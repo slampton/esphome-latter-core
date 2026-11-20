@@ -1,5 +1,6 @@
 #include "esphome/core/defines.h"
 #include "ui_pages.h"
+#include "hal_video_stream.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1506,6 +1507,9 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
   using esphome::Color;
   using esphome::display::TextAlign;
 
+  auto &rs = runtime_state();
+  const auto &ac = area_ctx_state();
+  const auto &ly = layout();
   const int cx = st.cx;
   const int cy = st.cy;
   const uint32_t now_ms = st.now_ms;
@@ -1515,17 +1519,136 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
   Color accent_c = is_crit ? st.col_red : (is_warn ? st.col_gold : st.theme_primary);
 
   const bool has_cam_url = !st.notif_camera_url.empty();
+  const bool has_cam_ent = !st.notif_camera_entity.empty();
+  const bool is_cam_notif = has_cam_url || has_cam_ent;
+  const bool live_popup = rs.cameras.doorbell_live_popup_active && is_cam_notif;
+
+  // Lookup matching CameraRecord for capability gating (audio / talkback / area unlock)
+  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  const int cam_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
+  const int cam_idx = has_cam_ent ? find_camera_index_by_entity(cams, cam_cnt, st.notif_camera_entity.sv()) : -1;
+  const CameraRecord *cam_rec = (cam_idx >= 0) ? &cams[cam_idx] : nullptr;
+  const bool can_audio = (cam_rec == nullptr) ? is_cam_notif : (cam_rec->has_audio() || cam_rec->has_talkback());
+  const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) &&
+                        ((cam_rec == nullptr) ? is_cam_notif : cam_rec->has_talkback());
+  const std::string cam_area = (cam_rec != nullptr) ? cam_rec->area_id : ac.area_id;
+  const EntryControlItem *unlock_t = is_cam_notif ? resolve_doorbell_quick_unlock_target(cam_area, home_hub_state()) : nullptr;
+
+  const int wrap_max_w = scale_x(280);
+  std::string fit_title = fit_text_to_width_font(
+      st.notif_title.empty() ? std::string("Notification") : st.notif_title.str(), wrap_max_w, ctx.font_date);
+
+  // --------------------------------------------------------------------------
+  // Path A: ESP32-P4 Live Video Doorbell Popup (D-066)
+  // --------------------------------------------------------------------------
+  if (live_popup) {
+    const CameraRect vp = compute_uncropped_video_viewport(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, false);
+    rs.cameras.video_y0 = vp.y0;
+    rs.cameras.video_y1 = vp.y1();
+    // Paint only strips outside vp (zero double-paint on live video pixels)
+    if (vp.y0 > 0) {
+      fill_rect_row_major(it, 0, 0, SCREEN_W, vp.y0, st.col_black);
+    }
+    if (vp.y1() + 1 < SCREEN_H) {
+      fill_rect_row_major(it, 0, vp.y1() + 1, SCREEN_W, SCREEN_H - (vp.y1() + 1), st.col_black);
+    }
+    if (vp.x0 > 0) {
+      fill_rect_row_major(it, 0, vp.y0, vp.x0, vp.h, st.col_black);
+    }
+    if (vp.x1() + 1 < SCREEN_W) {
+      fill_rect_row_major(it, vp.x1() + 1, vp.y0, SCREEN_W - (vp.x1() + 1), vp.h, st.col_black);
+    }
+
+    bool drew_live = false;
+    const uint16_t *v_px = nullptr;
+    int v_w = 0, v_h = 0;
+    if (video_client().acquire_frame(v_px, v_w, v_h)) {
+      drew_live = blit_rgb565_fitted_frame(it, v_px, v_w, v_h, vp, /*fill=*/false, false);
+      video_client().release_frame();
+    }
+    if (!drew_live && ctx.camera_snapshot_art.valid()) {
+      drew_live = blit_rgb565_fitted_frame(it, ctx.camera_snapshot_art.data,
+                                           ctx.camera_snapshot_art.width, ctx.camera_snapshot_art.height,
+                                           vp, /*fill=*/false, false);
+    }
+    if (!drew_live) {
+      fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, st.col_black);
+      ui::draw_icon_camera(it, cx, cy - scale_y(18), scale_s(20), accent_c, false);
+      fast_print(it, cx, cy + scale_y(16), ctx.font_small, st.col_slate, TextAlign::CENTER, "Connecting live video...");
+    }
+
+    Color ring_c = (is_crit && !pulse) ? ui::chrome_danger_bg() : accent_c;
+    render_bezel_alert_border(it, cx, cy, ring_c);
+
+    // Top title over live video
+    const int title_y = ly.hdr_y + scale_y(4);
+    fast_print(it, cx + 1, title_y + 1, ctx.font_date, st.col_black, TextAlign::CENTER, fit_title.c_str());
+    fast_print(it, cx, title_y, ctx.font_date, st.col_white, TextAlign::CENTER, fit_title.c_str());
+
+    // Tap video area -> Expand into full Cameras app
+    frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::NOTIF_EXPAND_BTN, kHitTap);
+
+    // Live PTT talk banner keeps video 100% visible during talk!
+    if (rs.voice.intercom_turn) {
+      const int ptt_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 62);
+      render_doorbell_ptt_banner(it, ctx, ptt_y);
+      return;
+    }
+
+    // Interactive action rows directly on P4 Live Popup
+    const int row2_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 54 : 38);
+    const int row1_y = row2_y - scale_y(48);
+    const int btn_r = scale_y(17);
+    const int gap = scale_x(8);
+
+    struct PopupBtn { const char *lbl; uint16_t wid; Color brd; Color bg; };
+    PopupBtn r1[4]{};
+    int r1_cnt = 0;
+    if (can_audio) {
+      const bool act = cam_listen_active() || cam_call_active();
+      r1[r1_cnt++] = {act ? "Mute" : "Listen", WidgetId::NOTIF_ANSWER_BTN,
+                      act ? ctx.col_green : kChromeGlassSheen,
+                      act ? mix_color_q8(kChromeGlassTint, ctx.col_green, 72) : kChromeGlassTint};
+    }
+    if (can_talk) {
+      r1[r1_cnt++] = {"Talk", WidgetId::NOTIF_TALK_BTN, ctx.theme_primary,
+                      mix_color_q8(kChromeGlassTint, ctx.theme_primary, 64)};
+      r1[r1_cnt++] = {"Reply", WidgetId::NOTIF_REPLY_BTN, kChromeGlassSheen, kChromeGlassTint};
+    }
+    if (unlock_t != nullptr && r1_cnt < 4) {
+      r1[r1_cnt++] = {unlock_t->is_lock ? "Unlock" : "Open", WidgetId::NOTIF_UNLOCK_BTN,
+                      st.col_gold, mix_color_q8(kChromeGlassTint, st.col_gold, 60)};
+    }
+    if (r1_cnt > 0) {
+      const int avail_w = std::min(scale_w(360), ly.band_safe_span(row1_y, 2 * btn_r, 14));
+      const int bw = std::max(scale_x(64), (avail_w - (r1_cnt - 1) * gap) / r1_cnt);
+      int x = cx - (r1_cnt * bw + (r1_cnt - 1) * gap) / 2;
+      for (int i = 0; i < r1_cnt; ++i) {
+        ui::pill_button(it, x, x + bw, row1_y, btn_r, r1[i].brd, r1[i].bg,
+                        r1[i].lbl, st.col_white, ctx.font_micro, r1[i].wid, kHitTap | kHitFocusSlot);
+        x += bw + gap;
+      }
+    }
+
+    const int r2_w = std::min(scale_w(250), ly.band_safe_span(row2_y, 2 * btn_r, 16));
+    const int half_w = std::max(scale_x(72), (r2_w - gap) / 2);
+    ui::pill_button(it, cx - half_w - gap / 2, cx - gap / 2, row2_y, btn_r,
+                    ctx.theme_primary, kChromeGlassTint, "Expand", st.col_white, ctx.font_micro,
+                    WidgetId::NOTIF_EXPAND_BTN, kHitTap | kHitFocusSlot);
+    ui::pill_button(it, cx + gap / 2, cx + half_w + gap / 2, row2_y, btn_r,
+                    accent_c, kChromeGlassTint, "Dismiss", st.col_white, ctx.font_micro,
+                    WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
+    return;
+  }
+
+  // --------------------------------------------------------------------------
+  // Path B: Universal Default Snapshot Doorbell Popup (Uncropped) / Alert Card
+  // --------------------------------------------------------------------------
   const bool cam_ready = (has_cam_url && st.notif_camera_url == st.current_loaded_camera_url &&
                           ctx.camera_snapshot_art.valid());
 
-  if (cam_ready) {
-    render_album_art_canvas(it, ctx.camera_snapshot_art, cx, false, false, false, true);
-  }
-
   Color ring_c = (is_crit && !pulse) ? ui::chrome_danger_bg() : accent_c;
-  render_bezel_alert_border(it, cx, cy, ring_c);
 
-  const int wrap_max_w = scale_x(280);
   std::string line1;
   std::string line2;
   std::string clean_msg = sanitize_utf8_for_font(st.notif_message.str());
@@ -1556,63 +1679,88 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
     }
   }
 
-  std::string fit_title = fit_text_to_width_font(
-      st.notif_title.empty() ? std::string("Notification") : st.notif_title.str(), wrap_max_w, ctx.font_date);
-
-  if (cam_ready) {
-    fast_print(it, cx + 1, scale_y(52) + 1, ctx.font_date, st.col_black, TextAlign::CENTER, fit_title.c_str());
-    fast_print(it, cx, scale_y(52), ctx.font_date, st.col_white, TextAlign::CENTER, fit_title.c_str());
-
-    if (!line1.empty()) {
-      int y1 = line2.empty() ? scale_y(356) : scale_y(344);
-      fast_print(it, cx + 1, y1 + 1, ctx.font_small, st.col_black, TextAlign::CENTER, line1.c_str());
-      fast_print(it, cx, y1, ctx.font_small, st.col_white, TextAlign::CENTER, line1.c_str());
+  if (is_cam_notif) {
+    // Uncropped snapshot viewport above action pills (never crops visitor!)
+    const int title_y = ly.hdr_y + scale_y(6);
+    const int btn_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 64 : 46);
+    const int btn_r = scale_y(18);
+    const int snap_top = title_y + scale_y(24);
+    const int snap_bot = btn_y - btn_r - scale_y(26);
+    const int snap_h = std::max(80, snap_bot - snap_top);
+    int snap_w = SCREEN_W - scale_x(24);
+    if (LATTER_ROUND_DISPLAY) {
+      snap_w = std::min(ly.safe_span(snap_top, 14), ly.safe_span(snap_bot, 14));
+      snap_w = std::clamp(snap_w, 180, SCREEN_W - 24);
     }
-    if (!line2.empty()) {
-      int y2 = scale_y(368);
-      fast_print(it, cx + 1, y2 + 1, ctx.font_small, st.col_black, TextAlign::CENTER, line2.c_str());
-      fast_print(it, cx, y2, ctx.font_small, st.theme_secondary, TextAlign::CENTER, line2.c_str());
-    }
+    const CameraRect snap_vp{cx - snap_w / 2, snap_top, snap_w, snap_h};
 
-    render_modern_card(it, cx - scale_x(72), scale_y(412), 132, 36, 10, kChromeGlassTint, ctx.col_green,
-                       "Answer", st.col_white, ctx.font_small);
-    render_modern_card(it, cx + scale_x(72), scale_y(412), 132, 36, 10, kChromeGlassTint, accent_c,
-                       "Dismiss", st.col_white, ctx.font_small);
-
-    frame_hits().add_rect(0, 0, SCREEN_W, scale_y(380), WidgetId::NOTIF_OPEN_CAM_BTN, kHitTap);
-    frame_hits().add_centered_rect(cx - scale_x(72), scale_y(412), scale_x(132), scale_y(36),
-                                   WidgetId::NOTIF_OPEN_CAM_BTN, kHitTap | kHitFocusSlot);
-    frame_hits().add_centered_rect(cx + scale_x(72), scale_y(412), scale_x(132), scale_y(36),
-                                   WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
-  } else {
-    const char *hdr_lbl = is_crit ? "CRITICAL ALERT" : (is_warn ? "WARNING" : "NOTIFICATION");
-    fast_print(it, cx, scale_y(72), ctx.font_small, accent_c, TextAlign::CENTER, hdr_lbl);
-
-    if (has_cam_url) {
-      ui::draw_icon_camera(it, cx, scale_y(120), scale_s(16), accent_c, true);
+    if (cam_ready) {
+      blit_rgb565_fitted_frame(it, ctx.camera_snapshot_art.data,
+                               ctx.camera_snapshot_art.width, ctx.camera_snapshot_art.height,
+                               snap_vp, /*fill=*/false, false);
     } else {
-      ui::draw_icon_bell(it, cx, scale_y(120), scale_s(16), accent_c, true);
+      fill_rect_row_major(it, snap_vp.x0, snap_vp.y0, snap_vp.w, snap_vp.h, Color(14, 18, 24));
+      ui::draw_icon_camera(it, snap_vp.cx(), snap_vp.cy() - scale_y(10), scale_s(18), accent_c, true);
+      fast_print(it, snap_vp.cx(), snap_vp.cy() + scale_y(18), ctx.font_micro, st.col_slate,
+                 TextAlign::CENTER, "Loading camera snapshot...");
     }
 
-    fast_print(it, cx, scale_y(168), ctx.font_date, st.col_white, TextAlign::CENTER, fit_title.c_str());
+    render_bezel_alert_border(it, cx, cy, ring_c);
+    fast_print(it, cx + 1, title_y + 1, ctx.font_date, st.col_black, TextAlign::CENTER, fit_title.c_str());
+    fast_print(it, cx, title_y, ctx.font_date, st.col_white, TextAlign::CENTER, fit_title.c_str());
 
     if (!line1.empty()) {
-      fast_print(it, cx, line2.empty() ? scale_y(222) : scale_y(210), ctx.font_small, st.theme_secondary,
-                 TextAlign::CENTER, line1.c_str());
-    }
-    if (!line2.empty()) {
-      fast_print(it, cx, scale_y(238), ctx.font_small, st.theme_secondary, TextAlign::CENTER, line2.c_str());
-    }
-    if (has_cam_url && !cam_ready) {
-      fast_print(it, cx, scale_y(274), ctx.font_small, st.col_slate, TextAlign::CENTER, "Loading camera snapshot...");
-      frame_hits().add_rect(0, 0, SCREEN_W, scale_y(308), WidgetId::NOTIF_OPEN_CAM_BTN, kHitTap);
+      const int msg_y = snap_bot + scale_y(12);
+      fast_print(it, cx + 1, msg_y + 1, ctx.font_micro, st.col_black, TextAlign::CENTER, line1.c_str());
+      fast_print(it, cx, msg_y, ctx.font_micro, st.col_white, TextAlign::CENTER, line1.c_str());
     }
 
-    render_modern_card(it, cx, scale_y(336), 216, 44, 12, kChromeGlassTint, accent_c,
-                       "Dismiss", st.col_white, ctx.font_small);
-    frame_hits().add_centered_rect(cx, scale_y(336), scale_x(216), scale_y(44),
-                                   WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
+    // Tap snapshot -> jump directly into Cameras Single live video
+    frame_hits().add_rect(snap_vp.x0, snap_vp.y0, snap_vp.w, snap_vp.h, WidgetId::NOTIF_VIEW_BTN, kHitTap);
+
+    // Bottom buttons: Answer (if audio/talkback) | View | Dismiss
+    struct SnapBtn { const char *lbl; uint16_t wid; Color brd; Color bg; };
+    SnapBtn sb[3]{};
+    int sb_cnt = 0;
+    if (can_audio) {
+      sb[sb_cnt++] = {"Answer", WidgetId::NOTIF_ANSWER_BTN, ctx.col_green,
+                      mix_color_q8(kChromeGlassTint, ctx.col_green, 72)};
+    }
+    sb[sb_cnt++] = {"View", WidgetId::NOTIF_VIEW_BTN, ctx.theme_primary,
+                    mix_color_q8(kChromeGlassTint, ctx.theme_primary, 64)};
+    sb[sb_cnt++] = {"Dismiss", WidgetId::NOTIF_DISMISS_BTN, accent_c, kChromeGlassTint};
+
+    const int gap = scale_x(8);
+    const int row_w = std::min(scale_w(340), ly.band_safe_span(btn_y, 2 * btn_r, 14));
+    const int bw = std::max(scale_x(68), (row_w - (sb_cnt - 1) * gap) / sb_cnt);
+    int x = cx - (sb_cnt * bw + (sb_cnt - 1) * gap) / 2;
+    for (int i = 0; i < sb_cnt; ++i) {
+      ui::pill_button(it, x, x + bw, btn_y, btn_r, sb[i].brd, sb[i].bg,
+                      sb[i].lbl, st.col_white, ctx.font_micro, sb[i].wid, kHitTap | kHitFocusSlot);
+      x += bw + gap;
+    }
+    return;
   }
+
+  // Regular non-camera push notification
+  render_bezel_alert_border(it, cx, cy, ring_c);
+  const char *hdr_lbl = is_crit ? "CRITICAL ALERT" : (is_warn ? "WARNING" : "NOTIFICATION");
+  fast_print(it, cx, scale_y(72), ctx.font_small, accent_c, TextAlign::CENTER, hdr_lbl);
+  ui::draw_icon_bell(it, cx, scale_y(120), scale_s(16), accent_c, true);
+  fast_print(it, cx, scale_y(168), ctx.font_date, st.col_white, TextAlign::CENTER, fit_title.c_str());
+
+  if (!line1.empty()) {
+    fast_print(it, cx, line2.empty() ? scale_y(222) : scale_y(210), ctx.font_small, st.theme_secondary,
+               TextAlign::CENTER, line1.c_str());
+  }
+  if (!line2.empty()) {
+    fast_print(it, cx, scale_y(238), ctx.font_small, st.theme_secondary, TextAlign::CENTER, line2.c_str());
+  }
+
+  render_modern_card(it, cx, scale_y(336), 216, 44, 12, kChromeGlassTint, accent_c,
+                     "Dismiss", st.col_white, ctx.font_small);
+  frame_hits().add_centered_rect(cx, scale_y(336), scale_x(216), scale_y(44),
+                                 WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
 }
 
 }  // namespace latter_ui

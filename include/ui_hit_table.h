@@ -45,6 +45,13 @@ namespace WidgetId {
   static constexpr uint16_t NOTIF_DISMISS_BTN  = 53;
   static constexpr uint16_t VA_CANCEL_BTN      = 54;
   static constexpr uint16_t HIBERNATE_CANCEL   = 55;
+  static constexpr uint16_t NOTIF_ANSWER_BTN   = 56;
+  static constexpr uint16_t NOTIF_VIEW_BTN     = 57;
+  static constexpr uint16_t NOTIF_TALK_BTN     = 58;
+  static constexpr uint16_t NOTIF_REPLY_BTN    = 59;
+  static constexpr uint16_t NOTIF_UNLOCK_BTN   = 60;
+  static constexpr uint16_t NOTIF_EXPAND_BTN   = 61;
+  static constexpr uint16_t CAM_PTT_BANNER_STOP = 62;
 
   static constexpr uint16_t CONFIRM_CANCEL     = 100;
   static constexpr uint16_t CONFIRM_ACCEPT     = 101;
@@ -270,6 +277,15 @@ namespace WidgetId {
   static constexpr uint16_t MUSIC_LYRIC_LINE_5         = 985;
   static constexpr uint16_t MUSIC_LYRIC_LINE_6         = 986;
   static constexpr uint16_t MUSIC_LYRIC_LINE_7         = 987;
+
+  // Dedicated 4-Tab Cameras App (Page 13)
+  static constexpr uint16_t CAM_GRID_TILE_BASE         = 990;  // 990..993 (param = global camera idx)
+  static constexpr uint16_t CAM_GRID_PREV_BTN          = 994;
+  static constexpr uint16_t CAM_GRID_NEXT_BTN          = 995;
+  static constexpr uint16_t CAM_FRAMING_BTN            = 996;
+  static constexpr uint16_t CAM_CAROUSEL_PAUSE_BTN     = 997;
+  static constexpr uint16_t CAM_VIDEO_TAP              = 998;
+  static constexpr uint16_t CAM_SETTINGS_ROW_BASE      = 1000; // 1000..1004 (param = setting index)
 }  // namespace WidgetId
 
 struct HitRegion {
@@ -1272,6 +1288,123 @@ inline constexpr uint16_t resolve_remote_dpad_widget(int tx, int ty, const Remot
     return (dx < 0) ? WidgetId::REMOTE_DPAD_LEFT : WidgetId::REMOTE_DPAD_RIGHT;
   }
   return (dy < 0) ? WidgetId::REMOTE_DPAD_UP : WidgetId::REMOTE_DPAD_DOWN;
+}
+
+// ==============================================================================
+// Pure-C++20 Dedicated Cameras App Layout & Uncropped Video Geometry (D-066)
+// Shared by page_cameras.cpp, page_ambient_va.cpp & standalone host unit tests.
+// ==============================================================================
+struct CameraRect {
+  int x0{0};
+  int y0{0};
+  int w{0};
+  int h{0};
+  constexpr int x1() const noexcept { return x0 + w - 1; }
+  constexpr int y1() const noexcept { return y0 + h - 1; }
+  constexpr int cx() const noexcept { return x0 + w / 2; }
+  constexpr int cy() const noexcept { return y0 + h / 2; }
+};
+
+struct CameraGridGeom {
+  CameraRect frame{};
+  CameraRect tiles[4]{};
+  int title_y{34};
+  int pager_y{34};
+  int mode_bar_cy{398};
+  int mode_bar_r{28};
+  int mode_slot_xs[4]{143, 203, 263, 323};
+};
+
+// Computes the centered destination rectangle for rendering a video/snapshot frame
+// of size (src_w, src_h) inside a bounding viewport `bounds`.
+// When `fill == false` (Uncropped default): preserves full aspect ratio with zero crop
+// (and on round displays inscribes cleanly inside the safe circle radius!).
+inline constexpr CameraRect compute_video_display_rect(
+    const CameraRect &bounds, int src_w, int src_h, bool fill) noexcept {
+  if (bounds.w <= 0 || bounds.h <= 0) return bounds;
+  if (src_w <= 0 || src_h <= 0) return bounds;
+  if (fill) return bounds;
+  const int64_t lhs = static_cast<int64_t>(bounds.w) * static_cast<int64_t>(src_h);
+  const int64_t rhs = static_cast<int64_t>(bounds.h) * static_cast<int64_t>(src_w);
+  int dst_w = bounds.w;
+  int dst_h = bounds.h;
+  if (lhs > rhs) {
+    dst_w = static_cast<int>((rhs + (src_h / 2)) / src_h);
+  } else {
+    dst_h = static_cast<int>((lhs + (src_w / 2)) / src_w);
+  }
+  if (dst_w < 1) dst_w = 1;
+  if (dst_h < 1) dst_h = 1;
+  CameraRect r{};
+  r.w = dst_w;
+  r.h = dst_h;
+  r.x0 = bounds.x0 + (bounds.w - dst_w) / 2;
+  r.y0 = bounds.y0 + (bounds.h - dst_h) / 2;
+  return r;
+}
+
+// Computes the safe full-viewport uncropped bounding box for Single / Carousel video.
+// On round panels (e.g. 466x466), inscribes 16:9 inside the circular bezel so all 4
+// corners stay 100% visible with zero bezel clipping!
+inline constexpr CameraRect compute_uncropped_video_viewport(
+    int panel_w, int panel_h, bool round, bool fill) noexcept {
+  if (round && !fill) {
+    // Max 16:9 box inscribed in circle of radius R_safe = panel_w/2 - 8:
+    // For 466x466: R_safe = 225 -> w = 384, h = 224 -> half-diag = sqrt(192^2 + 112^2) = 222.3 <= 225!
+    const int r_safe = (panel_w < panel_h ? panel_w : panel_h) / 2 - 8;
+    int w = (r_safe * 171) / 100;  // ~2 * R * 16/sqrt(337) = 1.743 * R
+    if (w > panel_w - 16) w = panel_w - 16;
+    w = (w > 16) ? (w & ~15) : 16;
+    int h = (w * 9) / 16;
+    h = (h > 16) ? ((h + 15) & ~15) : 16;
+    if (h > panel_h - 32) h = panel_h - 32;
+    return CameraRect{(panel_w - w) / 2, (panel_h - h) / 2, w, h};
+  }
+  return CameraRect{0, 0, panel_w, panel_h};
+}
+
+inline constexpr CameraGridGeom compute_camera_grid_geom(
+    int w, int h, bool round, bool wearable, int ppi) noexcept {
+  CameraGridGeom g{};
+  const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
+  const int cx = w / 2;
+  g.title_y = ly.hdr_y;
+  g.mode_bar_cy = ly.app_dock_y;
+  g.mode_bar_r = ly.dock_r;
+  const int dock_step = (w < 380)
+                            ? ((w - 64) / 3)
+                            : ((w > 520) ? ((w * 74) / 466)
+                                         : (round ? scale_x_for(60, w) : scale_x_for(72, w)));
+  g.mode_slot_xs[0] = cx - (3 * dock_step) / 2;
+  g.mode_slot_xs[1] = cx - dock_step / 2;
+  g.mode_slot_xs[2] = cx + dock_step / 2;
+  g.mode_slot_xs[3] = cx + (3 * dock_step) / 2;
+
+  const int top_y = ly.hdr_y + scale_y_for(24, h);
+  const int bot_y = ly.app_dock_y - ly.dock_r - scale_y_for(12, h);
+  int avail_h = std::max(80, bot_y - top_y);
+  int avail_w = w - scale_x_for(20, w);
+  if (round) {
+    // Inscribe 2x2 grid rectangle inside the safe circle chord at both top_y and bot_y
+    const int s_top = safe_span_for(top_y, w, h, true, wearable, 14);
+    const int s_bot = safe_span_for(bot_y, w, h, true, wearable, 14);
+    const int chord = std::min(s_top, s_bot);
+    avail_w = std::clamp(chord, 160, w - 36);
+    // Keep roughly 4:3 or 5:4 aspect for crisp 2x2 quadrants
+    if (avail_h > avail_w) avail_h = avail_w;
+  }
+  const int fx = cx - avail_w / 2;
+  const int fy = top_y + (bot_y - top_y - avail_h) / 2;
+  g.frame = CameraRect{fx, fy, avail_w, avail_h};
+
+  const int half_w = avail_w / 2;
+  const int half_h = avail_h / 2;
+  g.tiles[0] = CameraRect{fx, fy, half_w, half_h};
+  g.tiles[1] = CameraRect{fx + half_w, fy, avail_w - half_w, half_h};
+  g.tiles[2] = CameraRect{fx, fy + half_h, half_w, avail_h - half_h};
+  g.tiles[3] = CameraRect{fx + half_w, fy + half_h, avail_w - half_w, avail_h - half_h};
+  g.pager_y = g.title_y;
+  return g;
 }
 
 }  // namespace latter_ui

@@ -466,17 +466,79 @@ inline void leave_home_hub_cameras_if_active(DeviceRuntimeState &rs, const UiTou
       rt.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
     }
   }
-  cam_quick_reply_open() = false;
+  rs.cameras.quick_reply_open = false;
+  rs.cameras.doorbell_live_popup_active = false;
   cam_expanded_fullscreen() = false;
+  rt.cmd(UiHostCmd::STOP_CAMERA_STREAM);
   rt.cmd(UiHostCmd::RELEASE_CAMERA_ART);
   rs.alert.loaded_camera_url.clear();
   rt.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
 }
 
-inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeState &rs,
+inline void enter_cameras_app(int target_tab, std::string_view focus_entity, bool start_listen,
+                              DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms) {
+  const auto &prefs = persisted_prefs();
+  const auto &ac = area_ctx_state();
+  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  const int cam_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
+
+  rs.nav.gui_page = PageId::CAMERAS;
+  rs.nav.home_subpage = 0;
+  rs.nav.tools_subpage = 0;
+  rs.nav.remote_subpage = 0;
+  rs.nav.active_game = 0;
+  rs.cameras.quick_reply_open = false;
+  rs.cameras.doorbell_live_popup_active = false;
+  rs.cameras.hud_active = true;
+  rs.cameras.hud_timer = now_ms;
+  rs.cameras.carousel_last_advance_ms = now_ms;
+  rs.cameras.framing_override = -1;
+
+  if (!focus_entity.empty()) {
+    const int idx = find_camera_index_by_entity(cams, cam_cnt, focus_entity);
+    if (idx >= 0) {
+      rs.cameras.selected_idx = idx;
+    }
+  } else if (cam_cnt > 0) {
+    rs.cameras.selected_idx = std::clamp(rs.cameras.selected_idx, 0, cam_cnt - 1);
+  } else {
+    rs.cameras.selected_idx = 0;
+  }
+
+  int chosen_tab = target_tab;
+  if (chosen_tab < 0) {
+    if (prefs.camera_default_view == 1U) chosen_tab = CamerasTab::SINGLE;
+    else if (prefs.camera_default_view == 2U) chosen_tab = CamerasTab::CAROUSEL;
+    else chosen_tab = CamerasTab::GRID;
+  }
+  if (chosen_tab == CamerasTab::GRID && cam_cnt <= 1) {
+    chosen_tab = CamerasTab::SINGLE;
+  }
+  rs.cameras.tab = std::clamp(chosen_tab, CamerasTab::GRID, CamerasTab::SETTINGS);
+  mode_bar_anim().snap(0, rs.cameras.tab);
+
+  if (start_listen) {
+    intercom_session().start_call(now_ms);
+  }
+
+  cam_error_backoff_until_ms() = 0;
+  last_cam_live_fetch_ms() = now_ms;
+  if (rs.cameras.tab == CamerasTab::SETTINGS) {
+    rt.cmd(UiHostCmd::STOP_CAMERA_STREAM);
+  } else {
+    rt.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+    if (prefs.camera_stream_mode == 2U || ac.camera_stream_url.empty()) {
+      rt.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+    }
+  }
+}
+
+inline void enter_home_hub_tab(int target_tab, bool /*expand_cam*/, DeviceRuntimeState &rs,
                                const UiTouchRuntime &rt, uint32_t now_ms) {
   const bool was_hub = (rs.nav.gui_page == PageId::HOME_HUB);
-  const bool was_cam = is_camera_view_active(rs);
+  if (is_camera_view_active(rs)) {
+    leave_home_hub_cameras_if_active(rs, rt, now_ms);
+  }
   rs.nav.gui_page = PageId::HOME_HUB;
   rs.nav.home_subpage = 0;
   rs.nav.tools_subpage = 0;
@@ -512,20 +574,6 @@ inline void enter_home_hub_tab(int target_tab, bool expand_cam, DeviceRuntimeSta
     home_hub_mode_bar_page() = 0;
     home_hub_tab() = (target_tab >= 0) ? target_tab : HomeHubTab::ALARM;
   }
-
-  const auto &ac = area_ctx_state();
-  const bool has_cam_src =
-      !ac.camera_snapshot_url.empty() || !ac.cameras_summary.empty() || !rs.alert.camera_url.empty();
-  const bool now_cam = (hh_cnt > 0 && home_hub_tab() == HomeHubTab::CAMERAS && has_cam_src);
-  if (was_cam && !now_cam) {
-    leave_home_hub_cameras_if_active(rs, rt, now_ms);
-  } else if (now_cam) {
-    cam_quick_reply_open() = false;
-    cam_expanded_fullscreen() = expand_cam;
-    cam_error_backoff_until_ms() = 0;
-    last_cam_live_fetch_ms() = now_ms;
-    rt.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-  }
 }
 
 inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms) {
@@ -535,6 +583,9 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
 
   if (chosen_app == PageId::HOME_HUB) {
     enter_home_hub_tab(-1, false, rs, rt, now_ms);
+  } else if (chosen_app == PageId::CAMERAS) {
+    stop_calendar_dictation_if_active(rs, rt, now_ms);
+    enter_cameras_app(-1, "", false, rs, rt, now_ms);
   } else {
     if (is_camera_view_active(rs) || is_calendar_map_view_active(rs)) {
       leave_home_hub_cameras_if_active(rs, rt, now_ms);
@@ -765,6 +816,26 @@ inline void launch_shortcut_route(RouteId route_id, ShortcutOrigin origin,
     case RouteId::APP_HOME_HUB:
       launch_dock_app(PageId::HOME_HUB, rs, rt, now_ms);
       return;
+    case RouteId::APP_CAMERAS:
+      launch_dock_app(PageId::CAMERAS, rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      return;
+    case RouteId::CAMERAS_GRID:
+    case RouteId::CAMERAS_SINGLE:
+    case RouteId::CAMERAS_CAROUSEL:
+    case RouteId::CAMERAS_SETTINGS: {
+      int ctab = CamerasTab::GRID;
+      if (route_id == RouteId::CAMERAS_SINGLE) ctab = CamerasTab::SINGLE;
+      else if (route_id == RouteId::CAMERAS_CAROUSEL) ctab = CamerasTab::CAROUSEL;
+      else if (route_id == RouteId::CAMERAS_SETTINGS) ctab = CamerasTab::SETTINGS;
+      enter_cameras_app(ctab, "", false, rs, rt, now_ms);
+      rs.nav.shortcut_origin = origin;
+      rs.nav.shortcut_origin_pinned_page = saved_pinned_pg;
+      mark_dirty_full();
+      rt.schedule_disp();
+      return;
+    }
     case RouteId::APP_AREA:
       launch_dock_app(PageId::AREA, rs, rt, now_ms);
       return;
@@ -848,14 +919,12 @@ inline void launch_shortcut_route(RouteId route_id, ShortcutOrigin origin,
       return;
 
     case RouteId::HOME_HUB_ALARM:
-    case RouteId::HOME_HUB_CAMERAS:
     case RouteId::HOME_HUB_INTERCOM:
     case RouteId::HOME_HUB_THERMOSTAT:
     case RouteId::HOME_HUB_ENTRY:
     case RouteId::HOME_HUB_VACUUM: {
       int tab = HomeHubTab::ALARM;
-      if (route_id == RouteId::HOME_HUB_CAMERAS) tab = HomeHubTab::CAMERAS;
-      else if (route_id == RouteId::HOME_HUB_INTERCOM) tab = HomeHubTab::INTERCOM;
+      if (route_id == RouteId::HOME_HUB_INTERCOM) tab = HomeHubTab::INTERCOM;
       else if (route_id == RouteId::HOME_HUB_THERMOSTAT) tab = HomeHubTab::THERMOSTAT;
       else if (route_id == RouteId::HOME_HUB_ENTRY) tab = HomeHubTab::ENTRY;
       else if (route_id == RouteId::HOME_HUB_VACUUM) tab = HomeHubTab::VACUUM;
@@ -1258,7 +1327,14 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
                          ac.doorbell_talk_state != "unknown";
     rs.nav.shortcut_origin = ShortcutOrigin::NONE;
     if (db_live || cam_call_active() || cam_listen_active()) {
-      enter_home_hub_tab(HomeHubTab::CAMERAS, true, rs, rt, now_ms);
+      rs.nav.gui_page = PageId::CAMERAS;
+      rs.cameras.tab = CamerasTab::SINGLE;
+      rs.cameras.quick_reply_open = false;
+      rs.cameras.hud_active = true;
+      rs.cameras.hud_timer = now_ms;
+      rs.cameras.doorbell_live_popup_active = false;
+      mode_bar_anim().snap(CamerasTab::SINGLE);
+      rt.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
     } else {
       enter_home_hub_tab(HomeHubTab::INTERCOM, false, rs, rt, now_ms);
     }
@@ -1434,9 +1510,9 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   rs.nav.world_clock_page = 0;
   rs.nav.home_settings_page = 1;
   const bool start_cam = is_cameras_start_screen(prefs);
-  const bool keep_cam = start_cam ||
-                        (anchor == PageId::HOME_HUB && home_hub_tab() == HomeHubTab::CAMERAS);
+  const bool keep_cam = start_cam || (anchor == PageId::CAMERAS);
   if (was_cam_page && !keep_cam) {
+    rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
     rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
     rs.alert.loaded_camera_url.clear();
     rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
@@ -1462,8 +1538,8 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
     rt_.schedule_disp();
     return;
   }
-  if (start_cam) {
-    enter_home_hub_tab(HomeHubTab::CAMERAS, false, rs, rt_, now_ms);
+  if (start_cam || anchor == PageId::CAMERAS) {
+    enter_cameras_app(-1, "", false, rs, rt_, now_ms);
     mark_dirty_full();
     rt_.schedule_disp();
     return;
@@ -1512,6 +1588,8 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   rs.nav.sky_weather_subpage = 0;
   rs.nav.home_settings_page = 1;
   if (was_cam_page) {
+    rs.cameras.doorbell_live_popup_active = false;
+    rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
     rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
     rs.alert.loaded_camera_url.clear();
     rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
@@ -1818,8 +1896,10 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
   }
 
-  // Priority 2: Voice Assistant Takeover
-  if (rs.voice.active || !rs.voice.status_text.empty()) {
+  // Priority 2: Voice Assistant Takeover (exempt during live doorbell PTT reply — D-066!)
+  if (should_va_takeover_preempt(rs.voice.active, !rs.voice.status_text.empty(),
+                                 rs.voice.intercom_turn, rs.nav.gui_page,
+                                 rs.cameras.doorbell_live_popup_active)) {
     gest.active = false;
     last_screen_wake_ms() = now_touch;
     rt_.cmd(UiHostCmd::CANCEL_VOICE_ASSISTANT);
@@ -1833,21 +1913,108 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     return;
   }
 
-  // Priority 4: Push Notification Banner / Doorbell Camera Popup
+  // Priority 4: Push Notification Banner / Doorbell Camera Popup (Snapshot & P4 Live Video)
   if (rs.alert.active) {
     gest.active = false;
     last_screen_wake_ms() = now_touch;
     const HitRegion *n_hit = frame_hits().hit_test(touch.x, touch.y, kHitTap);
-    if (!rs.alert.camera_url.empty() && n_hit != nullptr &&
-        n_hit->widget_id == WidgetId::NOTIF_OPEN_CAM_BTN) {
-      rs.alert.active = false;
-      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
-      enter_home_hub_tab(HomeHubTab::CAMERAS, true, rs, rt_, now_touch);
-      intercom_session().start_call(now_touch);
+    const uint16_t nwid = (n_hit != nullptr) ? n_hit->widget_id : WidgetId::NONE;
+    const bool is_cam_notif = !rs.alert.camera_url.empty() || !rs.alert.camera_entity.empty();
+
+    // Live PTT banner tap during P4 live doorbell popup sends reply immediately without dismissing popup
+    if (rs.voice.intercom_turn && nwid == WidgetId::CAM_PTT_BANNER_STOP) {
+      rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
+      intercom_session().resume_listen(now_touch);
+      rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+      rt_.apply_power_policy();
       mark_dirty_full();
       rt_.schedule_disp();
       return;
     }
+
+    if (is_cam_notif && rs.cameras.doorbell_live_popup_active) {
+      // P4 Live Video Doorbell Popup interactive controls in-place
+      if (nwid == WidgetId::NOTIF_ANSWER_BTN) {
+        if (cam_call_active()) {
+          intercom_session().stop_call_with_hw(now_touch);
+        } else {
+          cam_listen_active() = !cam_listen_active();
+          rs.intercom.cam_action = cam_listen_active() ? "listen_start" : "listen_stop";
+          cam_intercom_status() = cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
+          rs.intercom.cam_status_ms = now_touch;
+          intercom_session().emit_current_cmd();
+          if (!cam_listen_active()) {
+            rt_.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
+          }
+        }
+        rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+        mark_dirty_full();
+        rt_.schedule_disp();
+        return;
+      }
+      if (nwid == WidgetId::NOTIF_TALK_BTN) {
+        if (!cam_call_active()) {
+          intercom_session().start_call(now_touch);
+        }
+        rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
+        rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+        mark_dirty_full();
+        rt_.schedule_disp();
+        return;
+      }
+      if (nwid == WidgetId::NOTIF_REPLY_BTN) {
+        const std::string focus_ent = rs.alert.camera_entity;
+        rs.alert.active = false;
+        rs.cameras.doorbell_live_popup_active = false;
+        rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+        enter_cameras_app(CamerasTab::SINGLE, focus_ent, false, rs, rt_, now_touch);
+        rs.cameras.quick_reply_open = true;
+        mark_dirty_full();
+        rt_.schedule_disp();
+        return;
+      }
+      if (nwid == WidgetId::NOTIF_UNLOCK_BTN) {
+        gate_or_dispatch_doorbell_unlock(now_touch, false);
+        return;
+      }
+      if (nwid == WidgetId::NOTIF_EXPAND_BTN || nwid == WidgetId::NOTIF_VIEW_BTN ||
+          nwid == WidgetId::NOTIF_OPEN_CAM_BTN) {
+        const std::string focus_ent = rs.alert.camera_entity;
+        rs.alert.active = false;
+        rs.cameras.doorbell_live_popup_active = false;
+        rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+        enter_cameras_app(CamerasTab::SINGLE, focus_ent, false, rs, rt_, now_touch);
+        mark_dirty_full();
+        rt_.schedule_disp();
+        return;
+      }
+      if (nwid == WidgetId::NOTIF_DISMISS_BTN) {
+        rs.cameras.doorbell_live_popup_active = false;
+        if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
+          intercom_session().stop_call_with_hw(now_touch);
+        }
+        rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
+        rt_.cmd(UiHostCmd::DISMISS_NOTIFICATION);
+        return;
+      }
+      return;
+    }
+
+    if (is_cam_notif && (nwid == WidgetId::NOTIF_ANSWER_BTN ||
+                         nwid == WidgetId::NOTIF_VIEW_BTN ||
+                         nwid == WidgetId::NOTIF_OPEN_CAM_BTN)) {
+      const std::string focus_ent = rs.alert.camera_entity;
+      const bool want_listen = (nwid == WidgetId::NOTIF_ANSWER_BTN || nwid == WidgetId::NOTIF_OPEN_CAM_BTN);
+      rs.alert.active = false;
+      rs.cameras.doorbell_live_popup_active = false;
+      rs.nav.shortcut_origin = ShortcutOrigin::NONE;
+      enter_cameras_app(CamerasTab::SINGLE, focus_ent, want_listen, rs, rt_, now_touch);
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return;
+    }
+    rs.cameras.doorbell_live_popup_active = false;
+    rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
     rt_.cmd(UiHostCmd::DISMISS_NOTIFICATION);
     return;
   }
@@ -2860,19 +3027,35 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     return;  // Mode bar, horizontal tab swipes, and overview card taps resolve in on_touch_move / on_touch_up
   }
 
-  // Page 9: Home Hub (including Camera Quick-Reply & Expanded Full-Bleed < Back)
+  // Page 9: Home Hub (5-tab whole-home controls resolve in on_touch_move / on_touch_up)
   if (rs.nav.gui_page == PageId::HOME_HUB) {
+    return;
+  }
+
+  // Page 13: Dedicated 4-Tab Cameras App (Quick-Reply < Back & Live PTT Banner Stop)
+  if (rs.nav.gui_page == PageId::CAMERAS) {
+    if (rs.voice.intercom_turn && wid == WidgetId::CAM_PTT_BANNER_STOP &&
+        touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
+      gest.active = false;
+      rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
+      intercom_session().resume_listen(now_touch);
+      rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+      rt_.apply_power_policy();
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return;
+    }
     if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
-      if (cam_quick_reply_open()) {
-        cam_quick_reply_open() = false;
+      gest.active = false;
+      if (rs.cameras.quick_reply_open) {
+        rs.cameras.quick_reply_open = false;
+        rs.cameras.hud_active = true;
+        rs.cameras.hud_timer = now_touch;
         mark_dirty_full();
         rt_.schedule_disp();
         return;
       }
-      if (cam_expanded_fullscreen()) {
-        cam_expanded_fullscreen() = false;
-        mark_dirty_full();
-        rt_.schedule_disp();
+      if (return_from_shortcut_origin(rs, rt_, now_touch)) {
         return;
       }
     }
@@ -3329,27 +3512,8 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 10. Page 9: Home Hub (Unified Canvas + Mode Bar Tab Step & Expanded Camera Carousel)
+  // 10. Page 9: Home Hub (5-Tab Whole-Home Controls)
   if (rs.nav.gui_page == PageId::HOME_HUB) {
-    if (cam_quick_reply_open()) return false;
-    if (home_hub_tab() == HomeHubTab::CAMERAS && cam_expanded_fullscreen()) {
-      if (h_dir != 0) {
-        commit_swipe();
-        std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
-        const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
-        if (c_total > 1) {
-          cam_carousel_idx() = step_wrap(cam_carousel_idx(), h_dir, c_total);
-          rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-          rs.alert.loaded_camera_url.clear();
-          cam_error_backoff_until_ms() = 0;
-          last_cam_live_fetch_ms() = now_ms;
-          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-          rt_.schedule_disp();
-        }
-        return true;
-      }
-      return false;
-    }
     if (home_hub_tab() == HomeHubTab::ENTRY &&
         v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
       commit_swipe();
@@ -3378,6 +3542,74 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         mark_dirty_full();
         rt_.schedule_disp();
       }
+      return true;
+    }
+    return false;
+  }
+
+  // 10b. Page 13: Dedicated 4-Tab Cameras App (Grid pagination, Single/Carousel camera swipe, Tab swipe)
+  if (rs.nav.gui_page == PageId::CAMERAS) {
+    if (rs.cameras.quick_reply_open || rs.voice.intercom_turn) return false;
+    CameraRecord cams[MAX_CAMERA_SLOTS]{};
+    const int c_total = parse_cameras_records(area_ctx_state().cameras_summary, cams, MAX_CAMERA_SLOTS);
+    if (rs.cameras.tab == CamerasTab::GRID && v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
+      const int total_pg = std::max(1, (c_total + 3) / 4);
+      if (total_pg > 1) {
+        commit_swipe();
+        bool changed = false;
+        rs.cameras.grid_page = step_pager_index(
+            rs.cameras.grid_page, 0, total_pg - 1, v_dir, /*wrap=*/false,
+            GestureAxisLock::Vertical, PageId::CAMERAS, now_ms, changed);
+        if (changed) {
+          rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+          mark_dirty_full();
+        }
+        rt_.schedule_disp();
+        return true;
+      }
+      return false;
+    }
+    if (h_dir != 0) {
+      commit_swipe();
+      if (rs.cameras.tab == CamerasTab::SINGLE && !rs.cameras.hud_active && c_total > 1) {
+        rs.cameras.selected_idx = step_wrap(rs.cameras.selected_idx, h_dir, c_total);
+        rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+        if (persisted_prefs().camera_stream_mode == 2U || area_ctx_state().camera_stream_url.empty()) {
+          rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+          rs.alert.loaded_camera_url.clear();
+          rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+        }
+        mark_dirty_full();
+        rt_.schedule_disp();
+        return true;
+      }
+      if (rs.cameras.tab == CamerasTab::CAROUSEL && !rs.cameras.hud_active && c_total > 1) {
+        int car[MAX_CAMERA_SLOTS]{};
+        const int car_cnt = collect_carousel_camera_indices(cams, c_total, car, MAX_CAMERA_SLOTS);
+        if (car_cnt > 1) {
+          rs.cameras.carousel_idx = step_wrap(rs.cameras.carousel_idx, h_dir, car_cnt);
+          rs.cameras.carousel_last_advance_ms = now_ms;
+          rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+          mark_dirty_full();
+          rt_.schedule_disp();
+          return true;
+        }
+      }
+      int next_tab = step_wrap(rs.cameras.tab, h_dir, 4);
+      if (next_tab == CamerasTab::GRID && c_total <= 1) {
+        next_tab = step_wrap(next_tab, h_dir, 4);
+      }
+      rs.cameras.tab = next_tab;
+      rs.cameras.hud_active = true;
+      rs.cameras.hud_timer = now_ms;
+      rs.cameras.carousel_last_advance_ms = now_ms;
+      if (next_tab == CamerasTab::SETTINGS) {
+        rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
+      } else {
+        rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+      }
+      mark_dirty_full();
+      rt_.schedule_disp();
       return true;
     }
     return false;
@@ -5173,18 +5405,14 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
       }
 
-    // 12. Page 9 Home Hub Controls (Alarm, Cameras, Intercom, Thermostat, Entry, Vacuum)
+    // 12. Page 9 Home Hub Controls (Alarm, Intercom, Thermostat, Entry, Vacuum)
     } else if (tap_valid && rs.nav.gui_page == PageId::HOME_HUB) {
       {
         int hh_tabs[kMaxHomeHubTabs]{};
         const int hh_tab_cnt = collect_home_hub_tabs(hh_tabs);
-        const bool mode_bar_visible =
-            !(home_hub_tab() == HomeHubTab::CAMERAS &&
-              (cam_quick_reply_open() || cam_expanded_fullscreen()));
         if (hh_tab_cnt <= 0) {
           // No Home Controls configured: ignore taps on empty state.
-        } else if (mode_bar_visible &&
-                   (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
+        } else if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
           if (hh_tab_cnt > 4) {
             home_hub_mode_bar_page() = std::clamp(
@@ -5192,8 +5420,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                 0, hh_tab_cnt - 4);
             rt_.schedule_disp();
           }
-        } else if (mode_bar_visible &&
-                   wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+        } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int slot = std::clamp(static_cast<int>(hit->param), 0, hh_tab_cnt - 1);
           const int target_tab = hh_tabs[slot];
@@ -5223,98 +5450,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           };
           rs.area.action_feedback = kAlarmFb[mode_i];
           gate_or_dispatch_alarm_action(kAlarmActs[mode_i], now_rel);
-        } else if (home_hub_tab() == HomeHubTab::CAMERAS) {
-          std::string c_ids[MAX_CAMERA_SLOTS], c_names[MAX_CAMERA_SLOTS];
-          const int c_total = parse_cameras_summary_list(area_ctx_state().cameras_summary, c_ids, c_names);
-          if (cam_quick_reply_open()) {
-            if (wid >= WidgetId::CAM_REPLY_BASE && wid < WidgetId::CAM_REPLY_BASE + 3 &&
-                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-              static constexpr const char *kDoorbellReplies[3] = {
-                  "On my way!",
-                  "Please leave it at the door.",
-                  "One moment, please!",
-              };
-              const int r_idx = static_cast<int>(wid - WidgetId::CAM_REPLY_BASE);
-              cam_quick_reply_open() = false;
-              rs.intercom.cam_action = "quick_reply";
-              rs.intercom.cam_message = kDoorbellReplies[r_idx];
-              cam_intercom_status() = "REPLY SENT";
-              rs.intercom.cam_status_ms = now_rel;
-              intercom_session().emit_current_cmd();
-              mark_dirty_full();
-              rt_.schedule_disp();
-            } else if (wid == WidgetId::CAM_UNLOCK_BTN &&
-                       touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-              cam_quick_reply_open() = false;
-              mark_dirty_full();
-              gate_or_dispatch_doorbell_unlock(now_rel, false);
-            }
-          } else if (wid == WidgetId::CAM_SNAPSHOT_CARD &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            cam_expanded_fullscreen() = !cam_expanded_fullscreen();
-            cam_error_backoff_until_ms() = 0;
-            last_cam_live_fetch_ms() = now_rel;
-            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_ORIENT_BTN &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            cam_landscape_mode() = !cam_landscape_mode();
-            cam_intercom_status() = cam_landscape_mode() ? "90° LANDSCAPE" : "PORTRAIT VIEW";
-            rs.intercom.cam_status_ms = now_rel;
-            rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-            rs.alert.loaded_camera_url.clear();
-            cam_error_backoff_until_ms() = 0;
-            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && c_total > 1 &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-            cam_carousel_idx() = step_wrap(
-                cam_carousel_idx(), (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
-            rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-            rs.alert.loaded_camera_url.clear();
-            cam_error_backoff_until_ms() = 0;
-            last_cam_live_fetch_ms() = now_rel;
-            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
-            rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_LISTEN_BTN &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            if (cam_call_active()) {
-              intercom_session().stop_call_with_hw(now_rel);
-            } else {
-              cam_listen_active() = !cam_listen_active();
-              rs.intercom.cam_action = cam_listen_active() ? "listen_start" : "listen_stop";
-              cam_intercom_status() = cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
-              rs.intercom.cam_status_ms = now_rel;
-              intercom_session().emit_current_cmd();
-              if (!cam_listen_active()) {
-                rt_.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
-              }
-              rt_.schedule_disp();
-            }
-          } else if (wid == WidgetId::CAM_PTT_BTN &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            if (!cam_call_active()) {
-              intercom_session().start_call(now_rel);
-              rt_.schedule_disp();
-            } else if (cam_intercom_ptt_active()) {
-              rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
-              intercom_session().resume_listen(now_rel);
-              rt_.apply_power_policy();
-              rt_.schedule_disp();
-            } else {
-              rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
-            }
-          } else if (wid == WidgetId::CAM_REPLY_MENU_BTN &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            cam_quick_reply_open() = true;
-            mark_dirty_full();
-            rt_.schedule_disp();
-          } else if (wid == WidgetId::CAM_UNLOCK_BTN &&
-                     touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-            gate_or_dispatch_doorbell_unlock(now_rel, false);
-          }
         } else if (home_hub_tab() == HomeHubTab::INTERCOM) {
           if (wid == WidgetId::INTERCOM_SEG_BROADCAST &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -5856,6 +5991,223 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           rt_.schedule_disp();
         }
       }
+
+    // 15. Page 13 Dedicated 4-Tab Cameras App (Grid, Single, Carousel, Settings)
+    } else if (tap_valid && rs.nav.gui_page == PageId::CAMERAS) {
+      const auto &ac = area_ctx_state();
+      CameraRecord cams[MAX_CAMERA_SLOTS]{};
+      const int c_total = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
+      const bool snap_only = (prefs.camera_stream_mode == 2U) || ac.camera_stream_url.empty();
+
+      auto trigger_cam_refresh = [&]() {
+        if (rs.cameras.tab == CamerasTab::SETTINGS) {
+          rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
+        } else {
+          rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+          if (snap_only) {
+            rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+            rs.alert.loaded_camera_url.clear();
+            cam_error_backoff_until_ms() = 0;
+            last_cam_live_fetch_ms() = now_rel;
+            rt_.cmd(UiHostCmd::FETCH_ON_DEMAND_CAMERA);
+          }
+        }
+      };
+
+      if (rs.cameras.quick_reply_open) {
+        if (wid >= WidgetId::CAM_REPLY_BASE && wid < WidgetId::CAM_REPLY_BASE + 3 &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          static constexpr const char *kDoorbellReplies[3] = {
+              "On my way!",
+              "Please leave it at the door.",
+              "One moment, please!",
+          };
+          const int r_idx = static_cast<int>(wid - WidgetId::CAM_REPLY_BASE);
+          rs.cameras.quick_reply_open = false;
+          rs.cameras.hud_active = true;
+          rs.cameras.hud_timer = now_rel;
+          rs.intercom.cam_action = "quick_reply";
+          rs.intercom.cam_message = kDoorbellReplies[r_idx];
+          cam_intercom_status() = "REPLY SENT";
+          rs.intercom.cam_status_ms = now_rel;
+          intercom_session().emit_current_cmd();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_UNLOCK_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.quick_reply_open = false;
+          rs.cameras.hud_active = true;
+          rs.cameras.hud_timer = now_rel;
+          mark_dirty_full();
+          gate_or_dispatch_doorbell_unlock(now_rel, false);
+        }
+      } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        int target_tab = std::clamp(static_cast<int>(hit->param), CamerasTab::GRID, CamerasTab::SETTINGS);
+        if (target_tab == CamerasTab::GRID && c_total <= 1) {
+          target_tab = CamerasTab::SINGLE;
+        }
+        if (target_tab != rs.cameras.tab) {
+          rs.cameras.tab = target_tab;
+          rs.cameras.hud_active = true;
+          rs.cameras.hud_timer = now_rel;
+          rs.cameras.carousel_last_advance_ms = now_rel;
+          trigger_cam_refresh();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      } else if (rs.cameras.tab == CamerasTab::GRID && c_total > 1) {
+        if (wid >= WidgetId::CAM_GRID_TILE_BASE && wid < WidgetId::CAM_GRID_TILE_BASE + 4 &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int c_idx = std::clamp(static_cast<int>(hit->param), 0, c_total - 1);
+          rs.cameras.selected_idx = c_idx;
+          rs.cameras.tab = CamerasTab::SINGLE;
+          rs.cameras.hud_active = true;
+          rs.cameras.hud_timer = now_rel;
+          trigger_cam_refresh();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if ((wid == WidgetId::CAM_GRID_PREV_BTN || wid == WidgetId::CAM_GRID_NEXT_BTN) &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          const int total_pg = std::max(1, (c_total + 3) / 4);
+          if (total_pg > 1) {
+            rs.cameras.grid_page = step_wrap(
+                rs.cameras.grid_page, (wid == WidgetId::CAM_GRID_NEXT_BTN) ? 1 : -1, total_pg);
+            trigger_cam_refresh();
+            mark_dirty_full();
+            rt_.schedule_disp();
+          }
+        }
+      } else if (rs.cameras.tab == CamerasTab::SETTINGS) {
+        if (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5 &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const int r_idx = static_cast<int>(wid - WidgetId::CAM_SETTINGS_ROW_BASE);
+          auto cycle_opt = [&]<size_t N>(UiSelectId sid, const char *const (&opts)[N], uint8_t cur_val) {
+            const uint8_t next_v = static_cast<uint8_t>((cur_val + 1U) % static_cast<uint8_t>(N));
+            rt_.set_select_opt(sid, opts[next_v], true);
+          };
+          if (r_idx == 0) {
+            cycle_opt(UiSelectId::CAMERA_DEFAULT_VIEW, kCameraDefaultViewOpts, prefs.camera_default_view);
+          } else if (r_idx == 1) {
+            cycle_opt(UiSelectId::CAMERA_CAROUSEL_INTERVAL, kCameraCarouselIntervalOpts, prefs.camera_carousel_interval);
+          } else if (r_idx == 2) {
+            cycle_opt(UiSelectId::CAMERA_FRAMING, kCameraFramingOpts, prefs.camera_framing);
+            rs.cameras.framing_override = -1;
+          } else if (r_idx == 3) {
+            cycle_opt(UiSelectId::CAMERA_STREAM_MODE, kCameraStreamModeOpts, prefs.camera_stream_mode);
+          } else if (r_idx == 4 && LATTER_CHIP_P4) {
+            cycle_opt(UiSelectId::CAMERA_DOORBELL_POPUP, kCameraDoorbellPopupOpts, prefs.camera_doorbell_popup);
+          }
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      } else if (rs.cameras.tab == CamerasTab::CAROUSEL) {
+        int car[MAX_CAMERA_SLOTS]{};
+        const int car_cnt = collect_carousel_camera_indices(cams, c_total, car, MAX_CAMERA_SLOTS);
+        if (wid == WidgetId::CAM_VIDEO_TAP &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.hud_active = !rs.cameras.hud_active;
+          rs.cameras.hud_timer = now_rel;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_CAROUSEL_PAUSE_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.carousel_paused = !rs.cameras.carousel_paused;
+          rs.cameras.carousel_last_advance_ms = now_rel;
+          rs.cameras.hud_timer = now_rel;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && car_cnt > 1 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          rs.cameras.carousel_idx = step_wrap(
+              rs.cameras.carousel_idx, (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, car_cnt);
+          rs.cameras.carousel_last_advance_ms = now_rel;
+          rs.cameras.hud_timer = now_rel;
+          trigger_cam_refresh();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      } else {
+        // Single Live View
+        if (wid == WidgetId::CAM_VIDEO_TAP &&
+            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.hud_active = !rs.cameras.hud_active;
+          rs.cameras.hud_timer = now_rel;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if ((wid == WidgetId::CAM_PREV_BTN || wid == WidgetId::CAM_NEXT_BTN) && c_total > 1 &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+          rs.cameras.selected_idx = step_wrap(
+              rs.cameras.selected_idx, (wid == WidgetId::CAM_NEXT_BTN) ? 1 : -1, c_total);
+          rs.cameras.hud_timer = now_rel;
+          trigger_cam_refresh();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_FRAMING_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          const bool next_fill = !rs.cameras.effective_fill(prefs);
+          rs.cameras.framing_override = next_fill ? 1 : 0;
+          rs.cameras.hud_timer = now_rel;
+          trigger_cam_refresh();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_ORIENT_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.landscape_mode = !rs.cameras.landscape_mode;
+          cam_intercom_status() = rs.cameras.landscape_mode ? "90\xC2\xB0 LANDSCAPE" : "PORTRAIT VIEW";
+          rs.intercom.cam_status_ms = now_rel;
+          rs.cameras.hud_timer = now_rel;
+          trigger_cam_refresh();
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_LISTEN_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.hud_timer = now_rel;
+          if (cam_call_active()) {
+            intercom_session().stop_call_with_hw(now_rel);
+          } else {
+            cam_listen_active() = !cam_listen_active();
+            rs.intercom.cam_action = cam_listen_active() ? "listen_start" : "listen_stop";
+            cam_intercom_status() = cam_listen_active() ? "DOOR AUDIO ON" : "AUDIO MUTED";
+            rs.intercom.cam_status_ms = now_rel;
+            intercom_session().emit_current_cmd();
+            if (!cam_listen_active()) {
+              rt_.cmd(UiHostCmd::STOP_DOORBELL_AUDIO);
+            }
+          }
+          rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_PTT_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.hud_timer = now_rel;
+          if (!cam_call_active()) {
+            intercom_session().start_call(now_rel);
+            rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+            mark_dirty_full();
+            rt_.schedule_disp();
+          } else if (cam_intercom_ptt_active()) {
+            rt_.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
+            intercom_session().resume_listen(now_rel);
+            rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+            rt_.apply_power_policy();
+            mark_dirty_full();
+            rt_.schedule_disp();
+          } else {
+            rt_.cmd(UiHostCmd::START_DOORBELL_PTT);
+            rt_.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
+          }
+        } else if (wid == WidgetId::CAM_REPLY_MENU_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.quick_reply_open = true;
+          mark_dirty_full();
+          rt_.schedule_disp();
+        } else if (wid == WidgetId::CAM_UNLOCK_BTN &&
+                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+          rs.cameras.hud_timer = now_rel;
+          gate_or_dispatch_doorbell_unlock(now_rel, false);
+        }
+      }
     }
   }
 
@@ -6083,6 +6435,11 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::HOME_DATE_TAP_ACTION: return pref_home_date_tap_cstr(p);
     case S::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
     case S::BEDTIME_DISPLAY: return pref_bedtime_display_cstr(p);
+    case S::CAMERA_DEFAULT_VIEW: return pref_camera_default_view_cstr(p);
+    case S::CAMERA_CAROUSEL_INTERVAL: return pref_camera_carousel_interval_cstr(p);
+    case S::CAMERA_FRAMING: return pref_camera_framing_cstr(p);
+    case S::CAMERA_STREAM_MODE: return pref_camera_stream_mode_cstr(p);
+    case S::CAMERA_DOORBELL_POPUP: return pref_camera_doorbell_popup_cstr(p);
   }
   return {};
 }
@@ -6140,6 +6497,11 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::HOME_DATE_TAP_ACTION: pk = K::HOME_DATE_TAP_ACTION; break;
     case S::AUTO_BRIGHTNESS_MODE: pk = K::AUTO_BRIGHTNESS_MODE; break;
     case S::BEDTIME_DISPLAY: pk = K::BEDTIME_DISPLAY; break;
+    case S::CAMERA_DEFAULT_VIEW: pk = K::CAMERA_DEFAULT_VIEW; break;
+    case S::CAMERA_CAROUSEL_INTERVAL: pk = K::CAMERA_CAROUSEL_INTERVAL; break;
+    case S::CAMERA_FRAMING: pk = K::CAMERA_FRAMING; break;
+    case S::CAMERA_STREAM_MODE: pk = K::CAMERA_STREAM_MODE; break;
+    case S::CAMERA_DOORBELL_POPUP: pk = K::CAMERA_DOORBELL_POPUP; break;
   }
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;

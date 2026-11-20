@@ -87,7 +87,8 @@ void render_tool_launcher_card(esphome::display::Display &it, int cx_card, int c
   const int card_w = (SCREEN_W < 380) ? 110 : 122;
   const Color surf_bg = render_modern_card(
       it, cx_card, cy_card, card_w, 86, 14,
-      kChromeGlassTint, kChromeCardBorder, nullptr, ctx.col_white, ctx.font_small);
+      kChromeGlassTint, kChromeCardBorder, nullptr, ctx.col_white, ctx.font_small,
+      GlassVariant::Clear, true);
 
   const Color col_white = ctx.col_white;
   const int ix = cx_card;

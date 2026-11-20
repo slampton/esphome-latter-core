@@ -133,6 +133,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     }
 
     if (is_camera_view_active(r) &&
+        prefs.camera_stream_mode == 2U &&
         r.alert.loaded_camera_url.empty() &&
         (!st.camera_snapshot_url.empty() || !st.cameras_summary.empty())) {
       eff.fetch_on_demand_camera = true;
@@ -147,7 +148,8 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     cam_listen_active() = (st.doorbell_talk_state == "listening");
 
     if (trigger_alert_banner(st.alert_title, st.alert_message, st.alert_priority, st.alert_duration,
-                             st.alert_camera_url, st.alert_id, ctx.now_ms, true, r.alert)) {
+                             st.alert_camera_url, st.alert_id, ctx.now_ms, true, r.alert,
+                             st.alert_camera_entity)) {
       const bool suppressed =
           should_suppress_alert_in_bedtime(prefs.bedtime_active, r.alert.priority_level);
       if (suppressed) {
@@ -161,9 +163,14 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
               (r.alert.priority == "critical" || r.alert.priority == "warning") ? 9 : 6;
         }
       }
-      if (r.alert.active && !r.alert.camera_url.empty()) {
-        eff.fetch_alert_camera = true;
+      if (r.alert.active && is_p4_live_doorbell_popup_enabled(prefs, st, r.alert)) {
+        r.cameras.doorbell_live_popup_active = true;
       } else {
+        r.cameras.doorbell_live_popup_active = false;
+      }
+      if (r.alert.active && !r.alert.camera_url.empty() && !r.cameras.doorbell_live_popup_active) {
+        eff.fetch_alert_camera = true;
+      } else if (!r.alert.active) {
         r.alert.loaded_camera_url.clear();
         eff.release_alert_camera_art = true;
       }
@@ -189,7 +196,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         eff.mark_dirty_full = true;
       }
       if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
-          gp == PageId::PINNED || gp == PageId::CALENDAR) {
+          gp == PageId::PINNED || gp == PageId::CALENDAR || gp == PageId::CAMERAS) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
         }

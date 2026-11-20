@@ -46,9 +46,11 @@ esphome:
             });
             latter_ui::intercom_session().bind_host_stop_hw(+[](uint32_t /*now_ms*/) {
               id(start_doorbell_ptt).stop();
+              latter_ui::runtime_state().voice.intercom_turn = false;
               id(latter_mic).set_mute_state(false);
               esphome::voice_assistant::abort_voice_assistant(id(va));
               id(stop_doorbell_audio).execute();
+              id(sync_camera_stream).execute();
               latter_ui::schedule_disp_update(&id(disp1));
             });
 
@@ -525,9 +527,11 @@ voice_assistant:
           rs.voice.vad_active = false;
           rs.voice.tts_received = false;
           if (latter_ui::cam_intercom_ptt_active()) {
+            rs.voice.intercom_turn = true;
             latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::DoorbellIntercom);
             rs.voice.status_text = "";
             latter_ui::cam_intercom_status() = "CALL • SPEAK NOW";
+            id(sync_camera_stream).execute();
             latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
@@ -622,6 +626,8 @@ voice_assistant:
             id(latter_mic).set_mute_state(false);
             esphome::voice_assistant::abort_voice_assistant(id(va));
             latter_ui::intercom_session().finish_ptt_stt(x, now_stt_ms);
+            rs.voice.intercom_turn = false;
+            id(sync_camera_stream).execute();
             id(apply_power_policy).execute();
             latter_ui::schedule_disp_update(&id(disp1));
             return;
@@ -773,6 +779,7 @@ voice_assistant:
                 } else {
                   ESP_LOGW("va", "Intercom turn error: %s - %s", code.c_str(), message.c_str());
                   latter_ui::intercom_session().resume_listen(millis());
+                  id(sync_camera_stream).execute();
                 }
                 id(apply_power_policy).execute();
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -1715,6 +1722,9 @@ script:
       - script.stop: va_tts_drain_and_finish
       - script.execute: stop_doorbell_audio
       - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          rs.voice.intercom_turn = true;
+          id(sync_camera_stream).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);
       - script.execute: mute_speaker_path

@@ -766,6 +766,7 @@ float relative_luminance(esphome::Color c);
 float contrast_ratio(float la, float lb);
 esphome::Color mix_color_q8(esphome::Color c_under, esphome::Color c_over, int a);
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h);
+GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h);
 bool is_semantic_glass_color(esphome::Color c);
 void normalize_glass_chrome(esphome::Color caller_bg, esphome::Color caller_brd,
                             GlassVariant &inout_variant, esphome::Color &out_base_tint,

@@ -75,59 +75,6 @@ void draw_frosted_pill(esphome::display::Display &it, int cx_pill, int cy_pill,
   }
 }
 
-void render_framed_camera_preview(esphome::display::Display &it, ArtImageView img,
-                                  int x0, int y0, int w, int h, int corner_r) {
-  if (!img.valid() || w <= 8 || h <= 8) return;
-  const int src_w = img.width;
-  const int src_h = img.height;
-  const int step_x = (src_w << 12) / w;
-  const int step_y = (src_h << 12) / h;
-  const int step_fp = std::max(1, std::min(step_x, step_y));
-  const int vis_w_fp = w * step_fp;
-  const int vis_h_fp = h * step_fp;
-  const int src_x0_fp = std::max(0, ((src_w << 12) - vis_w_fp) / 2);
-  const int src_y0_fp = std::max(0, ((src_h << 12) - vis_h_fp) / 2);
-
-  uint16_t sx_lut[SCREEN_W];
-  uint16_t row_px[SCREEN_W];
-  const int cl_w = std::min(w, SCREEN_W);
-  int cur_x = src_x0_fp;
-  for (int i = 0; i < cl_w; ++i) {
-    sx_lut[i] = static_cast<uint16_t>(std::clamp(cur_x >> 12, 0, src_w - 1));
-    cur_x += step_fp;
-  }
-
-  const int eff_r = std::clamp(corner_r, 0, std::min(cl_w, h) / 2);
-  int cur_y = src_y0_fp;
-  for (int ry = 0; ry < h; ++ry) {
-    const int py = y0 + ry;
-    const int sy = std::clamp(cur_y >> 12, 0, src_h - 1);
-    cur_y += step_fp;
-    if (!row_in_clip_band(py)) continue;
-
-    int inset = 0;
-    if (eff_r > 0) {
-      int dy = 0;
-      if (ry < eff_r) {
-        dy = eff_r - ry;
-      } else if (ry >= h - eff_r) {
-        dy = ry - (h - 1 - eff_r);
-      }
-      if (dy > 0) {
-        const int chord = chord_half_span_constexpr(eff_r, dy, false);
-        inset = std::max(0, eff_r - chord);
-      }
-    }
-    const int span_w = cl_w - 2 * inset;
-    if (span_w <= 0) continue;
-    const uint16_t *src_row = img.data + sy * src_w;
-    for (int i = 0; i < span_w; ++i) {
-      row_px[i] = src_row[sx_lut[inset + i]];
-    }
-    blit_rgb565_scanline(it, x0 + inset, py, span_w, row_px, false);
-  }
-}
-
 void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx,
                               const int *tabs, int tab_count, int active_slot) {
   using esphome::Color;
@@ -179,9 +126,6 @@ void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContex
     switch (tabs[g_idx]) {
       case HomeHubTab::ALARM:
         ui::draw_icon_shield_home(it, bx, by, ir, fg_c, sh);
-        break;
-      case HomeHubTab::CAMERAS:
-        ui::draw_icon_camera(it, bx, by, ir, fg_c, sh);
         break;
       case HomeHubTab::INTERCOM:
         ui::draw_icon_speaker(it, bx, by, ir, fg_c, true, sh);
@@ -316,82 +260,6 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::ALARM_MODE_BASE, codes, geoms, geom_cnt);
 }
 
-void render_camera_action_pills(esphome::display::Display &it, const UiFrameContext &ctx,
-                                int row_cy, int max_row_h, const EntryControlItem *unlock_target) {
-  using esphome::Color;
-
-  struct PillSpec {
-    const char *label;
-    Color border;
-    Color bg;
-    Color text;
-    uint16_t wid;
-  };
-
-  const bool in_call = cam_call_active();
-  const bool is_listening = cam_listen_active();
-  PillSpec specs[4]{};
-  int count = 0;
-
-  if (in_call) {
-    specs[count++] = {"End", ctx.col_red, ui::chrome_danger_bg(), ctx.col_white, WidgetId::CAM_LISTEN_BTN};
-  } else {
-    specs[count++] = {
-        is_listening ? "Mute" : "Listen",
-        is_listening ? ctx.theme_primary : ui::chrome_card_brd_off(),
-        is_listening ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-        is_listening ? ctx.col_white : ctx.theme_secondary,
-        WidgetId::CAM_LISTEN_BTN};
-  }
-
-#if LATTER_HAS_MIC && LATTER_HAS_SPEAKER
-  {
-    const bool speaking = cam_intercom_ptt_active();
-    const bool pulse = ((ctx.now_ms / 300U) % 2U) != 0U;
-    specs[count++] = {
-        speaking ? "Stop" : "Talk",
-        speaking ? (pulse ? ctx.col_white : ctx.col_red) : ctx.col_green,
-        speaking ? ui::chrome_danger_bg() : ui::chrome_card_bg_on(),
-        ctx.col_white,
-        WidgetId::CAM_PTT_BTN};
-  }
-#endif
-
-  specs[count++] = {
-      "Reply",
-      ui::chrome_card_brd_off(),
-      ui::chrome_card_bg_off(),
-      ctx.theme_secondary,
-      WidgetId::CAM_REPLY_MENU_BTN};
-
-  if (unlock_target != nullptr) {
-    specs[count++] = {
-        unlock_target->is_lock ? "Unlock" : "Open",
-        ctx.col_warm_gold,
-        ui::chrome_card_bg_on(),
-        ctx.col_white,
-        WidgetId::CAM_UNLOCK_BTN};
-  }
-
-  const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int pill_h = std::clamp(max_row_h, 30, scale_y(40));
-  const int hit_h = std::max(pill_h, std::min(min_hit, max_row_h + 10));
-  const int gap = std::max(5, scale_x(6));
-  const int row_w = std::min(scale_x(336), band_safe_w(row_cy, pill_h, 12));
-  const int pill_w = std::max(44, (row_w - (count - 1) * gap) / count);
-  const int total_w = count * pill_w + (count - 1) * gap;
-  const int x_left = ctx.cx - total_w / 2;
-  auto *p_font = (count >= 4 && pill_w < 64) ? ctx.font_micro : ctx.font_small;
-
-  for (int i = 0; i < count; ++i) {
-    const int pcx = x_left + i * (pill_w + gap) + pill_w / 2;
-    draw_frosted_pill(it, pcx, row_cy, pill_w, pill_h, pill_h / 2,
-                      specs[i].border, specs[i].bg,
-                      specs[i].label, specs[i].text, p_font,
-                      specs[i].wid, 0, pill_w, hit_h);
-  }
-}
-
 void render_hub_selector_pill(esphome::display::Display &it, const UiFrameContext &ctx,
                               const char *prefix_lbl, int active_idx, int item_count,
                               const std::string &item_name, const char *fallback_hdr,
@@ -436,255 +304,6 @@ void render_hub_selector_pill(esphome::display::Display &it, const UiFrameContex
                         prev_wid, kHitTap | kHitFocusSlot, -1);
   frame_hits().add_rect(cx, hdr_cy - hit_h / 2, half_hit_w, hit_h,
                         next_wid, kHitTap | kHitFocusSlot, 1);
-}
-
-void render_camera_selector_pill(esphome::display::Display &it, const UiFrameContext &ctx,
-                                 const std::string *names, int cam_count, int hdr_cy,
-                                 bool show_orient_btn) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const int cx = ctx.cx;
-  const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int pill_h = (SCREEN_H < 400) ? 28 : scale_y(34);
-  const int safe_w = band_safe_w(hdr_cy, pill_h, 12);
-
-  int orient_reserve = 0;
-#if !LATTER_ROUND_DISPLAY
-  if (show_orient_btn && SCREEN_W != SCREEN_H) {
-    orient_reserve = scale_x(56);
-  }
-#else
-  (void)show_orient_btn;
-#endif
-
-  const int hdr_w = std::max(120, std::min(scale_x(264), safe_w - orient_reserve));
-  const int hdr_cx = cx - orient_reserve / 2;
-
-  std::string title;
-  if (!cam_intercom_status().empty()) {
-    title = cam_intercom_status();
-  } else if (cam_call_active()) {
-    title = "Doorbell Live";
-  } else if (cam_count > 1) {
-    title = "Cam " + std::to_string(cam_carousel_idx() + 1) + "/" +
-            std::to_string(cam_count) + " \xC2\xB7 " + names[cam_carousel_idx()];
-  } else if (cam_count == 1 && !names[0].empty()) {
-    title = names[0];
-  } else {
-    title = "Camera";
-  }
-
-  if (cam_count > 1) {
-    const Color hdr_brd = cam_intercom_ptt_active()
-        ? ctx.col_red
-        : (cam_call_active() ? ctx.col_green : ctx.theme_primary);
-    render_card_box(it, hdr_cx - hdr_w / 2, hdr_cy - pill_h / 2, hdr_w, pill_h,
-                    ui::chrome_card_bg_on(), hdr_brd, pill_h / 2, GlassVariant::Clear, ctx.col_white);
-
-    const int arrow_pad = scale_x(22);
-    const std::string fit_t = fit_text_to_width_font(title, std::max(48, hdr_w - 2 * arrow_pad), ctx.font_small);
-    draw_shadowed_text(it, hdr_cx, hdr_cy, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_t.c_str());
-
-    const int lx = hdr_cx - hdr_w / 2 + scale_x(12);
-    const int rx = hdr_cx + hdr_w / 2 - scale_x(12);
-    draw_shadowed_text(it, lx, hdr_cy, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, "<");
-    draw_shadowed_text(it, rx, hdr_cy, ctx.font_small, ctx.theme_secondary, TextAlign::CENTER, ">");
-    const int half_hit_w = std::max(min_hit, hdr_w / 2);
-    const int hit_h = std::max(pill_h + 8, std::min(min_hit, scale_y(48)));
-    frame_hits().add_rect(hdr_cx - half_hit_w, hdr_cy - hit_h / 2, half_hit_w, hit_h,
-                          WidgetId::CAM_PREV_BTN, kHitTap | kHitFocusSlot, -1);
-    frame_hits().add_rect(hdr_cx, hdr_cy - hit_h / 2, half_hit_w, hit_h,
-                          WidgetId::CAM_NEXT_BTN, kHitTap | kHitFocusSlot, 1);
-  } else {
-    // Single camera (no </> switching action): shadowed title directly over canvas, zero fake glass pill.
-    const std::string fit_t = fit_text_to_width_font(title, std::max(64, hdr_w - scale_x(12)), ctx.font_small);
-    draw_shadowed_text(it, hdr_cx, hdr_cy, ctx.font_small, ctx.col_white, TextAlign::CENTER, fit_t.c_str());
-  }
-
-#if !LATTER_ROUND_DISPLAY
-  if (show_orient_btn && SCREEN_W != SCREEN_H) {
-    const int ob_w = scale_x(48);
-    const int ob_cx = hdr_cx + hdr_w / 2 + scale_x(6) + ob_w / 2;
-    draw_frosted_pill(it, ob_cx, hdr_cy, ob_w, pill_h, pill_h / 2,
-                      cam_landscape_mode() ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                      cam_landscape_mode() ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                      "90\xC2\xB0",
-                      cam_landscape_mode() ? ctx.col_white : ctx.theme_secondary,
-                      ctx.font_small, WidgetId::CAM_ORIENT_BTN, 0,
-                      std::max(ob_w, min_hit), std::max(pill_h, std::min(min_hit, scale_y(46))));
-  }
-#endif
-}
-
-bool render_cameras_tab(esphome::display::Display &it, const UiFrameContext &ctx,
-                        const DeviceRuntimeState &rs, const AreaContextState &ac,
-                        int content_top, int content_bot) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const int cx = ctx.cx;
-  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], areas[MAX_CAMERA_SLOTS];
-  const int cam_count = parse_cameras_summary_list(ac.cameras_summary, ids, names, nullptr, areas);
-  if (cam_count > 0 && (cam_carousel_idx() < 0 || cam_carousel_idx() >= cam_count)) {
-    cam_carousel_idx() = 0;
-  }
-
-  const std::string cam_area = (cam_count > 0) ? areas[cam_carousel_idx()] : ac.area_id;
-  const EntryControlItem *unlock_target =
-      resolve_doorbell_quick_unlock_target(cam_area, home_hub_state());
-  const bool has_lock_or_garage = (unlock_target != nullptr);
-  const bool has_url = !ac.camera_snapshot_url.empty() || (cam_count > 0);
-  const bool has_frame = has_url && ctx.camera_snapshot_art.valid() &&
-                         ctx.camera_snapshot_art.width > 16 &&
-                         ctx.camera_snapshot_art.height > 16;
-
-  // 1. Quick-Reply Sheet (full-takeover sub-sheet with < Back, no mode bar)
-  if (cam_quick_reply_open()) {
-    render_page_header(it, cx, "QUICK REPLY", ctx.font_small, ctx.col_white);
-    static constexpr const char *kReplyLabels[3] = {
-        "On My Way",
-        "Leave at Door",
-        "One Moment",
-    };
-    const int row_cnt = has_lock_or_garage ? 4 : 3;
-    const int sheet_top = layout().hdr_y + ((SCREEN_H < 400) ? 22 : scale_y(30));
-    const int sheet_bot = layout().back_y - ((SCREEN_H < 400) ? 20 : scale_y(26));
-    const int stride = std::max(38, (sheet_bot - sheet_top) / row_cnt);
-    const int card_h = std::clamp(stride - 6, 34, scale_y(48));
-    const int min_hit = UiLayout::mm_to_px(7.0f);
-    const int hit_h = std::max(card_h, std::min(min_hit, stride));
-    const int first_cy = sheet_top + stride / 2;
-    const int last_cy = sheet_top + (row_cnt - 1) * stride + stride / 2;
-    const int stack_w = std::min({scale_x(304), band_safe_w(first_cy, card_h, 14), band_safe_w(last_cy, card_h, 14)});
-
-    for (int i = 0; i < 3; ++i) {
-      const int cy_r = sheet_top + i * stride + stride / 2;
-      draw_frosted_pill(it, cx, cy_r, stack_w, card_h, std::min(14, card_h / 2),
-                        ctx.theme_primary, ui::chrome_card_bg_on(),
-                        kReplyLabels[i], ctx.col_white, ctx.font_small,
-                        static_cast<uint16_t>(WidgetId::CAM_REPLY_BASE + i),
-                        static_cast<int16_t>(i), stack_w, hit_h);
-    }
-    if (unlock_target != nullptr) {
-      const int cy_u = sheet_top + 3 * stride + stride / 2;
-      const char *u_lbl = unlock_target->is_lock ? "Unlock Entry" : "Open Garage";
-      draw_frosted_pill(it, cx, cy_u, stack_w, card_h, std::min(14, card_h / 2),
-                        ctx.col_warm_gold, ui::chrome_card_bg_on(),
-                        u_lbl, ctx.col_white, ctx.font_small,
-                        WidgetId::CAM_UNLOCK_BTN, 0, stack_w, hit_h);
-    }
-    render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
-    return false;
-  }
-
-  // 2. Expanded Full-Bleed Camera View (< Back collapses back to normal CAMERAS tab)
-  if (cam_expanded_fullscreen()) {
-    if (has_frame) {
-      render_album_art_canvas(it, ctx.camera_snapshot_art, cx, false, false, false, false);
-    } else {
-      if (!frame_base_state().painted) {
-        frame_base(it, ctx.col_bg);
-      }
-      render_passive_empty_label(
-          it, cx, ctx.cy,
-          has_url ? "Loading camera snapshot..." : "No Camera Configured",
-          ctx.font_small, has_url ? ctx.theme_secondary : ctx.col_slate);
-    }
-
-    const int hdr_cy = (SCREEN_H < 400) ? 34 : scale_y(42);
-    render_camera_selector_pill(it, ctx, names, cam_count, hdr_cy, has_url);
-
-    const int deck_cy = layout().back_y - ((SCREEN_H < 400) ? 36 : scale_y(48));
-    if (has_url) {
-      render_camera_action_pills(it, ctx, deck_cy, (SCREEN_H < 400) ? 32 : scale_y(38), unlock_target);
-    }
-
-    // Center canvas tap collapses expanded full-bleed mode back to framed tab mode
-    const int canvas_y0 = hdr_cy + scale_y(28);
-    const int canvas_y1 = deck_cy - scale_y(28);
-    if (canvas_y1 > canvas_y0 + 24) {
-      const int cw = band_safe_w((canvas_y0 + canvas_y1) / 2, canvas_y1 - canvas_y0, 16);
-      frame_hits().add_rect(cx - cw / 2, canvas_y0, cw, canvas_y1 - canvas_y0,
-                            WidgetId::CAM_SNAPSHOT_CARD, kHitTap, 0);
-    }
-
-    render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
-    return false;
-  }
-
-  // 3. Normal Framed Tab Mode (with bottom 4-slot Home Hub mode bar)
-  if (!has_url) {
-    render_page_header(it, cx, "CAMERAS", ctx.font_small, ctx.col_white);
-    const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
-    render_passive_empty_label(
-        it, cx, (content_top + content_bot) / 2,
-        is_fb ? rs.area.action_feedback.c_str() : "No cameras configured",
-        ctx.font_small, is_fb ? ctx.theme_secondary : ctx.col_slate);
-    return true;
-  }
-
-  const int hdr_cy = layout().hdr_y + ((SCREEN_H < 400) ? 4 : scale_y(4));
-  if (cam_count > 1) {
-    render_camera_selector_pill(it, ctx, names, cam_count, hdr_cy, false);
-  } else {
-    std::string hdr_txt = "CAMERAS";
-    if (!cam_intercom_status().empty()) {
-      hdr_txt = to_ascii_upper_str(cam_intercom_status());
-    } else if (cam_call_active()) {
-      hdr_txt = "DOORBELL LIVE";
-    } else if (cam_count == 1 && !names[0].empty()) {
-      hdr_txt = to_ascii_upper_str(names[0]);
-    }
-    render_page_header(it, cx, hdr_txt, ctx.font_small, ctx.col_white, true);
-  }
-
-  const int top_y = (cam_count > 1)
-      ? (hdr_cy + ((SCREEN_H < 400) ? 20 : scale_y(24)))
-      : content_top;
-  const int pill_row_h = (SCREEN_H < 400) ? 32 : scale_y(38);
-  const int pill_cy = content_bot - pill_row_h / 2;
-  const int frame_bot = pill_cy - pill_row_h / 2 - std::max(6, scale_y(8));
-  const int frame_h = std::max(64, frame_bot - top_y);
-  const int frame_cy = top_y + frame_h / 2;
-  const int frame_w = std::min(scale_x(328), band_safe_w(frame_cy, frame_h, 14));
-  const int frame_x0 = cx - frame_w / 2;
-  const int frame_y0 = frame_cy - frame_h / 2;
-  const int frame_r = std::max(12, scale_s(16));
-
-  render_card_box(it, frame_x0, frame_y0, frame_w, frame_h,
-                  ui::chrome_card_bg_on(),
-                  cam_call_active() ? ctx.col_green : ui::chrome_card_brd_on(),
-                  frame_r, GlassVariant::Clear, ctx.col_white);
-
-  if (has_frame) {
-    render_framed_camera_preview(it, ctx.camera_snapshot_art,
-                                 frame_x0 + 2, frame_y0 + 2,
-                                 frame_w - 4, frame_h - 4,
-                                 std::max(4, frame_r - 2));
-    const int tag_w = scale_x(68);
-    const int tag_h = (SCREEN_H < 400) ? 20 : scale_y(22);
-    const int tag_x0 = frame_x0 + frame_w - tag_w - 8;
-    const int tag_y0 = frame_y0 + frame_h - tag_h - 6;
-    if (tag_x0 > frame_x0 + 8 && tag_y0 > frame_y0 + 8) {
-      render_card_box(it, tag_x0, tag_y0, tag_w, tag_h,
-                      kChromeGlassTint, ui::chrome_card_brd_off(),
-                      tag_h / 2, GlassVariant::Clear, ctx.col_white);
-      draw_shadowed_text(it, tag_x0 + tag_w / 2, tag_y0 + tag_h / 2,
-                         ctx.font_micro, ctx.col_white, TextAlign::CENTER, "Expand");
-    }
-  } else {
-    const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
-    const char *msg = is_fb ? rs.area.action_feedback.c_str() : "Loading live snapshot...";
-    const std::string fit_m = fit_text_to_width_font(std::string(msg), std::max(60, frame_w - 20), ctx.font_small);
-    draw_shadowed_text(it, cx, frame_cy, ctx.font_small, ctx.theme_secondary,
-                       TextAlign::CENTER, fit_m.c_str());
-  }
-
-  frame_hits().add_rect(frame_x0, frame_y0, frame_w, frame_h,
-                        WidgetId::CAM_SNAPSHOT_CARD, kHitTap | kHitFocusSlot, 0);
-  render_camera_action_pills(it, ctx, pill_cy, pill_row_h, unlock_target);
-  return true;
 }
 
 void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ctx,
@@ -1140,13 +759,9 @@ void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &c
   const int content_top = layout().hdr_y + ((SCREEN_H < 400) ? 20 : scale_y(28));
   const int content_bot = layout().mode_bar_zone_top() - ((SCREEN_H < 400) ? 4 : scale_y(6));
 
-  bool show_mode_bar = true;
   switch (tab) {
     case HomeHubTab::ALARM:
       render_alarm_tab(it, ctx, rs, ac, content_top, content_bot);
-      break;
-    case HomeHubTab::CAMERAS:
-      show_mode_bar = render_cameras_tab(it, ctx, rs, ac, content_top, content_bot);
       break;
     case HomeHubTab::INTERCOM:
       render_intercom_tab(it, ctx, rs, ac, content_top, content_bot);
@@ -1163,9 +778,7 @@ void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &c
       break;
   }
 
-  if (show_mode_bar) {
-    render_home_hub_mode_bar(it, ctx, tabs, tab_count, active_slot);
-  }
+  render_home_hub_mode_bar(it, ctx, tabs, tab_count, active_slot);
 }
 
 void render_climate_controls_deck(esphome::display::Display &it,

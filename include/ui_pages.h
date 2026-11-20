@@ -43,6 +43,14 @@ void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx);
 void render_calendar_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx);
+
+// Shared live-video blitter & translucent doorbell PTT overlay (used by page_cameras.cpp & page_ambient_va.cpp)
+bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src,
+                              int src_w, int src_h, const CameraRect &dst_rect,
+                              bool fill, bool clip_round_bezel = false);
+void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameContext &ctx,
+                                int center_y);
 
 // ------------------------------------------------------------------------------
 // 2. Global System Takeover Overlays (called by render_system_takeovers)

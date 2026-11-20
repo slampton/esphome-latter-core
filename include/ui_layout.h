@@ -37,6 +37,18 @@ struct UiLayout {
   static constexpr int mm_to_px(float mm, int ppi = LATTER_PANEL_PPI) {
     return mm_to_px_for(mm, ppi);
   }
+  constexpr int min_hit_px() const {
+    return std::max(scale_s(36), mm_to_px(7.0f));
+  }
+  constexpr int safe_span(int y, int inset = 12) const {
+    return safe_span_for(y, w, h, is_round, LATTER_IS_WEARABLE != 0, inset);
+  }
+  constexpr int band_safe_span(int cy_band, int band_h, int inset = 12) const {
+    const int half_h = std::max(0, band_h / 2);
+    const int y_top = std::clamp(cy_band - half_h, 0, h - 1);
+    const int y_bot = std::clamp(cy_band + half_h, 0, h - 1);
+    return std::min(safe_span(y_top, inset), safe_span(y_bot, inset));
+  }
 
   int w = base.w;
   int h = base.h;
@@ -359,9 +371,10 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
            music_overlay_mode == 0;
   }
   if (anchor == PageId::HOME_HUB) {
-    return gui_page == PageId::HOME_HUB &&
-           !cam_expanded_fullscreen() &&
-           !cam_quick_reply_open();
+    return gui_page == PageId::HOME_HUB;
+  }
+  if (anchor == PageId::CAMERAS) {
+    return gui_page == PageId::CAMERAS && !runtime_state().cameras.quick_reply_open;
   }
   if (anchor == PageId::AREA) {
     if (runtime_state().area.active_area_id.empty()) {
@@ -408,7 +421,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   if (gui_page == PageId::TIME && (timer_view_slot() > 0 || alarm_edit_idx > 0)) {
     return false;
   }
-  if (gui_page == PageId::HOME_HUB && (cam_expanded_fullscreen() || cam_quick_reply_open())) {
+  if (gui_page == PageId::CAMERAS && runtime_state().cameras.quick_reply_open) {
     return false;
   }
   if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
@@ -453,8 +466,7 @@ inline bool can_go_home(const DeviceRuntimeState &rt = runtime_state()) {
   if (rt.nav.gui_page == PageId::TIME && (rt.timers.view_slot > 0 || rt.alarms.edit_idx > 0)) {
     return false;
   }
-  if (rt.nav.gui_page == PageId::HOME_HUB &&
-      (rt.intercom.cam_expanded_fullscreen || rt.intercom.cam_quick_reply_open)) {
+  if (rt.nav.gui_page == PageId::CAMERAS && rt.cameras.quick_reply_open) {
     return false;
   }
   if (rt.nav.gui_page == PageId::SYSTEM && rt.nav.system_menu_mode > 0) return false;
@@ -674,7 +686,7 @@ inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0, uint32
       home_dock_anim().win_animating = false;
       home_dock_anim().act_animating = false;
     }
-    if (gui_page != 2 && gui_page != 5 && gui_page != 6 && gui_page != 9 && gui_page != 10 && gui_page != 12) {
+    if (gui_page != 2 && gui_page != 5 && gui_page != 6 && gui_page != 9 && gui_page != 10 && gui_page != 12 && gui_page != 13) {
       mode_bar_anim().win_animating = false;
       mode_bar_anim().act_animating = false;
     }

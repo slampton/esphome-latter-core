@@ -169,7 +169,8 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
 
   // 1. HOME: Top-Left (supports tap & long-press)
   const Color home_surf = render_glass_circle(
-      it, left_fx, top_fy, f_r, kChromeGlassTint, hold_brd(WidgetId::REMOTE_NAV_HOME, kChromeCardBorder));
+      it, left_fx, top_fy, f_r, kChromeGlassTint, hold_brd(WidgetId::REMOTE_NAV_HOME, kChromeCardBorder),
+      0, GlassVariant::Clear, kChromeGlassSheen, true);
   fast_filled_triangle(it, left_fx, top_fy - scale_s(8), left_fx - scale_s(9), top_fy - 1, left_fx + scale_s(9), top_fy - 1, col_white);
   fill_rect_row_major(it, left_fx - scale_s(6), top_fy - 1, scale_s(13), scale_s(8), col_white);
   fill_rect_row_major(it, left_fx - scale_s(2), top_fy + scale_s(2), scale_s(5), scale_s(5), home_surf);

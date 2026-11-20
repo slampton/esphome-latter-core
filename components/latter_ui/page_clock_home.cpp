@@ -260,7 +260,7 @@ void render_home_activity_card_row(
   const int drop_bx    = card_right - scale_x(26);
 
   const esphome::Color surf_bg = render_modern_card(it, cx, pill_y, card_w, card_h, card_r, card_bg, card_brd,
-                                                    nullptr, col_white, font_small);
+                                                    nullptr, col_white, font_small, GlassVariant::Clear, true);
 
   draw_home_activity_row_contents(
       it, pill_y, cur_act, has_dropdown_ext, is_list_row, font_small,
@@ -1866,13 +1866,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                    in_tooth(p_d1, a_d1) || in_tooth(p_d2, a_d2);
           });
         }
-      } else if (route_id == RouteId::HOME_HUB_CAMERAS) {
-        fill_rect_row_major(it, bx - sd(13), by - sd(7), sdr(26), sdr(17), c);
-        fill_rect_row_major(it, bx - sd(5), by - sd(11), sdr(10), sdr(4), c);
+      } else if (route_id == RouteId::APP_CAMERAS) {
         if (!is_shadow) {
-          fast_filled_circle(it, bx, by + sd(1), sdr(6), cut_c);
-          fast_circle(it, bx, by + sd(1), sdr(4), c);
-          fast_filled_circle(it, bx, by + sd(1), sdr(2), c);
+          ui::draw_icon_camera(it, bx, by, icon_r, c, want_shadow);
         }
       } else if (route_id == RouteId::APP_HOME_HUB) {
         fill_rect_row_major(it, bx + sd(7), by - sd(14), sdr(4), sdr(8), c);
@@ -1949,7 +1945,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       const bool needs_cutout =
           bespoke_route &&
           (item.route_id == RouteId::APP_WEATHER || item.route_id == RouteId::APP_AREA ||
-           item.route_id == RouteId::APP_HOME_HUB || item.route_id == RouteId::HOME_HUB_CAMERAS);
+           item.route_id == RouteId::APP_HOME_HUB);
       const GlassBackdrop bd =
           needs_cutout ? sample_glass_backdrop(bx - dock_r, dock_y - dock_r, d, d) : GlassBackdrop{};
       const Color dock_tint = item_active
@@ -2086,6 +2082,9 @@ void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx
       break;
     case PageId::CALENDAR:
       render_calendar_page(it, ctx);
+      break;
+    case PageId::CAMERAS:
+      render_cameras_page(it, ctx);
       break;
     default:
       render_home_page(it, ctx);

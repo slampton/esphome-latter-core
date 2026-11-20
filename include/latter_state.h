@@ -37,6 +37,7 @@
 #endif
 
 #include "hal_manifest.h"
+#include "hal_video_stream.h"
 #include "audio_router.h"
 #include "latter_protocol.h"
 #include "latter_rpc.h"
@@ -58,7 +59,20 @@ namespace PageId {
   static constexpr int TIME       = 10;
   static constexpr int PINNED     = 11;
   static constexpr int CALENDAR   = 12;
+  static constexpr int CAMERAS    = 13;
 }  // namespace PageId
+
+namespace CamerasTab {
+  static constexpr int GRID     = 0;
+  static constexpr int SINGLE   = 1;
+  static constexpr int CAROUSEL = 2;
+  static constexpr int SETTINGS = 3;
+}  // namespace CamerasTab
+
+inline constexpr uint8_t kCamCapAudio    = 0x01U;
+inline constexpr uint8_t kCamCapTalkback = 0x02U;
+inline constexpr uint8_t kCamCapDoorbell = 0x04U;
+inline constexpr uint8_t kCamCapCarousel = 0x08U;
 
 namespace CalendarSubpage {
   static constexpr int OVERVIEW = 0;
@@ -298,11 +312,10 @@ struct LinkState {
 
 namespace HomeHubTab {
   static constexpr int ALARM      = 0;
-  static constexpr int CAMERAS    = 1;
-  static constexpr int INTERCOM   = 2;
-  static constexpr int THERMOSTAT = 3;
-  static constexpr int ENTRY      = 4;
-  static constexpr int VACUUM     = 5;
+  static constexpr int INTERCOM   = 1;
+  static constexpr int THERMOSTAT = 2;
+  static constexpr int ENTRY      = 3;
+  static constexpr int VACUUM     = 4;
 }  // namespace HomeHubTab
 
 namespace ToolsSubpage {
@@ -315,7 +328,7 @@ namespace ToolsSubpage {
   static constexpr int COIN_FLIP  = 8;
 }  // namespace ToolsSubpage
 
-inline constexpr int kMaxHomeHubTabs = 6;
+inline constexpr int kMaxHomeHubTabs = 5;
 
 inline constexpr uint16_t kAlarmCapCodeDisarm  = 0x01U;
 inline constexpr uint16_t kAlarmCapCodeArm     = 0x02U;
@@ -434,6 +447,7 @@ struct AreaContextState {
   std::string vacuums_summary = "";
   std::string area_climates_summary = "";
   std::string camera_snapshot_url = "";
+  std::string camera_stream_url = "";
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
   std::string intercom_targets_summary = "";
@@ -445,10 +459,11 @@ struct AreaContextState {
   int alert_duration = 10;
   bool alert_chime = true;
   std::string alert_camera_url = "";
+  std::string alert_camera_entity = "";
   std::string activity_card = "";        // "1" / "0"; empty = not set -> kDefaultActivityCard
   std::string activity_sources = "";     // csv of source keys; empty = not set -> kDefaultActivitySources
   std::string security_pin_policy = "";  // "allow" | "require_pin" | "block"
-  std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,cameras,intercom,thermostat,entry,vacuum")
+  std::string home_categories = "";      // ordered available Home Hub category tokens ("alarm,intercom,thermostat,entry,vacuum")
   std::string area_icon = "";            // Home Assistant AreaEntry icon (e.g. "mdi:sofa") or inferred archetype icon
   std::string local_tz_info = "";        // "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
   std::string world_clocks_summary = ""; // ";"-delimited "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
@@ -612,7 +627,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 14U;
+static constexpr uint16_t kPersistedPrefsVersion = 15U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -674,7 +689,12 @@ enum class PrefKey : uint8_t {
   BEDTIME_START_HOUR = 55,
   BEDTIME_END_HOUR = 56,
   BEDTIME_BRIGHTNESS = 57,
-  COUNT = 58,
+  CAMERA_DEFAULT_VIEW = 58,
+  CAMERA_CAROUSEL_INTERVAL = 59,
+  CAMERA_FRAMING = 60,
+  CAMERA_STREAM_MODE = 61,
+  CAMERA_DOORBELL_POPUP = 62,
+  COUNT = 63,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 64U,
               "PrefKey::COUNT must remain < 64 to fit in uint64_t dirty_mask.");
@@ -785,6 +805,11 @@ struct PersistedDevicePrefs {
   bool bedtime_schedule = false;
   uint8_t bedtime_start_hour = 22;         // 0..23
   uint8_t bedtime_end_hour = 7;            // 0..23
+  uint8_t camera_default_view = 0;         // 0..2 ("Grid", "Single", "Carousel")
+  uint8_t camera_carousel_interval = 1;    // 0..3 ("10s", "15s", "30s", "60s")
+  uint8_t camera_framing = 0;              // 0..1 ("Uncropped", "Fill")
+  uint8_t camera_stream_mode = 0;          // 0..2 ("Auto", "Low Bandwidth", "Snapshots")
+  uint8_t camera_doorbell_popup = 0;       // 0..1 ("Snapshot", "Live Video"; P4-only for Live Video)
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
@@ -841,6 +866,10 @@ struct PersistedDevicePrefs {
   constexpr uint32_t return_to_home_ms() const noexcept {
     constexpr uint32_t kMs[7] = {15000U, 30000U, 60000U, 120000U, 300000U, 600000U, 0U};
     return kMs[(return_to_home_timeout < 7U) ? return_to_home_timeout : 3U];
+  }
+  constexpr uint32_t camera_carousel_interval_ms() const noexcept {
+    constexpr uint32_t kMs[4] = {10000U, 15000U, 30000U, 60000U};
+    return kMs[(camera_carousel_interval < 4U) ? camera_carousel_interval : 1U];
   }
 };
 
@@ -909,6 +938,16 @@ inline constexpr const char *const kCalendarWeekStartOpts[2] = {
     "Sunday", "Monday"};
 inline constexpr const char *const kBedtimeDisplayOpts[2] = {
     "Screen Off", "Ambient Clock"};
+inline constexpr const char *const kCameraDefaultViewOpts[3] = {
+    "Grid", "Single", "Carousel"};
+inline constexpr const char *const kCameraCarouselIntervalOpts[4] = {
+    "10s", "15s", "30s", "60s"};
+inline constexpr const char *const kCameraFramingOpts[2] = {
+    "Uncropped", "Fill"};
+inline constexpr const char *const kCameraStreamModeOpts[3] = {
+    "Auto", "Low Bandwidth", "Snapshots"};
+inline constexpr const char *const kCameraDoorbellPopupOpts[2] = {
+    "Snapshot", "Live Video"};
 
 inline constexpr uint8_t snap_calendar_lookahead_days(int v) noexcept {
   if (v <= 10) return 7U;
@@ -1049,6 +1088,11 @@ inline const char *pref_podcast_sort_order_cstr(const PersistedDevicePrefs &p = 
 inline const char *pref_ww_sens_cstr(uint8_t idx) { return opt_at_clamped(kWwSensitivityOpts, idx, 1); }
 inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBleBeaconModeOpts, p.ble_beacon_mode); }
 inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return opt_at_clamped(kWeatherSimOpts, st.weather_sim_condition); }
+inline const char *pref_camera_default_view_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraDefaultViewOpts, p.camera_default_view); }
+inline const char *pref_camera_carousel_interval_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraCarouselIntervalOpts, p.camera_carousel_interval, 1); }
+inline const char *pref_camera_framing_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraFramingOpts, p.camera_framing); }
+inline const char *pref_camera_stream_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraStreamModeOpts, p.camera_stream_mode); }
+inline const char *pref_camera_doorbell_popup_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraDoorbellPopupOpts, p.camera_doorbell_popup); }
 
 template <size_t N>
 inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
@@ -1331,6 +1375,14 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   p.volume_step_size = static_cast<uint8_t>(std::clamp<int>(p.volume_step_size, 1, 10));
   p.speaker_volume_pct = static_cast<uint8_t>(std::clamp<int>(p.speaker_volume_pct, 10, 100));
   if (p.ble_beacon_mode >= 3) p.ble_beacon_mode = 0;
+  if (p.camera_default_view >= 3) p.camera_default_view = 0;
+  if (p.camera_carousel_interval >= 4) p.camera_carousel_interval = 1;
+  if (p.camera_framing >= 2) p.camera_framing = 0;
+  if (p.camera_stream_mode >= 3) p.camera_stream_mode = 0;
+  if (p.camera_doorbell_popup >= 2) p.camera_doorbell_popup = 0;
+#if !LATTER_CHIP_P4
+  p.camera_doorbell_popup = 0;  // Live Video doorbell popup is P4-only
+#endif
 #if !LATTER_HAS_IMU || LATTER_IS_STATIONARY
   p.pickup_to_wake = 2;  // Disabled
 #endif
@@ -1540,6 +1592,7 @@ struct AlertBannerState {
   std::string priority = "normal";
   AlertPriority priority_level = AlertPriority::Normal;
   std::string camera_url = "";
+  std::string camera_entity = "";
   std::string loaded_camera_url = "";
   uint32_t start_ms = 0;
   uint32_t duration_ms = 10000U;
@@ -1962,6 +2015,29 @@ struct IntercomRuntimeState {
   bool cam_download_in_progress = false;
 };
 
+struct CamerasRuntimeState {
+  int tab = CamerasTab::GRID;
+  int selected_idx = 0;
+  int grid_page = 0;
+  int carousel_idx = 0;
+  uint32_t carousel_last_advance_ms = 0;
+  bool carousel_paused = false;
+  int8_t framing_override = -1;  // -1 = follow pref, 0 = Uncropped, 1 = Fill
+  bool hud_active = true;
+  uint32_t hud_timer = 0;
+  bool quick_reply_open = false;
+  bool landscape_mode = false;
+  bool doorbell_live_popup_active = false;
+  int video_y0 = 0;
+  int video_y1 = LATTER_SCREEN_H - 1;
+  uint32_t last_stream_sync_ms = 0;
+
+  bool effective_fill(const PersistedDevicePrefs &p = persisted_prefs()) const noexcept {
+    if (framing_override >= 0) return framing_override == 1;
+    return p.camera_framing == 1;
+  }
+};
+
 struct HelloSyncState {
   bool in_flight = false;
   uint32_t started_ms = 0;
@@ -1992,6 +2068,7 @@ struct DeviceRuntimeState {
   RemoteRuntimeState remote{};
   CalendarUiState cal{};
   IntercomRuntimeState intercom{};
+  CamerasRuntimeState cameras{};
   HelloSyncState hello_sync{};
 
   // Live hardware telemetry & optional peripheral hooks (populated by modules/hal/pmu_axp2101.yaml and
@@ -2379,7 +2456,6 @@ inline int parse_area_categories_csv(std::string_view csv, std::string *out_cats
 
 inline int home_category_tab_for_token(std::string_view sv) noexcept {
   if (sv == "alarm") return HomeHubTab::ALARM;
-  if (sv == "cameras") return HomeHubTab::CAMERAS;
   if (sv == "intercom") return HomeHubTab::INTERCOM;
   if (sv == "thermostat") return HomeHubTab::THERMOSTAT;
   if (sv == "entry") return HomeHubTab::ENTRY;
@@ -2763,6 +2839,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   }
 
   st.camera_snapshot_url      = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_SNAPSHOT_URL)]);
+  st.camera_stream_url        = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_STREAM_URL)]);
   st.cameras_summary          = std::string(f[static_cast<size_t>(AreaCtxField::CAMERAS_SUMMARY)]);
   st.doorbell_talk_state      = std::string(f[static_cast<size_t>(AreaCtxField::DOORBELL_TALK_STATE)]);
   st.intercom_targets_summary = std::string(f[static_cast<size_t>(AreaCtxField::INTERCOM_TARGETS_SUMMARY)]);
@@ -2774,6 +2851,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.alert_duration           = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_DURATION)], 10);
   st.alert_chime              = v3_parse_bool(f[static_cast<size_t>(AreaCtxField::ALERT_CHIME)]);
   st.alert_camera_url         = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_CAMERA_URL)]);
+  st.alert_camera_entity      = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_CAMERA_ENTITY)]);
   st.activity_card            = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_CARD)]);
   st.activity_sources         = std::string(f[static_cast<size_t>(AreaCtxField::ACTIVITY_SOURCES)]);
   st.security_pin_policy      = std::string(f[static_cast<size_t>(AreaCtxField::SECURITY_PIN_POLICY)]);
@@ -3787,6 +3865,11 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::BEDTIME_START_HOUR: return "bedtime_start_hour";
     case PrefKey::BEDTIME_END_HOUR: return "bedtime_end_hour";
     case PrefKey::BEDTIME_BRIGHTNESS: return "bedtime_brightness";
+    case PrefKey::CAMERA_DEFAULT_VIEW: return "camera_default_view";
+    case PrefKey::CAMERA_CAROUSEL_INTERVAL: return "camera_carousel_interval";
+    case PrefKey::CAMERA_FRAMING: return "camera_framing";
+    case PrefKey::CAMERA_STREAM_MODE: return "camera_stream_mode";
+    case PrefKey::CAMERA_DOORBELL_POPUP: return "camera_doorbell_popup";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3852,6 +3935,11 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::BEDTIME_START_HOUR: return std::to_string(p.bedtime_start_hour);
     case PrefKey::BEDTIME_END_HOUR: return std::to_string(p.bedtime_end_hour);
     case PrefKey::BEDTIME_BRIGHTNESS: return std::to_string(p.bedtime_brightness_pct());
+    case PrefKey::CAMERA_DEFAULT_VIEW: return pref_camera_default_view_cstr(p);
+    case PrefKey::CAMERA_CAROUSEL_INTERVAL: return pref_camera_carousel_interval_cstr(p);
+    case PrefKey::CAMERA_FRAMING: return pref_camera_framing_cstr(p);
+    case PrefKey::CAMERA_STREAM_MODE: return pref_camera_stream_mode_cstr(p);
+    case PrefKey::CAMERA_DOORBELL_POPUP: return pref_camera_doorbell_popup_cstr(p);
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3874,6 +3962,7 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
     if (key == PrefKey::BATTERY_HIBERNATE_TIMEOUT && (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY)) u = 4;
     if (key == PrefKey::CLOCK_FACE && !LATTER_ROUND_DISPLAY && u == 1) u = 0;
     if (key == PrefKey::START_SCREEN && !p.home_screen_enabled && u == 0) u = kStartScreenTimeAppIdx;
+    if (key == PrefKey::CAMERA_DOORBELL_POPUP && !LATTER_CHIP_P4) u = 0;
     if (slot == u) return false;
     slot = u;
     changed_mask |= pref_key_bit(key);
@@ -4085,6 +4174,16 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_num(p.bedtime_end_hour, 0, 23, kPrefEffectBedtime);
     case PrefKey::BEDTIME_BRIGHTNESS:
       return apply_num(p.bedtime_brightness, 1, 100, kPrefEffectBrightness);
+    case PrefKey::CAMERA_DEFAULT_VIEW:
+      return apply_enum(p.camera_default_view, kCameraDefaultViewOpts, 0);
+    case PrefKey::CAMERA_CAROUSEL_INTERVAL:
+      return apply_enum(p.camera_carousel_interval, kCameraCarouselIntervalOpts, 0);
+    case PrefKey::CAMERA_FRAMING:
+      return apply_enum(p.camera_framing, kCameraFramingOpts, 0);
+    case PrefKey::CAMERA_STREAM_MODE:
+      return apply_enum(p.camera_stream_mode, kCameraStreamModeOpts, 0);
+    case PrefKey::CAMERA_DOORBELL_POPUP:
+      return apply_enum(p.camera_doorbell_popup, kCameraDoorbellPopupOpts, 0);
     case PrefKey::COUNT:
       break;
   }
@@ -4208,6 +4307,11 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::BEDTIME_START_HOUR, PrefKey::BEDTIME_START_HOUR);
   apply_f(DevicePrefsField::BEDTIME_END_HOUR, PrefKey::BEDTIME_END_HOUR);
   apply_f(DevicePrefsField::BEDTIME_BRIGHTNESS, PrefKey::BEDTIME_BRIGHTNESS);
+  apply_f(DevicePrefsField::CAMERA_DEFAULT_VIEW, PrefKey::CAMERA_DEFAULT_VIEW);
+  apply_f(DevicePrefsField::CAMERA_CAROUSEL_INTERVAL, PrefKey::CAMERA_CAROUSEL_INTERVAL);
+  apply_f(DevicePrefsField::CAMERA_FRAMING, PrefKey::CAMERA_FRAMING);
+  apply_f(DevicePrefsField::CAMERA_STREAM_MODE, PrefKey::CAMERA_STREAM_MODE);
+  apply_f(DevicePrefsField::CAMERA_DOORBELL_POPUP, PrefKey::CAMERA_DOORBELL_POPUP);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
 
@@ -5105,7 +5209,8 @@ inline bool trigger_alert_banner(std::string_view title, std::string_view messag
                                  std::string_view priority, int duration_s,
                                  std::string_view camera_url, int alert_id,
                                  uint32_t now_ms, bool seed_only_if_unseen = false,
-                                 AlertBannerState &ab = runtime_state().alert) {
+                                 AlertBannerState &ab = runtime_state().alert,
+                                 std::string_view camera_entity = "") {
   if (seed_only_if_unseen) {
     if (alert_id < 0) return false;
     if (ab.last_seen_alert_id < 0) {
@@ -5129,6 +5234,17 @@ inline bool trigger_alert_banner(std::string_view title, std::string_view messag
   ab.duration_ms = static_cast<uint32_t>(dur) * 1000U;
   ab.start_ms = now_ms;
   ab.camera_url = std::string(camera_url);
+  ab.camera_entity = std::string(camera_entity);
+  if (ab.camera_entity.empty() && !ab.camera_url.empty()) {
+    const size_t epos = ab.camera_url.find("entity_id=");
+    if (epos != std::string::npos) {
+      const size_t start = epos + 10U;
+      const size_t amp = ab.camera_url.find('&', start);
+      ab.camera_entity = (amp == std::string::npos)
+                             ? ab.camera_url.substr(start)
+                             : ab.camera_url.substr(start, amp - start);
+    }
+  }
   ab.active = true;
   return true;
 }
@@ -5240,7 +5356,8 @@ inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_pre
   if (opt == "Calendar") return PageId::CALENDAR;
   if (opt == "Clock Face") return PageId::CLOCK;
   if (opt == "Media") return PageId::MUSIC;
-  if (opt == "Home Hub" || opt == "Cameras") return PageId::HOME_HUB;
+  if (opt == "Home Hub") return PageId::HOME_HUB;
+  if (opt == "Cameras") return PageId::CAMERAS;
   if (opt == "Area Controls") return PageId::AREA;
   if (opt == "Remote") return PageId::REMOTE;
   if (opt == "Weather") return PageId::WEATHER;
@@ -5341,7 +5458,8 @@ inline bool evaluate_perimeter_pin_prompt(std::string_view policy,
 inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
                                           const PersistedDevicePrefs &p,
                                           bool media_playing,
-                                          bool cam_session_active = false) {
+                                          bool cam_session_active = false,
+                                          bool is_stationary = (LATTER_IS_STATIONARY != 0)) {
   if (!p.home_screen_enabled) return false;
   if (return_to_home_timeout_ms(p) == 0U) return false;
   if (rt.nav.gui_page == 1 && rt.nav.home_subpage == 0) return false;
@@ -5360,6 +5478,12 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
       rt.music.takeover == MusicTakeover::NONE &&
       rt.music.overlay_mode == 0 && media_playing) {
     return false;
+  }
+  if (rt.nav.gui_page == PageId::CAMERAS) {
+    if (is_stationary &&
+        (rt.cameras.tab == CamerasTab::CAROUSEL || rt.cameras.tab == CamerasTab::GRID)) {
+      return false;
+    }
   }
   if (rt.nav.gui_page == 10) {
     if (rt.nav.time_subpage == 1 && rt.timers.running) return false;
@@ -5714,7 +5838,7 @@ inline void ensure_ui_anim_poller(PollerT *tick) {
 inline uint32_t &menu_scroll_start_ms() { return runtime_state().nav.menu_scroll_start_ms; }
 inline int &pinned_menu_page() { return runtime_state().nav.pinned_menu_page; }
 inline int &timer_view_slot() { return runtime_state().timers.view_slot; }
-inline bool &cam_quick_reply_open() { return runtime_state().intercom.cam_quick_reply_open; }
+inline bool &cam_quick_reply_open() { return runtime_state().cameras.quick_reply_open; }
 inline int &home_dock_page() { return runtime_state().nav.home_dock_page; }
 inline uint32_t &last_music_page_req_ms() { return runtime_state().last_music_page_req_ms; }
 inline uint32_t &music_scroll_tap_lockout_until_ms() { return runtime_state().music.scroll_tap_lockout_until_ms; }
@@ -5842,6 +5966,65 @@ inline std::string &latter_site_id() { return runtime_state().area.site_id; }
 inline std::string &latter_ble_proxy() { return runtime_state().area.ble_proxy; }
 inline std::string &latter_area_label() { return runtime_state().area.area_label; }
 
+inline constexpr int MAX_CAMERA_SLOTS = 10;
+
+struct CameraRecord {
+  std::string entity_id = "";
+  std::string name = "";
+  std::string area_id = "";
+  uint8_t caps = 0;
+
+  constexpr bool has_audio() const noexcept { return (caps & kCamCapAudio) != 0U; }
+  constexpr bool has_talkback() const noexcept { return (caps & kCamCapTalkback) != 0U; }
+  constexpr bool is_doorbell() const noexcept { return (caps & kCamCapDoorbell) != 0U; }
+  constexpr bool in_carousel() const noexcept { return (caps & kCamCapCarousel) != 0U; }
+};
+
+inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int max_slots = MAX_CAMERA_SLOTS) {
+  if (raw.empty() || out == nullptr || max_slots <= 0) return 0;
+  std::string_view recs[MAX_CAMERA_SLOTS];
+  const int cap = (max_slots < MAX_CAMERA_SLOTS) ? max_slots : MAX_CAMERA_SLOTS;
+  const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
+  int idx = 0;
+  for (size_t r = 0; r < n && idx < cap; ++r) {
+    std::string_view f[4];
+    const size_t fc = v3_split_fields(recs[r], f, 4, '|');
+    if (fc < 2 || f[0].empty()) continue;
+    out[idx].entity_id = std::string(f[0]);
+    out[idx].name = f[1].empty() ? std::string(f[0]) : std::string(f[1]);
+    out[idx].area_id = (fc >= 3) ? std::string(f[2]) : "";
+    uint8_t parsed_caps = 0;
+    if (fc >= 4 && !f[3].empty()) {
+      const std::string_view cv = f[3];
+      if (cv.rfind("0x", 0) == 0 || cv.rfind("0X", 0) == 0) {
+        uint32_t acc = 0;
+        for (size_t i = 2; i < cv.size(); ++i) {
+          const char ch = cv[i];
+          if (ch >= '0' && ch <= '9') acc = (acc << 4) | static_cast<uint32_t>(ch - '0');
+          else if (ch >= 'a' && ch <= 'f') acc = (acc << 4) | static_cast<uint32_t>(10 + ch - 'a');
+          else if (ch >= 'A' && ch <= 'F') acc = (acc << 4) | static_cast<uint32_t>(10 + ch - 'A');
+          else break;
+        }
+        parsed_caps = static_cast<uint8_t>(acc & 0xFFU);
+      } else if (cv[0] >= '0' && cv[0] <= '9') {
+        parsed_caps = static_cast<uint8_t>(v3_parse_u32(cv, 0U) & 0xFFU);
+      }
+    }
+    out[idx].caps = parsed_caps;
+    ++idx;
+  }
+  return idx;
+}
+
+inline int count_configured_cameras(const AreaContextState &ac = area_ctx_state()) {
+  if (!ac.cameras_summary.empty()) {
+    CameraRecord cams[MAX_CAMERA_SLOTS]{};
+    const int n = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
+    if (n > 0) return n;
+  }
+  return (!ac.camera_stream_url.empty() || !ac.camera_snapshot_url.empty()) ? 1 : 0;
+}
+
 inline constexpr int kMaxEffectiveDockItems = 16;
 
 inline int collect_effective_dock_items(ShortcutItem *out_items,
@@ -5850,6 +6033,7 @@ inline int collect_effective_dock_items(ShortcutItem *out_items,
   if (out_items == nullptr || max_items <= 0) return 0;
   const bool has_pinned = !st.pinned_items.empty() || (!st.live_received && st.cold_pinned_total > 0U);
   const bool has_remote = has_any_configured_remote();
+  const bool has_cameras = count_configured_cameras() > 0;
   int count = 0;
 
   auto push_item = [&](const ShortcutItem &src) {
@@ -5859,6 +6043,11 @@ inline int collect_effective_dock_items(ShortcutItem *out_items,
       if (!is_route_supported_on_board(src.route_id)) return;
       if (src.route_id == RouteId::APP_PINNED && !has_pinned) return;
       if ((src.route_id == RouteId::APP_REMOTE || src.route_id == RouteId::REMOTE_DEVICES) && !has_remote) {
+        return;
+      }
+      if ((src.route_id == RouteId::APP_CAMERAS || src.route_id == RouteId::CAMERAS_GRID ||
+           src.route_id == RouteId::CAMERAS_SINGLE || src.route_id == RouteId::CAMERAS_CAROUSEL ||
+           src.route_id == RouteId::CAMERAS_SETTINGS) && !has_cameras) {
         return;
       }
       for (int i = 0; i < count; ++i) {
@@ -6068,18 +6257,16 @@ TimerAlarmController &timer_alarm_controller() noexcept;
 void reset_runtime_state(bool preserve_hooks = false);
 
 // ==============================================================================
-// Intercom & Camera Carousel State / Protocol v3 Summary Parsers
+// Intercom & Camera State / Protocol v3 Summary Parsers & Stream URL Builders
 // ==============================================================================
-inline constexpr int MAX_CAMERA_SLOTS = 10;
-
 inline bool &intercom_live_call_mode() { return runtime_state().intercom.live_call_mode; }
-inline int &cam_carousel_idx() { return runtime_state().intercom.cam_carousel_idx; }
+inline int &cam_carousel_idx() { return runtime_state().cameras.selected_idx; }
 inline bool &cam_call_active() { return runtime_state().intercom.cam_call_active; }
 inline bool &cam_listen_active() { return runtime_state().intercom.cam_listen_active; }
 inline bool &cam_intercom_ptt_active() { return runtime_state().intercom.cam_intercom_ptt_active; }
 inline std::string &cam_intercom_status() { return runtime_state().intercom.cam_intercom_status; }
 inline int &cam_noise_idx() { return runtime_state().intercom.cam_noise_idx; }
-inline bool &cam_landscape_mode() { return runtime_state().intercom.cam_landscape_mode; }
+inline bool &cam_landscape_mode() { return runtime_state().cameras.landscape_mode; }
 inline bool &cam_expanded_fullscreen() { return runtime_state().intercom.cam_expanded_fullscreen; }
 inline uint32_t &last_cam_live_fetch_ms() { return runtime_state().intercom.last_cam_live_fetch_ms; }
 inline uint32_t &cam_error_backoff_until_ms() { return runtime_state().intercom.cam_error_backoff_until_ms; }
@@ -6107,7 +6294,17 @@ inline bool can_start_online_art_fetch(bool has_existing_buffer = false) noexcep
 }
 
 inline bool is_camera_view_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
-  return rs.nav.gui_page == PageId::HOME_HUB && home_hub_state().tab == HomeHubTab::CAMERAS;
+  return rs.nav.gui_page == PageId::CAMERAS;
+}
+
+inline bool is_p4_live_doorbell_popup_enabled(
+    const PersistedDevicePrefs &p = persisted_prefs(),
+    const AreaContextState &ac = area_ctx_state(),
+    const AlertBannerState &ab = runtime_state().alert,
+    bool is_p4 = (LATTER_CHIP_P4 != 0)) noexcept {
+  if (!is_p4 || p.camera_doorbell_popup != 1U) return false;
+  if (ac.camera_stream_url.empty()) return false;
+  return !ab.camera_entity.empty() || !ab.camera_url.empty();
 }
 
 inline int parse_intercom_targets_list(const std::string &raw, std::string out_ids[5],
@@ -6130,43 +6327,238 @@ inline int parse_cameras_summary_list(const std::string &raw,
                                       std::string out_ids[MAX_CAMERA_SLOTS],
                                       std::string out_names[MAX_CAMERA_SLOTS],
                                       std::string out_urls[MAX_CAMERA_SLOTS] = nullptr,
-                                      std::string out_areas[MAX_CAMERA_SLOTS] = nullptr) {
-  std::string_view recs[MAX_CAMERA_SLOTS];
-  const size_t n = v3_split_fields(raw, recs, MAX_CAMERA_SLOTS, kProtocolRecordSep);
-  int idx = 0;
-  for (size_t r = 0; r < n; r++) {
-    std::string_view f[4];
-    if (v3_split_fields(recs[r], f, 4, '|') != 4 || f[0].empty()) continue;
-    out_ids[idx] = std::string(f[0]);
-    out_names[idx] = std::string(f[1]);
-    if (out_areas != nullptr) out_areas[idx] = std::string(f[2]);
-    if (out_urls != nullptr) out_urls[idx] = std::string(f[3]);
-    idx++;
+                                      std::string out_areas[MAX_CAMERA_SLOTS] = nullptr,
+                                      uint8_t out_caps[MAX_CAMERA_SLOTS] = nullptr) {
+  CameraRecord recs[MAX_CAMERA_SLOTS]{};
+  const int cnt = parse_cameras_records(raw, recs, MAX_CAMERA_SLOTS);
+  for (int i = 0; i < cnt; ++i) {
+    out_ids[i] = recs[i].entity_id;
+    out_names[i] = recs[i].name;
+    if (out_areas != nullptr) out_areas[i] = recs[i].area_id;
+    if (out_caps != nullptr) out_caps[i] = recs[i].caps;
+    if (out_urls != nullptr) out_urls[i].clear();
   }
-  return idx;
+  return cnt;
+}
+
+inline int find_camera_index_by_entity(const CameraRecord *cams, int cam_cnt,
+                                       std::string_view entity_id) noexcept {
+  if (cams == nullptr || cam_cnt <= 0 || entity_id.empty()) return -1;
+  for (int i = 0; i < cam_cnt; ++i) {
+    if (cams[i].entity_id == entity_id) return i;
+  }
+  return -1;
+}
+
+inline int collect_carousel_camera_indices(const CameraRecord *cams, int cam_cnt,
+                                           int *out_indices, int max_out) noexcept {
+  if (cams == nullptr || cam_cnt <= 0 || out_indices == nullptr || max_out <= 0) return 0;
+  int n = 0;
+  for (int i = 0; i < cam_cnt && n < max_out; ++i) {
+    if (cams[i].in_carousel()) {
+      out_indices[n++] = i;
+    }
+  }
+  if (n == 0) {
+    for (int i = 0; i < cam_cnt && n < max_out; ++i) {
+      out_indices[n++] = i;
+    }
+  }
+  return n;
+}
+
+inline constexpr int cam_align16_floor(int px) noexcept {
+  return (px <= 16) ? 16 : (px & ~15);
+}
+
+inline void resolve_camera_stream_dims(int panel_w, int panel_h, bool is_round,
+                                       bool is_grid, bool is_p4, bool low_bw,
+                                       uint16_t &out_w, uint16_t &out_h,
+                                       bool rot90 = false) noexcept {
+  if (is_round) {
+    if (is_grid) {
+      out_w = low_bw ? 256U : 320U;
+      out_h = low_bw ? 192U : 256U;
+    } else {
+      out_w = low_bw ? 320U : 384U;
+      out_h = low_bw ? 176U : 224U;
+    }
+    return;
+  }
+  const int max_dim = is_p4 ? (low_bw ? 512 : 768) : (low_bw ? 320 : 480);
+  if (rot90 && !is_grid && panel_h > panel_w) {
+    const int h = std::min(panel_h, max_dim);
+    int w = std::min(panel_w, (h * 9) / 16);
+    if (w < 128) w = std::min(panel_w, 192);
+    out_w = static_cast<uint16_t>(cam_align16_floor(w));
+    out_h = static_cast<uint16_t>(cam_align16_floor(h));
+    return;
+  }
+  int w = std::min(panel_w, max_dim);
+  int h = is_grid ? std::min(panel_h - 96, (w * 3) / 4)
+                  : std::min(panel_h, (w * 9) / 16);
+  if (h < 128) h = std::min(panel_h, 192);
+  out_w = static_cast<uint16_t>(cam_align16_floor(w));
+  out_h = static_cast<uint16_t>(cam_align16_floor(h));
+}
+
+inline constexpr uint8_t resolve_camera_stream_fps(bool is_p4, bool is_grid,
+                                                   bool low_bw, bool audio_or_ptt_active) noexcept {
+  if (is_p4) {
+    if (is_grid) return low_bw ? 4U : 6U;
+    return low_bw ? 6U : 12U;
+  }
+  if (audio_or_ptt_active) return 2U;
+  if (is_grid) return 2U;
+  return low_bw ? 3U : 5U;
+}
+
+inline std::string strip_query_param(std::string_view url, std::string_view key) {
+  std::string out;
+  out.reserve(url.size());
+  const size_t qpos = url.find('?');
+  if (qpos == std::string_view::npos) return std::string(url);
+  out.append(url.substr(0, qpos + 1));
+  std::string_view qs = url.substr(qpos + 1);
+  bool first = true;
+  size_t pos = 0;
+  while (pos <= qs.size()) {
+    const size_t amp = qs.find('&', pos);
+    const std::string_view seg =
+        (amp == std::string_view::npos) ? qs.substr(pos) : qs.substr(pos, amp - pos);
+    if (!seg.empty()) {
+      const size_t eq = seg.find('=');
+      const std::string_view k = (eq == std::string_view::npos) ? seg : seg.substr(0, eq);
+      if (k != key) {
+        if (!first) out.push_back('&');
+        out.append(seg);
+        first = false;
+      }
+    }
+    if (amp == std::string_view::npos) break;
+    pos = amp + 1;
+  }
+  return out;
+}
+
+inline std::string build_camera_single_stream_url(std::string_view base_stream_url,
+                                                  std::string_view entity_id,
+                                                  uint16_t w, uint16_t h, uint8_t fps,
+                                                  bool fill, bool rot90 = false) {
+  if (base_stream_url.empty()) return "";
+  std::string out = strip_query_param(base_stream_url, "entity_id");
+  const char sep = (out.find('?') == std::string::npos) ? '?' : '&';
+  if (!entity_id.empty()) {
+    out.push_back(sep);
+    out.append("entity_id=");
+    out.append(entity_id);
+  }
+  auto append_kv = [&](const char *k, const std::string &v) {
+    out.push_back((out.find('?') == std::string::npos) ? '?' : '&');
+    out.append(k);
+    out.push_back('=');
+    out.append(v);
+  };
+  append_kv("w", std::to_string(w));
+  append_kv("h", std::to_string(h));
+  append_kv("fps", std::to_string(fps));
+  append_kv("fit", fill ? "fill" : "contain");
+  if (rot90) append_kv("rot", "90");
+  return out;
+}
+
+inline std::string build_camera_grid_stream_url(std::string_view base_stream_url,
+                                                const std::string *entities, int count,
+                                                uint16_t w, uint16_t h, uint8_t fps) {
+  if (base_stream_url.empty() || entities == nullptr || count <= 0) return "";
+  std::string base = strip_query_param(base_stream_url, "entity_id");
+  const size_t pos = base.find("/camera_stream/");
+  if (pos != std::string::npos) {
+    base.replace(pos, 15U, "/camera_grid/");
+  }
+  std::string cams_csv;
+  const int lim = std::min(count, 4);
+  for (int i = 0; i < lim; ++i) {
+    if (entities[i].empty()) continue;
+    if (!cams_csv.empty()) cams_csv.push_back(',');
+    cams_csv.append(entities[i]);
+  }
+  if (cams_csv.empty()) return "";
+  auto append_kv = [&](const char *k, const std::string &v) {
+    base.push_back((base.find('?') == std::string::npos) ? '?' : '&');
+    base.append(k);
+    base.push_back('=');
+    base.append(v);
+  };
+  append_kv("cameras", cams_csv);
+  append_kv("w", std::to_string(w));
+  append_kv("h", std::to_string(h));
+  append_kv("fps", std::to_string(fps));
+  return base;
+}
+
+inline std::string build_camera_snapshot_url(std::string_view base_snap_url,
+                                             std::string_view entity_id,
+                                             bool fill, bool rot90, uint32_t ts_ms) {
+  if (base_snap_url.empty()) return "";
+  std::string out = strip_query_param(base_snap_url, "entity_id");
+  out = strip_query_param(out, "fit");
+  out = strip_query_param(out, "rot");
+  out = strip_query_param(out, "ts");
+  auto append_kv = [&](const char *k, std::string_view v) {
+    out.push_back((out.find('?') == std::string::npos) ? '?' : '&');
+    out.append(k);
+    out.push_back('=');
+    out.append(v);
+  };
+  if (!entity_id.empty()) append_kv("entity_id", entity_id);
+  append_kv("fit", fill ? "fill" : "contain");
+  if (rot90) append_kv("rot", "90");
+  append_kv("ts", std::to_string(ts_ms));
+  return out;
 }
 
 inline std::string resolve_active_carousel_camera_area_id(const std::string &cameras_summary) {
-  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], areas[MAX_CAMERA_SLOTS];
-  const int cnt = parse_cameras_summary_list(cameras_summary, ids, names, nullptr, areas);
+  const auto &rs = runtime_state();
+  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  const int cnt = parse_cameras_records(cameras_summary, cams, MAX_CAMERA_SLOTS);
+  if (rs.alert.active && !rs.alert.camera_entity.empty()) {
+    const int ai = find_camera_index_by_entity(cams, cnt, rs.alert.camera_entity);
+    if (ai >= 0) return cams[ai].area_id;
+  }
   if (cnt > 0) {
-    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
-      cam_carousel_idx() = 0;
+    int idx = cam_carousel_idx();
+    if (rs.nav.gui_page == PageId::CAMERAS && rs.cameras.tab == CamerasTab::CAROUSEL) {
+      int car[MAX_CAMERA_SLOTS]{};
+      const int cc = collect_carousel_camera_indices(cams, cnt, car, MAX_CAMERA_SLOTS);
+      if (cc > 0) idx = car[std::clamp(rs.cameras.carousel_idx, 0, cc - 1)];
     }
-    return areas[cam_carousel_idx()];
+    if (idx < 0 || idx >= cnt) idx = 0;
+    return cams[idx].area_id;
   }
   return "";
 }
 
 inline std::string resolve_active_carousel_camera_id(const std::string &cameras_summary,
                                                      const std::string &fallback_cam_url) {
-  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS];
-  const int cnt = parse_cameras_summary_list(cameras_summary, ids, names);
+  const auto &rs = runtime_state();
+  if (rs.alert.active && !rs.alert.camera_entity.empty()) {
+    return rs.alert.camera_entity;
+  }
+  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  const int cnt = parse_cameras_records(cameras_summary, cams, MAX_CAMERA_SLOTS);
   if (cnt > 0) {
-    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
-      cam_carousel_idx() = 0;
+    int idx = cam_carousel_idx();
+    if (rs.nav.gui_page == PageId::CAMERAS && rs.cameras.tab == CamerasTab::CAROUSEL) {
+      int car[MAX_CAMERA_SLOTS]{};
+      const int cc = collect_carousel_camera_indices(cams, cnt, car, MAX_CAMERA_SLOTS);
+      if (cc > 0) idx = car[std::clamp(rs.cameras.carousel_idx, 0, cc - 1)];
     }
-    return ids[cam_carousel_idx()];
+    if (idx < 0 || idx >= cnt) {
+      cam_carousel_idx() = 0;
+      idx = 0;
+    }
+    return cams[idx].entity_id;
   }
   const size_t epos = fallback_cam_url.find("entity_id=");
   if (epos != std::string::npos) {
@@ -6182,26 +6574,11 @@ inline std::string resolve_active_carousel_camera_id(const std::string &cameras_
 inline std::string build_carousel_camera_url(const std::string &base_cam_url,
                                              const std::string &cameras_summary,
                                              uint32_t now_ms) {
-  std::string ids[MAX_CAMERA_SLOTS], names[MAX_CAMERA_SLOTS], urls[MAX_CAMERA_SLOTS];
-  const int cnt = parse_cameras_summary_list(cameras_summary, ids, names, urls);
-  std::string chosen_url;
-  if (cnt > 0) {
-    if (cam_carousel_idx() < 0 || cam_carousel_idx() >= cnt) {
-      cam_carousel_idx() = 0;
-    }
-    chosen_url = urls[cam_carousel_idx()];
-  }
-  if (chosen_url.empty() && !base_cam_url.empty()) {
-    chosen_url = base_cam_url;
-  }
-  if (chosen_url.empty()) {
-    return "";
-  }
-  if (cam_landscape_mode() && chosen_url.find("&rot=") == std::string::npos) {
-    chosen_url += "&rot=90";
-  }
-  chosen_url += "&ts=" + std::to_string(now_ms);
-  return chosen_url;
+  if (base_cam_url.empty()) return "";
+  const auto &rs = runtime_state();
+  const std::string ent = resolve_active_carousel_camera_id(cameras_summary, base_cam_url);
+  return build_camera_snapshot_url(
+      base_cam_url, ent, rs.cameras.effective_fill(persisted_prefs()), cam_landscape_mode(), now_ms);
 }
 
 inline constexpr bool alarm_editor_blink_dim(uint32_t now_ms, uint32_t last_input_ms) noexcept {
@@ -6254,9 +6631,7 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       break;
     case 9:
       sub = home_hub_tab();
-      drill = (rs.intercom.cam_expanded_fullscreen ? 1 : 0) |
-              (rs.intercom.cam_quick_reply_open ? 2 : 0) |
-              (rs.intercom.live_call_mode ? 4 : 0) |
+      drill = (rs.intercom.live_call_mode ? 4 : 0) |
               ((home_hub_state().entry_page & 0x0F) << 3);
       break;
     case 10:
@@ -6273,6 +6648,12 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
     case 12:
       sub = rs.cal.subpage;
       drill = (rs.cal.drilldown & 0x1F) | (rs.cal.delete_confirm_open ? 0x40 : 0);
+      break;
+    case 13:
+      sub = rs.cameras.tab;
+      drill = (rs.cameras.hud_active ? 1 : 0) |
+              (rs.cameras.quick_reply_open ? 2 : 0) |
+              ((rs.cameras.grid_page & 0x07) << 2);
       break;
     default:
       break;

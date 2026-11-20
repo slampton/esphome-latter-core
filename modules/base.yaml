@@ -33,6 +33,7 @@ esphome:
         - lambda: |-
             latter_ui::ensure_persisted_prefs_loaded();
             latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
+            id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_state_json());
 
 # Client-initiated dial-back (outgoing_connection -> HA TCP :6054, Noise PSK verified on both sides):
 # ESPHome 2026.11 only skips the 60 s default delay under USE_DEEP_SLEEP, whereas Latter battery
@@ -156,7 +157,7 @@ script:
             api.connected:
               state_subscription_only: true
           then:
-            - delay: 250ms
+            - delay: 50ms
             - lambda: |-
                 const uint32_t now_ms = millis();
                 latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
@@ -178,7 +179,7 @@ text_sensor:
     id: latter_hardware_manifest
     icon: "mdi:chip"
     entity_category: diagnostic
-    update_interval: 300s
+    update_interval: never
     lambda: 'return latter_ui::build_hardware_manifest_state_json();'
 
   - platform: template

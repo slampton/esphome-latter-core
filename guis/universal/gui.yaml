@@ -210,14 +210,15 @@ display:
       const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
                                   ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
                                   ctx.home_wallpaper_art.width > 0);
+      const bool cam_live_canvas =
+          (rs.nav.gui_page == latter_ui::PageId::CAMERAS &&
+           rs.cameras.tab != latter_ui::CamerasTab::SETTINGS &&
+           !rs.cameras.quick_reply_open);
       const bool tools_full_bleed =
           (rs.nav.gui_page == latter_ui::PageId::TOOLS &&
            rs.nav.tools_subpage == latter_ui::ToolsSubpage::FLASHLIGHT) ||
           (latter_ui::is_calendar_map_view_active(rs) && ctx.camera_snapshot_art.width > 16) ||
-          ((rs.nav.gui_page == latter_ui::PageId::HOME_HUB &&
-            latter_ui::home_hub_tab() == latter_ui::HomeHubTab::CAMERAS &&
-            latter_ui::cam_expanded_fullscreen()) &&
-           !latter_ui::cam_quick_reply_open() && ctx.camera_snapshot_art.width > 16);
+          cam_live_canvas;
       const bool weather_sim_active = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
       const latter_ui::BackdropMode bd_mode = latter_ui::resolve_backdrop_mode(
           rs.nav.gui_page, rs.nav.home_subpage, ctx.home_weather_bg, weather_sim_active,
@@ -287,19 +288,33 @@ display:
       }
 
       if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
-        // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (rs.nav.gui_page == 7), Tools (8), Hub (9)
-        const bool use_page_wallpaper = (bd_mode == latter_ui::BackdropMode::CustomWallpaper);
-        if (rs.nav.gui_page != 5 || use_page_wallpaper) {
-          latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
+        // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (rs.nav.gui_page == 7), Tools (8), Hub (9), Cameras (13)
+        // Skip P4 between-frames PPA clear while full-screen live video is active so DPI scanout keeps full PSRAM bandwidth!
+        if (cam_live_canvas) {
+          latter_ui::frame_base_skip();
+        } else {
+          const bool use_page_wallpaper = (bd_mode == latter_ui::BackdropMode::CustomWallpaper);
+          if (rs.nav.gui_page != 5 || use_page_wallpaper) {
+            latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
+          }
         }
       }
 
       latter_ui::render_active_page(it, ctx);
 
       const bool alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
-      const bool va_visible = rs.voice.active || !rs.voice.status_text.empty();
+      const bool va_visible = latter_ui::should_va_takeover_preempt(
+          rs.voice.active, !rs.voice.status_text.empty(), rs.voice.intercom_turn,
+          rs.nav.gui_page, rs.cameras.doorbell_live_popup_active);
+      const bool cam_hud_hidden =
+          (rs.nav.gui_page == latter_ui::PageId::CAMERAS &&
+           (rs.cameras.tab == latter_ui::CamerasTab::SINGLE ||
+            rs.cameras.tab == latter_ui::CamerasTab::CAROUSEL) &&
+           (!rs.cameras.hud_active || rs.voice.intercom_turn) &&
+           !latter_ui::cam_call_active() && !latter_ui::cam_listen_active());
       const bool show_home_pill =
           !rs.nav.is_hibernating && !rs.nav.ota_in_progress && !va_visible &&
+          !cam_hud_hidden && !rs.voice.intercom_turn &&
           rs.nav.display_power_state == 0 &&
           latter_ui::can_go_home(
               rs.nav.gui_page, rs.nav.system_menu_mode, rs.nav.active_game, rs.music.overlay_mode,

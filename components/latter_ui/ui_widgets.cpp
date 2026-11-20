@@ -63,7 +63,8 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
                                   esphome::Color bg_c, esphome::Color border_c,
                                   const char *label, esphome::Color text_c,
                                   esphome::display::BaseFont *font,
-                                  GlassVariant variant) {
+                                  GlassVariant variant,
+                                  bool sample_surface) {
   if (SCREEN_W > 520) {
     if (w <= 340) w = scale_x(w);
     if (h <= 96)  h = scale_y(h);
@@ -85,7 +86,10 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
   GlassVariant eff_var = variant;
   esphome::Color norm_tint, rim_col;
   normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+  const GlassBackdrop bd =
+      (eff_var == GlassVariant::ReadableDark)
+          ? sample_glass_backdrop(x0, y0, w, h)
+          : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
@@ -104,7 +108,8 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
 
 esphome::Color render_card_box(esphome::display::Display &it, int x0, int y0, int w, int h,
                                esphome::Color bg_c, esphome::Color border_c, int r,
-                               GlassVariant variant, esphome::Color ref_text) {
+                               GlassVariant variant, esphome::Color ref_text,
+                               bool sample_surface) {
   if (w <= 4 || h <= 4) return bg_c;
   if (r > h / 2) r = h / 2;
   if (r > w / 2) r = w / 2;
@@ -113,7 +118,10 @@ esphome::Color render_card_box(esphome::display::Display &it, int x0, int y0, in
   GlassVariant eff_var = variant;
   esphome::Color norm_tint, rim_col;
   normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
+  const GlassBackdrop bd =
+      (eff_var == GlassVariant::ReadableDark)
+          ? sample_glass_backdrop(x0, y0, w, h)
+          : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
@@ -127,14 +135,18 @@ esphome::Color render_card_box(esphome::display::Display &it, int x0, int y0, in
 esphome::Color render_glass_circle(esphome::display::Display &it, int cx_btn, int cy_btn, int r,
                                    esphome::Color bg_c, esphome::Color border_c,
                                    int inner_hole_r, GlassVariant variant,
-                                   esphome::Color ref_text) {
+                                   esphome::Color ref_text,
+                                   bool sample_surface) {
   if (r <= 1) return bg_c;
   GlassVariant eff_var = variant;
   esphome::Color norm_tint, rim_col;
   normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
 
   const int d = 2 * r + 1;
-  const GlassBackdrop bd = sample_glass_backdrop(cx_btn - r, cy_btn - r, d, d);
+  const GlassBackdrop bd =
+      (eff_var == GlassVariant::ReadableDark)
+          ? sample_glass_backdrop(cx_btn - r, cy_btn - r, d, d)
+          : (sample_surface ? sample_glass_mean(cx_btn - r, cy_btn - r, d, d) : GlassBackdrop{});
   esphome::Color eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
@@ -1687,6 +1699,64 @@ void draw_icon_hamburger(esphome::display::Display &it, int cx, int cy, int r,
   });
 }
 
+void draw_icon_grid_2x2(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float off = 0.44f * rf;
+  const float cell = 0.34f * rf;
+  const float rad = std::max(1.0f, 0.14f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    const float ax = std::fabs(x);
+    const float ay = std::fabs(y);
+    return sd_rbox_px(ax, ay, off, off, cell, cell, rad);
+  });
+}
+
+void draw_icon_carousel(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float ring_r = 0.72f * rf;
+  const float ring_t = std::max(1.1f, 0.14f * rf);
+  const SdfSymTri tri_r = SdfSymTri::make(0.0f, -0.34f * rf, 0.36f * rf, 0.34f * rf);
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    // Circular slideshow ring with subtle break at top-right + centered play triangle
+    float d_ring = sd_ring_px(x, y, 0.0f, 0.0f, ring_r, ring_t);
+    if (x > 0.15f * rf && y < -0.15f * rf) {
+      const float gap = sd_circle_px(x, y, 0.56f * rf, -0.56f * rf, 0.28f * rf);
+      d_ring = std::max(d_ring, -gap);
+    }
+    const float d_play = tri_r.eval(y, -x + 0.05f * rf);
+    return std::min(d_ring, d_play);
+  });
+}
+
+void draw_icon_gear(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow) {
+  const float rf = static_cast<float>(std::max(6, r));
+  const float body_r = 0.68f * rf;
+  const float hole_r = 0.30f * rf;
+  static constexpr float kInvSqrt2 = 0.70710678f;
+
+  rasterize_sdf_icon(it, cx, cy, r, col, shadow, [&](float x, float y) -> float {
+    float d_solid = sd_circle_px(x, y, 0.0f, 0.0f, body_r);
+    const float ax = std::fabs(x);
+    const float ay = std::fabs(y);
+    const float rx = std::fabs((x - y) * kInvSqrt2);
+    const float ry = std::fabs((x + y) * kInvSqrt2);
+    const float tw = std::max(1.2f, 0.17f * rf);
+    const float th = 0.90f * rf;
+    const float tr = std::max(0.9f, 0.08f * rf);
+    d_solid = std::min(d_solid, sd_rbox_px(ax, ay, 0.0f, 0.0f, tw, th, tr));
+    d_solid = std::min(d_solid, sd_rbox_px(ax, ay, 0.0f, 0.0f, th, tw, tr));
+    d_solid = std::min(d_solid, sd_rbox_px(rx, ry, 0.0f, 0.0f, tw, th, tr));
+    d_solid = std::min(d_solid, sd_rbox_px(rx, ry, 0.0f, 0.0f, th, tw, tr));
+    const float d_hole = sd_circle_px(x, y, 0.0f, 0.0f, hole_r);
+    return std::max(d_solid, -d_hole);
+  });
+}
+
 void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
                      esphome::Color col, esphome::Color cut_c, bool shadow) {
   (void)cut_c;
@@ -1726,8 +1796,18 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
     case RouteId::HOME_HUB_ALARM:
       draw_icon_shield_home(it, cx, cy, r, col, shadow);
       return;
-    case RouteId::HOME_HUB_CAMERAS:
+    case RouteId::APP_CAMERAS:
+    case RouteId::CAMERAS_SINGLE:
       draw_icon_camera(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::CAMERAS_GRID:
+      draw_icon_grid_2x2(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::CAMERAS_CAROUSEL:
+      draw_icon_carousel(it, cx, cy, r, col, shadow);
+      return;
+    case RouteId::CAMERAS_SETTINGS:
+      draw_icon_gear(it, cx, cy, r, col, shadow);
       return;
     case RouteId::HOME_HUB_INTERCOM:
       draw_icon_intercom_handset(it, cx, cy, r, col, shadow);

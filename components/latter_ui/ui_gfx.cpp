@@ -473,6 +473,39 @@ GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   return out;
 }
 
+GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h) {
+  GlassBackdrop out;
+  if (w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
+  const uint16_t *fb = active_frame_buf16();
+  const int xs = std::max(0, x0), xe = std::min(SCREEN_W, x0 + w);
+  const int ys = std::max(clip_y0(), y0), ye = std::min(clip_y1() + 1, y0 + h);
+  if (fb == nullptr || xe <= xs || ye <= ys) return out;
+  const int mode = active_frame_endian_mode();
+  const int step = std::max(4, std::max(w, h) / 6);
+  uint32_t tr = 0, tg = 0, tb = 0, n = 0;
+  for (int y = ys + step / 2; y < ye; y += step) {
+    const uint16_t *row = fb + y * SCREEN_W;
+    for (int x = xs + step / 2; x < xe; x += step) {
+      const uint16_t hw = row[x];
+      const uint16_t p = (mode == 1) ? decode_hw_rgb565_mode<1>(hw)
+                       : ((mode == 2) ? decode_hw_rgb565_mode<2>(hw)
+                       : ((mode == 4) ? decode_hw_rgb565_mode<4>(hw) : decode_hw_rgb565_mode<3>(hw)));
+      const uint32_t r5 = (p >> 11) & 0x1FU, g6 = (p >> 5) & 0x3FU, b5 = p & 0x1FU;
+      tr += (r5 << 3) | (r5 >> 2);
+      tg += (g6 << 2) | (g6 >> 4);
+      tb += (b5 << 3) | (b5 >> 2);
+      n++;
+    }
+  }
+  if (n == 0) return out;
+  out.mean = esphome::Color(static_cast<uint8_t>(tr / n),
+                            static_cast<uint8_t>(tg / n),
+                            static_cast<uint8_t>(tb / n));
+  out.bright = out.mean;
+  out.valid = true;
+  return out;
+}
+
 bool is_semantic_glass_color(esphome::Color c) {
   const int mx = std::max({static_cast<int>(c.r), static_cast<int>(c.g), static_cast<int>(c.b)});
   const int mn = std::min({static_cast<int>(c.r), static_cast<int>(c.g), static_cast<int>(c.b)});
@@ -1230,6 +1263,66 @@ void dim_rgb565_row_dither(uint16_t *row_buf, int span_w, int mul_q8, int x0, in
   }
 }
 
+void blit_dimmed_rgb565_scanline(esphome::display::Display &it, int start_x, int y, int span_w,
+                                 const uint16_t *src_row, int mul_q8, uint16_t *fallback_row_buf) {
+  if (span_w <= 0 || !row_in_clip_band(y) || src_row == nullptr) return;
+  if (mul_q8 >= 256) {
+    blit_rgb565_scanline(it, start_x, y, span_w, src_row, false);
+    return;
+  }
+  uint16_t *fb = active_frame_buf16();
+  if (fb != nullptr) {
+    if (start_x < 0) {
+      src_row -= start_x;
+      span_w += start_x;
+      start_x = 0;
+    }
+    if (start_x + span_w > SCREEN_W) {
+      span_w = SCREEN_W - start_x;
+    }
+    if (span_w <= 0) return;
+    if (mul_q8 < 0) mul_q8 = 0;
+    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + start_x;
+    const uint8_t *th = kBayer4[y & 3];
+    const uint32_t m = static_cast<uint32_t>(mul_q8);
+    const int mode = active_frame_endian_mode();
+    if (mode == 1) {
+      for (int i = 0; i < span_w; i++) {
+        const uint32_t p = src_row[i];
+        const uint32_t t = static_cast<uint32_t>(th[(start_x + i) & 3]) * 16U + 8U;
+        const uint32_t r = (((p >> 11) & 0x1FU) * m + t) >> 8;
+        const uint32_t g = (((p >> 5) & 0x3FU) * m + t) >> 8;
+        const uint32_t b = ((p & 0x1FU) * m + t) >> 8;
+        dst[i] = static_cast<uint16_t>((r << 11) | (g << 5) | b);
+      }
+      return;
+    }
+    if (mode == 2) {
+      for (int i = 0; i < span_w; i++) {
+        const uint32_t p = src_row[i];
+        const uint32_t t = static_cast<uint32_t>(th[(start_x + i) & 3]) * 16U + 8U;
+        const uint32_t r = (((p >> 11) & 0x1FU) * m + t) >> 8;
+        const uint32_t g = (((p >> 5) & 0x3FU) * m + t) >> 8;
+        const uint32_t b = ((p & 0x1FU) * m + t) >> 8;
+        dst[i] = bswap16_u16(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+      }
+      return;
+    }
+    for (int i = 0; i < span_w; i++) {
+      const uint32_t p = src_row[i];
+      const uint32_t t = static_cast<uint32_t>(th[(start_x + i) & 3]) * 16U + 8U;
+      const uint32_t r = (((p >> 11) & 0x1FU) * m + t) >> 8;
+      const uint32_t g = (((p >> 5) & 0x3FU) * m + t) >> 8;
+      const uint32_t b = ((p & 0x1FU) * m + t) >> 8;
+      dst[i] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+    }
+    return;
+  }
+  std::memcpy(fallback_row_buf, src_row, static_cast<size_t>(span_w) * sizeof(uint16_t));
+  dim_rgb565_row_dither(fallback_row_buf, span_w, mul_q8, start_x, y);
+  blit_rgb565_scanline(it, start_x, y, span_w, fallback_row_buf, false);
+}
+
 void art_row_span(int y, int cx, int &start_x, int &end_x) {
 #if LATTER_ROUND_DISPLAY
   const int hw = circle_half_span(y, 0);
@@ -1318,13 +1411,7 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
       const int span_w = end_x - start_x + 1;
       if (span_w <= 0) continue;
       const uint16_t *src_row = src_data + static_cast<size_t>(sy) * SCREEN_W;
-      if (mul_q8 >= 256) {
-        blit_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, false);
-      } else {
-        std::memcpy(row_buf, src_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
-        dim_rgb565_row_dither(row_buf, span_w, mul_q8, start_x, y);
-        blit_rgb565_scanline(it, start_x, y, span_w, row_buf, false);
-      }
+      blit_dimmed_rgb565_scanline(it, start_x, y, span_w, src_row + start_x, mul_q8, row_buf);
     }
   } else {
     const int view_h = std::max(1, end_y - start_y);
@@ -1363,13 +1450,7 @@ void draw_album_art(esphome::display::Display &it, const uint16_t *src_data, int
         }
         prev_sy = sy;
       }
-      if (mul_q8 >= 256) {
-        blit_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, false);
-      } else {
-        std::memcpy(row_buf + start_x, scaled_row + start_x, static_cast<size_t>(span_w) * sizeof(uint16_t));
-        dim_rgb565_row_dither(row_buf + start_x, span_w, mul_q8, start_x, y);
-        blit_rgb565_scanline(it, start_x, y, span_w, row_buf + start_x, false);
-      }
+      blit_dimmed_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, mul_q8, row_buf + start_x);
     }
   }
 
@@ -1561,15 +1642,19 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
   }
 
   if (hit == nullptr) {
+    const bool full_rect_overwrite = full_bleed && (LATTER_ROUND_DISPLAY == 0);
     bool freshly_zeroed = false;
 #ifdef USE_ESP32
     if (victim->px == nullptr) {
 #if !LATTER_CHIP_P4
       sky_base_cache_drop();
 #endif
+      const size_t px_bytes = static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t);
       victim->px = static_cast<uint16_t *>(
-          heap_caps_calloc(static_cast<size_t>(SCREEN_W) * SCREEN_H, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-      freshly_zeroed = (victim->px != nullptr);
+          full_rect_overwrite
+              ? heap_caps_malloc(px_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+              : heap_caps_calloc(static_cast<size_t>(SCREEN_W) * SCREEN_H, sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      freshly_zeroed = (!full_rect_overwrite && victim->px != nullptr);
     }
 #endif
     if (victim->px == nullptr) {
@@ -1578,7 +1663,7 @@ bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView ta
       backdrop_active() = true;
       return true;
     }
-    if (!freshly_zeroed && full_bleed) {
+    if (!freshly_zeroed && full_bleed && !full_rect_overwrite) {
       std::memset(victim->px, 0, static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t));
     }
     const int saved_cy0 = clip_y0();

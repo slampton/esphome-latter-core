@@ -28,7 +28,7 @@ void render_pinned_card(esphome::display::Display &it, int cx_card, int cy_card,
 
   const Color surf_bg = render_modern_card(
       it, cx_card, cy_card, raw_w, 86, 14,
-      bg_c, brd_c, nullptr, text_c, ctx.font_small);
+      bg_c, brd_c, nullptr, text_c, ctx.font_small, GlassVariant::Clear, true);
 
   const int ix = cx_card;
   const int iy = cy_card - scale_y(13);

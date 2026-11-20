@@ -42,6 +42,8 @@
 #include "../../include/hal_panel_power.h"
 #include "../../include/hal_power_pm.h"
 #include "../../include/hal_touch.h"
+#include "../../include/hal_video_stream.h"
+#include "../../components/latter_core/video_stream.cpp"
 #include "../../components/latter_core/power_pm.cpp"
 #include "../../components/latter_core/runtime_controllers.cpp"
 #include "../../include/ui_hit_table.h"
@@ -839,23 +841,26 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 14U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 58U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 64U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 39U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 15U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 63U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 69U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 41U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
-  // Universal shortcut routes + PageId::PINNED == 11 + PageId::CALENDAR == 12
+  // Universal shortcut routes + PageId::PINNED == 11 + PageId::CALENDAR == 12 + PageId::CAMERAS == 13
   LATTER_CHECK(latter_ui::PageId::HOME_HUB == 9);
   LATTER_CHECK(latter_ui::PageId::TIME == 10);
   LATTER_CHECK(latter_ui::PageId::PINNED == 11);
   LATTER_CHECK(latter_ui::PageId::CALENDAR == 12);
+  LATTER_CHECK(latter_ui::PageId::CAMERAS == 13);
   LATTER_CHECK(latter_ui::find_shortcut_route("app:pinned") != nullptr);
   LATTER_CHECK(latter_ui::find_shortcut_route("app:calendar") != nullptr);
   LATTER_CHECK(latter_ui::find_shortcut_route("calendar:month") != nullptr);
   LATTER_CHECK(latter_ui::find_shortcut_route("tools:calendar") == nullptr);
   LATTER_CHECK(latter_ui::find_shortcut_route("weather:moon") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("home_hub:cameras") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("app:cameras") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("cameras:grid") != nullptr);
+  LATTER_CHECK(latter_ui::find_shortcut_route("home_hub:cameras") == nullptr);
 
   // Start screen Pinned, Calendar & Cameras resolution
   latter_ui::PersistedDevicePrefs cam_prefs{};
@@ -864,7 +869,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Calendar"));
   LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::CALENDAR);
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Cameras"));
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::HOME_HUB);
+  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::CAMERAS);
   LATTER_CHECK(latter_ui::is_cameras_start_screen(cam_prefs));
   cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Tools"));
   LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == 8);
@@ -889,23 +894,23 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::is_configured_remote_slot("remote.living_room"));
   LATTER_CHECK(!latter_ui::is_configured_remote_slot(""));
 
-  // Ordered Home Hub category CSV parser & collect_home_hub_tabs (6-category Home Hub, zero pre-sync placeholder tabs)
-  int hh_tabs[latter_ui::kMaxHomeHubTabs] = {-1, -1, -1, -1, -1, -1};
+  // Ordered Home Hub category CSV parser & collect_home_hub_tabs (5-category Home Hub, zero pre-sync placeholder tabs)
+  int hh_tabs[latter_ui::kMaxHomeHubTabs] = {-1, -1, -1, -1, -1};
   latter_ui::AreaContextState uninit_ac{};
   LATTER_CHECK(uninit_ac.epoch == 0U && uninit_ac.home_categories.empty());
   LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
   uninit_ac.home_categories = latter_ui::kDefaultHomeCategories;
   LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);  // epoch == 0 still returns 0
   uninit_ac.epoch = 1U;
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 6);
+  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 5);
   LATTER_CHECK(hh_tabs[0] == 0 && hh_tabs[1] == 1 && hh_tabs[2] == 2 &&
-               hh_tabs[3] == 3 && hh_tabs[4] == 4 && hh_tabs[5] == 5);
+               hh_tabs[3] == 3 && hh_tabs[4] == 4);
   uninit_ac.epoch = 10U;
-  uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum,cameras";
+  uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum,intercom";
   LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 3);
   LATTER_CHECK(hh_tabs[0] == latter_ui::HomeHubTab::VACUUM &&
                hh_tabs[1] == latter_ui::HomeHubTab::THERMOSTAT &&
-               hh_tabs[2] == latter_ui::HomeHubTab::CAMERAS);
+               hh_tabs[2] == latter_ui::HomeHubTab::INTERCOM);
   uninit_ac.home_categories.clear();
   LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
 
@@ -1080,7 +1085,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111903L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111904L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -2930,17 +2935,17 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_alarms_root);
   rs_ctx.alarms.edit_idx = 0;
 
-  rs_ctx.nav.gui_page = 9;  // PageId::HOME_HUB -> CAMERAS
-  home_hub_tab() = HomeHubTab::CAMERAS;
-  rs_ctx.intercom.cam_expanded_fullscreen = false;
-  rs_ctx.intercom.cam_quick_reply_open = false;
+  rs_ctx.nav.gui_page = PageId::CAMERAS;
+  rs_ctx.cameras.tab = CamerasTab::SINGLE;
+  rs_ctx.cameras.hud_active = true;
+  rs_ctx.cameras.quick_reply_open = false;
   const int ctx_cam_root = compute_touch_context(rs_ctx);
-  rs_ctx.intercom.cam_quick_reply_open = true;
+  rs_ctx.cameras.quick_reply_open = true;
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cam_root);
-  rs_ctx.intercom.cam_quick_reply_open = false;
-  rs_ctx.intercom.cam_expanded_fullscreen = true;
+  rs_ctx.cameras.quick_reply_open = false;
+  rs_ctx.cameras.hud_active = false;
   LATTER_CHECK(compute_touch_context(rs_ctx) != ctx_cam_root);
-  rs_ctx.intercom.cam_expanded_fullscreen = false;
+  rs_ctx.cameras.hud_active = true;
 
   rs_ctx.nav.gui_page = PageId::CALENDAR;
   rs_ctx.cal.subpage = CalendarSubpage::OVERVIEW;
@@ -3199,25 +3204,24 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 
   reset_runtime_state();
 
-  // 1. 6-category Home Hub CSV order, deduplication, conveyor windowing & ALARM_CAPS parsing
-  LATTER_CHECK(kMaxHomeHubTabs == 6);
+  // 1. 5-category Home Hub CSV order, deduplication, conveyor windowing & ALARM_CAPS parsing
+  LATTER_CHECK(kMaxHomeHubTabs == 5);
   LATTER_CHECK(std::string_view(kDefaultHomeCategories) ==
-               "alarm,cameras,intercom,thermostat,entry,vacuum");
+               "alarm,intercom,thermostat,entry,vacuum");
 
   int tabs[kMaxHomeHubTabs]{};
-  LATTER_CHECK(parse_home_categories_csv(kDefaultHomeCategories, tabs, kMaxHomeHubTabs) == 6);
+  LATTER_CHECK(parse_home_categories_csv(kDefaultHomeCategories, tabs, kMaxHomeHubTabs) == 5);
   LATTER_CHECK(tabs[0] == HomeHubTab::ALARM &&
-               tabs[1] == HomeHubTab::CAMERAS &&
-               tabs[2] == HomeHubTab::INTERCOM &&
-               tabs[3] == HomeHubTab::THERMOSTAT &&
-               tabs[4] == HomeHubTab::ENTRY &&
-               tabs[5] == HomeHubTab::VACUUM);
+               tabs[1] == HomeHubTab::INTERCOM &&
+               tabs[2] == HomeHubTab::THERMOSTAT &&
+               tabs[3] == HomeHubTab::ENTRY &&
+               tabs[4] == HomeHubTab::VACUUM);
 
   LATTER_CHECK(parse_home_categories_csv(
-                   "intercom,alarm,cameras,intercom,bogus,vacuum", tabs, kMaxHomeHubTabs) == 4);
+                   "intercom,alarm,entry,intercom,bogus,vacuum", tabs, kMaxHomeHubTabs) == 4);
   LATTER_CHECK(tabs[0] == HomeHubTab::INTERCOM &&
                tabs[1] == HomeHubTab::ALARM &&
-               tabs[2] == HomeHubTab::CAMERAS &&
+               tabs[2] == HomeHubTab::ENTRY &&
                tabs[3] == HomeHubTab::VACUUM);
 
   // 4-slot conveyor windowing across 6 tabs
@@ -3359,15 +3363,15 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   rs_cam.nav.gui_page = PageId::HOME_HUB;
   home_hub_tab() = HomeHubTab::ALARM;
   LATTER_CHECK(!is_camera_view_active(rs_cam));
-  home_hub_tab() = HomeHubTab::CAMERAS;
+  rs_cam.nav.gui_page = PageId::CAMERAS;
   LATTER_CHECK(is_camera_view_active(rs_cam));
-  const int sub_cam_framed = compute_subpage_id(
-      PageId::HOME_HUB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-      HomeHubTab::CAMERAS, 0, 0, 0, 1, 0, 0);
-  const int sub_cam_expanded = compute_subpage_id(
-      PageId::HOME_HUB, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-      HomeHubTab::CAMERAS, 0, 0, 0, 1, 0, 1);
-  LATTER_CHECK(sub_cam_expanded != sub_cam_framed);
+  const int sub_cam_grid = compute_subpage_id(
+      PageId::CAMERAS, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 1, 0, 0, 0, 0, CamerasTab::GRID);
+  const int sub_cam_single = compute_subpage_id(
+      PageId::CAMERAS, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 1, 0, 0, 0, 0, CamerasTab::SINGLE);
+  LATTER_CHECK(sub_cam_grid != sub_cam_single);
   rs_cam.nav.gui_page = PageId::PINNED;
   LATTER_CHECK(!is_camera_view_active(rs_cam));
 
@@ -3398,14 +3402,16 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111903L, "LATTER_SDK_REV must match 2026111903L");
+  static_assert(LATTER_SDK_REV == 2026111904L, "LATTER_SDK_REV must match 2026111904L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
   static_assert(static_cast<size_t>(AreaCtxField::VACUUMS_SUMMARY) == 18U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_CLIMATES_SUMMARY) == 19U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
-  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 39U);
+  static_assert(static_cast<size_t>(AreaCtxField::CAMERA_STREAM_URL) == 39U);
+  static_assert(static_cast<size_t>(AreaCtxField::ALERT_CAMERA_ENTITY) == 40U);
+  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 41U);
 
   reset_runtime_state();
 
@@ -3843,19 +3849,19 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(hh_src.find("Tap mode below") == std::string::npos);
   LATTER_CHECK(hh_src.find("Select vacuum command") == std::string::npos);
   LATTER_CHECK(hh_src.find("render_empty_state(") == std::string::npos);
-  // render_card_box may appear ONLY inside draw_frosted_pill, render_camera_selector_pill,
-  // render_cameras_tab (tappable snapshot frame + Expand badge), render_intercom_tab (tappable rows),
-  // and render_entry_card — NEVER inside render_alarm_tab, render_thermostat_tab, or render_vacuum_tab!
+  // render_card_box may appear ONLY inside draw_frosted_pill, render_hub_selector_pill,
+  // render_intercom_tab (tappable rows), and render_entry_card — NEVER inside render_alarm_tab,
+  // render_thermostat_tab, or render_vacuum_tab!
   const size_t alarm_fn = hh_src.find("void render_alarm_tab(");
-  const size_t cam_fn = hh_src.find("void render_camera_action_pills(");
+  const size_t sel_fn = hh_src.find("void render_hub_selector_pill(");
   const size_t therm_fn = hh_src.find("void render_thermostat_tab(");
   const size_t entry_fn = hh_src.find("void render_entry_card(");
   const size_t vac_fn = hh_src.find("void render_vacuum_tab(");
   const size_t page_fn = hh_src.find("void render_home_hub_page(");
-  LATTER_CHECK(alarm_fn != std::string::npos && cam_fn > alarm_fn);
+  LATTER_CHECK(alarm_fn != std::string::npos && sel_fn != std::string::npos && sel_fn > alarm_fn);
   LATTER_CHECK(therm_fn != std::string::npos && entry_fn > therm_fn);
   LATTER_CHECK(vac_fn != std::string::npos && page_fn > vac_fn);
-  LATTER_CHECK(hh_src.substr(alarm_fn, cam_fn - alarm_fn).find("render_card_box(") == std::string::npos);
+  LATTER_CHECK(hh_src.substr(alarm_fn, sel_fn - alarm_fn).find("render_card_box(") == std::string::npos);
   LATTER_CHECK(hh_src.substr(therm_fn, entry_fn - therm_fn).find("render_card_box(") == std::string::npos);
   LATTER_CHECK(hh_src.substr(vac_fn, page_fn - vac_fn).find("render_card_box(") == std::string::npos);
   LATTER_CHECK(te_src.find("\"arm_vacation\"") != std::string::npos);
@@ -4283,8 +4289,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v14 schema invariants
-  static_assert(kPersistedPrefsVersion == 14U, "PersistedDevicePrefs must be bumped to v14");
+  // 1. Protocol v3 & PersistedDevicePrefs v15 schema invariants
+  static_assert(kPersistedPrefsVersion == 15U, "PersistedDevicePrefs must be bumped to v15");
   static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 54U);
   static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 55U);
@@ -4296,7 +4302,12 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_START_HOUR) == 61U);
   static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_END_HOUR) == 62U);
   static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_BRIGHTNESS) == 63U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 64U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DEFAULT_VIEW) == 64U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_CAROUSEL_INTERVAL) == 65U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_FRAMING) == 66U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_STREAM_MODE) == 67U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DOORBELL_POPUP) == 68U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 69U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 48U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 49U);
@@ -4308,7 +4319,12 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_START_HOUR) == 55U);
   static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_END_HOUR) == 56U);
   static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_BRIGHTNESS) == 57U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 58U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DEFAULT_VIEW) == 58U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_CAROUSEL_INTERVAL) == 59U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_FRAMING) == 60U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_STREAM_MODE) == 61U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DOORBELL_POPUP) == 62U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 63U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -5504,6 +5520,15 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(gfx_src.find("static uint16_t sx_lut[") == std::string::npos);
   LATTER_CHECK(gfx_src.find("static uint16_t scaled_row[") == std::string::npos);
   LATTER_CHECK(gfx_src.find("sky_base_cache_drop()") != std::string::npos);
+  LATTER_CHECK(gfx_src.find("blit_dimmed_rgb565_scanline(") != std::string::npos);
+  LATTER_CHECK(gfx_src.find("full_rect_overwrite") != std::string::npos);
+  LATTER_CHECK(gfx_src.find("sample_glass_mean(") != std::string::npos);
+  const std::string wid_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+  const std::string pm_yaml = read_repo_file("../../modules/power_manager.yaml");
+  const std::string base_yaml = read_repo_file("../../modules/base.yaml");
+  LATTER_CHECK(wid_src.find("sample_surface ? sample_glass_mean(") != std::string::npos);
+  LATTER_CHECK(pm_yaml.find("defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)") != std::string::npos);
+  LATTER_CHECK(base_yaml.find("update_interval: 300s") == std::string::npos);
   LATTER_CHECK(wth_src.find("art_canvas_drop_all()") != std::string::npos);
   LATTER_CHECK(dp_yaml.find("timeout: 15s") == std::string::npos);
   LATTER_CHECK(dp_yaml.find("timeout: 4s") != std::string::npos);
@@ -5695,6 +5720,259 @@ void test_full_spectrum_brightness_d065() {
   LATTER_CHECK(persisted_prefs().bedtime_brightness_pct() == 9U);
 }
 
+void test_cameras_app_and_live_video_d066() {
+  using namespace latter_ui;
+  reset_runtime_state();
+
+  // 1. MjpegFrameParser: multipart Content-Length (1-byte chunking), SOI..EOI fallback, & oversized skip
+  {
+    MjpegFrameParser parser(64U);
+    parser.set_boundary("multipart/x-mixed-replace; boundary=latterframe");
+    LATTER_CHECK(parser.boundary() == "latterframe");
+
+    std::vector<uint8_t> jpeg1 = {0xFF, 0xD8, 0x11, 0x22, 0x33, 0xFF, 0xD9};
+    std::string stream = "--latterframe\r\nContent-Type: image/jpeg\r\nContent-Length: 7\r\n\r\n";
+    stream.append(reinterpret_cast<const char *>(jpeg1.data()), jpeg1.size());
+    stream.append("\r\n--latterframe\r\nContent-Type: image/jpeg\r\n\r\n");
+    stream.append(reinterpret_cast<const char *>(jpeg1.data()), jpeg1.size());
+    stream.append("\r\n--latterframe\r\nContent-Length: 200\r\n\r\n");
+    stream.append(200, 'X');
+    stream.append("\r\n--latterframe--\r\n");
+
+    std::vector<size_t> sizes;
+    for (char ch : stream) {
+      const uint8_t b = static_cast<uint8_t>(ch);
+      parser.feed(&b, 1U, [&](const uint8_t *d, size_t len) {
+        LATTER_CHECK(len == 7U && d[0] == 0xFFU && d[1] == 0xD8U && d[len - 2] == 0xFFU && d[len - 1] == 0xD9U);
+        sizes.push_back(len);
+      });
+    }
+    LATTER_CHECK(sizes.size() == 2U);
+    LATTER_CHECK(parser.frames_parsed() == 2U);
+    LATTER_CHECK(parser.frames_oversized() == 1U);
+  }
+
+  // 2. LatterVideoClient state transitions & host frame injection
+  {
+    auto &vc = video_client();
+    vc.reset_for_test();
+    LATTER_CHECK(vc.state() == VideoStreamState::IDLE && !vc.is_active() && !vc.has_frame());
+    vc.start("http://ha.local/api/latter/camera_stream/desk?sig=abc&entity_id=camera.front&w=384&h=224&fps=12&fit=contain", 384U, 224U);
+    LATTER_CHECK(vc.is_active());
+    const uint16_t px[4] = {0xF800U, 0x07E0U, 0x001FU, 0xFFFFU};
+    vc.inject_host_frame_for_test(px, 2, 2);
+    LATTER_CHECK(vc.has_frame() && vc.state() == VideoStreamState::STREAMING);
+    LATTER_CHECK(vc.consume_frame_dirty());
+    LATTER_CHECK(!vc.consume_frame_dirty());
+    const uint16_t *out_d = nullptr;
+    int out_w = 0, out_h = 0;
+    LATTER_CHECK(vc.acquire_frame(out_d, out_w, out_h));
+    LATTER_CHECK(out_d == px && out_w == 2 && out_h == 2);
+    vc.release_frame();
+    vc.stop();
+    LATTER_CHECK(vc.state() == VideoStreamState::IDLE && !vc.is_active() && !vc.has_frame());
+  }
+
+  // 3. Slimmed CAMERAS_SUMMARY parsing (entity_id|name|area_id|caps) & Carousel index filtering
+  {
+    std::string raw;
+    raw += "camera.front_door|Front Door|porch|15";  // audio+talkback+doorbell+carousel
+    raw.push_back(kProtocolRecordSep);
+    raw += "camera.backyard|Backyard|yard|9";        // audio+carousel
+    raw.push_back(kProtocolRecordSep);
+    raw += "camera.garage|Garage|garage|0";          // no audio/carousel
+    CameraRecord cams[MAX_CAMERA_SLOTS]{};
+    const int n = parse_cameras_records(raw, cams, MAX_CAMERA_SLOTS);
+    LATTER_CHECK(n == 3);
+    LATTER_CHECK(cams[0].entity_id == "camera.front_door" && cams[0].has_audio() &&
+                 cams[0].has_talkback() && cams[0].is_doorbell() && cams[0].in_carousel());
+    LATTER_CHECK(cams[1].has_audio() && !cams[1].has_talkback() && cams[1].in_carousel());
+    LATTER_CHECK(!cams[2].has_audio() && !cams[2].in_carousel());
+
+    int car_idx[MAX_CAMERA_SLOTS]{};
+    const int car_n = collect_carousel_camera_indices(cams, n, car_idx, MAX_CAMERA_SLOTS);
+    LATTER_CHECK(car_n == 2 && car_idx[0] == 0 && car_idx[1] == 1);
+
+    // Fallback to all cameras when none are flagged in_carousel
+    cams[0].caps = 0;
+    cams[1].caps = 0;
+    const int car_fb = collect_carousel_camera_indices(cams, n, car_idx, MAX_CAMERA_SLOTS);
+    LATTER_CHECK(car_fb == 3 && car_idx[0] == 0 && car_idx[1] == 1 && car_idx[2] == 2);
+  }
+
+  // 4. Stream URL builders & trait-based viewport/FPS resolution (16px-aligned, S3 audio fps=2, P4 12 FPS)
+  {
+    uint16_t rw = 0, rh = 0;
+    resolve_camera_stream_dims(466, 466, /*is_round=*/true, /*is_grid=*/false, false, false, rw, rh);
+    LATTER_CHECK((rw % 16U) == 0U && (rh % 16U) == 0U && rw == 384U && rh == 224U);
+    resolve_camera_stream_dims(720, 720, /*is_round=*/false, /*is_grid=*/true, true, false, rw, rh);
+    LATTER_CHECK((rw % 16U) == 0U && (rh % 16U) == 0U && rw <= 720U);
+    // Portrait panel (320x480) with rot90=true requests portrait 9:16 dims (256x480), not landscape 320x176
+    resolve_camera_stream_dims(320, 480, /*is_round=*/false, /*is_grid=*/false, false, false, rw, rh, /*rot90=*/false);
+    LATTER_CHECK(rw == 320U && rh == 176U);
+    resolve_camera_stream_dims(320, 480, /*is_round=*/false, /*is_grid=*/false, false, false, rw, rh, /*rot90=*/true);
+    LATTER_CHECK((rw % 16U) == 0U && (rh % 16U) == 0U && rh == 480U && rw == 256U && (static_cast<size_t>(rw) * rh * 2U) <= 262144U);
+
+    // FrameCadenceController keeps ui_anim_tick warm while video_stream_active and wakes on 250ms
+    {
+      FrameCadenceController fc;
+      Cadence20msInputs c20{};
+      c20.panel_on = true;
+      c20.display_power_state = 0;
+      c20.gui_page = PageId::CAMERAS;
+      c20.video_stream_active = true;
+      for (int tick = 0; tick < 6; ++tick) {
+        c20.now_ms = static_cast<uint32_t>(1000 + tick * 20);
+        const auto a20 = fc.evaluate_20ms(c20);
+        LATTER_CHECK(a20.anim_driving_disp && !a20.stop_anim_poller);
+      }
+      // Once video stops, idle_anim_ticks reaches 2 and stops anim poller cleanly
+      c20.video_stream_active = false;
+      c20.now_ms = 1200U;
+      LATTER_CHECK(!fc.evaluate_20ms(c20).stop_anim_poller);
+      c20.now_ms = 1220U;
+      LATTER_CHECK(fc.evaluate_20ms(c20).stop_anim_poller);
+
+      Cadence250msInputs c250{};
+      c250.now_ms = 2000U;
+      c250.display_power_state = 0;
+      c250.gui_page = PageId::CAMERAS;
+      c250.anim_poller_running = false;
+      c250.video_stream_active = true;
+      LATTER_CHECK(fc.evaluate_250ms(c250).ensure_anim_poller);
+    }
+
+    LATTER_CHECK(resolve_camera_stream_fps(/*is_p4=*/false, false, false, /*audio_ptt=*/true) == 2U);
+    LATTER_CHECK(resolve_camera_stream_fps(/*is_p4=*/false, false, false, /*audio_ptt=*/false) == 5U);
+    LATTER_CHECK(resolve_camera_stream_fps(/*is_p4=*/true, false, false, /*audio_ptt=*/true) == 12U);
+    LATTER_CHECK(resolve_camera_stream_fps(/*is_p4=*/true, true, false, false) == 6U);
+
+    const std::string base = "http://ha.local:8123/api/latter/camera_stream/desk?sig=deadbeef";
+    const std::string single_u = build_camera_single_stream_url(base, "camera.front", 384, 224, 12, false, false);
+    LATTER_CHECK(single_u.find("/camera_stream/desk?sig=deadbeef") != std::string::npos);
+    LATTER_CHECK(single_u.find("entity_id=camera.front") != std::string::npos);
+    LATTER_CHECK(single_u.find("fit=contain") != std::string::npos);
+
+    const std::string ents[4] = {"camera.a", "camera.b", "camera.c", "camera.d"};
+    const std::string grid_u = build_camera_grid_stream_url(base, ents, 4, 640, 480, 6);
+    LATTER_CHECK(grid_u.find("/camera_grid/desk?sig=deadbeef") != std::string::npos);
+    LATTER_CHECK(grid_u.find("cameras=camera.a,camera.b,camera.c,camera.d") != std::string::npos);
+    LATTER_CHECK(grid_u.find("w=640&h=480&fps=6") != std::string::npos);
+  }
+
+  // 5. Uncropped geometry (round 466x466 zero corner clipping!) & 2x2 Grid quadrant hit regions across 5 panels
+  {
+    const CameraRect round_vp = compute_uncropped_video_viewport(466, 466, /*round=*/true, /*fill=*/false);
+    const int rdx = (round_vp.x0 + round_vp.w / 2) - 233;
+    const int corner_dx = round_vp.w / 2;
+    const int corner_dy = round_vp.h / 2;
+    LATTER_CHECK(rdx == 0);
+    LATTER_CHECK(corner_dx * corner_dx + corner_dy * corner_dy <= 228 * 228);  // 100% inside round 466 bezel!
+
+    const CameraRect fit_16_9 = compute_video_display_rect(CameraRect{0, 0, 720, 720}, 1920, 1080, false);
+    LATTER_CHECK(fit_16_9.w == 720 && fit_16_9.h == 405 && fit_16_9.y0 == 157);
+
+    struct PanelSpec { int w, h; bool round, wear; int ppi; };
+    const PanelSpec panels[5] = {
+        {466, 466, true, false, 266},
+        {480, 480, false, false, 313},
+        {410, 502, false, true, 315},
+        {320, 480, false, false, 165},
+        {720, 720, false, false, 254},
+    };
+    for (const auto &pn : panels) {
+      const CameraGridGeom gg = compute_camera_grid_geom(pn.w, pn.h, pn.round, pn.wear, pn.ppi);
+      LATTER_CHECK(gg.frame.w > 120 && gg.frame.h > 80);
+      LATTER_CHECK(gg.frame.x0 >= 0 && gg.frame.x1() < pn.w);
+      LATTER_CHECK(gg.frame.y0 >= 0 && gg.frame.y1() < gg.mode_bar_cy - gg.mode_bar_r);
+      FrameHitTable ht;
+      for (int q = 0; q < 4; ++q) {
+        ht.add_rect(gg.tiles[q].x0, gg.tiles[q].y0, gg.tiles[q].w, gg.tiles[q].h,
+                    static_cast<uint16_t>(WidgetId::CAM_GRID_TILE_BASE + q), kHitTap, static_cast<int16_t>(q));
+      }
+      for (int q = 0; q < 4; ++q) {
+        const HitRegion *hr = ht.hit_test(gg.tiles[q].cx(), gg.tiles[q].cy(), kHitTap);
+        LATTER_CHECK(hr != nullptr && hr->widget_id == static_cast<uint16_t>(WidgetId::CAM_GRID_TILE_BASE + q));
+      }
+    }
+  }
+
+  // 6. Auto-hide app:cameras on Home Dock when 0 cameras configured, show when > 0
+  {
+    shortcuts_state() = ShortcutsState{};
+    area_ctx_state() = AreaContextState{};
+    ShortcutItem dock[kMaxEffectiveDockItems]{};
+    const int n0 = collect_effective_dock_items(dock, kMaxEffectiveDockItems);
+    bool found0 = false;
+    for (int i = 0; i < n0; ++i) {
+      if (dock[i].route_id == RouteId::APP_CAMERAS) found0 = true;
+    }
+    LATTER_CHECK(!found0);
+
+    area_ctx_state().cameras_summary = "camera.front|Front|porch|15";
+    const int n1 = collect_effective_dock_items(dock, kMaxEffectiveDockItems);
+    bool found1 = false;
+    for (int i = 0; i < n1; ++i) {
+      if (dock[i].route_id == RouteId::APP_CAMERAS) found1 = true;
+    }
+    LATTER_CHECK(found1);
+  }
+
+  // 7. Return-to-Home idle exemption on Stationary Grid/Carousel & Live Video During PTT VA Takeover Precedence
+  {
+    auto &rs = runtime_state();
+    PersistedDevicePrefs p{};
+    p.home_screen_enabled = true;
+    p.return_to_home_timeout = 3;  // 2 min
+    rs.nav.gui_page = PageId::CAMERAS;
+    rs.cameras.tab = CamerasTab::CAROUSEL;
+    LATTER_CHECK(!should_return_to_home_on_idle(rs, p, false, false, /*is_stationary=*/true));
+    LATTER_CHECK(should_return_to_home_on_idle(rs, p, false, false, /*is_stationary=*/false));
+    rs.cameras.tab = CamerasTab::GRID;
+    LATTER_CHECK(!should_return_to_home_on_idle(rs, p, false, false, /*is_stationary=*/true));
+    rs.cameras.tab = CamerasTab::SINGLE;
+    LATTER_CHECK(should_return_to_home_on_idle(rs, p, false, false, /*is_stationary=*/true));
+    LATTER_CHECK(!should_return_to_home_on_idle(rs, p, false, /*cam_session_active=*/true, true));
+
+    // VA Takeover must NOT hide live video during doorbell PTT (`intercom_turn == true`)!
+    LATTER_CHECK(!should_va_takeover_preempt(true, true, /*intercom_turn=*/true, PageId::CAMERAS, false));
+    LATTER_CHECK(!should_va_takeover_preempt(true, true, /*intercom_turn=*/true, PageId::HOME, /*live_popup=*/true));
+    LATTER_CHECK(should_va_takeover_preempt(true, true, /*intercom_turn=*/false, PageId::CAMERAS, false));
+    LATTER_CHECK(should_va_takeover_preempt(true, false, /*intercom_turn=*/true, PageId::HOME, false));
+  }
+
+  // 8. P4 Live Doorbell Popup predicate & 5 new Camera DevicePrefs v15 round-trip
+  {
+    PersistedDevicePrefs p{};
+    AreaContextState ac{};
+    AlertBannerState ab{};
+    ac.camera_stream_url = "http://ha.local/api/latter/camera_stream/desk?sig=123";
+    ab.camera_entity = "camera.doorbell";
+    p.camera_doorbell_popup = 1U;
+    LATTER_CHECK(is_p4_live_doorbell_popup_enabled(p, ac, ab, /*is_p4=*/true));
+    LATTER_CHECK(!is_p4_live_doorbell_popup_enabled(p, ac, ab, /*is_p4=*/false));
+    p.camera_doorbell_popup = 0U;
+    LATTER_CHECK(!is_p4_live_doorbell_popup_enabled(p, ac, ab, /*is_p4=*/true));
+
+    device_prefs_state() = DevicePrefsState{};
+    persisted_prefs() = PersistedDevicePrefs{};
+    std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "72";
+    dp_tok[static_cast<size_t>(DevicePrefsField::CAMERA_DEFAULT_VIEW)] = "Carousel";
+    dp_tok[static_cast<size_t>(DevicePrefsField::CAMERA_CAROUSEL_INTERVAL)] = "30s";
+    dp_tok[static_cast<size_t>(DevicePrefsField::CAMERA_FRAMING)] = "Fill";
+    dp_tok[static_cast<size_t>(DevicePrefsField::CAMERA_STREAM_MODE)] = "Low Bandwidth";
+    dp_tok[static_cast<size_t>(DevicePrefsField::CAMERA_DOORBELL_POPUP)] = "Live Video";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(97, 1, dp_tok), eff, 5000U));
+    LATTER_CHECK(std::string_view(pref_camera_default_view_cstr()) == "Carousel");
+    LATTER_CHECK(std::string_view(pref_camera_carousel_interval_cstr()) == "30s");
+    LATTER_CHECK(persisted_prefs().camera_carousel_interval_ms() == 30000U);
+    LATTER_CHECK(std::string_view(pref_camera_framing_cstr()) == "Fill");
+    LATTER_CHECK(std::string_view(pref_camera_stream_mode_cstr()) == "Low Bandwidth");
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -5726,6 +6004,7 @@ int main() {
   test_sram_psram_budget_and_http_stall_guards();
   test_bedtime_mode_d063();
   test_full_spectrum_brightness_d065();
+  test_cameras_app_and_live_video_d066();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

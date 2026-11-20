@@ -11,11 +11,11 @@ static constexpr size_t kProtocolMinRequiredFields = 3;
 static constexpr char kProtocolFieldSep = '\x1f';
 static constexpr char kProtocolRecordSep = '\x1e';
 
-static constexpr const char *kDefaultDockRoutes = "app:pinned,app:music,app:home_hub,app:area,app:remote,app:games,app:tools";  // defaults.dock_routes
+static constexpr const char *kDefaultDockRoutes = "app:pinned,app:music,app:home_hub,app:cameras,app:area,app:remote,app:games,app:tools";  // defaults.dock_routes
 static constexpr const char *kDefaultActivityCard = "1";  // defaults.activity_card
 static constexpr const char *kDefaultActivitySources = "calendar,music_queue,stopwatch,alarms,timers";  // defaults.activity_sources
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
-static constexpr const char *kDefaultHomeCategories = "alarm,cameras,intercom,thermostat,entry,vacuum";  // defaults.home_categories
+static constexpr const char *kDefaultHomeCategories = "alarm,intercom,thermostat,entry,vacuum";  // defaults.home_categories
 static constexpr const char *kDefaultToolsItems = "stopwatch,level,flashlight,calculator,dice,coin_flip";  // defaults.tools_items
 static constexpr const char *kDefaultGamesItems = "marbles,archery,bricks,chomp,2048,memory";  // defaults.games_items
 
@@ -30,71 +30,75 @@ enum class RouteId : uint8_t {
   APP_PINNED = 1,
   APP_MUSIC = 2,
   APP_HOME_HUB = 3,
-  APP_AREA = 4,
-  APP_REMOTE = 5,
-  APP_WEATHER = 6,
-  APP_TIME = 7,
-  APP_CALENDAR = 8,
-  APP_TOOLS = 9,
-  APP_GAMES = 10,
-  APP_CLOCK = 11,
-  HOME_HUB_ALARM = 12,
-  HOME_HUB_CAMERAS = 13,
+  APP_CAMERAS = 4,
+  APP_AREA = 5,
+  APP_REMOTE = 6,
+  APP_WEATHER = 7,
+  APP_TIME = 8,
+  APP_CALENDAR = 9,
+  APP_TOOLS = 10,
+  APP_GAMES = 11,
+  APP_CLOCK = 12,
+  HOME_HUB_ALARM = 13,
   HOME_HUB_INTERCOM = 14,
   HOME_HUB_THERMOSTAT = 15,
   HOME_HUB_ENTRY = 16,
   HOME_HUB_VACUUM = 17,
-  AREA_PICKER = 18,
-  AREA_SCENE = 19,
-  AREA_LIGHT = 20,
-  AREA_COVER = 21,
-  AREA_FAN = 22,
-  AREA_SWITCH = 23,
-  AREA_CLIMATE = 24,
-  AREA_MEDIA = 25,
-  AREA_ALL = 26,
-  WEATHER_CURRENT = 27,
-  WEATHER_FORECAST = 28,
-  WEATHER_SUN = 29,
-  WEATHER_MOON = 30,
-  TIME_CLOCK = 31,
-  TIME_TIMERS = 32,
-  TIME_ALARMS = 33,
-  TIME_STOPWATCH = 34,
-  CALENDAR_OVERVIEW = 35,
-  CALENDAR_DAY = 36,
-  CALENDAR_WEEK = 37,
-  CALENDAR_MONTH = 38,
-  MUSIC_SPEAKERS = 39,
-  MUSIC_LIBRARY = 40,
-  MUSIC_FAVORITES = 41,
-  MUSIC_PLAYLISTS = 42,
-  MUSIC_QUEUE = 43,
-  MUSIC_ALBUM_TRACKS = 44,
-  MUSIC_LYRICS = 45,
-  MUSIC_INFO = 46,
-  REMOTE_DEVICES = 47,
-  TOOLS_STOPWATCH = 48,
-  TOOLS_LEVEL = 49,
-  TOOLS_FLASHLIGHT = 50,
-  TOOLS_CALCULATOR = 51,
-  TOOLS_DICE = 52,
-  TOOLS_COIN_FLIP = 53,
-  GAMES_MARBLES = 54,
-  GAMES_ARCHERY = 55,
-  GAMES_BRICKS = 56,
-  GAMES_CHOMP = 57,
-  GAMES_2048 = 58,
-  GAMES_MEMORY = 59,
-  SETTINGS_DISPLAY = 60,
-  SETTINGS_SLEEP = 61,
-  SETTINGS_SOUND = 62,
-  SETTINGS_VOICE = 63,
-  SETTINGS_MUSIC = 64,
-  SETTINGS_HOME = 65,
-  SETTINGS_ACTIONS = 66,
-  SETTINGS_UPDATE = 67,
-  SETTINGS_INFO = 68,
+  CAMERAS_GRID = 18,
+  CAMERAS_SINGLE = 19,
+  CAMERAS_CAROUSEL = 20,
+  CAMERAS_SETTINGS = 21,
+  AREA_PICKER = 22,
+  AREA_SCENE = 23,
+  AREA_LIGHT = 24,
+  AREA_COVER = 25,
+  AREA_FAN = 26,
+  AREA_SWITCH = 27,
+  AREA_CLIMATE = 28,
+  AREA_MEDIA = 29,
+  AREA_ALL = 30,
+  WEATHER_CURRENT = 31,
+  WEATHER_FORECAST = 32,
+  WEATHER_SUN = 33,
+  WEATHER_MOON = 34,
+  TIME_CLOCK = 35,
+  TIME_TIMERS = 36,
+  TIME_ALARMS = 37,
+  TIME_STOPWATCH = 38,
+  CALENDAR_OVERVIEW = 39,
+  CALENDAR_DAY = 40,
+  CALENDAR_WEEK = 41,
+  CALENDAR_MONTH = 42,
+  MUSIC_SPEAKERS = 43,
+  MUSIC_LIBRARY = 44,
+  MUSIC_FAVORITES = 45,
+  MUSIC_PLAYLISTS = 46,
+  MUSIC_QUEUE = 47,
+  MUSIC_ALBUM_TRACKS = 48,
+  MUSIC_LYRICS = 49,
+  MUSIC_INFO = 50,
+  REMOTE_DEVICES = 51,
+  TOOLS_STOPWATCH = 52,
+  TOOLS_LEVEL = 53,
+  TOOLS_FLASHLIGHT = 54,
+  TOOLS_CALCULATOR = 55,
+  TOOLS_DICE = 56,
+  TOOLS_COIN_FLIP = 57,
+  GAMES_MARBLES = 58,
+  GAMES_ARCHERY = 59,
+  GAMES_BRICKS = 60,
+  GAMES_CHOMP = 61,
+  GAMES_2048 = 62,
+  GAMES_MEMORY = 63,
+  SETTINGS_DISPLAY = 64,
+  SETTINGS_SLEEP = 65,
+  SETTINGS_SOUND = 66,
+  SETTINGS_VOICE = 67,
+  SETTINGS_MUSIC = 68,
+  SETTINGS_HOME = 69,
+  SETTINGS_ACTIONS = 70,
+  SETTINGS_UPDATE = 71,
+  SETTINGS_INFO = 72,
   SETTINGS_ROOT = 250,
 };
 
@@ -110,6 +114,7 @@ inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {
     {RouteId::APP_PINNED, "app:pinned", "Pinned", true, ShortcutRouteCap::NONE},
     {RouteId::APP_MUSIC, "app:music", "Music", false, ShortcutRouteCap::NONE},
     {RouteId::APP_HOME_HUB, "app:home_hub", "Home Hub", false, ShortcutRouteCap::NONE},
+    {RouteId::APP_CAMERAS, "app:cameras", "Cameras", false, ShortcutRouteCap::NONE},
     {RouteId::APP_AREA, "app:area", "Area Control", false, ShortcutRouteCap::NONE},
     {RouteId::APP_REMOTE, "app:remote", "Remote", false, ShortcutRouteCap::NONE},
     {RouteId::APP_WEATHER, "app:weather", "Sky & Weather", false, ShortcutRouteCap::NONE},
@@ -119,11 +124,14 @@ inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {
     {RouteId::APP_GAMES, "app:games", "Games", false, ShortcutRouteCap::NONE},
     {RouteId::APP_CLOCK, "app:clock", "Clock Face", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_ALARM, "home_hub:alarm", "Security Alarm", false, ShortcutRouteCap::NONE},
-    {RouteId::HOME_HUB_CAMERAS, "home_hub:cameras", "Cameras", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_INTERCOM, "home_hub:intercom", "Intercom", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_THERMOSTAT, "home_hub:thermostat", "Thermostat", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_ENTRY, "home_hub:entry", "Entry & Garage", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_VACUUM, "home_hub:vacuum", "Robot Vacuum", false, ShortcutRouteCap::NONE},
+    {RouteId::CAMERAS_GRID, "cameras:grid", "Cameras: Grid", false, ShortcutRouteCap::NONE},
+    {RouteId::CAMERAS_SINGLE, "cameras:single", "Cameras: Live", false, ShortcutRouteCap::NONE},
+    {RouteId::CAMERAS_CAROUSEL, "cameras:carousel", "Cameras: Carousel", false, ShortcutRouteCap::NONE},
+    {RouteId::CAMERAS_SETTINGS, "cameras:settings", "Cameras: Settings", false, ShortcutRouteCap::NONE},
     {RouteId::AREA_PICKER, "area:picker", "Switch Area", false, ShortcutRouteCap::NONE},
     {RouteId::AREA_SCENE, "area:scene", "Area: Scenes", false, ShortcutRouteCap::NONE},
     {RouteId::AREA_LIGHT, "area:light", "Area: Lights", false, ShortcutRouteCap::NONE},
@@ -225,7 +233,9 @@ enum class AreaCtxField : size_t {
   LOCAL_TZ_INFO = 36,  // local_tz_info (string)
   WORLD_CLOCKS_SUMMARY = 37,  // world_clocks_summary (string)
   ALARM_CAPS = 38,  // alarm_caps (u16)
-  COUNT = 39
+  CAMERA_STREAM_URL = 39,  // camera_stream_url (url)
+  ALERT_CAMERA_ENTITY = 40,  // alert_camera_entity (entity_id)
+  COUNT = 41
 };
 
 // Domain: active_media (sensor.<device>_active_media)
@@ -368,7 +378,12 @@ enum class DevicePrefsField : size_t {
   BEDTIME_START_HOUR = 61,  // bedtime_start_hour (u16)
   BEDTIME_END_HOUR = 62,  // bedtime_end_hour (u16)
   BEDTIME_BRIGHTNESS = 63,  // bedtime_brightness (u16)
-  COUNT = 64
+  CAMERA_DEFAULT_VIEW = 64,  // camera_default_view (string)
+  CAMERA_CAROUSEL_INTERVAL = 65,  // camera_carousel_interval (string)
+  CAMERA_FRAMING = 66,  // camera_framing (string)
+  CAMERA_STREAM_MODE = 67,  // camera_stream_mode (string)
+  CAMERA_DOORBELL_POPUP = 68,  // camera_doorbell_popup (string)
+  COUNT = 69
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

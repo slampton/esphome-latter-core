@@ -9,6 +9,11 @@
 #endif
 
 #if __has_include("esphome/core/defines.h")
+#if __has_include("hal_video_stream.h")
+#include "hal_video_stream.h"
+#else
+#include "../../include/hal_video_stream.h"
+#endif
 #if __has_include("ui_pages.h")
 #include "ui_pages.h"
 #else
@@ -359,6 +364,12 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
     }
   }
 
+  // 6. Live MJPEG video streaming: keep 20 ms anim poller alive so consume_frame_dirty()
+  //    drives banded video flushes without stopping ui_anim_tick after 40 ms.
+  if (in.panel_on && in.display_power_state == 0 && in.video_stream_active) {
+    out.anim_driving_disp = true;
+  }
+
   if (in.display_power_state == 0 || in.va_visible) {
     out.sync_disp_poller = true;
     out.sync_disp_poller_val = out.anim_driving_disp;
@@ -426,7 +437,7 @@ Cadence250msActions FrameCadenceController::evaluate_250ms(const Cadence250msInp
 
     if (!in.anim_poller_running) {
       const bool need_anim_wake =
-          in.va_busy || in.alert_or_critical_busy ||
+          in.va_busy || in.alert_or_critical_busy || in.video_stream_active ||
           (in.gui_page == 3 && in.active_game > 0) ||
           in.tool_anim_due || in.time_anim_due || in.clock_sweep_due ||
           in.greet_fade_due || home_rotate_imminent || in.sky_motion_due ||
@@ -648,6 +659,7 @@ Cadence20msActions FrameCadenceController::step_20ms(
   in.greet_fading = is_wake_greeting_fading(now_ms, prefs.wake_greeting);
   in.act_sliding = home_activity_slide_active(now_ms);
   in.act_fade_settle = has_pending_home_activity_fade_settle(now_ms);
+  in.video_stream_active = video_client().is_active();
 
   const bool home_Or_weather_page =
       on_home_main || (rs.nav.gui_page == PageId::WEATHER && in.sky_enabled);
@@ -786,6 +798,7 @@ Cadence250msActions FrameCadenceController::step_250ms(
       (rs.alert.active && rs.alert.is_critical());
   in.pending_wallpaper_fetch =
       !ac.wallpaper_url.empty() && ac.wallpaper_url != rs.music.loaded_wallpaper_url;
+  in.video_stream_active = video_client().is_active();
   in.latest_fw_version = latest_fw_version;
 
   auto out = evaluate_250ms(in);
@@ -936,15 +949,27 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.entry_page + 1)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.vacuum_idx + 1)) * 16777619U;
     hh_sig = (hh_sig ^ hh.local_mutation_seq) * 16777619U;
-    hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.intercom.cam_carousel_idx)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.cameras.selected_idx + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.cameras.carousel_idx + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.cameras.grid_page + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(video_client().state())) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.width)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.height)) * 16777619U;
     const uint32_t flags =
         (rs.intercom.cam_call_active ? 1U : 0U) |
         (rs.intercom.cam_listen_active ? 2U : 0U) |
         (rs.intercom.cam_intercom_ptt_active ? 4U : 0U) |
-        (rs.intercom.cam_landscape_mode ? 8U : 0U) |
-        (!rs.intercom.cam_intercom_status.empty() ? 16U : 0U);
+        (rs.cameras.landscape_mode ? 8U : 0U) |
+        (!rs.intercom.cam_intercom_status.empty() ? 16U : 0U) |
+        (rs.cameras.hud_active ? 32U : 0U) |
+        (rs.cameras.carousel_paused ? 64U : 0U) |
+        (rs.voice.intercom_turn ? 128U : 0U) |
+        (rs.voice.vad_active ? 256U : 0U) |
+        (static_cast<uint32_t>(prefs.camera_default_view & 3U) << 9) |
+        (static_cast<uint32_t>(prefs.camera_carousel_interval & 3U) << 11) |
+        (static_cast<uint32_t>(prefs.camera_framing & 1U) << 13) |
+        (static_cast<uint32_t>(prefs.camera_stream_mode & 3U) << 14) |
+        (static_cast<uint32_t>(prefs.camera_doorbell_popup & 1U) << 16);
     hh_sig = (hh_sig ^ flags) * 16777619U;
     sig ^= (hh_sig | 1U);
   } else if (rs.nav.gui_page == PageId::AREA) {
@@ -1173,7 +1198,8 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
     return true;
   }
   if (is_camera_view_active(rs)) {
-    return true;
+    return rs.voice.intercom_turn ||
+           (rs.cameras.tab == CamerasTab::CAROUSEL && !rs.cameras.carousel_paused);
   }
   if (rs.nav.gui_page == PageId::HOME_HUB) {
     const auto &ac = area_ctx_state();
@@ -1284,8 +1310,11 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
     return true;
   }
 
-  // 5. VOICE ASSISTANT TAKEOVER
-  if (st.va_active || !st.va_status_text.empty()) {
+  // 5. VOICE ASSISTANT TAKEOVER (exempt during live doorbell PTT reply — D-066!)
+  if ((st.va_active || !st.va_status_text.empty()) &&
+      should_va_takeover_preempt(st.va_active, !st.va_status_text.empty(),
+                                 st.va_intercom_turn, runtime_state().nav.gui_page,
+                                 runtime_state().cameras.doorbell_live_popup_active)) {
     frame_base(it, st.col_bg);
     render_voice_assistant_overlay(it, ctx, st);
     return true;
@@ -1300,9 +1329,14 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
     return true;
   }
 
-  // 7. PUSH NOTIFICATION & CAMERA SNAPSHOT TAKEOVER
+  // 7. PUSH NOTIFICATION & DOORBELL CAMERA POPUP TAKEOVER
   if (st.notif_active) {
-    frame_base(it, st.col_bg);
+    const auto &rs = runtime_state();
+    if (rs.cameras.doorbell_live_popup_active) {
+      frame_base_skip();
+    } else {
+      frame_base(it, st.col_bg);
+    }
     render_notification_overlay(it, ctx, st);
     render_active_focus_overlay(it, st.now_ms, st.theme_primary, st.col_white);
     return true;

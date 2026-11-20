@@ -31,19 +31,22 @@ esphome::Color render_modern_card(esphome::display::Display &it, int cx_card, in
                                   esphome::Color bg_c, esphome::Color border_c,
                                   const char *label, esphome::Color text_c,
                                   esphome::display::BaseFont *font,
-                                  GlassVariant variant = GlassVariant::Clear);
+                                  GlassVariant variant = GlassVariant::Clear,
+                                  bool sample_surface = false);
 
 // Top-left-origin 2-tier smoked-glass card box (x0, y0, w, h), returning resolved surface color.
 esphome::Color render_card_box(esphome::display::Display &it, int x0, int y0, int w, int h,
                                esphome::Color bg_c, esphome::Color border_c, int r = 10,
                                GlassVariant variant = GlassVariant::Clear,
-                               esphome::Color ref_text = kChromeGlassSheen);
+                               esphome::Color ref_text = kChromeGlassSheen,
+                               bool sample_surface = false);
 
 esphome::Color render_glass_circle(esphome::display::Display &it, int cx_btn, int cy_btn, int r,
                                    esphome::Color bg_c, esphome::Color border_c,
                                    int inner_hole_r = 0,
                                    GlassVariant variant = GlassVariant::Clear,
-                                   esphome::Color ref_text = kChromeGlassSheen);
+                                   esphome::Color ref_text = kChromeGlassSheen,
+                                   bool sample_surface = false);
 
 inline esphome::Color render_glass_circle(esphome::display::Display &it, int cx_btn, int cy_btn, int r,
                                           esphome::Color bg_c, esphome::Color border_c,
@@ -209,6 +212,12 @@ void draw_icon_play_pause(esphome::display::Display &it, int cx, int cy, int r,
                           esphome::Color col, bool shadow = false);
 void draw_icon_hamburger(esphome::display::Display &it, int cx, int cy, int r,
                          esphome::Color col, bool shadow = false);
+void draw_icon_grid_2x2(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow = false);
+void draw_icon_carousel(esphome::display::Display &it, int cx, int cy, int r,
+                        esphome::Color col, bool shadow = false);
+void draw_icon_gear(esphome::display::Display &it, int cx, int cy, int r,
+                    esphome::Color col, bool shadow = false);
 void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int cy, int r,
                      esphome::Color col, esphome::Color cut_c, bool shadow = false);
 

@@ -109,7 +109,9 @@ esphome:
                 if (eff.alert_sfx_id > 0) {
                   id(play_game_sfx).execute(eff.alert_sfx_id);
                 }
-                if (eff.fetch_alert_camera) {
+                if (latter_ui::runtime_state().cameras.doorbell_live_popup_active) {
+                  id(sync_camera_stream).execute();
+                } else if (eff.fetch_alert_camera) {
                   id(fetch_camera_snapshot).execute();
                 } else if (eff.release_alert_camera_art) {
                   latter_ui::release_art(id(camera_snapshot_art));
@@ -213,7 +215,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111903L;
+            constexpr long LATTER_YAML_REV = 2026111904L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -254,7 +256,6 @@ esphome:
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
             rs.alert.loaded_camera_url = "";
-            id(latter_hardware_manifest).publish_state(latter_ui::build_hardware_manifest_state_json());
         - script.execute: mute_speaker_path
         - script.execute: sync_ui_touch_runtime
         - script.execute: apply_default_start_page
@@ -378,6 +379,7 @@ api:
         duration: int
         chime: bool
         camera_url: string
+        camera_entity: string
         alert_id: int
       then:
         - lambda: |-
@@ -388,7 +390,8 @@ api:
                     std::string_view(priority.c_str(), priority.size()),
                     duration,
                     std::string_view(camera_url.c_str(), camera_url.size()),
-                    alert_id, millis(), false, rs.alert)) {
+                    alert_id, millis(), false, rs.alert,
+                    std::string_view(camera_entity.c_str(), camera_entity.size()))) {
               return;
             }
             const bool bt_suppress = latter_ui::should_suppress_alert_in_bedtime(
@@ -404,11 +407,18 @@ api:
               int sfx = (rs.alert.priority == "critical" || rs.alert.priority == "warning") ? 9 : 6;
               id(play_game_sfx).execute(sfx);
             }
-            if (!rs.alert.camera_url.empty()) {
-              id(fetch_camera_snapshot).execute();
+            if (latter_ui::is_p4_live_doorbell_popup_enabled(
+                    latter_ui::persisted_prefs(), latter_ui::area_ctx_state(), rs.alert)) {
+              rs.cameras.doorbell_live_popup_active = true;
+              id(sync_camera_stream).execute();
             } else {
-              rs.alert.loaded_camera_url = "";
-              latter_ui::release_art(id(camera_snapshot_art));
+              rs.cameras.doorbell_live_popup_active = false;
+              if (!rs.alert.camera_url.empty()) {
+                id(fetch_camera_snapshot).execute();
+              } else {
+                rs.alert.loaded_camera_url = "";
+                latter_ui::release_art(id(camera_snapshot_art));
+              }
             }
             latter_ui::schedule_disp_update(&id(disp1));
 
@@ -421,6 +431,7 @@ ota:
         - light.turn_on: display_brightness
         - lambda: |-
             auto &rs = latter_ui::runtime_state();
+            latter_ui::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
             latter_ui::release_art(id(camera_snapshot_art));
@@ -456,6 +467,7 @@ ota:
         - light.turn_on: display_brightness
         - lambda: |-
             auto &rs = latter_ui::runtime_state();
+            latter_ui::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
             latter_ui::release_art(id(camera_snapshot_art));
@@ -846,6 +858,8 @@ script:
                 case C::FETCH_CALENDAR_MAP_SNAPSHOT: id(fetch_calendar_map_snapshot).execute(); break;
                 case C::FETCH_ON_DEMAND_CAMERA: id(fetch_on_demand_camera).execute(); break;
                 case C::RELEASE_CAMERA_ART: latter_ui::release_art(id(camera_snapshot_art)); break;
+                case C::SYNC_CAMERA_STREAM: id(sync_camera_stream).execute(); break;
+                case C::STOP_CAMERA_STREAM: id(stop_camera_stream).execute(); break;
                 case C::STOP_DOORBELL_AUDIO: id(stop_doorbell_audio).execute(); break;
                 case C::START_DOORBELL_PTT: id(start_doorbell_ptt).execute(); break;
                 case C::START_CALENDAR_DICTATION: id(start_calendar_dictation).execute(); break;
@@ -966,6 +980,9 @@ script:
             }
           }
           if ((eff & latter_ui::kPrefEffectRedraw) && rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
+            if (latter_ui::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active)) {
+              id(sync_camera_stream).execute();
+            }
             latter_ui::weather_sim_dirty() = true;
             latter_ui::record_ambient_frame_ms(0);
             if (rs.nav.display_power_state == 0) {
@@ -1014,7 +1031,12 @@ script:
           auto &ab = rs.alert;
           ab.active = false;
           ab.camera_url = "";
+          ab.camera_entity = "";
           ab.loaded_camera_url = "";
+          rs.cameras.doorbell_live_popup_active = false;
+          if (!latter_ui::is_camera_view_active(rs)) {
+            latter_ui::video_client().stop();
+          }
           if (rs.voice.resume_music_after && !rs.voice.active && !rs.voice.tts_received &&
               !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active) {
             id(resume_music_after_va).execute();

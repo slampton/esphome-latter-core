@@ -251,6 +251,7 @@ interval:
                 }
                 latter_ui::cam_quick_reply_open() = false;
                 latter_ui::cam_expanded_fullscreen() = false;
+                latter_ui::video_client().stop();
                 rs.alert.loaded_camera_url.clear();
                 latter_ui::release_art(id(camera_snapshot_art));
                 id(sync_ui_touch_runtime).execute();
@@ -382,7 +383,7 @@ script:
               id(announcement_mixing_input).is_running() ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-              (rs.nav.display_power_state == 0 && latter_ui::is_camera_view_active(rs)) ||
+              (rs.nav.display_power_state == 0 && (latter_ui::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active))) ||
               latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
               (rs.nav.display_power_state == 0 && (now_p - last_interact_ms < 8000U));
           const auto &prefs = latter_ui::persisted_prefs();
@@ -479,7 +480,9 @@ script:
             if (wifi_up) {
               latter_ui::link_state().last_wifi_connect_ms = (now_p == 0) ? 1U : now_p;
             } else {
+              #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
               latter_ui::weak_link_note_disconnect(now_p);
+              #endif
             }
           }
           const bool api_connected = esphome::api::global_api_server != nullptr &&
@@ -488,10 +491,14 @@ script:
               wifi_up && !rs.nav.ota_in_progress &&
               ((!api_connected && (now_p - latter_ui::link_state().last_wifi_connect_ms < 30000U)) ||
                (api_connected && (now_p - latter_ui::link_state().last_ha_connect_ms < 20000U)));
-          // Weak Wi-Fi: Home Assistant's link drops in light sleep at weak RSSI (hal_link_report.h,
-          // kWeakLinkEnterDbm), so a sustained weak link keeps the chip awake after post-connect AGC settle.
+          // Weak Wi-Fi: Home Assistant's link drops in automatic light sleep at weak RSSI (hal_link_report.h,
+          // kWeakLinkEnterDbm), so a sustained weak link keeps tickless-sleep chips awake after AGC settle.
+          #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
           const bool weak_link =
               wifi_up && latter_ui::weak_link_update(now_p, latter_ui::link_state().last_wifi_connect_ms);
+          #else
+          const bool weak_link = false;
+          #endif
           const bool stay_awake =
               ha_link_settling || weak_link ||
               latter_ui::imu_wom_qualifying(now_p) ||
@@ -584,6 +591,7 @@ script:
           if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
             latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
           }
+          latter_ui::video_client().stop();
 
           const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           const std::string_view ww_mode = latter_ui::pref_wake_word_mode_cstr();
@@ -606,6 +614,7 @@ script:
           auto &rs = latter_ui::runtime_state();
           const uint32_t now_sb_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
+          latter_ui::video_client().stop();
           if (prefs.bedtime_active) {
             const bool bt_clock = (LATTER_IS_STATIONARY != 0 || rs.hw_usb_connected) &&
                                   (std::string_view(latter_ui::pref_bedtime_display_cstr(prefs)) == "Ambient Clock");
@@ -699,6 +708,10 @@ script:
               wp_u != rs.music.loaded_wallpaper_url) {
             id(fetch_wallpaper_debounced).execute();
           }
+          if (latter_ui::is_camera_view_active(rs) ||
+              (rs.alert.active && rs.cameras.doorbell_live_popup_active)) {
+            id(sync_camera_stream).execute();
+          }
 
   - id: prepare_hibernation_teardown
     mode: restart
@@ -714,6 +727,7 @@ script:
           rs.nav.hibernate_countdown_val = countdown_sec;
           rs.nav.is_hibernating = true;
           rs.nav.active_game = 0;
+          latter_ui::video_client().stop();
       - micro_wake_word.stop:
       - voice_assistant.stop:
       - media_player.pause: latter_media_player

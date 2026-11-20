@@ -21,7 +21,7 @@
 #endif
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026111903L
+#define LATTER_SDK_REV 2026111904L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
@@ -171,6 +171,11 @@ inline std::string build_hardware_manifest_json() {
   const int disp_h = LATTER_HAS_DISPLAY ? LATTER_SCREEN_H : 0;
   const char *shape = !LATTER_HAS_DISPLAY ? "none" : (LATTER_ROUND_DISPLAY ? "circle" : "square");
   const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
+  const int video_hw_jpeg = LATTER_CHIP_P4 ? 1 : 0;
+  const int video_max_w = LATTER_HAS_DISPLAY ? (LATTER_SCREEN_W & ~15) : 0;
+  const int video_max_h = LATTER_HAS_DISPLAY ? (LATTER_SCREEN_H & ~15) : 0;
+  const int video_max_fps = LATTER_CHIP_P4 ? (LATTER_HAS_BATTERY ? 10 : 15) : 5;
+  const int video_grid_fps = LATTER_CHIP_P4 ? (LATTER_HAS_BATTERY ? 5 : 8) : 2;
   char audio_buf[96];
   if (LATTER_HAS_AUDIO) {
     std::snprintf(audio_buf, sizeof(audio_buf),
@@ -180,13 +185,14 @@ inline std::string build_hardware_manifest_json() {
   } else {
     std::snprintf(audio_buf, sizeof(audio_buf), "0");
   }
-  char buf[640];
+  char buf[768];
   std::snprintf(buf, sizeof(buf),
                 "{\"v\":2,\"contract\":%d,\"fw\":\"3.0.0\",\"board\":\"%s\",\"boot_id\":%lu,"
                 "\"w\":%d,\"h\":%d,\"shape\":\"%s\","
                 "\"display\":%d,\"touch\":%d,\"audio\":%s,\"mic\":%d,\"spk\":%d,"
                 "\"imu\":%d,\"battery\":%d,\"has_rtc\":%d,\"stationary\":%d,\"wearable\":%d,"
                 "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
+                "\"video\":{\"hw_jpeg\":%d,\"max_w\":%d,\"max_h\":%d,\"max_fps\":%d,\"grid_fps\":%d},"
                 "\"slot_count\":%d,\"card_slot_count\":%d,\"max_payload_bytes\":2048,"
                 "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d},"
                 "\"sdk\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
@@ -197,6 +203,7 @@ inline std::string build_hardware_manifest_json() {
                 (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY, (int)LATTER_HAS_RTC,
                 (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
                 (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
+                video_hw_jpeg, video_max_w, video_max_h, video_max_fps, video_grid_fps,
                 (int)LATTER_SLOT_COUNT, (int)LATTER_CARD_SLOT_COUNT, (int)LATTER_BLE_MINOR,
                 (long)LATTER_SDK_REV, last_reset_reason(), (int)crash_record_present(), (int)firmware_rolled_back());
   return std::string(buf);

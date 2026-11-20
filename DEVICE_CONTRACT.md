@@ -30,17 +30,17 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 | Name | Value |
 | :--- | :--- |
-| `dock_routes` | `app:pinned,app:music,app:home_hub,app:area,app:remote,app:games,app:tools` |
+| `dock_routes` | `app:pinned,app:music,app:home_hub,app:cameras,app:area,app:remote,app:games,app:tools` |
 | `activity_card` | `1` |
 | `activity_sources` | `calendar,music_queue,stopwatch,alarms,timers` |
 | `area_categories` | `scene,light,cover,fan,switch,climate,media` |
-| `home_categories` | `alarm,cameras,intercom,thermostat,entry,vacuum` |
+| `home_categories` | `alarm,intercom,thermostat,entry,vacuum` |
 | `tools_items` | `stopwatch,level,flashlight,calculator,dice,coin_flip` |
 | `games_items` | `marbles,archery,bricks,chomp,2048,memory` |
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `39` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `41` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -64,7 +64,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `18` | `vacuums_summary` | `AreaCtxField::VACUUMS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|state|caps robot vacuum records (up to 6, in configured order; caps is the u16 VacuumEntityFeature bitmask: 1=start, 2=pause, 4=stop, 8=return_home, 16=clean_spot, 32=locate) |
 | `19` | `area_climates_summary` | `AreaCtxField::AREA_CLIMATES_SUMMARY` | `records` | 0x1E-joined entity_id|name|state|target_temp|current_temp|caps climate records for the active Area (up to 6) |
 | `20` | `camera_snapshot_url` | `AreaCtxField::CAMERA_SNAPSHOT_URL` | `url` | Signed HTTP URL for primary camera snapshot |
-| `21` | `cameras_summary` | `AreaCtxField::CAMERAS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|snapshot_url camera records (up to 10, in configured order; area_id empty when the camera has no Area) |
+| `21` | `cameras_summary` | `AreaCtxField::CAMERAS_SUMMARY` | `records` | 0x1E-joined entity_id|name|area_id|caps camera records (up to 10, in configured order; area_id empty when unassigned; caps u16 bitmask: 1=has_audio, 2=has_talkback, 4=is_doorbell, 8=in_carousel) |
 | `22` | `doorbell_talk_state` | `AreaCtxField::DOORBELL_TALK_STATE` | `string` | Doorbell talkback state |
 | `23` | `intercom_targets_summary` | `AreaCtxField::INTERCOM_TARGETS_SUMMARY` | `records` | 0x1E-joined target_id|label|kind call_target records (up to 10; kind all = every other Latter Device, listed first; kind device = one Latter Device, labelled by its title); empty when there is no other Device |
 | `24` | `alert_id` | `AreaCtxField::ALERT_ID` | `u32` | Monotonic alert/notification identifier |
@@ -77,11 +77,13 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `31` | `activity_card` | `AreaCtxField::ACTIVITY_CARD` | `bool` | 1 = show the Home Activity Card, 0 = hide it (also sent when every source is off); empty until set: the device uses defaults.activity_card |
 | `32` | `activity_sources` | `AreaCtxField::ACTIVITY_SOURCES` | `csv` | Activity Card sources that are on, in this order: calendar, music_queue, stopwatch, alarms, timers (unknown keys are ignored); empty until set: the device uses defaults.activity_sources |
 | `33` | `security_pin_policy` | `AreaCtxField::SECURITY_PIN_POLICY` | `string` | Perimeter action policy for unlock, disarm, and open_cover (allow|require_pin|block) |
-| `34` | `home_categories` | `AreaCtxField::HOME_CATEGORIES` | `csv` | Comma-separated enabled Home Hub categories with >= 1 configured entity, in configured order (alarm, cameras, intercom, thermostat, entry, vacuum); empty when no categories have entities |
+| `34` | `home_categories` | `AreaCtxField::HOME_CATEGORIES` | `csv` | Comma-separated enabled Home Hub categories with >= 1 configured entity, in configured order (alarm, intercom, thermostat, entry, vacuum); empty when no categories have entities |
 | `35` | `area_icon` | `AreaCtxField::AREA_ICON` | `string` | Home Assistant AreaEntry icon string (e.g. mdi:sofa) or inferred Area archetype icon; empty when unassigned |
 | `36` | `local_tz_info` | `AreaCtxField::LOCAL_TZ_INFO` | `string` | Pipe-delimited local time zone status ('<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst>') |
 | `37` | `world_clocks_summary` | `AreaCtxField::WORLD_CLOCKS_SUMMARY` | `string` | Semicolon-delimited configured World Clocks ('<iana>|<label>|<abbr>|<utc_offset_min>|<is_dst>;...') |
 | `38` | `alarm_caps` | `AreaCtxField::ALARM_CAPS` | `u16` | Alarm capability & code bitmask (1=code_disarm_required, 2=code_arm_required, 4=supports_arm_home, 8=supports_arm_away, 16=supports_arm_night, 32=supports_arm_vacation) |
+| `39` | `camera_stream_url` | `AreaCtxField::CAMERA_STREAM_URL` | `url` | Signed device-scoped base URL for live MJPEG single and 2x2 grid camera streaming |
+| `40` | `alert_camera_entity` | `AreaCtxField::ALERT_CAMERA_ENTITY` | `entity_id` | Camera entity ID associated with the active alert or doorbell notification |
 
 ### `sensor.<device>_active_media` (`MediaField`, `24` total fields)
 
@@ -153,7 +155,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `64` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `69` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -220,6 +222,11 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `61` | `bedtime_start_hour` | `DevicePrefsField::BEDTIME_START_HOUR` | `u16` | Bedtime Mode schedule start hour in local 24h time (0..23) |
 | `62` | `bedtime_end_hour` | `DevicePrefsField::BEDTIME_END_HOUR` | `u16` | Bedtime Mode schedule end hour in local 24h time (0..23) |
 | `63` | `bedtime_brightness` | `DevicePrefsField::BEDTIME_BRIGHTNESS` | `u16` | Bedtime Mode active wake brightness percentage (1..100%) |
+| `64` | `camera_default_view` | `DevicePrefsField::CAMERA_DEFAULT_VIEW` | `string` | Default view when opening the Cameras app (Grid|Single|Carousel) |
+| `65` | `camera_carousel_interval` | `DevicePrefsField::CAMERA_CAROUSEL_INTERVAL` | `string` | Auto-cycle interval in Cameras Carousel view (10s|15s|30s|60s) |
+| `66` | `camera_framing` | `DevicePrefsField::CAMERA_FRAMING` | `string` | Camera video framing mode (Uncropped|Fill) |
+| `67` | `camera_stream_mode` | `DevicePrefsField::CAMERA_STREAM_MODE` | `string` | Camera live streaming quality and bandwidth mode (Auto|Low Bandwidth|Snapshots) |
+| `68` | `camera_doorbell_popup` | `DevicePrefsField::CAMERA_DOORBELL_POPUP` | `string` | Doorbell ring popup media mode on hardware-JPEG devices (Snapshot|Live Video) |
 
 ### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -245,7 +252,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter_set_slots` | `is_area_slots: bool`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/queue/search browse slots or Area/Site entity control slots to the device (0x1E-joined name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current] records) |
 | `latter_set_music_lyrics` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `track_key: string`, `synced: bool`, `lines: string` | Push full-track LRC timestamp-synced or plain lyrics (up to 128 lines across multi-chunk frames; lines is 0x1E-joined '<t_ms>\x1f<text>' records where t_ms >= 0 for synced LRC lines and -1 for plain unsynced lines) |
 | `latter_set_calendar_view` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `window_start: string`, `window_end: string`, `map_url: string`, `events: string` | Push chunked windowed calendar events (up to 64 events across multi-chunk frames) or a signed on-demand Event Details map URL to the device |
-| `latter_show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot; alert_id > 0 deduplicates repeats |
+| `latter_show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `camera_entity: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot or live doorbell video; alert_id > 0 deduplicates repeats |
 | `latter_ui_input` | `action: string`, `delta: int` | Remote navigation input: action up|down|left|right|select|back|home (canonical navigation actions); delta overrides the step for directional actions (0 = derive from action) |
 
 ## 4. Firmware RPC Outbox Methods (`latter_rpc_outbox`)
@@ -298,9 +305,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `37`
+- **Studio Wire Revision (`studio_rev`)**: `38`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
 - **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_wallpaper`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `select_wallpaper`, `toggle_wallpaper_favorite`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `56` typed preference descriptors
+- **Declarative `device_prefs` Specs**: `61` typed preference descriptors

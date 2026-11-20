@@ -148,7 +148,7 @@ constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
     return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
   if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
-      ((gui_page == 8 || gui_page == 9 || gui_page == 12) && !tools_full_bleed) ||
+      ((gui_page == 8 || gui_page == 9 || gui_page == 12 || gui_page == 13) && !tools_full_bleed) ||
       gui_page == 10 || gui_page == 11) {
     return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
   }
@@ -224,7 +224,8 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int time_sub = 0, int wc_pg = 0,
                                  int alarm_edit = 0, int home_set_pg = 1,
                                  int hub_mode_pg = 0, int hub_drill = 0,
-                                 int pinned_pg = 0, int cal_sub_id = 0) {
+                                 int pinned_pg = 0, int cal_sub_id = 0,
+                                 int cam_sub_id = 0) {
   switch (gui_page) {
     case 1:
       return (home_subpage & 0xFF) | ((home_dock_pg & 0xFF) << 8) | ((home_set_pg & 0x0F) << 16);
@@ -253,9 +254,24 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
       return pinned_pg & 0xFFFF;
     case 12:
       return cal_sub_id;
+    case 13:
+      return cam_sub_id;
     default:
       return 0;
   }
+}
+
+// Pure-C++20 VA takeover precedence check (D-066): during doorbell PTT talk
+// (`intercom_turn == true`), keep live camera video visible instead of hiding
+// it behind the full-screen Voice Assistant orb!
+inline constexpr bool should_va_takeover_preempt(bool va_active, bool has_status_text,
+                                                 bool intercom_turn, int gui_page,
+                                                 bool live_popup_active) noexcept {
+  if (!va_active && !has_status_text) return false;
+  if (intercom_turn && (gui_page == PageId::CAMERAS || live_popup_active)) {
+    return false;
+  }
+  return true;
 }
 
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
@@ -312,6 +328,7 @@ struct Cadence20msInputs {
   bool greet_fading = false;
   bool act_sliding = false;
   bool act_fade_settle = false;
+  bool video_stream_active = false;
 };
 
 struct Cadence20msActions {
@@ -363,6 +380,7 @@ struct Cadence250msInputs {
   bool home_overlay_motion_due = false;
   bool nav_scroll_or_sim_dirty = false;
   bool pending_wallpaper_fetch = false;
+  bool video_stream_active = false;
   std::string_view latest_fw_version{};
 };
 
@@ -945,12 +963,14 @@ struct SystemTakeoverState {
   UiStrView va_status_text{};
   bool va_tts_received{false};
   bool va_vad_active{false};
+  bool va_intercom_turn{false};
   UiStrView va_visual_profile_opt{};
   bool notif_active{false};
   UiStrView notif_title{};
   UiStrView notif_message{};
   UiStrView notif_priority{};
   UiStrView notif_camera_url{};
+  UiStrView notif_camera_entity{};
   UiStrView current_loaded_camera_url{};
   UiStrView screensaver_style_opt{};
   esphome::Color theme_primary{};
@@ -991,12 +1011,14 @@ struct SystemTakeoverState {
     st.va_status_text = rs.voice.status_text;
     st.va_tts_received = rs.voice.tts_received;
     st.va_vad_active = rs.voice.vad_active;
+    st.va_intercom_turn = rs.voice.intercom_turn;
     st.va_visual_profile_opt = ctx.va_visual_profile_opt;
     st.notif_active = rs.alert.active;
     st.notif_title = rs.alert.title;
     st.notif_message = rs.alert.message;
     st.notif_priority = rs.alert.priority;
     st.notif_camera_url = rs.alert.camera_url;
+    st.notif_camera_entity = rs.alert.camera_entity;
     st.current_loaded_camera_url = rs.alert.loaded_camera_url;
     st.screensaver_style_opt =
         prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt;
@@ -1016,21 +1038,22 @@ struct SystemTakeoverState {
 };
 
 inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
+  const auto &rs = runtime_state();
+  const bool va_preempt = should_va_takeover_preempt(
+      st.va_active, !st.va_status_text.empty(), st.va_intercom_turn,
+      rs.nav.gui_page, rs.cameras.doorbell_live_popup_active);
   return compute_takeover_signature(
       st.ota_in_progress, st.is_hibernating, st.panel_is_on,
       st.display_power_state,
       st.alarm_ringing || st.timer_ringing || st.find_my_active,
-      st.va_active || !st.va_status_text.empty(),
+      va_preempt,
       ui::pin_pad_state().open, st.notif_active,
       shortcut_confirm_state().open);
 }
 
 inline int compute_active_subpage_id() {
   const auto &rs = runtime_state();
-  const int hub_drill =
-      (rs.intercom.cam_expanded_fullscreen ? 1 : 0) |
-      (rs.intercom.cam_quick_reply_open ? 2 : 0) |
-      (rs.intercom.live_call_mode ? 4 : 0);
+  const int hub_drill = rs.intercom.live_call_mode ? 4 : 0;
   int cal_vert_pg = rs.cal.overview_page;
   if (rs.cal.drilldown >= CalDrilldown::PICK_TITLE) {
     cal_vert_pg = rs.cal.picker_page;
@@ -1050,6 +1073,12 @@ inline int compute_active_subpage_id() {
       ((static_cast<int>(rs.music.takeover) & 0x07) << 7) |
       ((rs.music.mode_bar_win_start & 0x07) << 10) |
       ((rs.music.overlay_mode & 0x0F) << 13);
+  const int cam_sub_id =
+      (rs.cameras.tab & 0x0F) |
+      ((rs.cameras.grid_page & 0x0F) << 4) |
+      (rs.cameras.hud_active ? (1 << 8) : 0) |
+      (rs.cameras.quick_reply_open ? (1 << 9) : 0) |
+      (rs.cameras.landscape_mode ? (1 << 10) : 0);
   return compute_subpage_id(
       rs.nav.gui_page, rs.nav.home_subpage, home_dock_page(),
       music_sub_id, rs.nav.active_game,
@@ -1061,7 +1090,7 @@ inline int compute_active_subpage_id() {
       rs.nav.time_subpage, rs.nav.world_clock_page,
       rs.alarms.edit_idx, rs.nav.home_settings_page,
       home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page,
-      cal_sub_id);
+      cal_sub_id, cam_sub_id);
 }
 
 inline int compute_hhmm_key(const esphome::ESPTime &now) {
