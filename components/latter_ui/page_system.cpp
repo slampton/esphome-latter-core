@@ -29,10 +29,16 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   const auto &ac = area_ctx_state();
 
   if (!frame_base_state().painted) {
-    const bool has_wall = (!ac.wallpaper_url.empty() &&
-                           ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                           ctx.home_wallpaper_art.valid());
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg);
+    if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
+      render_static_day_night_sky_base(
+          it, ctx.cx, ctx.cy,
+          resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
+    } else {
+      const bool has_wall = (!ac.wallpaper_url.empty() &&
+                             ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                             ctx.home_wallpaper_art.valid());
+      render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg);
+    }
   }
 
   const int cx = ctx.cx;
@@ -211,8 +217,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 #else
     std::snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Battery Timeout: N/A");
 #endif
-    std::snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Docked Saver: %s", ctx.docked_screensaver_enabled ? "On" : "Off");
-    const char *short_s = (ctx.screensaver_style_opt == "Digital Rain") ? "Rain" : ctx.screensaver_style_opt.c_str();
+    const char *short_m = (ctx.screensaver_mode_opt == "Docked Only") ? "Docked" : ctx.screensaver_mode_opt.c_str();
+    std::snprintf(sleep_labels[3], sizeof(sleep_labels[3]), "Saver: %s", short_m);
+    const char *short_s = (ctx.screensaver_style_opt == "Digital Rain")
+                              ? "Rain"
+                              : ((ctx.screensaver_style_opt == "Photo Frame")
+                                     ? "Photo"
+                                     : ctx.screensaver_style_opt.c_str());
     std::snprintf(sleep_labels[4], sizeof(sleep_labels[4]), "Saver Style: %s", short_s);
     std::snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Docked Timeout: %s", ctx.screensaver_docked_timeout_opt.c_str());
 #if LATTER_HAS_BATTERY
@@ -228,14 +239,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     const char *short_bt = (ctx.bedtime_display_opt == "Ambient Clock") ? "Clock" : "Off";
     std::snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Bedtime Screen: %s", short_bt);
 
+    const bool saver_enabled = (ctx.screensaver_mode_opt != "Never");
     const int page_base = (sleep_menu_page == 2) ? 5 : 0;
     for (int i = 0; i < 10; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
-        if (i == 3) {
-          draw_toggle_card_y(y, "Docked Saver", ctx.docked_screensaver_enabled, row_slot, row_slot);
-        } else if (i == 7) {
+        if (i == 7) {
 #if LATTER_HAS_BATTERY
           draw_toggle_card_y(y, ctx.instant_crown_hibernate ? "Hold Crown: Instant" : "Hold Crown: 5s Delay",
                              ctx.instant_crown_hibernate, row_slot, row_slot);
@@ -247,7 +257,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
         } else {
           const bool en = (i == 0) ? (LATTER_HAS_IMU != 0)
                         : (i == 2) ? (LATTER_HAS_BATTERY != 0)
-                        : (i == 4) ? ctx.docked_screensaver_enabled
+                        : (i == 4) ? saver_enabled
                         : (i == 6) ? (LATTER_HAS_BATTERY != 0)
                                    : true;
           const uint16_t wid = (row_slot >= 0)
@@ -268,8 +278,8 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 2) {
-    const int current_offset = compute_scroll_offset(display_menu_page, 252);
-    char disp_labels[9][36];
+    const int current_offset = compute_scroll_offset(display_menu_page, 315);
+    char disp_labels[10][36];
     const char *start_lbl =
         (ctx.default_start_app_opt == "Area Controls") ? "Area"
         : ((ctx.default_start_app_opt == "Time App") ? "Time"
@@ -294,16 +304,20 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                   std::clamp(ctx.day_brightness_pct, 1, 100));
     std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "Night Bri: %d%%",
                   std::clamp(ctx.night_brightness_pct, 1, 100));
+    std::snprintf(disp_labels[9], sizeof(disp_labels[9]), "Photo Clock: %s",
+                  ctx.screensaver_photo_clock ? "On" : "Off");
 
     const bool ab_off = (ctx.auto_brightness_opt == "Disabled" || ctx.auto_brightness_opt.empty());
     const bool ab_sched = (ctx.auto_brightness_opt == "Time Schedule");
-    const int page_base = (display_menu_page == 2) ? 4 : 0;
+    const int page_base = (display_menu_page == 2) ? 5 : 0;
 
-    for (int i = 0; i < 9; i++) {
+    for (int i = 0; i < 10; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
-        if (i <= 2) {
+        if (i == 9) {
+          draw_toggle_card_y(y, "Photo Clock", ctx.screensaver_photo_clock, row_slot, row_slot);
+        } else if (i <= 2) {
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;

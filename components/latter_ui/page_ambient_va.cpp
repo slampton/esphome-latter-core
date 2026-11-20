@@ -640,14 +640,49 @@ void render_docked_screensaver(esphome::display::Display &it, const UiFrameConte
   const uint32_t now_ms = st.now_ms;
   const UiStrView ss_style = st.screensaver_style_opt;
 
-  if (ss_style == "Ambient Clock") {
-    static constexpr int8_t kMicroOrbit[12] = {-3, -2, -1, 0, 1, 2, 3, 2, 1, 0, -1, -2};
-    const uint32_t min_idx = ctx.now.is_valid()
-                                 ? static_cast<uint32_t>(ctx.now.hour * 60 + ctx.now.minute)
-                                 : (now_ms / 60000U);
-    const int drift_x = static_cast<int>(kMicroOrbit[min_idx % 12U]);
-    const int drift_y = static_cast<int>(kMicroOrbit[(min_idx + 3U) % 12U]);
+  static constexpr int8_t kMicroOrbit[12] = {-3, -2, -1, 0, 1, 2, 3, 2, 1, 0, -1, -2};
+  const uint32_t min_idx = ctx.now.is_valid()
+                               ? static_cast<uint32_t>(ctx.now.hour * 60 + ctx.now.minute)
+                               : (now_ms / 60000U);
+  const int drift_x = static_cast<int>(kMicroOrbit[min_idx % 12U]);
+  const int drift_y = static_cast<int>(kMicroOrbit[(min_idx + 3U) % 12U]);
 
+  if (ss_style == "Photo Frame") {
+    const auto &ac = area_ctx_state();
+    if (ctx.screensaver_photo_art.valid() && !ac.screensaver_photo_url.empty()) {
+      const CameraRect full_vp{0, 0, SCREEN_W, SCREEN_H};
+      blit_rgb565_fitted_frame(it, ctx.screensaver_photo_art.data,
+                               ctx.screensaver_photo_art.width, ctx.screensaver_photo_art.height,
+                               full_vp, /*fill=*/true,
+                               /*clip_round_bezel=*/(LATTER_ROUND_DISPLAY != 0));
+      if (st.screensaver_photo_clock) {
+        char photo_time[16];
+        if (ctx.now.is_valid()) {
+          format_time_hhmm(ctx.now.hour, ctx.now.minute, st.is_24h_format, photo_time, sizeof(photo_time));
+        } else {
+          std::snprintf(photo_time, sizeof(photo_time), "%s", kUnknownGlyph);
+        }
+        auto *clk_font = (ctx.font_chrono_time != nullptr) ? ctx.font_chrono_time : ctx.font_date;
+#if LATTER_ROUND_DISPLAY
+        const int clk_x = cx + drift_x;
+        const int clk_y = SCREEN_H - scale_y(58) + drift_y;
+        const auto align = esphome::display::TextAlign::CENTER;
+#else
+        const int clk_y = SCREEN_H - (LATTER_IS_WEARABLE ? scale_y(44) : scale_y(30)) + drift_y;
+        const int safe_half = circle_half_span(clk_y, scale_x(16));
+        const int clk_x = cx + safe_half + drift_x;
+        const auto align = esphome::display::TextAlign::CENTER_RIGHT;
+#endif
+        fast_print(it, clk_x + 2, clk_y + 2, clk_font, kChromeShadow, align, photo_time);
+        fast_print(it, clk_x + 1, clk_y + 1, clk_font, kChromeShadow, align, photo_time);
+        fast_print(it, clk_x, clk_y, clk_font, st.col_white, align, photo_time);
+      }
+      return;
+    }
+    // Graceful fallback to Ambient Clock until Photo Frame image finishes downloading.
+  }
+
+  if (ss_style == "Ambient Clock" || ss_style == "Photo Frame") {
     if (ctx.now.is_valid()) {
       char amb_time[16];
       format_time_hhmm(ctx.now.hour, ctx.now.minute, st.is_24h_format, amb_time, sizeof(amb_time));

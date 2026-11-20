@@ -1139,7 +1139,7 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
 
   // 3. Deterministic active-screen idle timeout (replaces screen_sleep_timer & 2s retry loop)
   const uint32_t idle_timeout_ms = resolve_idle_screen_timeout_ms(
-      in.is_stationary, in.usb_connected, in.docked_screensaver,
+      in.is_stationary, in.usb_connected, in.screensaver_mode,
       in.docked_timeout_opt, in.battery_timeout_opt, in.bedtime_active);
 
   if (in.ota_in_progress) {
@@ -1179,11 +1179,13 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
     }
   }
 
-  // 4. Self-healing inactivity auto-descent to hardware hibernate (battery devices only)
+  // 4. Self-healing inactivity auto-descent to hardware hibernate (battery devices only).
+  // Applies to both Screen Off (2) and battery Screensaver (1, when screensaver_mode == "Always")
+  // as a safety ceiling unless hibernate_timeout_opt == "Disabled" (hibernate_blocked is true on USB).
   if (in.has_battery) {
     const uint32_t hib_timeout_ms = resolve_battery_hibernate_timeout_ms(in.hibernate_timeout_opt);
-    const bool screen_is_off = (nav_power_state == 2) || !in.panel_brightness_on;
-    if (screen_is_off && !in.hibernate_blocked) {
+    const bool in_standby = (nav_power_state == 2) || (nav_power_state == 1) || !in.panel_brightness_on;
+    if (in_standby && !in.hibernate_blocked) {
       if (sleep_start_time == 0U) {
         sleep_start_time = (now_ms != 0U) ? now_ms : 1U;
       } else if (hib_timeout_ms > 0U &&

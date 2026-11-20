@@ -126,6 +126,15 @@ esphome:
               if (eff.fetch_wallpaper) {
                 id(fetch_wallpaper_debounced).execute();
               }
+              if (eff.stop_screensaver_photo_fetch) {
+                id(fetch_screensaver_photo_debounced).stop();
+              }
+              if (eff.release_screensaver_photo_art) {
+                latter_ui::release_art(id(screensaver_photo_art));
+              }
+              if (eff.fetch_screensaver_photo) {
+                id(fetch_screensaver_photo_debounced).execute();
+              }
               if (eff.weather_sim_dirty) {
                 latter_ui::weather_sim_dirty() = true;
               }
@@ -215,7 +224,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026111904L;
+            constexpr long LATTER_YAML_REV = 2026111905L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -250,11 +259,13 @@ esphome:
             latter_ui::speaker_volume_boot_synced() = true;
         - lambda: 'latter_ui::release_art(id(remote_album_art));'
         - lambda: 'latter_ui::release_art(id(home_wallpaper_art));'
+        - lambda: 'latter_ui::release_art(id(screensaver_photo_art));'
         - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
         - lambda: |-
             auto &rs = latter_ui::runtime_state();
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
+            rs.music.loaded_screensaver_photo_url = "";
             rs.alert.loaded_camera_url = "";
         - script.execute: mute_speaker_path
         - script.execute: sync_ui_touch_runtime
@@ -434,11 +445,13 @@ ota:
             latter_ui::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
+            latter_ui::release_art(id(screensaver_photo_art));
             latter_ui::release_art(id(camera_snapshot_art));
             latter_ui::art_canvas_drop_all();
             latter_ui::sky_base_cache_drop();
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
+            rs.music.loaded_screensaver_photo_url = "";
             rs.alert.loaded_camera_url = "";
             latter_ui::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
@@ -470,11 +483,13 @@ ota:
             latter_ui::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
+            latter_ui::release_art(id(screensaver_photo_art));
             latter_ui::release_art(id(camera_snapshot_art));
             latter_ui::art_canvas_drop_all();
             latter_ui::sky_base_cache_drop();
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
+            rs.music.loaded_screensaver_photo_url = "";
             rs.alert.loaded_camera_url = "";
             latter_ui::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
@@ -907,13 +922,25 @@ script:
           if (eff & latter_ui::kPrefEffectBrightness) {
             id(sync_display_brightness).execute();
           }
-          if (eff & latter_ui::kPrefEffectDockedSaverOff) {
-            if (rs.nav.display_power_state == 1) {
-              #if LATTER_IS_STATIONARY
-              id(wake_to_active_state).execute();
-              #else
-              id(turn_screen_off).execute();
-              #endif
+          if (eff & latter_ui::kPrefEffectScreensaverChange) {
+            if (rs.nav.display_power_state == 1 && !p.bedtime_active) {
+              if (!latter_ui::screensaver_allowed_for_power(
+                      p.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected)) {
+                #if LATTER_IS_STATIONARY
+                id(wake_to_active_state).execute();
+                #else
+                id(turn_screen_off).execute();
+                #endif
+              } else {
+                id(apply_power_policy).execute();
+                id(sync_display_brightness).execute();
+                if (std::string_view(latter_ui::effective_screensaver_style_cstr(p)) == "Photo Frame" &&
+                    !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
+                  id(fetch_screensaver_photo_debounced).execute();
+                }
+                latter_ui::mark_dirty_full();
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
             }
           }
           if (eff & latter_ui::kPrefEffectBedtime) {
@@ -951,10 +978,18 @@ script:
               }
               #else
               if (rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
-                if (rs.nav.display_power_state == 1 && !p.docked_screensaver) {
+                if (rs.nav.display_power_state == 1 &&
+                    !latter_ui::screensaver_allowed_for_power(
+                        p.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected)) {
                   id(turn_screen_off).execute();
                 } else {
+                  id(apply_power_policy).execute();
                   id(sync_display_brightness).execute();
+                  if (rs.nav.display_power_state == 1 &&
+                      std::string_view(latter_ui::effective_screensaver_style_cstr(p)) == "Photo Frame" &&
+                      !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
+                    id(fetch_screensaver_photo_debounced).execute();
+                  }
                 }
               }
               #endif
@@ -1137,9 +1172,12 @@ script:
           }
 
           if (rs.nav.display_power_state == 0 || rs.nav.display_power_state == 1) {
+            const bool is_photo_frame =
+                !prefs.bedtime_active &&
+                (std::string_view(latter_ui::pref_screensaver_style_cstr(prefs)) == "Photo Frame");
             const float ss_bri = prefs.bedtime_active
                                      ? latter_ui::resolve_bedtime_ambient_brightness(b_target)
-                                     : latter_ui::resolve_screensaver_brightness(b_target);
+                                     : latter_ui::resolve_screensaver_brightness(b_target, is_photo_frame);
             const float target_bri =
                 (rs.nav.display_power_state == 0) ? b_target : ss_bri;
             const auto &cv = id(display_brightness).current_values;

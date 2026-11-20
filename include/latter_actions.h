@@ -572,7 +572,7 @@ inline bool record_local_pref_edit(latter_ui::PrefKey key, std::string_view val,
                                    OutboxT outbox = nullptr) {
   out_effects = 0;
   auto &p = latter_ui::persisted_prefs();
-  uint64_t changed_mask = 0;
+  latter_ui::PrefMask changed_mask{};
   if (!latter_ui::set_pref_by_key_str(p, key, val, true, changed_mask, out_effects)) {
     return false;
   }
@@ -708,7 +708,7 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
 template <typename OutboxT = std::nullptr_t>
 inline void sync_local_pref_key_edit(latter_ui::PrefKey key, OutboxT outbox = nullptr) {
   auto &p = latter_ui::persisted_prefs();
-  const uint64_t bit = latter_ui::pref_key_bit(key);
+  const latter_ui::PrefMask bit = latter_ui::pref_key_bit(key);
   p.dirty_mask |= bit;
   latter_ui::save_persisted_prefs();
   if (latter_ui::link_state().ha_connected) {

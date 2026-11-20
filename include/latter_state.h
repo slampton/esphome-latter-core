@@ -235,13 +235,36 @@ enum class TapWakeMode : uint8_t {
   Disabled   = 3,
 };
 
+enum class ScreensaverMode : uint8_t {
+  DockedOnly = 0,
+  Always     = 1,
+  Never      = 2,
+};
+
 enum class ScreensaverStyle : uint8_t {
   AmbientClock = 0,
-  Aurora       = 1,
-  Starfield    = 2,
-  DigitalRain  = 3,
-  Fireworks    = 4,
+  PhotoFrame   = 1,
+  Aurora       = 2,
+  Starfield    = 3,
+  DigitalRain  = 4,
+  Fireworks    = 5,
 };
+
+inline constexpr std::string_view kDayNightSkyWallpaperUrl = "latter://day_night_sky";
+
+inline constexpr bool is_day_night_sky_wallpaper_url(std::string_view url) noexcept {
+  return url == kDayNightSkyWallpaperUrl;
+}
+
+inline constexpr bool resolve_day_night_sky_is_night(
+    std::string_view sun_state, bool time_valid, int hour) noexcept {
+  if (sun_state == "below_horizon") return true;
+  if (sun_state == "above_horizon") return false;
+  if (time_valid && hour >= 0 && hour <= 23) {
+    return (hour < 6 || hour >= 20);
+  }
+  return false;
+}
 
 enum class AutoBrightnessMode : uint8_t {
   Disabled        = 0,
@@ -467,6 +490,7 @@ struct AreaContextState {
   std::string area_icon = "";            // Home Assistant AreaEntry icon (e.g. "mdi:sofa") or inferred archetype icon
   std::string local_tz_info = "";        // "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
   std::string world_clocks_summary = ""; // ";"-delimited "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
+  std::string screensaver_photo_url = "";
 };
 
 // Protocol v3 active_media state.
@@ -627,7 +651,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 15U;
+static constexpr uint16_t kPersistedPrefsVersion = 16U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -637,7 +661,7 @@ enum class PrefKey : uint8_t {
   BATTERY_SCREEN_TIMEOUT = 3,
   DOCKED_IDLE_TIMEOUT = 4,
   BATTERY_HIBERNATE_TIMEOUT = 5,
-  DOCKED_SCREENSAVER = 6,
+  SCREENSAVER_MODE = 6,
   SCREENSAVER_STYLE = 7,
   HOLD_CROWN_POWER_OFF = 8,
   AUTO_BRIGHTNESS_MODE = 9,
@@ -694,26 +718,75 @@ enum class PrefKey : uint8_t {
   CAMERA_FRAMING = 60,
   CAMERA_STREAM_MODE = 61,
   CAMERA_DOORBELL_POPUP = 62,
-  COUNT = 63,
+  SCREENSAVER_PHOTO_CLOCK = 63,
+  WEATHER_APP_BACKGROUND = 64,
+  COUNT = 65,
 };
-static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 64U,
-              "PrefKey::COUNT must remain < 64 to fit in uint64_t dirty_mask.");
+static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 128U,
+              "PrefKey::COUNT must remain < 128 to fit in 128-bit PrefMask.");
 
-inline constexpr uint64_t pref_key_bit(PrefKey k) {
-  return 1ULL << static_cast<uint8_t>(k);
+struct PrefMask {
+  uint64_t lo = 0ULL;
+  uint64_t hi = 0ULL;
+
+  constexpr PrefMask() noexcept = default;
+  constexpr PrefMask(uint64_t lo_v, uint64_t hi_v = 0ULL) noexcept : lo(lo_v), hi(hi_v) {}
+
+  constexpr bool empty() const noexcept { return lo == 0ULL && hi == 0ULL; }
+  constexpr bool any() const noexcept { return !empty(); }
+  constexpr void clear() noexcept { lo = 0ULL; hi = 0ULL; }
+
+  constexpr PrefMask operator|(const PrefMask &o) const noexcept { return {lo | o.lo, hi | o.hi}; }
+  constexpr PrefMask operator&(const PrefMask &o) const noexcept { return {lo & o.lo, hi & o.hi}; }
+  constexpr PrefMask operator~() const noexcept { return {~lo, ~hi}; }
+  constexpr PrefMask &operator|=(const PrefMask &o) noexcept {
+    lo |= o.lo;
+    hi |= o.hi;
+    return *this;
+  }
+  constexpr PrefMask &operator&=(const PrefMask &o) noexcept {
+    lo &= o.lo;
+    hi &= o.hi;
+    return *this;
+  }
+  constexpr bool operator==(const PrefMask &o) const noexcept = default;
+  constexpr bool operator!=(const PrefMask &o) const noexcept = default;
+  constexpr bool operator==(uint64_t v) const noexcept { return lo == v && hi == 0ULL; }
+  constexpr bool operator!=(uint64_t v) const noexcept { return !(*this == v); }
+  constexpr PrefMask &operator=(uint64_t v) noexcept {
+    lo = v;
+    hi = 0ULL;
+    return *this;
+  }
+  constexpr explicit operator bool() const noexcept { return any(); }
+};
+static_assert(std::is_trivially_copyable_v<PrefMask>,
+              "PrefMask must remain trivially copyable for PersistedDevicePrefs POD.");
+
+inline constexpr PrefMask pref_key_bit(PrefKey k) noexcept {
+  const uint8_t idx = static_cast<uint8_t>(k);
+  return (idx < 64U) ? PrefMask{1ULL << idx, 0ULL}
+                     : PrefMask{0ULL, 1ULL << (idx - 64U)};
+}
+
+inline constexpr PrefMask pref_mask_all(uint8_t count) noexcept {
+  if (count == 0U) return {0ULL, 0ULL};
+  if (count < 64U) return {(1ULL << count) - 1ULL, 0ULL};
+  if (count == 64U) return {~0ULL, 0ULL};
+  return {~0ULL, (count < 128U) ? ((1ULL << (count - 64U)) - 1ULL) : ~0ULL};
 }
 
 // Side-effect bitmask returned when device_prefs or local preferences mutate.
-static constexpr uint32_t kPrefEffectWakeWordSync   = 1U << 0;
-static constexpr uint32_t kPrefEffectWakeWordSens   = 1U << 1;
-static constexpr uint32_t kPrefEffectBrightness     = 1U << 2;
-static constexpr uint32_t kPrefEffectSleepTimer     = 1U << 3;
-static constexpr uint32_t kPrefEffectDockedSaverOff = 1U << 4;
-static constexpr uint32_t kPrefEffectThemePreset    = 1U << 5;
-static constexpr uint32_t kPrefEffectPowerPolicy    = 1U << 6;
-static constexpr uint32_t kPrefEffectRedraw         = 1U << 7;
-static constexpr uint32_t kPrefEffectNavPolicy      = 1U << 8;
-static constexpr uint32_t kPrefEffectBedtime        = 1U << 9;
+static constexpr uint32_t kPrefEffectWakeWordSync      = 1U << 0;
+static constexpr uint32_t kPrefEffectWakeWordSens      = 1U << 1;
+static constexpr uint32_t kPrefEffectBrightness        = 1U << 2;
+static constexpr uint32_t kPrefEffectSleepTimer        = 1U << 3;
+static constexpr uint32_t kPrefEffectScreensaverChange = 1U << 4;
+static constexpr uint32_t kPrefEffectThemePreset       = 1U << 5;
+static constexpr uint32_t kPrefEffectPowerPolicy       = 1U << 6;
+static constexpr uint32_t kPrefEffectRedraw            = 1U << 7;
+static constexpr uint32_t kPrefEffectNavPolicy         = 1U << 8;
+static constexpr uint32_t kPrefEffectBedtime           = 1U << 9;
 
 struct PersistedAlarmPref {
   uint8_t hour = 7;
@@ -736,8 +809,9 @@ struct PersistedDevicePrefs {
   uint8_t battery_screen_timeout = 2;      // 0..5 ("10s", "15s", "30s", "1 min", "2 min", "Never")
   uint8_t docked_idle_timeout = 3;         // 0..6 ("10s", "15s", "30s", "1 min", "2 min", "5 min", "Never")
   uint8_t battery_hibernate_timeout = 2;   // 0..4 ("5 min", "10 min", "15 min", "30 min", "Disabled")
-  bool docked_screensaver = true;
-  uint8_t screensaver_style = 0;           // 0..4 ("Ambient Clock" .. "Fireworks")
+  uint8_t screensaver_mode = 0;            // 0..2 ("Docked Only", "Always", "Never")
+  uint8_t screensaver_style = 0;           // 0..5 ("Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks")
+  bool screensaver_photo_clock = false;    // Optional subtle clock on Photo Frame screensaver
   bool hold_crown_power_off = false;
   uint8_t auto_brightness_mode = 1;        // 0..2 ("Disabled", "Sun Synchronized", "Time Schedule")
   uint8_t manual_brightness = 80;          // 1..100 (%)
@@ -758,6 +832,7 @@ struct PersistedDevicePrefs {
   char local_clock_label[33]{};            // Optional user-defined label shown above local time (<= 32 bytes)
   char world_clocks_spec[260]{};           // Up to 4 semicolon-delimited '<label>|<iana>' World Clock entries
   bool weather_background = true;
+  bool weather_app_background = true;
   bool home_sun = true;
   bool home_moon = true;
   bool wake_greeting = true;
@@ -783,7 +858,7 @@ struct PersistedDevicePrefs {
 
   // Two-way Latter Protocol v3 sync tracking
   uint32_t prefs_seq = 0;
-  uint64_t dirty_mask = 0;
+  PrefMask dirty_mask{};
 
   uint32_t custom_theme_rgb = 0x3898FFU;
   int32_t high_score_marbles = 0;
@@ -821,8 +896,11 @@ struct PersistedDevicePrefs {
   constexpr WakePolicyMode pickup_to_wake_enum() const noexcept {
     return static_cast<WakePolicyMode>((pickup_to_wake < 3U) ? pickup_to_wake : 1U);
   }
+  constexpr ScreensaverMode screensaver_mode_enum() const noexcept {
+    return static_cast<ScreensaverMode>((screensaver_mode < 3U) ? screensaver_mode : 0U);
+  }
   constexpr ScreensaverStyle screensaver_style_enum() const noexcept {
-    return static_cast<ScreensaverStyle>((screensaver_style < 5U) ? screensaver_style : 0U);
+    return static_cast<ScreensaverStyle>((screensaver_style < 6U) ? screensaver_style : 0U);
   }
   constexpr AutoBrightnessMode auto_brightness_enum() const noexcept {
     return static_cast<AutoBrightnessMode>((auto_brightness_mode < 3U) ? auto_brightness_mode : 1U);
@@ -890,6 +968,7 @@ struct DevicePrefsState {
   uint32_t nvs_dirty_since_ms = 0;
   std::string tools_items = kDefaultToolsItems;
   std::string games_items = kDefaultGamesItems;
+  bool weather_app_background = true;
 };
 
 inline DevicePrefsState &device_prefs_state() {
@@ -918,8 +997,10 @@ inline constexpr const char *const kDockedIdleTimeoutOpts[7] = {
     "10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"};
 inline constexpr const char *const kBattHibernateTimeoutOpts[5] = {
     "5 min", "10 min", "15 min", "30 min", "Disabled"};
-inline constexpr const char *const kScreensaverStyleOpts[5] = {
-    "Ambient Clock", "Aurora", "Starfield", "Digital Rain", "Fireworks"};
+inline constexpr const char *const kScreensaverModeOpts[3] = {
+    "Docked Only", "Always", "Never"};
+inline constexpr const char *const kScreensaverStyleOpts[6] = {
+    "Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks"};
 inline constexpr const char *const kAutoBrightnessModeOpts[3] = {
     "Disabled", "Sun Synchronized", "Time Schedule"};
 inline constexpr const char *const kColorProfileOpts[5] = {
@@ -1002,6 +1083,7 @@ inline const char *pref_pickup_to_wake_cstr(const PersistedDevicePrefs &p = pers
 inline const char *pref_battery_screen_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattScreenTimeoutOpts, p.battery_screen_timeout, 2); }
 inline const char *pref_docked_idle_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kDockedIdleTimeoutOpts, p.docked_idle_timeout, 3); }
 inline const char *pref_battery_hibernate_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattHibernateTimeoutOpts, p.battery_hibernate_timeout, 2); }
+inline const char *pref_screensaver_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kScreensaverModeOpts, p.screensaver_mode); }
 inline const char *pref_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kScreensaverStyleOpts, p.screensaver_style); }
 inline const char *pref_bedtime_display_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBedtimeDisplayOpts, p.bedtime_display); }
 inline const char *effective_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) {
@@ -1057,8 +1139,12 @@ inline BedtimeScheduleTracker &bedtime_schedule_tracker() noexcept {
   static BedtimeScheduleTracker tr{};
   return tr;
 }
-inline constexpr float resolve_screensaver_brightness(float active_bri) noexcept {
+inline constexpr float resolve_screensaver_brightness(float active_bri,
+                                                      bool photo_frame = false) noexcept {
   const float b = std::clamp(active_bri, 0.0f, 1.0f);
+  if (photo_frame) {
+    return std::min(b, std::max(0.08f, b * 0.70f));
+  }
   return std::min(b, std::max(0.05f, b * 0.45f));
 }
 
@@ -1329,7 +1415,8 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.battery_screen_timeout >= 6) p.battery_screen_timeout = 2;
   if (p.docked_idle_timeout >= 7) p.docked_idle_timeout = 3;
   if (p.battery_hibernate_timeout >= 5) p.battery_hibernate_timeout = 2;
-  if (p.screensaver_style >= 5) p.screensaver_style = 0;
+  if (p.screensaver_mode >= 3) p.screensaver_mode = 0;
+  if (p.screensaver_style >= 6) p.screensaver_style = 0;
   if (p.auto_brightness_mode >= 3) p.auto_brightness_mode = 1;
   p.manual_brightness = static_cast<uint8_t>(std::clamp<int>(p.manual_brightness, 1, 100));
   p.day_brightness = static_cast<uint8_t>(std::clamp<int>(p.day_brightness, 1, 100));
@@ -1360,6 +1447,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (&p == &persisted_prefs()) {
     device_prefs_state().tools_items = p.tools_items;
     device_prefs_state().games_items = p.games_items;
+    device_prefs_state().weather_app_background = p.weather_app_background;
   }
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
@@ -1407,7 +1495,7 @@ inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, boo
     p.docked_idle_timeout = 6;
     p.battery_hibernate_timeout = 4;
     p.ble_beacon_mode = 0;
-    p.docked_screensaver = false;
+    p.screensaver_mode = 2;  // "Never"
   } else if (is_wearable) {
     p.wake_word_mode = 0;
     p.tap_to_wake = 1;
@@ -1416,7 +1504,7 @@ inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, boo
     p.docked_idle_timeout = 3;
     p.battery_hibernate_timeout = 2;
     p.ble_beacon_mode = 1;
-    p.docked_screensaver = true;
+    p.screensaver_mode = 0;  // "Docked Only"
     p.day_brightness = 80;
     p.night_brightness = 25;
   } else if (is_round_display && has_battery) {
@@ -1427,7 +1515,7 @@ inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, boo
     p.docked_idle_timeout = 3;
     p.battery_hibernate_timeout = 2;
     p.ble_beacon_mode = 1;
-    p.docked_screensaver = true;
+    p.screensaver_mode = 0;  // "Docked Only"
   } else {
     p.wake_word_mode = 0;
     p.tap_to_wake = 0;
@@ -1436,7 +1524,7 @@ inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, boo
     p.docked_idle_timeout = 3;
     p.battery_hibernate_timeout = 3;
     p.ble_beacon_mode = 1;
-    p.docked_screensaver = true;
+    p.screensaver_mode = 0;  // "Docked Only"
   }
 }
 
@@ -1854,6 +1942,7 @@ struct MusicRuntimeState {
   std::string last_sendspin_album = "";
   std::string loaded_art_url = "";
   std::string loaded_wallpaper_url = "";
+  std::string loaded_screensaver_photo_url = "";
 
   void sync_carousel_for_view() noexcept {
     const int idx = std::clamp(static_cast<int>(view), 0, kMusicPeerTabCount - 1);
@@ -2042,7 +2131,7 @@ struct HelloSyncState {
   bool in_flight = false;
   uint32_t started_ms = 0;
   uint32_t last_sent_ms = 0;
-  uint64_t last_sent_dirty_mask = 0;
+  PrefMask last_sent_dirty_mask{};
 };
 
 struct DeviceRuntimeState {
@@ -2859,6 +2948,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.area_icon                = std::string(f[static_cast<size_t>(AreaCtxField::AREA_ICON)]);
   st.local_tz_info            = std::string(f[static_cast<size_t>(AreaCtxField::LOCAL_TZ_INFO)]);
   st.world_clocks_summary     = std::string(f[static_cast<size_t>(AreaCtxField::WORLD_CLOCKS_SUMMARY)]);
+  st.screensaver_photo_url    = std::string(f[static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL)]);
   const uint32_t raw_alarm_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::ALARM_CAPS)], 0U);
   st.alarm_caps = st.alarm_entity.empty()
                       ? 0U
@@ -3813,7 +3903,7 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::BATTERY_SCREEN_TIMEOUT: return "battery_screen_timeout";
     case PrefKey::DOCKED_IDLE_TIMEOUT: return "docked_idle_timeout";
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return "battery_hibernate_timeout";
-    case PrefKey::DOCKED_SCREENSAVER: return "docked_screensaver";
+    case PrefKey::SCREENSAVER_MODE: return "screensaver_mode";
     case PrefKey::SCREENSAVER_STYLE: return "screensaver_style";
     case PrefKey::HOLD_CROWN_POWER_OFF: return "hold_crown_power_off";
     case PrefKey::AUTO_BRIGHTNESS_MODE: return "auto_brightness_mode";
@@ -3870,6 +3960,8 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::CAMERA_FRAMING: return "camera_framing";
     case PrefKey::CAMERA_STREAM_MODE: return "camera_stream_mode";
     case PrefKey::CAMERA_DOORBELL_POPUP: return "camera_doorbell_popup";
+    case PrefKey::SCREENSAVER_PHOTO_CLOCK: return "screensaver_photo_clock";
+    case PrefKey::WEATHER_APP_BACKGROUND: return "weather_app_background";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -3883,7 +3975,7 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::BATTERY_SCREEN_TIMEOUT: return pref_battery_screen_timeout_cstr(p);
     case PrefKey::DOCKED_IDLE_TIMEOUT: return pref_docked_idle_timeout_cstr(p);
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return pref_battery_hibernate_timeout_cstr(p);
-    case PrefKey::DOCKED_SCREENSAVER: return p.docked_screensaver ? "1" : "0";
+    case PrefKey::SCREENSAVER_MODE: return pref_screensaver_mode_cstr(p);
     case PrefKey::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
     case PrefKey::HOLD_CROWN_POWER_OFF: return p.hold_crown_power_off ? "1" : "0";
     case PrefKey::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
@@ -3940,13 +4032,15 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::CAMERA_FRAMING: return pref_camera_framing_cstr(p);
     case PrefKey::CAMERA_STREAM_MODE: return pref_camera_stream_mode_cstr(p);
     case PrefKey::CAMERA_DOORBELL_POPUP: return pref_camera_doorbell_popup_cstr(p);
+    case PrefKey::SCREENSAVER_PHOTO_CLOCK: return p.screensaver_photo_clock ? "1" : "0";
+    case PrefKey::WEATHER_APP_BACKGROUND: return p.weather_app_background ? "1" : "0";
     case PrefKey::COUNT: break;
   }
   return "";
 }
 
 inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
-                                bool /*unused_cascade*/, uint64_t &changed_mask, uint32_t &effects_mask) {
+                                bool /*unused_cascade*/, PrefMask &changed_mask, uint32_t &effects_mask) {
   if (sv.empty() &&
       key != PrefKey::WORLD_CLOCKS &&
       key != PrefKey::LOCAL_CLOCK_LABEL &&
@@ -3974,13 +4068,9 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
   auto apply_bool = [&](bool &slot, uint32_t eff) -> bool {
     bool b = v3_parse_bool(sv);
     if (slot == b) return false;
-    bool was_true = slot;
     slot = b;
     changed_mask |= pref_key_bit(key);
     effects_mask |= (eff | kPrefEffectRedraw);
-    if (key == PrefKey::DOCKED_SCREENSAVER && was_true && !b) {
-      effects_mask |= kPrefEffectDockedSaverOff;
-    }
     return true;
   };
   auto apply_num = [&](uint8_t &slot, int lo, int hi, uint32_t eff) -> bool {
@@ -4007,10 +4097,11 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_enum(p.docked_idle_timeout, kDockedIdleTimeoutOpts, kPrefEffectSleepTimer);
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT:
       return apply_enum(p.battery_hibernate_timeout, kBattHibernateTimeoutOpts, kPrefEffectPowerPolicy);
-    case PrefKey::DOCKED_SCREENSAVER:
-      return apply_bool(p.docked_screensaver, kPrefEffectSleepTimer);
+    case PrefKey::SCREENSAVER_MODE:
+      return apply_enum(p.screensaver_mode, kScreensaverModeOpts,
+                        kPrefEffectSleepTimer | kPrefEffectScreensaverChange);
     case PrefKey::SCREENSAVER_STYLE:
-      return apply_enum(p.screensaver_style, kScreensaverStyleOpts, 0);
+      return apply_enum(p.screensaver_style, kScreensaverStyleOpts, kPrefEffectScreensaverChange);
     case PrefKey::HOLD_CROWN_POWER_OFF:
       return apply_bool(p.hold_crown_power_off, 0);
     case PrefKey::AUTO_BRIGHTNESS_MODE:
@@ -4184,19 +4275,28 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       return apply_enum(p.camera_stream_mode, kCameraStreamModeOpts, 0);
     case PrefKey::CAMERA_DOORBELL_POPUP:
       return apply_enum(p.camera_doorbell_popup, kCameraDoorbellPopupOpts, 0);
+    case PrefKey::SCREENSAVER_PHOTO_CLOCK:
+      return apply_bool(p.screensaver_photo_clock, kPrefEffectScreensaverChange);
+    case PrefKey::WEATHER_APP_BACKGROUND: {
+      const bool chg = apply_bool(p.weather_app_background, 0);
+      if (chg && &p == &persisted_prefs()) {
+        device_prefs_state().weather_app_background = p.weather_app_background;
+      }
+      return chg;
+    }
     case PrefKey::COUNT:
       break;
   }
   return false;
 }
 
-inline std::string encode_prefs_mask(uint64_t mask, const PersistedDevicePrefs &p = persisted_prefs()) {
-  if (mask == 0ULL) return "";
+inline std::string encode_prefs_mask(PrefMask mask, const PersistedDevicePrefs &p = persisted_prefs()) {
+  if (mask.empty()) return "";
   std::string out;
   out.reserve(128);
   for (uint8_t i = 0; i < static_cast<uint8_t>(PrefKey::COUNT); ++i) {
     const auto key = static_cast<PrefKey>(i);
-    if ((mask & pref_key_bit(key)) == 0ULL) continue;
+    if ((mask & pref_key_bit(key)).empty()) continue;
     const char *name = pref_key_name(key);
     if (name[0] == '\0') continue;
     if (!out.empty()) out.push_back(kProtocolRecordSep);
@@ -4213,8 +4313,8 @@ inline std::string encode_prefs_mask(uint64_t mask, const PersistedDevicePrefs &
 // without clobbering Studio-configured lists.
 inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs()) {
   if (p.prefs_seq == 0) {
-    constexpr uint64_t kAllMask = (1ULL << static_cast<uint8_t>(PrefKey::COUNT)) - 1ULL;
-    constexpr uint64_t kExcludeUnlessDirty =
+    constexpr PrefMask kAllMask = pref_mask_all(static_cast<uint8_t>(PrefKey::COUNT));
+    constexpr PrefMask kExcludeUnlessDirty =
         pref_key_bit(PrefKey::BLE_BEACON_ENABLED) |
         pref_key_bit(PrefKey::WORLD_CLOCKS) |
         pref_key_bit(PrefKey::ALARMS_SUMMARY) |
@@ -4222,7 +4322,7 @@ inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persi
         pref_key_bit(PrefKey::TOOLS_ITEMS) |
         pref_key_bit(PrefKey::GAMES_ITEMS) |
         pref_key_bit(PrefKey::BEDTIME_ACTIVE);
-    const uint64_t seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
+    const PrefMask seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
     return encode_prefs_mask(seed_mask, p);
   }
   return encode_prefs_mask(p.dirty_mask, p);
@@ -4244,7 +4344,7 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
   v3_check_field_count("device_prefs", payload, kCount);
 
-  uint64_t changed_mask = 0;
+  PrefMask changed_mask{};
   auto apply_f = [&](DevicePrefsField df, PrefKey pk) {
     set_pref_by_key_str(p, pk, f[static_cast<size_t>(df)], false, changed_mask, out_effects);
   };
@@ -4255,7 +4355,7 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::BATTERY_SCREEN_TIMEOUT, PrefKey::BATTERY_SCREEN_TIMEOUT);
   apply_f(DevicePrefsField::DOCKED_IDLE_TIMEOUT, PrefKey::DOCKED_IDLE_TIMEOUT);
   apply_f(DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT, PrefKey::BATTERY_HIBERNATE_TIMEOUT);
-  apply_f(DevicePrefsField::DOCKED_SCREENSAVER, PrefKey::DOCKED_SCREENSAVER);
+  apply_f(DevicePrefsField::SCREENSAVER_MODE, PrefKey::SCREENSAVER_MODE);
   apply_f(DevicePrefsField::SCREENSAVER_STYLE, PrefKey::SCREENSAVER_STYLE);
   apply_f(DevicePrefsField::HOLD_CROWN_POWER_OFF, PrefKey::HOLD_CROWN_POWER_OFF);
   apply_f(DevicePrefsField::AUTO_BRIGHTNESS_MODE, PrefKey::AUTO_BRIGHTNESS_MODE);
@@ -4312,8 +4412,11 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::CAMERA_FRAMING, PrefKey::CAMERA_FRAMING);
   apply_f(DevicePrefsField::CAMERA_STREAM_MODE, PrefKey::CAMERA_STREAM_MODE);
   apply_f(DevicePrefsField::CAMERA_DOORBELL_POPUP, PrefKey::CAMERA_DOORBELL_POPUP);
+  apply_f(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK, PrefKey::SCREENSAVER_PHOTO_CLOCK);
+  apply_f(DevicePrefsField::WEATHER_APP_BACKGROUND, PrefKey::WEATHER_APP_BACKGROUND);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
+  st.weather_app_background = p.weather_app_background;
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {
@@ -4337,11 +4440,11 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   }
 
   const uint32_t in_seq = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)], 0);
-  const bool meta_changed = (in_seq > 0 && p.prefs_seq != in_seq) || (p.dirty_mask != 0ULL);
+  const bool meta_changed = (in_seq > 0 && p.prefs_seq != in_seq) || p.dirty_mask.any();
   if (in_seq > 0) p.prefs_seq = in_seq;
-  p.dirty_mask = 0ULL;
+  p.dirty_mask.clear();
 
-  if (changed_mask != 0ULL || meta_changed) {
+  if (changed_mask.any() || meta_changed) {
     schedule_persisted_prefs_save(now_ms);
   }
   return true;
@@ -5781,7 +5884,7 @@ inline void reset_hello_sync_on_connect() {
   st.in_flight = false;
   st.started_ms = 0;
   st.last_sent_ms = 0;
-  st.last_sent_dirty_mask = 0;
+  st.last_sent_dirty_mask.clear();
 }
 
 inline void mark_hello_in_flight(bool active, uint32_t now_ms = 0) {
@@ -5790,7 +5893,7 @@ inline void mark_hello_in_flight(bool active, uint32_t now_ms = 0) {
   st.started_ms = active ? ((now_ms == 0U) ? 1U : now_ms) : 0U;
 }
 
-inline void mark_hello_sent(uint32_t now_ms, uint64_t dirty_mask) {
+inline void mark_hello_sent(uint32_t now_ms, PrefMask dirty_mask) {
   auto &st = hello_sync_state();
   st.in_flight = false;
   st.started_ms = 0;
@@ -5798,7 +5901,7 @@ inline void mark_hello_sent(uint32_t now_ms, uint64_t dirty_mask) {
   st.last_sent_dirty_mask = dirty_mask;
 }
 
-inline bool should_trigger_hello_on_ping(uint32_t now_ms, uint64_t dirty_mask) {
+inline bool should_trigger_hello_on_ping(uint32_t now_ms, PrefMask dirty_mask) {
   const auto &st = hello_sync_state();
   if (st.in_flight && (st.started_ms == 0U || static_cast<uint32_t>(now_ms - st.started_ms) < 31000U)) {
     return false;
@@ -6148,6 +6251,9 @@ struct V3DomainEffects {
   bool stop_wallpaper_fetch{false};
   bool release_wallpaper_art{false};
   bool fetch_wallpaper{false};
+  bool stop_screensaver_photo_fetch{false};
+  bool release_screensaver_photo_art{false};
+  bool fetch_screensaver_photo{false};
   bool weather_sim_dirty{false};
   bool reset_ambient_frame_ms{false};
   bool ensure_anim_poller{false};
@@ -6188,6 +6294,7 @@ class V3DomainReducer {
   int prev_queue_count_{0};
   uint16_t prev_media_caps_{0};
   std::string prev_sun_{};
+  std::string prev_wallpaper_url_{};
 };
 
 V3DomainReducer &v3_domain_reducer() noexcept;

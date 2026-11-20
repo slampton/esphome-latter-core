@@ -176,8 +176,10 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       }
     }
 
+    bool wallpaper_changed = (st.wallpaper_url != prev_wallpaper_url_);
+    prev_wallpaper_url_ = st.wallpaper_url;
     bool wallpaper_cleared = false;
-    if (st.wallpaper_url.empty()) {
+    if (st.wallpaper_url.empty() || is_day_night_sky_wallpaper_url(st.wallpaper_url)) {
       if (!r.music.loaded_wallpaper_url.empty()) {
         r.music.loaded_wallpaper_url.clear();
         eff.stop_wallpaper_fetch = true;
@@ -185,18 +187,38 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         eff.weather_sim_dirty = true;
         eff.ensure_anim_poller = true;
         wallpaper_cleared = true;
+      } else if (wallpaper_changed) {
+        eff.stop_wallpaper_fetch = true;
+        eff.weather_sim_dirty = true;
+        wallpaper_cleared = true;
       }
     } else if (r.nav.display_power_state == 0 && st.wallpaper_url != r.music.loaded_wallpaper_url) {
       eff.fetch_wallpaper = true;
     }
 
+    if (st.screensaver_photo_url.empty()) {
+      if (!r.music.loaded_screensaver_photo_url.empty()) {
+        r.music.loaded_screensaver_photo_url.clear();
+        eff.stop_screensaver_photo_fetch = true;
+        eff.release_screensaver_photo_art = true;
+        if (r.nav.display_power_state == 1 && !r.nav.is_hibernating) {
+          eff.mark_dirty_full = true;
+          eff.schedule_disp_update = true;
+        }
+      }
+    } else if (r.nav.display_power_state == 1 && !r.nav.is_hibernating &&
+               std::string_view(effective_screensaver_style_cstr(prefs)) == "Photo Frame" &&
+               st.screensaver_photo_url != r.music.loaded_screensaver_photo_url) {
+      eff.fetch_screensaver_photo = true;
+    }
+
     if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
       const int gp = r.nav.gui_page;
-      if (wallpaper_cleared) {
+      if (wallpaper_cleared || wallpaper_changed) {
         eff.mark_dirty_full = true;
       }
-      if (wallpaper_cleared || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
-          gp == PageId::PINNED || gp == PageId::CALENDAR || gp == PageId::CAMERAS) {
+      if (wallpaper_cleared || wallpaper_changed || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
+          gp == PageId::PINNED || gp == PageId::CALENDAR || gp == PageId::CAMERAS || gp == PageId::WEATHER) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
         }
@@ -354,6 +376,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     if (weather_state().sun_state != prev_sun_) {
       prev_sun_ = weather_state().sun_state;
       eff.sync_display_brightness = true;
+      eff.mark_dirty_full = true;
     }
     eff.weather_sim_dirty = true;
     eff.reset_ambient_frame_ms = true;

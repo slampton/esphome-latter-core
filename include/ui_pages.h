@@ -127,6 +127,7 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
                                      bool mask_hero_temp = true,
                                      float accel_x = 0.0f, float accel_y = 0.0f,
                                      bool show_celestial = true);
+void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night);
 
 // ------------------------------------------------------------------------------
 // 5. Shared Area, Home Hub, Tools, Comms & Games State

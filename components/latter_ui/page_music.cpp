@@ -198,10 +198,16 @@ void render_music_art_or_wallpaper_base(esphome::display::Display &it, const UiF
   const auto &ac = area_ctx_state();
   const UiStrView art_mode = ctx.music_fullscreen_art_opt;
   if (art_mode == "None") {
-    const bool has_wall = (!ac.wallpaper_url.empty() &&
-                           ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                           ctx.home_wallpaper_art.valid());
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, dim_level);
+    if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
+      render_static_day_night_sky_base(
+          it, ctx.cx, ctx.cy,
+          resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
+    } else {
+      const bool has_wall = (!ac.wallpaper_url.empty() &&
+                             ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                             ctx.home_wallpaper_art.valid());
+      render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, dim_level);
+    }
   } else {
     const bool is_standard = (art_mode == "Standard") && (dim_level == 0);
     const bool is_letterbox = (art_mode == "Letterbox") && (dim_level == 0);
@@ -749,10 +755,16 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
 
   // Full-bleed dimmed cover art backdrop — ZERO passive glass card behind lyrics text (D-043 / D-048)!
   if (ctx.music_fullscreen_art_opt == "None") {
-    const bool has_wall = (!ac.wallpaper_url.empty() &&
-                           ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                           ctx.home_wallpaper_art.valid());
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, kArtDimLyrics);
+    if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
+      render_static_day_night_sky_base(
+          it, ctx.cx, ctx.cy,
+          resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
+    } else {
+      const bool has_wall = (!ac.wallpaper_url.empty() &&
+                             ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                             ctx.home_wallpaper_art.valid());
+      render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, kArtDimLyrics);
+    }
   } else {
     render_lyrics_art_backdrop(it, select_music_art(ctx), ctx.cx, ctx.theme_primary, ctx.col_bg);
   }
@@ -1010,10 +1022,16 @@ void render_info_view(esphome::display::Display &it, const UiFrameContext &ctx) 
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
 
   if (ctx.music_fullscreen_art_opt == "None") {
-    const bool has_wall = (!ac.wallpaper_url.empty() &&
-                           ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                           ctx.home_wallpaper_art.valid());
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, kArtDimLyrics);
+    if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
+      render_static_day_night_sky_base(
+          it, ctx.cx, ctx.cy,
+          resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
+    } else {
+      const bool has_wall = (!ac.wallpaper_url.empty() &&
+                             ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                             ctx.home_wallpaper_art.valid());
+      render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, ctx.cx, ctx.col_bg, kArtDimLyrics);
+    }
   } else {
     render_lyrics_art_backdrop(it, select_music_art(ctx), ctx.cx, ctx.theme_primary, ctx.col_bg);
   }

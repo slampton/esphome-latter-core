@@ -4339,6 +4339,9 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
           }
           rt_.schedule_disp();
+        } else if (item_idx == 6) {
+          rt_.sw_toggle(UiSwitchId::WEATHER_APP_BG);
+          rt_.schedule_disp();
         }
       }
 
@@ -4981,13 +4984,15 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                           {"10s", "15s", "30s", "1 min", "2 min", "Never"}));
 #endif
         } else if (idx == 3) {
-          rt_.sw_toggle(UiSwitchId::DOCKED_SCREENSAVER);
+          rt_.set_select_opt(UiSelectId::SCREENSAVER_MODE,
+                             cycle_option(rt_.select_opt(UiSelectId::SCREENSAVER_MODE),
+                                          {"Docked Only", "Always", "Never"}));
         } else if (idx == 4) {
-          if (rt_.sw_state(UiSwitchId::DOCKED_SCREENSAVER)) {
+          if (rt_.select_opt(UiSelectId::SCREENSAVER_MODE) != "Never") {
             rt_.set_select_opt(UiSelectId::SCREENSAVER_STYLE,
                                cycle_option(rt_.select_opt(UiSelectId::SCREENSAVER_STYLE),
-                                            {"Ambient Clock", "Aurora", "Starfield",
-                                             "Digital Rain", "Fireworks"}));
+                                            {"Ambient Clock", "Photo Frame", "Aurora",
+                                             "Starfield", "Digital Rain", "Fireworks"}));
           }
         } else if (idx == 5) {
           rt_.set_select_opt(UiSelectId::SCREENSAVER_DOCKED_TIMEOUT,
@@ -5028,7 +5033,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           }
         } else if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
           const int slot_idx = hit->param;
-          const int item_idx = (rs.nav.display_menu_page == 1) ? slot_idx : (slot_idx + 4);
+          const int item_idx = (rs.nav.display_menu_page == 1) ? slot_idx : (slot_idx + 5);
           const std::string_view ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
           if (item_idx == 0) {
             if (prefs.home_screen_enabled) {
@@ -5082,6 +5087,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             rt_.set_num_val(UiNumberId::DAY_START_HOUR, static_cast<float>(nxt_dh));
             rt_.set_num_val(UiNumberId::NIGHT_START_HOUR, static_cast<float>(nxt_nh));
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+          } else if (item_idx == 9) {
+            rt_.sw_toggle(UiSwitchId::SCREENSAVER_PHOTO_CLOCK);
           }
           rt_.schedule_disp();
         }
@@ -6425,6 +6432,7 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::THEME_PALETTE: return pref_color_profile_cstr(p);
     case S::PICKUP_WAKE_MODE: return pref_pickup_to_wake_cstr(p);
     case S::DISPLAY_OFF_TIMEOUT: return pref_battery_screen_timeout_cstr(p);
+    case S::SCREENSAVER_MODE: return pref_screensaver_mode_cstr(p);
     case S::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
     case S::SCREENSAVER_DOCKED_TIMEOUT: return pref_docked_idle_timeout_cstr(p);
     case S::HIBERNATE_TIMEOUT_MODE: return pref_battery_hibernate_timeout_cstr(p);
@@ -6487,6 +6495,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::THEME_PALETTE: pk = K::COLOR_PROFILE; break;
     case S::PICKUP_WAKE_MODE: pk = K::PICKUP_TO_WAKE; break;
     case S::DISPLAY_OFF_TIMEOUT: pk = K::BATTERY_SCREEN_TIMEOUT; break;
+    case S::SCREENSAVER_MODE: pk = K::SCREENSAVER_MODE; break;
     case S::SCREENSAVER_STYLE: pk = K::SCREENSAVER_STYLE; break;
     case S::SCREENSAVER_DOCKED_TIMEOUT: pk = K::DOCKED_IDLE_TIMEOUT; break;
     case S::HIBERNATE_TIMEOUT_MODE: pk = K::BATTERY_HIBERNATE_TIMEOUT; break;
@@ -6516,11 +6525,12 @@ bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
   const auto &p = persisted_prefs();
   switch (swid) {
     case W::HOME_WEATHER_BG: return p.weather_background;
+    case W::WEATHER_APP_BG: return p.weather_app_background;
     case W::HOME_WAKE_GREETING: return p.wake_greeting;
     case W::BLE_AREA_BEACON: return p.ble_beacon_enabled;
     case W::GAME_SOUND: return p.game_sound_effects;
     case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
-    case W::DOCKED_SCREENSAVER: return p.docked_screensaver;
+    case W::SCREENSAVER_PHOTO_CLOCK: return p.screensaver_photo_clock;
     case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
     case W::BEDTIME_MODE: return p.bedtime_active;
   }
@@ -6535,11 +6545,12 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
   bool next_val = false;
   switch (swid) {
     case W::HOME_WEATHER_BG: pk = K::WEATHER_BACKGROUND; next_val = !p.weather_background; break;
+    case W::WEATHER_APP_BG: pk = K::WEATHER_APP_BACKGROUND; next_val = !p.weather_app_background; break;
     case W::HOME_WAKE_GREETING: pk = K::WAKE_GREETING; next_val = !p.wake_greeting; break;
     case W::BLE_AREA_BEACON: pk = K::BLE_BEACON_ENABLED; next_val = !p.ble_beacon_enabled; break;
     case W::GAME_SOUND: pk = K::GAME_SOUND_EFFECTS; next_val = !p.game_sound_effects; break;
     case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
-    case W::DOCKED_SCREENSAVER: pk = K::DOCKED_SCREENSAVER; next_val = !p.docked_screensaver; break;
+    case W::SCREENSAVER_PHOTO_CLOCK: pk = K::SCREENSAVER_PHOTO_CLOCK; next_val = !p.screensaver_photo_clock; break;
     case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
     case W::BEDTIME_MODE: pk = K::BEDTIME_ACTIVE; next_val = !p.bedtime_active; break;
   }

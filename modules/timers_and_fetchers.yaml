@@ -368,6 +368,7 @@ script:
                   rs.voice.active || !rs.voice.status_text.empty() ||
                   (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
                   ac.wallpaper_url.empty() ||
+                  latter_ui::is_day_night_sky_wallpaper_url(ac.wallpaper_url) ||
                   (ac.wallpaper_url == rs.music.loaded_wallpaper_url)) {
                 return false;
               }
@@ -381,6 +382,48 @@ script:
             - online_image.set_url:
                 id: home_wallpaper_art
                 url: !lambda 'return latter_ui::area_ctx_state().wallpaper_url;'
+
+  - id: fetch_screensaver_photo_debounced
+    mode: restart
+    then:
+      - delay: 250ms
+      - if:
+          condition:
+            lambda: |-
+              const auto &rs = latter_ui::runtime_state();
+              const auto &ac = latter_ui::area_ctx_state();
+              if ((rs.nav.display_power_state != 1) ||
+                  rs.nav.is_hibernating || rs.nav.ota_in_progress ||
+                  rs.voice.active || !rs.voice.status_text.empty() ||
+                  (std::string_view(latter_ui::effective_screensaver_style_cstr()) != "Photo Frame") ||
+                  ac.screensaver_photo_url.empty() ||
+                  (ac.screensaver_photo_url == rs.music.loaded_screensaver_photo_url &&
+                   id(screensaver_photo_art).get_width() > 0)) {
+                return false;
+              }
+              #if !LATTER_CHIP_P4
+              if (id(screensaver_photo_art).get_width() == 0) {
+                latter_ui::sky_base_cache_drop();
+              }
+              #endif
+              return latter_ui::can_start_online_art_fetch(id(screensaver_photo_art).get_width() > 0);
+          then:
+            - online_image.set_url:
+                id: screensaver_photo_art
+                url: !lambda 'return latter_ui::area_ctx_state().screensaver_photo_url;'
+
+  # Release screensaver_photo_art if an async download finishes after leaving screensaver mode.
+  - id: release_hidden_screensaver_photo
+    mode: restart
+    then:
+      - delay: 1ms
+      - if:
+          condition:
+            lambda: 'return latter_ui::runtime_state().nav.display_power_state != 1;'
+          then:
+            - lambda: |-
+                latter_ui::runtime_state().music.loaded_screensaver_photo_url = "";
+                latter_ui::release_art(id(screensaver_photo_art));
 
   - id: fetch_camera_snapshot
     mode: restart

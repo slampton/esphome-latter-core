@@ -40,7 +40,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `41` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `42` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -50,7 +50,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `4` | `area_name` | `AreaCtxField::AREA_NAME` | `string` | Friendly display name of the active Area |
 | `5` | `site_id` | `AreaCtxField::SITE_ID` | `string` | Active Site ID |
 | `6` | `ble_closest_proxy` | `AreaCtxField::BLE_CLOSEST_PROXY` | `string` | Friendly name of closest Bluetooth proxy |
-| `7` | `wallpaper_url` | `AreaCtxField::WALLPAPER_URL` | `url` | Signed HTTP URL for active wallpaper |
+| `7` | `wallpaper_url` | `AreaCtxField::WALLPAPER_URL` | `url` | Signed HTTP URL for active wallpaper, or "latter://day_night_sky" to select the native Day & Night Sky wallpaper |
 | `8` | `available_domains` | `AreaCtxField::AVAILABLE_DOMAINS` | `csv` | Comma-separated enabled Area categories with >= 1 entity in the active Area, in configured order (scene, light, cover, fan, switch, climate, media, all); empty when no categories have entities |
 | `9` | `area_temp` | `AreaCtxField::AREA_TEMP` | `string` | Formatted Area temperature |
 | `10` | `area_humidity` | `AreaCtxField::AREA_HUMIDITY` | `string` | Formatted Area relative humidity |
@@ -84,6 +84,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `38` | `alarm_caps` | `AreaCtxField::ALARM_CAPS` | `u16` | Alarm capability & code bitmask (1=code_disarm_required, 2=code_arm_required, 4=supports_arm_home, 8=supports_arm_away, 16=supports_arm_night, 32=supports_arm_vacation) |
 | `39` | `camera_stream_url` | `AreaCtxField::CAMERA_STREAM_URL` | `url` | Signed device-scoped base URL for live MJPEG single and 2x2 grid camera streaming |
 | `40` | `alert_camera_entity` | `AreaCtxField::ALERT_CAMERA_ENTITY` | `entity_id` | Camera entity ID associated with the active alert or doorbell notification |
+| `41` | `screensaver_photo_url` | `AreaCtxField::SCREENSAVER_PHOTO_URL` | `url` | Signed HTTP URL for the active Photo Frame screensaver image (un-dimmed, darken=1.0); empty when screensaver_style is not Photo Frame or the photo pool is empty |
 
 ### `sensor.<device>_active_media` (`MediaField`, `24` total fields)
 
@@ -155,7 +156,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `69` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `71` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -168,8 +169,8 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `7` | `battery_screen_timeout` | `DevicePrefsField::BATTERY_SCREEN_TIMEOUT` | `string` | Battery screen timeout (10s|15s|30s|1 min|2 min|Never) |
 | `8` | `docked_idle_timeout` | `DevicePrefsField::DOCKED_IDLE_TIMEOUT` | `string` | Docked idle timeout before screensaver/sleep (10s|15s|30s|1 min|2 min|5 min|Never) |
 | `9` | `battery_hibernate_timeout` | `DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT` | `string` | Battery deep sleep / hibernate timeout (5 min|10 min|15 min|30 min|Disabled) |
-| `10` | `docked_screensaver` | `DevicePrefsField::DOCKED_SCREENSAVER` | `bool` | 1 = launch screensaver instead of sleeping when docked idle timeout expires, else 0 |
-| `11` | `screensaver_style` | `DevicePrefsField::SCREENSAVER_STYLE` | `string` | Ambient screensaver style (Ambient Clock|Aurora|Starfield|Digital Rain|Fireworks) |
+| `10` | `screensaver_mode` | `DevicePrefsField::SCREENSAVER_MODE` | `string` | Screensaver activation policy when idle (Docked Only|Always|Never) |
+| `11` | `screensaver_style` | `DevicePrefsField::SCREENSAVER_STYLE` | `string` | Ambient screensaver style (Ambient Clock|Photo Frame|Aurora|Starfield|Digital Rain|Fireworks) |
 | `12` | `hold_crown_power_off` | `DevicePrefsField::HOLD_CROWN_POWER_OFF` | `bool` | 1 = long-holding rotary crown enters deep sleep / power off, else 0 |
 | `13` | `auto_brightness_mode` | `DevicePrefsField::AUTO_BRIGHTNESS_MODE` | `string` | Automatic brightness mode (Disabled|Sun Synchronized|Time Schedule) |
 | `14` | `manual_brightness` | `DevicePrefsField::MANUAL_BRIGHTNESS` | `u16` | Manual brightness target when auto brightness is Disabled (1..100%) |
@@ -227,6 +228,8 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `66` | `camera_framing` | `DevicePrefsField::CAMERA_FRAMING` | `string` | Camera video framing mode (Uncropped|Fill) |
 | `67` | `camera_stream_mode` | `DevicePrefsField::CAMERA_STREAM_MODE` | `string` | Camera live streaming quality and bandwidth mode (Auto|Low Bandwidth|Snapshots) |
 | `68` | `camera_doorbell_popup` | `DevicePrefsField::CAMERA_DOORBELL_POPUP` | `string` | Doorbell ring popup media mode on hardware-JPEG devices (Snapshot|Live Video) |
+| `69` | `screensaver_photo_clock` | `DevicePrefsField::SCREENSAVER_PHOTO_CLOCK` | `bool` | 1 = show subtle clock overlay on Photo Frame screensaver, else 0 |
+| `70` | `weather_app_background` | `DevicePrefsField::WEATHER_APP_BACKGROUND` | `bool` | 1 = show live animated weather sky background in the Sky & Weather app, else 0 |
 
 ### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -305,9 +308,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `38`
+- **Studio Wire Revision (`studio_rev`)**: `39`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
-- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_wallpaper`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
-- **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `select_wallpaper`, `toggle_wallpaper_favorite`, `save_device_config`
+- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
+- **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `61` typed preference descriptors
+- **Declarative `device_prefs` Specs**: `63` typed preference descriptors

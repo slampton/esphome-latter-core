@@ -235,7 +235,8 @@ enum class AreaCtxField : size_t {
   ALARM_CAPS = 38,  // alarm_caps (u16)
   CAMERA_STREAM_URL = 39,  // camera_stream_url (url)
   ALERT_CAMERA_ENTITY = 40,  // alert_camera_entity (entity_id)
-  COUNT = 41
+  SCREENSAVER_PHOTO_URL = 41,  // screensaver_photo_url (url)
+  COUNT = 42
 };
 
 // Domain: active_media (sensor.<device>_active_media)
@@ -324,7 +325,7 @@ enum class DevicePrefsField : size_t {
   BATTERY_SCREEN_TIMEOUT = 7,  // battery_screen_timeout (string)
   DOCKED_IDLE_TIMEOUT = 8,  // docked_idle_timeout (string)
   BATTERY_HIBERNATE_TIMEOUT = 9,  // battery_hibernate_timeout (string)
-  DOCKED_SCREENSAVER = 10,  // docked_screensaver (bool)
+  SCREENSAVER_MODE = 10,  // screensaver_mode (string)
   SCREENSAVER_STYLE = 11,  // screensaver_style (string)
   HOLD_CROWN_POWER_OFF = 12,  // hold_crown_power_off (bool)
   AUTO_BRIGHTNESS_MODE = 13,  // auto_brightness_mode (string)
@@ -383,7 +384,9 @@ enum class DevicePrefsField : size_t {
   CAMERA_FRAMING = 66,  // camera_framing (string)
   CAMERA_STREAM_MODE = 67,  // camera_stream_mode (string)
   CAMERA_DOORBELL_POPUP = 68,  // camera_doorbell_popup (string)
-  COUNT = 69
+  SCREENSAVER_PHOTO_CLOCK = 69,  // screensaver_photo_clock (bool)
+  WEATHER_APP_BACKGROUND = 70,  // weather_app_background (bool)
+  COUNT = 71
 };
 
 // Domain: shortcuts (sensor.<device>_shortcuts)

@@ -841,10 +841,10 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 15U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 63U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 69U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 41U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 16U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 65U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 71U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
   // Universal shortcut routes + PageId::PINNED == 11 + PageId::CALENDAR == 12 + PageId::CAMERAS == 13
@@ -1026,7 +1026,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(std::string_view(latter_ui::pref_return_to_home_timeout_cstr(p)) == "2 min");
   LATTER_CHECK(latter_ui::return_to_home_timeout_ms(p) == 120000U);
 
-  uint64_t nav_chg = 0ULL;
+  latter_ui::PrefMask nav_chg{};
   uint32_t nav_eff = 0;
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
       p, latter_ui::PrefKey::HOME_SCREEN_ENABLED, "0", false, nav_chg, nav_eff));
@@ -1085,7 +1085,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026111904L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026111905L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -1215,7 +1215,8 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_wall)) == "Never");
     LATTER_CHECK(std::string_view(latter_ui::pref_docked_idle_timeout_cstr(p_wall)) == "Never");
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_wall)) == "Disabled");
-    LATTER_CHECK(p_wall.docked_screensaver == false);
+    LATTER_CHECK(p_wall.screensaver_mode == 2U);
+    LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_mode_cstr(p_wall)) == "Never");
     LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(p_wall)) == "Handheld Only");
 
     latter_ui::PersistedDevicePrefs p_pocket{};
@@ -1226,7 +1227,8 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_screen_timeout_cstr(p_pocket)) == "30s");
     LATTER_CHECK(std::string_view(latter_ui::pref_docked_idle_timeout_cstr(p_pocket)) == "1 min");
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_pocket)) == "15 min");
-    LATTER_CHECK(p_pocket.docked_screensaver == true);
+    LATTER_CHECK(p_pocket.screensaver_mode == 0U);
+    LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_mode_cstr(p_pocket)) == "Docked Only");
 
     latter_ui::PersistedDevicePrefs p_wear{};
     latter_ui::seed_hardware_sleep_defaults_for_traits(p_wear, false, true, false, true);
@@ -1253,13 +1255,13 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(prefs.ble_beacon_mode == 1U);
   LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld + Screen Off");
 
-  uint64_t chg = 0ULL;
+  latter_ui::PrefMask chg{};
   uint32_t eff = 0U;
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
       prefs, latter_ui::PrefKey::BLE_BEACON_MODE, "Handheld Only", true, chg, eff));
   LATTER_CHECK(prefs.ble_beacon_mode == 0U);
   LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld Only");
-  LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)) != 0ULL);
+  LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)).any());
   LATTER_CHECK((eff & latter_ui::kPrefEffectPowerPolicy) != 0U);
 
   MockRpcOutbox roam_outbox{};
@@ -1688,33 +1690,42 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   using latter_ui::BackdropMode;
   using latter_ui::resolve_backdrop_mode;
 
-  // 1. Single Authoritative Backdrop Precedence (D-038)
+  // 1. Single Authoritative Backdrop Precedence (D-038, D-067)
   // On Home (gui_page=1, home_subpage=0) AND Sky & Weather (gui_page=5):
-  // weather_background ON (or weather_sim_active) wins over CustomWallpaper!
-  LATTER_CHECK(resolve_backdrop_mode(1, 0, true, false, true) == BackdropMode::LiveWeatherSky);
-  LATTER_CHECK(resolve_backdrop_mode(5, 0, true, false, true) == BackdropMode::LiveWeatherSky);
-  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, true, true) == BackdropMode::LiveWeatherSky);
-  LATTER_CHECK(resolve_backdrop_mode(5, 2, false, true, true) == BackdropMode::LiveWeatherSky);
-  // When weather_background is OFF (and sim inactive), CustomWallpaper renders when loaded, else SolidBlack
-  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, false) == BackdropMode::SolidBlack);
-  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, false) == BackdropMode::SolidBlack);
-  // Home subpage 1 & 2 keep CustomWallpaper (dimmed on subpage 2) even while weather_background is ON!
-  LATTER_CHECK(resolve_backdrop_mode(1, 1, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, false, false) == BackdropMode::SolidBlack);
+  // Independent home_weather_bg / weather_app_bg (or weather_sim_active) wins over CustomWallpaper & DayNightSky!
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, true, true, false, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, true, true, false, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, true, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(5, 2, false, false, true, true) == BackdropMode::LiveWeatherSky);
+  // Independent split: Home OFF + Weather App ON vs Home ON + Weather App OFF
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, true, false, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, true, false, false, true) == BackdropMode::LiveWeatherSky);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, true, false, false, true) == BackdropMode::CustomWallpaper);
+  // When weather_background is OFF (and sim inactive), DayNightSky > CustomWallpaper > SolidBlack
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, false, false, true) == BackdropMode::DayNightSky);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, false, false, true) == BackdropMode::DayNightSky);
+  LATTER_CHECK(resolve_backdrop_mode(1, 0, false, false, false, false, false) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(5, 0, false, false, false, false, false) == BackdropMode::SolidBlack);
+  // Home subpage 1 & 2 keep DayNightSky / CustomWallpaper even while weather_background is ON!
+  LATTER_CHECK(resolve_backdrop_mode(1, 1, true, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, true, false, false, true) == BackdropMode::DayNightSky);
+  LATTER_CHECK(resolve_backdrop_mode(1, 2, true, true, false, false, false) == BackdropMode::SolidBlack);
   // System (4), Area (6), Remote (7), Tools (8), Home Hub (9), Music (2), Clock (0), Games (3)
-  LATTER_CHECK(resolve_backdrop_mode(4, 0, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(6, 0, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(7, 0, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(8, 0, true, false, true, false) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(8, 0, true, false, true, true) == BackdropMode::SolidBlack);
-  LATTER_CHECK(resolve_backdrop_mode(9, 0, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, false, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, false, true, false, false) == BackdropMode::SolidBlack);
-  LATTER_CHECK(resolve_backdrop_mode(0, 0, true, false, true) == BackdropMode::SolidBlack);
-  LATTER_CHECK(resolve_backdrop_mode(3, 0, true, false, true) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(4, 0, true, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(6, 0, true, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(7, 0, true, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(8, 0, true, true, false, true, false, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(8, 0, true, true, false, true, false, true) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(9, 0, true, true, false, true, false) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, true, false, true, false, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, true, false, false, true, false, true) == BackdropMode::DayNightSky);
+  LATTER_CHECK(resolve_backdrop_mode(2, 0, true, true, false, true, false, false, false) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(0, 0, true, true, false, true, true) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(3, 0, true, true, false, true, true) == BackdropMode::SolidBlack);
 
   // 2. Zero-Copy UiStrView invariants & temporary-rvalue compile-time guard
   static_assert(!std::is_constructible_v<latter_ui::UiStrView, std::string &&>);
@@ -2232,10 +2243,12 @@ void test_display_lifecycle_controller() {
   using namespace latter_ui;
 
   // 1. Compile-time timeout resolution tables
-  static_assert(resolve_idle_screen_timeout_ms(false, true, true, "15s", "30s") == 15000U);
-  static_assert(resolve_idle_screen_timeout_ms(false, false, true, "5 min", "2 min") == 120000U);
-  static_assert(resolve_idle_screen_timeout_ms(false, true, true, "Never", "30s") == 0U);
-  static_assert(resolve_idle_screen_timeout_ms(true, true, false, "1 min", "30s") == 0U);
+  static_assert(resolve_idle_screen_timeout_ms(false, true, 0U, "15s", "30s") == 15000U);
+  static_assert(resolve_idle_screen_timeout_ms(false, false, 0U, "5 min", "2 min") == 120000U);
+  static_assert(resolve_idle_screen_timeout_ms(false, true, 0U, "Never", "30s") == 0U);
+  static_assert(resolve_idle_screen_timeout_ms(true, true, 2U, "1 min", "30s") == 0U);
+  static_assert(resolve_idle_screen_timeout_ms(true, true, 0U, "1 min", "30s") == 60000U);
+  static_assert(resolve_idle_screen_timeout_ms(false, false, 1U, "5 min", "30s") == 30000U);
   static_assert(resolve_battery_hibernate_timeout_ms("5 min") == 300000U);
   static_assert(resolve_battery_hibernate_timeout_ms("30 min") == 1800000U);
   static_assert(resolve_battery_hibernate_timeout_ms("Disabled") == 0U);
@@ -2818,8 +2831,8 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(std::string_view(kClockFaceOpts[2]) == "Hybrid Digital");
 
   // Backdrop mode: PageId::TIME (10) uses CustomWallpaper; PageId::CLOCK (0) uses pure SolidBlack
-  LATTER_CHECK(resolve_backdrop_mode(10, 0, true, false, true) == BackdropMode::CustomWallpaper);
-  LATTER_CHECK(resolve_backdrop_mode(0, 0, true, false, true) == BackdropMode::SolidBlack);
+  LATTER_CHECK(resolve_backdrop_mode(10, 0, true, true, false, true) == BackdropMode::CustomWallpaper);
+  LATTER_CHECK(resolve_backdrop_mode(0, 0, true, true, false, true) == BackdropMode::SolidBlack);
 
   // 2. Local Clock Label sanitization, World Clocks '<label>|<iana>;...' spec, active collector & day-delta wall math
   LATTER_CHECK(sanitize_clock_label("  San  Francisco | Bay ; Home  ") == "San Francisco Bay Home");
@@ -2835,7 +2848,7 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(tz.valid && tz.iana == "America/Los_Angeles" && tz.city == "Oakland");
   LATTER_CHECK(tz.abbr == "PDT" && tz.utc_offset_min == -420 && tz.is_dst);
 
-  uint64_t chg = 0ULL;
+  PrefMask chg{};
   uint32_t eff = 0U;
   LATTER_CHECK(set_pref_by_key_str(p, PrefKey::LOCAL_CLOCK_LABEL, "  Oakland Studio  ", false, chg, eff));
   LATTER_CHECK(std::string_view(p.local_clock_label) == "Oakland Studio");
@@ -3402,7 +3415,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026111904L, "LATTER_SDK_REV must match 2026111904L");
+  static_assert(LATTER_SDK_REV == 2026111905L, "LATTER_SDK_REV must match 2026111905L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -3411,7 +3424,8 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::CAMERA_STREAM_URL) == 39U);
   static_assert(static_cast<size_t>(AreaCtxField::ALERT_CAMERA_ENTITY) == 40U);
-  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 41U);
+  static_assert(static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL) == 41U);
+  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 42U);
 
   reset_runtime_state();
 
@@ -4057,7 +4071,7 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
 
     // Direct tap_to_wake preference round-trip across all 4 options
     PersistedDevicePrefs pp{};
-    uint64_t chg = 0ULL;
+    PrefMask chg{};
     uint32_t eff = 0U;
     for (const char *tap_opt : {"Double Tap", "Single Tap", "Docked Only", "Disabled"}) {
       chg = 0ULL;
@@ -4289,8 +4303,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v15 schema invariants
-  static_assert(kPersistedPrefsVersion == 15U, "PersistedDevicePrefs must be bumped to v15");
+  // 1. Protocol v3 & PersistedDevicePrefs v16 schema invariants
+  static_assert(kPersistedPrefsVersion == 16U, "PersistedDevicePrefs must be bumped to v16");
   static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 54U);
   static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 55U);
@@ -4307,7 +4321,9 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_FRAMING) == 66U);
   static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_STREAM_MODE) == 67U);
   static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DOORBELL_POPUP) == 68U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 69U);
+  static_assert(static_cast<size_t>(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK) == 69U);
+  static_assert(static_cast<size_t>(DevicePrefsField::WEATHER_APP_BACKGROUND) == 70U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 71U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 48U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 49U);
@@ -4324,7 +4340,9 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<uint8_t>(PrefKey::CAMERA_FRAMING) == 60U);
   static_assert(static_cast<uint8_t>(PrefKey::CAMERA_STREAM_MODE) == 61U);
   static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DOORBELL_POPUP) == 62U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 63U);
+  static_assert(static_cast<uint8_t>(PrefKey::SCREENSAVER_PHOTO_CLOCK) == 63U);
+  static_assert(static_cast<uint8_t>(PrefKey::WEATHER_APP_BACKGROUND) == 64U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 65U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -5564,10 +5582,10 @@ void test_bedtime_mode_d063() {
 
   // 2. Stationary panel without daytime screensaver still times out after 15 s in Bedtime Mode
   LATTER_CHECK(resolve_idle_screen_timeout_ms(
-                   /*is_stationary=*/true, /*usb=*/true, /*docked_ss=*/false,
+                   /*is_stationary=*/true, /*usb=*/true, /*screensaver_mode=*/2U,
                    "Never", "30s", /*bedtime_active=*/false) == 0U);
   LATTER_CHECK(resolve_idle_screen_timeout_ms(
-                   /*is_stationary=*/true, /*usb=*/true, /*docked_ss=*/false,
+                   /*is_stationary=*/true, /*usb=*/true, /*screensaver_mode=*/2U,
                    "Never", "30s", /*bedtime_active=*/true) == kBedtimeIdleTimeoutMs);
 
   // Wake greeting is suppressed during Bedtime Mode
@@ -5612,7 +5630,7 @@ void test_bedtime_mode_d063() {
   LATTER_CHECK(p.bedtime_start_hour == 21U && p.bedtime_end_hour == 6U);
   p_check: {
     PersistedDevicePrefs fp = p;
-    fp.screensaver_style = 4U;  // Fireworks in daytime
+    fp.screensaver_style = 5U;  // Fireworks in daytime
     LATTER_CHECK(std::string_view(effective_screensaver_style_cstr(fp)) == "Ambient Clock");
     fp.bedtime_active = false;
     LATTER_CHECK(std::string_view(effective_screensaver_style_cstr(fp)) == "Fireworks");
@@ -5687,7 +5705,7 @@ void test_full_spectrum_brightness_d065() {
 
   // 3. 1..100% brightness prefs & bedtime_brightness Protocol v3 + local edit round-trip
   PersistedDevicePrefs p{};
-  uint64_t chg = 0ULL;
+  PrefMask chg{};
   uint32_t eff = 0U;
   LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MANUAL_BRIGHTNESS, "42", false, chg, eff));
   LATTER_CHECK(p.manual_brightness == 42U && get_pref_value_str(PrefKey::MANUAL_BRIGHTNESS, p) == "42");
@@ -5973,6 +5991,174 @@ void test_cameras_app_and_live_video_d066() {
   }
 }
 
+void test_photo_frame_screensaver_day_night_sky_d067() {
+  using namespace latter_ui;
+
+  // 1. Universal screensaver_mode ("Docked Only" | "Always" | "Never") power eligibility
+  static_assert(screensaver_allowed_for_power(0U, true, false));   // Stationary Docked Only -> allowed
+  static_assert(screensaver_allowed_for_power(0U, false, true));   // Battery USB Docked Only -> allowed
+  static_assert(!screensaver_allowed_for_power(0U, false, false)); // Battery unplugged Docked Only -> screen off
+  static_assert(screensaver_allowed_for_power(1U, false, false));  // Battery unplugged Always -> allowed!
+  static_assert(screensaver_allowed_for_power(1U, true, false));   // Stationary Always -> allowed
+  static_assert(!screensaver_allowed_for_power(2U, true, true));   // Stationary Never -> disabled
+  static_assert(!screensaver_allowed_for_power(2U, false, true));  // Battery USB Never -> disabled
+
+  // 2. Battery hibernate safety ceiling still fires during Always screensaver on battery (not docked)
+  {
+    DisplayLifecycleController dlc{};
+    int nav_pwr = 1;  // Screensaver active on battery
+    uint32_t sleep_ts = 0U;
+    uint32_t sb_ts = 1000U;
+    bool greet = false;
+    DisplaySupervisorInputs in{};
+    in.is_stationary = false;
+    in.has_battery = true;
+    in.usb_connected = false;
+    in.screensaver_mode = 1U;  // Always
+    in.hibernate_timeout_opt = "5 min";
+    in.panel_brightness_on = true;
+    in.hibernate_blocked = false;
+
+    auto a1 = dlc.evaluate_1s(10000U, in, nav_pwr, sleep_ts, sb_ts, greet);
+    LATTER_CHECK(!a1.start_hibernate_countdown_now && sleep_ts == 10000U);
+    auto a2 = dlc.evaluate_1s(310000U, in, nav_pwr, sleep_ts, sb_ts, greet);
+    LATTER_CHECK(a2.start_hibernate_countdown_now);
+
+    // Disabled hibernate runs indefinitely on battery
+    sleep_ts = 0U;
+    in.hibernate_timeout_opt = "Disabled";
+    auto a3 = dlc.evaluate_1s(10000U, in, nav_pwr, sleep_ts, sb_ts, greet);
+    auto a4 = dlc.evaluate_1s(9000000U, in, nav_pwr, sleep_ts, sb_ts, greet);
+    LATTER_CHECK(!a3.start_hibernate_countdown_now && !a4.start_hibernate_countdown_now);
+
+    // Docked screensaver (hibernate_blocked = true) never hibernates
+    sleep_ts = 0U;
+    in.hibernate_timeout_opt = "5 min";
+    in.usb_connected = true;
+    in.hibernate_blocked = true;
+    auto a5 = dlc.evaluate_1s(10000U, in, nav_pwr, sleep_ts, sb_ts, greet);
+    auto a6 = dlc.evaluate_1s(900000U, in, nav_pwr, sleep_ts, sb_ts, greet);
+    LATTER_CHECK(!a5.start_hibernate_countdown_now && !a6.start_hibernate_countdown_now && sleep_ts == 0U);
+  }
+
+  // 3. Photo Frame brightness (0.70x, 0.08 floor, capped at active) vs Ambient/Animated (0.45x, 0.05 floor)
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(1.00f, true) - 0.70f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.80f, true) - 0.56f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.10f, true) - 0.08f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(0.05f, true) - 0.05f) < 1e-4f);
+  LATTER_CHECK(std::fabs(resolve_screensaver_brightness(1.00f, false) - 0.45f) < 1e-4f);
+
+  // 4. Photo Frame is strictly 0 FPS static in FrameCadenceController::evaluate_screensaver_20ms
+  {
+    FrameCadenceController fc{};
+    CadenceScreensaverInputs in{};
+    in.now_ms = 5000U;
+    in.display_power_state = 1;
+    in.screensaver_style = "Photo Frame";
+    const auto pf_act = fc.evaluate_screensaver_20ms(in);
+    LATTER_CHECK(!pf_act.schedule_anim_full && !pf_act.record_ambient_ms);
+    LATTER_CHECK(pf_act.sync_disp_poller && !pf_act.sync_disp_poller_val);
+
+    in.screensaver_style = "Aurora";
+    const auto au_act = fc.evaluate_screensaver_20ms(in);
+    LATTER_CHECK(au_act.schedule_anim_full && au_act.sync_disp_poller && au_act.sync_disp_poller_val);
+  }
+
+  // 5. DirtyBandTracker 0 FPS idle skip during static screensaver, waking on 1-min clock rollover
+  {
+    DirtyBandTracker dbt{};
+    const uint32_t ss_sig = compute_takeover_signature(false, false, true, 1, false, false, false, false, false);
+    LATTER_CHECK(ss_sig == (1U << 3));
+    LATTER_CHECK(dbt.begin_frame(1, 0, ss_sig, false, 600, 0x11U, 180, false));   // Enter screensaver -> full draw
+    LATTER_CHECK(!dbt.begin_frame(1, 0, ss_sig, false, 600, 0x11U, 180, false));  // Same minute -> idle skip (0 FPS)
+    LATTER_CHECK(dbt.begin_frame(1, 0, ss_sig, false, 601, 0x11U, 180, false));   // Minute rollover -> full draw
+    LATTER_CHECK(!dbt.begin_frame(1, 0, ss_sig, false, 601, 0x11U, 180, false));  // Idle skip again
+  }
+
+  // 6. Native Day & Night Sky sentinel + horizon/clock day-night resolver
+  static_assert(is_day_night_sky_wallpaper_url("latter://day_night_sky"));
+  static_assert(!is_day_night_sky_wallpaper_url("http://ha.local/api/latter/wallpaper/1"));
+  static_assert(!is_day_night_sky_wallpaper_url(""));
+  static_assert(resolve_day_night_sky_is_night("below_horizon", true, 12));
+  static_assert(!resolve_day_night_sky_is_night("above_horizon", true, 23));
+  static_assert(resolve_day_night_sky_is_night("", true, 5));
+  static_assert(!resolve_day_night_sky_is_night("", true, 6));
+  static_assert(!resolve_day_night_sky_is_night("", true, 19));
+  static_assert(resolve_day_night_sky_is_night("", true, 20));
+  static_assert(!resolve_day_night_sky_is_night("unknown", false, 23));
+
+  // 7. 128-bit PrefMask high-bit prefs (63 & 64) + Protocol v3 device_prefs & area_context round-trip
+  {
+    reset_all_v3_rev_guards();
+    device_prefs_state() = DevicePrefsState{};
+    persisted_prefs() = PersistedDevicePrefs{};
+    runtime_state() = DeviceRuntimeState{};
+
+    const PrefMask hi_mask =
+        pref_key_bit(PrefKey::SCREENSAVER_PHOTO_CLOCK) | pref_key_bit(PrefKey::WEATHER_APP_BACKGROUND);
+    LATTER_CHECK(hi_mask.lo == (1ULL << 63) && hi_mask.hi == 1ULL);
+    const std::string enc = encode_prefs_mask(hi_mask, persisted_prefs());
+    LATTER_CHECK(enc.find("screensaver_photo_clock=0") != std::string::npos);
+    LATTER_CHECK(enc.find("weather_app_background=1") != std::string::npos);
+
+    const std::string hello_seed = build_hello_dirty_prefs(persisted_prefs());
+    LATTER_CHECK(hello_seed.find("screensaver_mode=Docked Only") != std::string::npos);
+    LATTER_CHECK(hello_seed.find("screensaver_photo_clock=0") != std::string::npos);
+    LATTER_CHECK(hello_seed.find("weather_app_background=1") != std::string::npos);
+
+    std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "88";
+    dp_tok[static_cast<size_t>(DevicePrefsField::SCREENSAVER_MODE)] = "Always";
+    dp_tok[static_cast<size_t>(DevicePrefsField::SCREENSAVER_STYLE)] = "Photo Frame";
+    dp_tok[static_cast<size_t>(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK)] = "1";
+    dp_tok[static_cast<size_t>(DevicePrefsField::WEATHER_APP_BACKGROUND)] = "0";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(98, 1, dp_tok), eff, 6000U));
+    LATTER_CHECK((eff & kPrefEffectScreensaverChange) != 0U);
+    LATTER_CHECK(persisted_prefs().screensaver_mode == 1U);
+    LATTER_CHECK(std::string_view(pref_screensaver_mode_cstr()) == "Always");
+    LATTER_CHECK(persisted_prefs().screensaver_style == 1U);
+    LATTER_CHECK(persisted_prefs().screensaver_style_enum() == ScreensaverStyle::PhotoFrame);
+    LATTER_CHECK(std::string_view(pref_screensaver_style_cstr()) == "Photo Frame");
+    LATTER_CHECK(persisted_prefs().screensaver_photo_clock == true);
+    LATTER_CHECK(persisted_prefs().weather_app_background == false);
+    LATTER_CHECK(device_prefs_state().weather_app_background == false);
+
+    // V3DomainReducer: native "latter://day_night_sky" releases old HTTP wallpaper & skips fetch;
+    // screensaver_photo_url triggers fetch strictly while in screensaver + Photo Frame
+    auto &rs = runtime_state();
+    rs.nav.display_power_state = 0;
+    rs.music.loaded_wallpaper_url = "http://ha.local/api/latter/wallpaper/old";
+    v3_domain_reducer().reset();
+
+    std::vector<std::string> ac_tok(static_cast<size_t>(AreaCtxField::COUNT), "");
+    ac_tok[static_cast<size_t>(AreaCtxField::WALLPAPER_URL)] = "latter://day_night_sky";
+    ac_tok[static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL)] = "http://ha.local/api/latter/wallpaper/p1?mode=screensaver";
+    LATTER_CHECK(parse_v3_area_ctx_payload(build_v3_packet(98, 1, ac_tok)));
+    LATTER_CHECK(area_ctx_state().screensaver_photo_url == "http://ha.local/api/latter/wallpaper/p1?mode=screensaver");
+
+    V3ReduceContext rctx{};
+    rctx.now_ms = 7000U;
+    const auto e_active = v3_domain_reducer().reduce("area_context", rctx);
+    LATTER_CHECK(e_active.stop_wallpaper_fetch && e_active.release_wallpaper_art && !e_active.fetch_wallpaper);
+    LATTER_CHECK(!e_active.fetch_screensaver_photo);  // Active display does NOT fetch screensaver photo
+
+    // Enter screensaver -> next area_context rotation triggers fetch_screensaver_photo
+    rs.nav.display_power_state = 1;
+    ac_tok[static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL)] = "http://ha.local/api/latter/wallpaper/p2?mode=screensaver";
+    LATTER_CHECK(parse_v3_area_ctx_payload(build_v3_packet(98, 2, ac_tok)));
+    const auto e_ss = v3_domain_reducer().reduce("area_context", rctx);
+    LATTER_CHECK(e_ss.fetch_screensaver_photo && !e_ss.release_screensaver_photo_art);
+
+    // Clearing screensaver_photo_url stops & releases art
+    rs.music.loaded_screensaver_photo_url = "http://ha.local/api/latter/wallpaper/p2?mode=screensaver";
+    ac_tok[static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL)] = "";
+    LATTER_CHECK(parse_v3_area_ctx_payload(build_v3_packet(98, 3, ac_tok)));
+    const auto e_clr = v3_domain_reducer().reduce("area_context", rctx);
+    LATTER_CHECK(e_clr.stop_screensaver_photo_fetch && e_clr.release_screensaver_photo_art && !e_clr.fetch_screensaver_photo);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -6005,6 +6191,7 @@ int main() {
   test_bedtime_mode_d063();
   test_full_spectrum_brightness_d065();
   test_cameras_app_and_live_video_d066();
+  test_photo_frame_screensaver_day_night_sky_d067();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

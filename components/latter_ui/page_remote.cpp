@@ -17,10 +17,16 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   const int cx = ctx.cx;
 
   if (!frame_base_state().painted) {
-    const bool has_wall = (!ac.wallpaper_url.empty() &&
-                           ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                           ctx.home_wallpaper_art.valid());
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, cx, ctx.col_bg);
+    if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
+      render_static_day_night_sky_base(
+          it, cx, ctx.cy,
+          resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
+    } else {
+      const bool has_wall = (!ac.wallpaper_url.empty() &&
+                             ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                             ctx.home_wallpaper_art.valid());
+      render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, cx, ctx.col_bg);
+    }
   }
   const uint32_t now_ms = ctx.now_ms;
   const int remote_subpage = rs.nav.remote_subpage;

@@ -115,42 +115,56 @@ enum class BackdropMode : uint8_t {
   SolidBlack = 0,
   CustomWallpaper = 1,
   LiveWeatherSky = 2,
+  DayNightSky = 3,
 };
 
 // Single authoritative backdrop precedence shared across gui.yaml, timers_and_fetchers.yaml,
-// page_clock_home.cpp, and page_weather.cpp (D-038):
-// - Home root (gui_page == 1 && home_subpage == 0) and Sky & Weather (gui_page == 5):
-//     If weather_background is ON (persisted pref OR active weather simulation): LiveWeatherSky
-//     (even when a System Wallpaper is loaded — System Wallpaper still renders dimmed on Home
-//     subpage 2 and on other wallpaper-backed views, and renders on Home/Weather when
-//     weather_background is OFF).
-//     If weather_background is OFF: CustomWallpaper when loaded, else SolidBlack.
+// page_clock_home.cpp, and page_weather.cpp (D-038, D-067):
+// - Home root (gui_page == 1 && home_subpage == 0):
+//     If home_weather_bg is ON (persisted pref OR active weather simulation): LiveWeatherSky.
+//     Otherwise: DayNightSky (native "latter://day_night_sky") > CustomWallpaper > SolidBlack.
+// - Sky & Weather (gui_page == 5):
+//     If weather_app_bg is ON (persisted pref OR active weather simulation): LiveWeatherSky.
+//     Otherwise: DayNightSky > CustomWallpaper > SolidBlack.
 // - Home overlays (subpage 1 or 2), System Settings (4), Area (6), Remote (7),
-//   Tools non-full-bleed (8), Home Hub (9), and Music with Art Mode "None" (2):
-//     CustomWallpaper when loaded, else SolidBlack.
-// - Clock (0), Games (3), Music with Album Art enabled (2), and Tools full-bleed (8): SolidBlack.
+//   Tools/Home Hub/Calendar/Cameras non-full-bleed (8/9/12/13), Time (10), Pinned (11),
+//   and Music with Art Mode "None" (2):
+//     DayNightSky > CustomWallpaper > SolidBlack.
+// - Clock (0), Games (3), Music with Album Art enabled (2), and full-bleed tools/maps/cameras: SolidBlack.
 constexpr BackdropMode resolve_backdrop_mode(int gui_page, int home_subpage,
-                                             bool weather_background_pref,
+                                             bool home_weather_bg,
+                                             bool weather_app_bg,
                                              bool weather_sim_active,
                                              bool has_custom_wallpaper,
+                                             bool has_day_night_sky = false,
                                              bool tools_full_bleed = false,
                                              bool music_art_none = false) noexcept {
-  if ((gui_page == 1 && home_subpage == 0) || gui_page == 5) {
-    if (weather_background_pref || weather_sim_active) {
+  const BackdropMode fallback_wall =
+      has_day_night_sky
+          ? BackdropMode::DayNightSky
+          : (has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack);
+  if (gui_page == 1 && home_subpage == 0) {
+    if (home_weather_bg || weather_sim_active) {
       return BackdropMode::LiveWeatherSky;
     }
-    return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+    return fallback_wall;
+  }
+  if (gui_page == 5) {
+    if (weather_app_bg || weather_sim_active) {
+      return BackdropMode::LiveWeatherSky;
+    }
+    return fallback_wall;
   }
   if (gui_page == 1) {
-    return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+    return fallback_wall;
   }
   if (gui_page == 2) {
-    return (music_art_none && has_custom_wallpaper) ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+    return music_art_none ? fallback_wall : BackdropMode::SolidBlack;
   }
   if (gui_page == 4 || gui_page == 6 || gui_page == 7 ||
       ((gui_page == 8 || gui_page == 9 || gui_page == 12 || gui_page == 13) && !tools_full_bleed) ||
       gui_page == 10 || gui_page == 11) {
-    return has_custom_wallpaper ? BackdropMode::CustomWallpaper : BackdropMode::SolidBlack;
+    return fallback_wall;
   }
   return BackdropMode::SolidBlack;
 }
@@ -856,6 +870,7 @@ struct UiFrameContext {
   ArtImageView album_art{};
   ArtImageView remote_album_art{};
   ArtImageView home_wallpaper_art{};
+  ArtImageView screensaver_photo_art{};
   ArtImageView camera_snapshot_art{};
 
   // Palette colors
@@ -907,6 +922,7 @@ struct UiFrameContext {
   UiStrView tap_wake_opt{"Always On"};
   UiStrView pickup_wake_opt{"Medium"};
   UiStrView display_off_timeout_opt{"30 Seconds"};
+  UiStrView screensaver_mode_opt{"Docked Only"};
   UiStrView screensaver_style_opt{"Ambient Clock"};
   UiStrView screensaver_docked_timeout_opt{"5 Minutes"};
   UiStrView hibernate_timeout_opt{"30 Minutes"};
@@ -930,12 +946,13 @@ struct UiFrameContext {
 
   // Switches
   bool home_weather_bg{true};
+  bool weather_app_bg{true};
   bool home_wake_greeting{true};
   bool home_sun_arc{true};
   bool home_moon_phase{true};
   bool game_sound_enabled{true};
   bool va_wake_screen{true};
-  bool docked_screensaver_enabled{true};
+  bool screensaver_photo_clock{false};
   bool instant_crown_hibernate{false};
   bool bedtime_active{false};
 };
@@ -973,6 +990,7 @@ struct SystemTakeoverState {
   UiStrView notif_camera_entity{};
   UiStrView current_loaded_camera_url{};
   UiStrView screensaver_style_opt{};
+  bool screensaver_photo_clock{false};
   esphome::Color theme_primary{};
   esphome::Color theme_secondary{};
   esphome::Color col_bg{};
@@ -1022,6 +1040,7 @@ struct SystemTakeoverState {
     st.current_loaded_camera_url = rs.alert.loaded_camera_url;
     st.screensaver_style_opt =
         prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt;
+    st.screensaver_photo_clock = !prefs.bedtime_active && prefs.screensaver_photo_clock;
     st.theme_primary = ctx.theme_primary;
     st.theme_secondary = ctx.theme_secondary;
     st.col_bg = ctx.col_bg;

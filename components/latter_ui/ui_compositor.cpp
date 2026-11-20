@@ -148,7 +148,7 @@ bool DirtyBandTracker::begin_frame(int page, int subpage, uint32_t overlay_sig, 
       return true;
     }
     if ((page == 1 && (subpage & 0xFF) == 2) || page == 4 || page == 12 ||
-        (page == 10 && (subpage & 0x0F) == 2)) {
+        (page == 10 && (subpage & 0x0F) == 2) || (overlay_sig == (1U << 3))) {
       active_y0 = 0;
       active_y1 = SCREEN_H - 1;
       active_full = true;
@@ -476,6 +476,7 @@ CadenceScreensaverActions FrameCadenceController::evaluate_screensaver_20ms(
   if (in.display_power_state == 1 && !in.va_visible && !in.is_hibernating) {
     if (!in.screensaver_style.empty() &&
         in.screensaver_style != "Ambient Clock" &&
+        in.screensaver_style != "Photo Frame" &&
         in.screensaver_style != "Screen Off") {
       driving = true;
       if (ambient_step_ready(in.now_ms, in.last_ambient_ms, in.last_disp_end_ms,
@@ -641,11 +642,13 @@ Cadence20msActions FrameCadenceController::step_20ms(
   const bool weather_sim_active = (sim_opt != "Live (Home Assistant)");
   const auto &ac = area_ctx_state();
   const bool custom_wall = !ac.wallpaper_url.empty() &&
+                           !is_day_night_sky_wallpaper_url(ac.wallpaper_url) &&
                            ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                            wallpaper_loaded;
+  const bool day_night_sky = is_day_night_sky_wallpaper_url(ac.wallpaper_url);
   const BackdropMode bd_mode = resolve_backdrop_mode(
       rs.nav.gui_page, rs.nav.home_subpage, prefs.weather_background,
-      weather_sim_active, custom_wall);
+      prefs.weather_app_background, weather_sim_active, custom_wall, day_night_sky);
   in.sky_enabled = (bd_mode == BackdropMode::LiveWeatherSky);
   in.motion_mag = rs.hw_motion_mag;
   in.rotate_period_ms = rotate_period_ms;
@@ -724,11 +727,13 @@ Cadence250msActions FrameCadenceController::step_250ms(
   const bool weather_sim_active = (sim_opt != "Live (Home Assistant)");
   const auto &ac = area_ctx_state();
   const bool custom_wall = !ac.wallpaper_url.empty() &&
+                           !is_day_night_sky_wallpaper_url(ac.wallpaper_url) &&
                            ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                            wallpaper_loaded;
+  const bool day_night_sky = is_day_night_sky_wallpaper_url(ac.wallpaper_url);
   const BackdropMode bd_mode = resolve_backdrop_mode(
       rs.nav.gui_page, rs.nav.home_subpage, prefs.weather_background,
-      weather_sim_active, custom_wall);
+      prefs.weather_app_background, weather_sim_active, custom_wall, day_night_sky);
   const bool va_visible = rs.voice.active || !rs.voice.status_text.empty();
   bool music_hud_changed = false;
   if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating && !va_visible &&
@@ -797,7 +802,9 @@ Cadence250msActions FrameCadenceController::step_250ms(
       rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
       (rs.alert.active && rs.alert.is_critical());
   in.pending_wallpaper_fetch =
-      !ac.wallpaper_url.empty() && ac.wallpaper_url != rs.music.loaded_wallpaper_url;
+      !ac.wallpaper_url.empty() &&
+      !is_day_night_sky_wallpaper_url(ac.wallpaper_url) &&
+      ac.wallpaper_url != rs.music.loaded_wallpaper_url;
   in.video_stream_active = video_client().is_active();
   in.latest_fw_version = latest_fw_version;
 
@@ -836,10 +843,27 @@ CadenceScreensaverActions FrameCadenceController::step_screensaver_20ms(
 uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
+  if (rs.nav.display_power_state == 1) {
+    const std::string_view ss_style(effective_screensaver_style_cstr(prefs));
+    if (ss_style == "Photo Frame" || ss_style == "Ambient Clock") {
+      uint32_t ss_sig = (ss_style == "Photo Frame") ? 2U : 1U;
+      if (!prefs.bedtime_active && prefs.screensaver_photo_clock) ss_sig |= (1U << 2);
+      if (ctx.screensaver_photo_art.valid()) ss_sig |= (1U << 3);
+      if (prefs.is_24h_format) ss_sig |= (1U << 4);
+      const auto &ac = area_ctx_state();
+      uint32_t uh = 2166136261U;
+      for (unsigned char c : ac.screensaver_photo_url) uh = (uh ^ c) * 16777619U;
+      return ss_sig ^ (uh << 5);
+    }
+  }
   const uint32_t batt_u8 = std::isnan(rs.hw_batt_level)
       ? 255U
       : static_cast<uint32_t>(std::clamp<int>(static_cast<int>(std::round(rs.hw_batt_level)), 0, 100));
   uint32_t sig = batt_u8;
+  if (is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url) &&
+      resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+    sig |= (1U << 28);
+  }
   if (rs.hw_batt_charging) sig |= (1U << 8);
   if (rs.hw_usb_connected) sig |= (1U << 9);
   if (offline_pill_due(ctx.now_ms)) sig |= (1U << 10);

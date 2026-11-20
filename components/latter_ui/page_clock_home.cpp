@@ -873,19 +873,27 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       (is_rem_media || ctx.track_artist.empty()) ? ms.artist : ctx.track_artist.str();
 
   const bool sim_override_on = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
+  const bool has_day_night_sky = is_day_night_sky_wallpaper_url(ac.wallpaper_url);
   const bool has_custom_wallpaper = (!ac.wallpaper_url.empty() &&
+                                     !has_day_night_sky &&
                                      ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                                      ctx.home_wallpaper_art.get_width() > 0);
+  const bool dns_night = resolve_day_night_sky_is_night(ws.sun_state, ctx.now.is_valid(), ctx.now.hour);
   const BackdropMode bd_mode = resolve_backdrop_mode(
-      PageId::HOME, home_subpage, show_weather_bg, sim_override_on, has_custom_wallpaper);
+      PageId::HOME, home_subpage, show_weather_bg, prefs.weather_app_background,
+      sim_override_on, has_custom_wallpaper, has_day_night_sky);
 
   if (home_subpage == 1) {
     s_act_deck_rotates = false;
     home_activity_card_shown() = false;
     home_act_state().was_visible = false;
     home_act_state().fade_out_start_ms = 0U;
-    render_page_wallpaper_base(it, ctx.home_wallpaper_art,
-                               bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
+    if (bd_mode == BackdropMode::DayNightSky) {
+      render_static_day_night_sky_base(it, cx, cy, dns_night);
+    } else {
+      render_page_wallpaper_base(it, ctx.home_wallpaper_art,
+                                 bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
+    }
     render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.col_white);
 
     const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, 2);
@@ -931,6 +939,10 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
                           "Moon Indicator", prefs.home_moon, ctx.font_small,
                           ctx.theme_primary, ctx.col_white, ctx.col_slate,
                           WidgetId::LIST_SLOT_BASE, 5);
+      ui::toggle_card_row(it, cx, layout().slot5_y(1), layout().list_card_w, 44,
+                          "Weather App Sky", prefs.weather_app_background, ctx.font_small,
+                          ctx.theme_primary, ctx.col_white, ctx.col_slate,
+                          WidgetId::LIST_SLOT_BASE + 1, 6);
     }
 
     render_vertical_page_pips(it, hs_pg == 2, hs_pg == 1,
@@ -1083,7 +1095,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     home_activity_card_shown() = false;
     home_activity_rendered_rows() = 0;
     reset_home_activity_anim_state(false);
-    if (bd_mode == BackdropMode::CustomWallpaper) {
+    if (bd_mode == BackdropMode::DayNightSky) {
+      render_static_day_night_sky_base(it, cx, cy, dns_night);
+    } else if (bd_mode == BackdropMode::CustomWallpaper) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
     } else if ((show_weather_bg || sim_override_on) && weather_ready) {
       backdrop_active() = true;
@@ -1114,6 +1128,8 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night,
                                       moon_cycle, cel_x, cel_y, true,
                                       rs.hw_accel_x, rs.hw_accel_y, show_celestial);
+    } else if (has_day_night_sky) {
+      render_static_day_night_sky_base(it, cx, cy, dns_night);
     } else if (has_custom_wallpaper) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 0);
     } else {

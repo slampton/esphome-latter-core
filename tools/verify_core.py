@@ -2300,6 +2300,7 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path, *, include_hal_boards
     ptr_ids = {
         "remote_album_art",
         "home_wallpaper_art",
+        "screensaver_photo_art",
         "camera_snapshot_art",
         "album_art",
         "touch_screen",

@@ -75,6 +75,27 @@ image:
       - script.execute: sync_wake_word_state
 
   - platform: online_image
+    id: screensaver_photo_art
+    format: JPEG
+    buffer_size: 16384
+    type: RGB565
+    resize: ${art_resize}
+    url: "${initial_art_url}"
+    on_download_finished:
+      - lambda: |-
+          auto &rs = latter_ui::runtime_state();
+          rs.music.loaded_screensaver_photo_url = latter_ui::area_ctx_state().screensaver_photo_url;
+          if (rs.nav.display_power_state == 1 && !rs.nav.is_hibernating) {
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
+          }
+      - script.execute: release_hidden_screensaver_photo
+      - script.execute: sync_wake_word_state
+    on_error:
+      - lambda: 'latter_ui::runtime_state().music.loaded_screensaver_photo_url = "";'
+      - script.execute: sync_wake_word_state
+
+  - platform: online_image
     id: camera_snapshot_art
     format: JPEG
     buffer_size: 16384

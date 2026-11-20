@@ -309,7 +309,7 @@ interval:
           dl_in.is_stationary = (LATTER_IS_STATIONARY != 0);
           dl_in.has_battery = (LATTER_HAS_BATTERY != 0);
           dl_in.usb_connected = rs.hw_usb_connected;
-          dl_in.docked_screensaver = prefs.docked_screensaver;
+          dl_in.screensaver_mode = prefs.screensaver_mode;
           dl_in.docked_timeout_opt = latter_ui::pref_docked_idle_timeout_cstr(prefs);
           dl_in.battery_timeout_opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
           dl_in.hibernate_timeout_opt = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
@@ -436,7 +436,13 @@ script:
             }
           };
           static int8_t ss_anim_on = -1;
-          gate(id(screensaver_anim_tick), rs.nav.display_power_state == 1, ss_anim_on);
+          const std::string_view eff_ss_style = latter_ui::effective_screensaver_style_cstr(prefs);
+          const bool want_ss_anim = (rs.nav.display_power_state == 1) &&
+                                    !eff_ss_style.empty() &&
+                                    (eff_ss_style != "Ambient Clock") &&
+                                    (eff_ss_style != "Photo Frame") &&
+                                    (eff_ss_style != "Screen Off");
+          gate(id(screensaver_anim_tick), want_ss_anim, ss_anim_on);
           // ui_anim_tick (20 ms) self-stops when no active animation is running; stop immediately when
           // leaving active display (unless VA is busy) and start whenever VA or active-screen animation needs it.
           if (va_busy) {
@@ -563,12 +569,18 @@ script:
             id(turn_screen_off).execute();
             return;
           }
+          latter_ui::video_client().stop();
+          latter_ui::release_art(id(camera_snapshot_art));
+          rs.alert.loaded_camera_url = "";
           latter_ui::display_lifecycle().on_enter_screensaver(
               now_ss_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
           id(disp1).start_poller();
           latter_ui::record_ambient_frame_ms(now_ss_ms);
           id(apply_power_policy).execute();
           id(sync_display_brightness).execute();
+          if (s_style == "Photo Frame" && !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
+            id(fetch_screensaver_photo_debounced).execute();
+          }
           latter_ui::schedule_disp_update(&id(disp1));
 
   - id: turn_screen_off
@@ -592,6 +604,9 @@ script:
             latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
           }
           latter_ui::video_client().stop();
+          id(fetch_screensaver_photo_debounced).stop();
+          latter_ui::release_art(id(screensaver_photo_art));
+          rs.music.loaded_screensaver_photo_url = "";
 
           const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           const std::string_view ww_mode = latter_ui::pref_wake_word_mode_cstr();
@@ -615,6 +630,8 @@ script:
           const uint32_t now_sb_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
           latter_ui::video_client().stop();
+          latter_ui::release_art(id(camera_snapshot_art));
+          rs.alert.loaded_camera_url = "";
           if (prefs.bedtime_active) {
             const bool bt_clock = (LATTER_IS_STATIONARY != 0 || rs.hw_usb_connected) &&
                                   (std::string_view(latter_ui::pref_bedtime_display_cstr(prefs)) == "Ambient Clock");
@@ -632,9 +649,10 @@ script:
             return;
           }
           const std::string_view s_style = latter_ui::pref_screensaver_style_cstr(prefs);
-          bool screensaver_allowed = rs.hw_usb_connected &&
-                                     prefs.docked_screensaver &&
-                                     (s_style != "Screen Off");
+          const bool screensaver_allowed =
+              latter_ui::screensaver_allowed_for_power(
+                  prefs.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected) &&
+              (s_style != "Screen Off");
           if (screensaver_allowed) {
             latter_ui::display_lifecycle().on_enter_screensaver(
                 now_sb_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
@@ -642,7 +660,10 @@ script:
             latter_ui::record_ambient_frame_ms(now_sb_ms);
             id(apply_power_policy).execute();
             id(sync_display_brightness).execute();
-            if (s_style == "Ambient Clock") {
+            if (s_style == "Photo Frame" && !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
+              id(fetch_screensaver_photo_debounced).execute();
+            }
+            if (s_style == "Ambient Clock" || s_style == "Photo Frame") {
               latter_ui::schedule_disp_update(&id(disp1));
             }
           } else {
@@ -677,6 +698,9 @@ script:
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
             latter_ui::record_screen_wake();
           }
+          id(fetch_screensaver_photo_debounced).stop();
+          latter_ui::release_art(id(screensaver_photo_art));
+          rs.music.loaded_screensaver_photo_url = "";
           latter_ui::display_lifecycle().on_wake_active(
               wake_now_ms, rs.nav.display_power_state, rs.nav.sleep_start_time,
               rs.nav.standby_entered_ms,
@@ -705,6 +729,7 @@ script:
           }
           const std::string &wp_u = latter_ui::area_ctx_state().wallpaper_url;
           if (!wp_u.empty() &&
+              !latter_ui::is_day_night_sky_wallpaper_url(wp_u) &&
               wp_u != rs.music.loaded_wallpaper_url) {
             id(fetch_wallpaper_debounced).execute();
           }
@@ -728,6 +753,9 @@ script:
           rs.nav.is_hibernating = true;
           rs.nav.active_game = 0;
           latter_ui::video_client().stop();
+          id(fetch_screensaver_photo_debounced).stop();
+          latter_ui::release_art(id(screensaver_photo_art));
+          rs.music.loaded_screensaver_photo_url = "";
       - micro_wake_word.stop:
       - voice_assistant.stop:
       - media_player.pause: latter_media_player

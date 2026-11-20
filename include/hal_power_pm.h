@@ -220,13 +220,21 @@ enum class DisplayPowerState : uint8_t {
 
 static constexpr uint32_t kBedtimeIdleTimeoutMs = 15000U;
 
+constexpr bool screensaver_allowed_for_power(uint8_t screensaver_mode,
+                                             bool is_stationary,
+                                             bool usb_connected) noexcept {
+  if (screensaver_mode == 1U) return true;  // "Always" (docked or on battery)
+  if (screensaver_mode == 2U) return false;  // "Never"
+  return is_stationary || usb_connected;  // 0 = "Docked Only"
+}
+
 constexpr uint32_t resolve_idle_screen_timeout_ms(bool is_stationary, bool usb_connected,
-                                                  bool docked_screensaver,
+                                                  uint8_t screensaver_mode,
                                                   std::string_view docked_opt,
                                                   std::string_view battery_opt,
                                                   bool bedtime_active = false) noexcept {
   uint32_t normal_ms = 0U;
-  if (!(is_stationary && !docked_screensaver)) {
+  if (!(is_stationary && screensaver_mode == 2U)) {
     const std::string_view opt = (is_stationary || usb_connected) ? docked_opt : battery_opt;
     if (opt == "10s") normal_ms = 10000U;
     else if (opt == "15s") normal_ms = 15000U;
@@ -256,7 +264,7 @@ struct DisplaySupervisorInputs {
   bool is_stationary{false};
   bool has_battery{false};
   bool usb_connected{true};
-  bool docked_screensaver{true};
+  uint8_t screensaver_mode{0U};  // 0 = "Docked Only", 1 = "Always", 2 = "Never"
   bool bedtime_active{false};
   std::string_view docked_timeout_opt{"1 min"};
   std::string_view battery_timeout_opt{"30s"};

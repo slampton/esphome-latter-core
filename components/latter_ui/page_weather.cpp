@@ -2260,50 +2260,12 @@ bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t l
   return (st.precip_alpha_scale > 0.001f) || !st.calm_frame_rendered;
 }
 
-// Clean-Sheet WeatherSkyEngine (D-034 / D-038):
-// 1. PSRAM-cached static atmospheric base (Bayer-dithered sky gradient + stars + solar/lunar disc +
-//    procedural cumulus/stratus cloud deck explicitly covering rainy/pouring/drizzle/snowy/cloudy/storm),
-//    blitted respecting Y-scissor [clip_y0(), clip_y1()] with direct-draw fallback when PSRAM unavailable.
-// 2. Stateful monotonic dt_s particle engine, deterministic 180 ms exponential sheet-lightning decay,
-//    2-layer depth-of-field rain (>= 45% spatial overlap at 12.5 FPS), and 35 s battery 800 ms fade-out
-//    to 0 FPS calm sky / 400 ms fade-in on wake/touch/tilt/USB.
-void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
-                                     const std::string &cond, bool is_night,
-                                     double moon_cycle,
-                                     int cel_cx, int cel_cy,
-                                     bool mask_hero_temp,
-                                     float accel_x, float accel_y,
-                                     bool show_celestial) {
-  (void)mask_hero_temp;
-  if (cond.empty()) {
-    return;
-  }
+namespace {
 
-  ProfLap lap;
-
-  const auto &rs = runtime_state();
-  const uint32_t latest_input_ms = std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
-  step_weather_battery_fade(rs.hw_usb_connected, now_ms, latest_input_ms);
-  float precip_alpha = sky_fade_state().precip_alpha_scale;
-  if (precip_alpha <= 0.001f) {
-    precip_alpha = 0.0f;
-    sky_fade_state().precip_alpha_scale = 0.0f;
-    sky_fade_state().calm_frame_rendered = true;
-  }
-
-  // Smooth EMA-damped 3D IMU tilt parallax offset for foreground particles
-  static float par_x = 0.0f;
-  static float par_y = 0.0f;
-  if (!std::isnan(accel_x) && !std::isnan(accel_y)) {
-    const float target_px = fmaxf(-18.0f, fminf(18.0f, accel_x * 20.0f));
-    const float target_py = fmaxf(-18.0f, fminf(18.0f, accel_y * 20.0f));
-    par_x += (target_px - par_x) * 0.22f;
-    par_y += (target_py - par_y) * 0.22f;
-  }
-
-  // --------------------------------------------------------------------------
-  // STAGE 1: PSRAM SKY BASE CACHE (or direct fallback if PSRAM unavailable)
-  // --------------------------------------------------------------------------
+void blit_or_bake_sky_base(esphome::display::Display &it, int cx, int cy,
+                           const std::string &cond, bool is_night,
+                           double moon_cycle, int cel_cx, int cel_cy,
+                           bool show_celestial) {
   uint16_t *fb = active_frame_buf16();
   auto &cache = sky_base_cache();
   if (fb != nullptr && !cache.alloc_attempted) {
@@ -2379,6 +2341,63 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
     frame_base_claim();
     bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
   }
+}
+
+}  // namespace
+
+void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night) {
+  const std::string cond = is_night ? "clear-night" : "sunny";
+  backdrop_active() = true;
+  blit_or_bake_sky_base(it, cx, cy, cond, is_night, 0.5, 0, 0, /*show_celestial=*/false);
+}
+
+// Clean-Sheet WeatherSkyEngine (D-034 / D-038):
+// 1. PSRAM-cached static atmospheric base (Bayer-dithered sky gradient + stars + solar/lunar disc +
+//    procedural cumulus/stratus cloud deck explicitly covering rainy/pouring/drizzle/snowy/cloudy/storm),
+//    blitted respecting Y-scissor [clip_y0(), clip_y1()] with direct-draw fallback when PSRAM unavailable.
+// 2. Stateful monotonic dt_s particle engine, deterministic 180 ms exponential sheet-lightning decay,
+//    2-layer depth-of-field rain (>= 45% spatial overlap at 12.5 FPS), and 35 s battery 800 ms fade-out
+//    to 0 FPS calm sky / 400 ms fade-in on wake/touch/tilt/USB.
+void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
+                                     const std::string &cond, bool is_night,
+                                     double moon_cycle,
+                                     int cel_cx, int cel_cy,
+                                     bool mask_hero_temp,
+                                     float accel_x, float accel_y,
+                                     bool show_celestial) {
+  (void)mask_hero_temp;
+  if (cond.empty()) {
+    return;
+  }
+
+  ProfLap lap;
+
+  const auto &rs = runtime_state();
+  const uint32_t latest_input_ms = std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
+  step_weather_battery_fade(rs.hw_usb_connected, now_ms, latest_input_ms);
+  float precip_alpha = sky_fade_state().precip_alpha_scale;
+  if (precip_alpha <= 0.001f) {
+    precip_alpha = 0.0f;
+    sky_fade_state().precip_alpha_scale = 0.0f;
+    sky_fade_state().calm_frame_rendered = true;
+  }
+
+  // Smooth EMA-damped 3D IMU tilt parallax offset for foreground particles
+  static float par_x = 0.0f;
+  static float par_y = 0.0f;
+  if (!std::isnan(accel_x) && !std::isnan(accel_y)) {
+    const float target_px = fmaxf(-18.0f, fminf(18.0f, accel_x * 20.0f));
+    const float target_py = fmaxf(-18.0f, fminf(18.0f, accel_y * 20.0f));
+    par_x += (target_px - par_x) * 0.22f;
+    par_y += (target_py - par_y) * 0.22f;
+  }
+
+  // --------------------------------------------------------------------------
+  // STAGE 1: PSRAM SKY BASE CACHE (or direct fallback if PSRAM unavailable)
+  // --------------------------------------------------------------------------
+  blit_or_bake_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
+  uint16_t *fb = active_frame_buf16();
+  const uint32_t cond_hash = fnv1a_sky_str(cond);
 
   lap.mark(ProfSect::BG_SKY);
 
@@ -2832,9 +2851,9 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
   const Color col_warm_gold = ctx.col_warm_gold;
 #endif
 
-  // Authoritative backdrop precedence (resolve_backdrop_mode):
-  // - Weather Background ON (or simulation active) -> LiveWeatherSky (even if System Wallpaper is loaded)
-  // - Weather Background OFF -> System Wallpaper when loaded, else SolidBlack
+  // Authoritative backdrop precedence (resolve_backdrop_mode, D-067):
+  // - weather_app_background ON (or simulation active) -> LiveWeatherSky
+  // - weather_app_background OFF -> DayNightSky > CustomWallpaper > SolidBlack
   {
     std::string sky_cond = weather_cond_raw;
     bool sky_night = (sun_state == "below_horizon" || sky_cond == "clear-night" ||
@@ -2843,11 +2862,15 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
     const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
     const bool sun_ready = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
     const auto &ac = area_ctx_state();
+    const bool has_day_night_sky = is_day_night_sky_wallpaper_url(ac.wallpaper_url);
     const bool has_custom_wallpaper =
-        (!ac.wallpaper_url.empty() && ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+        (!ac.wallpaper_url.empty() && !has_day_night_sky &&
+         ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
          ctx.home_wallpaper_art.valid());
+    const bool dns_night = resolve_day_night_sky_is_night(sun_state, now.is_valid(), now.hour);
     const BackdropMode bd_mode = resolve_backdrop_mode(
-        5, 0, prefs.weather_background, sim_override_on, has_custom_wallpaper);
+        PageId::WEATHER, 0, prefs.weather_background, prefs.weather_app_background,
+        sim_override_on, has_custom_wallpaper, has_day_night_sky);
 
     if (bd_mode == BackdropMode::LiveWeatherSky) {
       if (((!std::isnan(weather_temp) && sun_ready) || sim_override_on) &&
@@ -2861,11 +2884,17 @@ void render_weather_page(esphome::display::Display &it, const UiFrameContext &ct
                                         sky_moon_cycle, 0, 0, true,
                                         rs.hw_accel_x, rs.hw_accel_y, false);
       } else if (!backdrop_active()) {
-        if (has_custom_wallpaper) {
+        if (has_day_night_sky) {
+          render_static_day_night_sky_base(it, cx, cy, dns_night);
+        } else if (has_custom_wallpaper) {
           render_page_wallpaper_base(it, ctx.home_wallpaper_art, true, cx, ctx.col_bg);
         } else {
           frame_base(it, ctx.col_bg);
         }
+      }
+    } else if (bd_mode == BackdropMode::DayNightSky) {
+      if (!backdrop_active()) {
+        render_static_day_night_sky_base(it, cx, cy, dns_night);
       }
     } else if (bd_mode == BackdropMode::CustomWallpaper) {
       if (!backdrop_active()) {
