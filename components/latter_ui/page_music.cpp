@@ -867,9 +867,10 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
   const int live_act_idx = lyr.synced ? lyr.find_active_line(pos_ms) : -1;
 
   const int n_lines = static_cast<int>(std::min<size_t>(lyr.lines.size(), kMaxMusicLyricLines));
-  int doc_y0[kMaxMusicLyricLines]{};
-  int doc_y1[kMaxMusicLyricLines]{};
-  int doc_cy[kMaxMusicLyricLines]{};
+  static std::vector<int> s_doc_buf(kMaxMusicLyricLines * 3U);
+  int *const doc_y0 = s_doc_buf.data();
+  int *const doc_y1 = doc_y0 + kMaxMusicLyricLines;
+  int *const doc_cy = doc_y0 + (kMaxMusicLyricLines * 2U);
   int cur_doc_y = scale_y(16);
 
   for (int i = 0; i < n_lines; ++i) {

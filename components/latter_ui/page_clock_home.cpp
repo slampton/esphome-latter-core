@@ -1726,7 +1726,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   home_lap.mark(ProfSect::HOME_TEXT);
 
   // ZONE 5: Fluid 4-Icon Sliding App Dock (Universal Shortcut Engine)
-  ShortcutItem dock_items[kMaxEffectiveDockItems]{};
+  ShortcutItem *dock_items = dock_items_scratch();
   const int dock_count = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
   if (dock_count > 0) {
     const int total_dock_pages = (dock_count + 3) / 4;

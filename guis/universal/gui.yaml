@@ -98,7 +98,7 @@ display:
       const int prof_sub = latter_ui::compute_active_subpage_id();
       latter_ui::FrameProfileScope prof_frame_scope(rs.nav.gui_page, prof_sub, rs.nav.display_power_state);
 
-      latter_ui::UiFrameContext ctx;
+      latter_ui::UiFrameContext &ctx = latter_ui::acquire_frame_context();
       ctx.now = id(ha_time).now();
       if (!ctx.now.is_valid()) ctx.now = id(sntp_time).now();
       ctx.now_ms = millis();
@@ -245,7 +245,7 @@ display:
            (rs.nav.gui_page == latter_ui::PageId::TOOLS &&
             rs.nav.tools_subpage == latter_ui::ToolsSubpage::STOPWATCH)) &&
           rs.stopwatch.running;
-      const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
+      const auto &takeover_st = latter_ui::acquire_takeover_state(ctx);
       const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
       const bool dock_anim_now =
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);

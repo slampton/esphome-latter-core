@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -4655,14 +4656,30 @@ inline int collect_writable_calendar_sources(std::string_view raw,
                                              CalendarSourceMeta *out,
                                              int *out_source_indices,
                                              int max_out = kMaxCalendarSources) noexcept {
-  CalendarSourceMeta all[kMaxCalendarSources]{};
-  const int n = parse_calendar_sources_meta(raw, all, kMaxCalendarSources);
+  if (raw.empty() || max_out <= 0) return 0;
+  std::string_view recs[kMaxCalendarSources]{};
+  const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(kMaxCalendarSources), kProtocolRecordSep);
+  int src_idx = 0;
   int wcnt = 0;
-  for (int i = 0; i < n && wcnt < max_out; ++i) {
-    if (!all[i].can_create) continue;
-    if (out != nullptr) out[wcnt] = all[i];
-    if (out_source_indices != nullptr) out_source_indices[wcnt] = i;
-    ++wcnt;
+  for (size_t i = 0; i < n; ++i) {
+    std::string_view cols[5]{};
+    const size_t cn = v3_split_fields(recs[i], cols, 5, '|');
+    if (cn < 2 || cols[0].empty()) continue;
+    const bool can_create = (cn >= 4) && (cols[3] == "1" || cols[3] == "true");
+    if (can_create && wcnt < max_out) {
+      if (out != nullptr) {
+        CalendarSourceMeta item{};
+        copy_bounded_cstr(item.entity_id, cols[0]);
+        copy_bounded_cstr(item.label, cols[1].empty() ? cols[0] : cols[1]);
+        item.color_idx = static_cast<uint8_t>(std::clamp(cn >= 3 ? v3_parse_int(cols[2], src_idx) : src_idx, 0, 5));
+        item.can_create = true;
+        item.can_delete = (cn >= 5) && (cols[4] == "1" || cols[4] == "true");
+        out[wcnt] = item;
+      }
+      if (out_source_indices != nullptr) out_source_indices[wcnt] = src_idx;
+      ++wcnt;
+    }
+    ++src_idx;
   }
   return wcnt;
 }
@@ -5749,7 +5766,8 @@ inline void reset_hibernate_snapshot_for_test() {
 #endif
 
 inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
-  HibernateSnapshot snap{};
+  auto snap_ptr = std::make_unique<HibernateSnapshot>();
+  HibernateSnapshot &snap = *snap_ptr;
   snap.magic = kHibernateSnapshotMagic;
   snap.version = kHibernateSnapshotVersion;
   const auto &ac = area_ctx_state();
@@ -5800,7 +5818,8 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
 }
 
 inline bool load_hibernate_snapshot_if_cold() {
-  HibernateSnapshot snap{};
+  auto snap_ptr = std::make_unique<HibernateSnapshot>();
+  HibernateSnapshot &snap = *snap_ptr;
 #if LATTER_HAS_ESP_PREFS
   if (esphome::global_preferences == nullptr) return false;
   if (!hibernate_snapshot_handle().load(&snap)) return false;
@@ -6119,16 +6138,32 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
   return idx;
 }
 
-inline int count_configured_cameras(const AreaContextState &ac = area_ctx_state()) {
+inline CameraRecord *camera_records_scratch() {
+  static std::vector<CameraRecord> s_buf(static_cast<size_t>(MAX_CAMERA_SLOTS));
+  return s_buf.data();
+}
+
+inline int count_configured_cameras(const AreaContextState &ac = area_ctx_state()) noexcept {
   if (!ac.cameras_summary.empty()) {
-    CameraRecord cams[MAX_CAMERA_SLOTS]{};
-    const int n = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
-    if (n > 0) return n;
+    std::string_view recs[MAX_CAMERA_SLOTS];
+    const size_t n = v3_split_fields(ac.cameras_summary, recs, static_cast<size_t>(MAX_CAMERA_SLOTS), kProtocolRecordSep);
+    int valid = 0;
+    for (size_t r = 0; r < n; ++r) {
+      std::string_view f[2];
+      const size_t fc = v3_split_fields(recs[r], f, 2, '|');
+      if (fc >= 2 && !f[0].empty()) ++valid;
+    }
+    if (valid > 0) return valid;
   }
   return (!ac.camera_stream_url.empty() || !ac.camera_snapshot_url.empty()) ? 1 : 0;
 }
 
 inline constexpr int kMaxEffectiveDockItems = 16;
+
+inline ShortcutItem *dock_items_scratch() {
+  static std::vector<ShortcutItem> s_buf(static_cast<size_t>(kMaxEffectiveDockItems));
+  return s_buf.data();
+}
 
 inline int collect_effective_dock_items(ShortcutItem *out_items,
                                         int max_items = kMaxEffectiveDockItems,
@@ -6436,7 +6471,7 @@ inline int parse_cameras_summary_list(const std::string &raw,
                                       std::string out_urls[MAX_CAMERA_SLOTS] = nullptr,
                                       std::string out_areas[MAX_CAMERA_SLOTS] = nullptr,
                                       uint8_t out_caps[MAX_CAMERA_SLOTS] = nullptr) {
-  CameraRecord recs[MAX_CAMERA_SLOTS]{};
+  CameraRecord *recs = camera_records_scratch();
   const int cnt = parse_cameras_records(raw, recs, MAX_CAMERA_SLOTS);
   for (int i = 0; i < cnt; ++i) {
     out_ids[i] = recs[i].entity_id;
@@ -6627,7 +6662,7 @@ inline std::string build_camera_snapshot_url(std::string_view base_snap_url,
 
 inline std::string resolve_active_carousel_camera_area_id(const std::string &cameras_summary) {
   const auto &rs = runtime_state();
-  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  CameraRecord *cams = camera_records_scratch();
   const int cnt = parse_cameras_records(cameras_summary, cams, MAX_CAMERA_SLOTS);
   if (rs.alert.active && !rs.alert.camera_entity.empty()) {
     const int ai = find_camera_index_by_entity(cams, cnt, rs.alert.camera_entity);
@@ -6652,7 +6687,7 @@ inline std::string resolve_active_carousel_camera_id(const std::string &cameras_
   if (rs.alert.active && !rs.alert.camera_entity.empty()) {
     return rs.alert.camera_entity;
   }
-  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  CameraRecord *cams = camera_records_scratch();
   const int cnt = parse_cameras_records(cameras_summary, cams, MAX_CAMERA_SLOTS);
   if (cnt > 0) {
     int idx = cam_carousel_idx();

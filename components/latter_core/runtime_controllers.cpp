@@ -405,7 +405,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     }
     eff.apply_device_prefs_effects = true;
   } else if (sv_dom == "shortcuts") {
-    ShortcutItem dock_buf[kMaxEffectiveDockItems]{};
+    ShortcutItem *dock_buf = dock_items_scratch();
     const int dock_cnt = collect_effective_dock_items(dock_buf, kMaxEffectiveDockItems);
     const int max_dock_pages = std::max(1, (dock_cnt + 3) / 4);
     if (home_dock_page() < 0 || home_dock_page() >= max_dock_pages) {

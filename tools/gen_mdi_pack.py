@@ -426,10 +426,17 @@ struct DecodedMdiEntry {
   uint8_t stream[kMaxCachedBytes]{};
 };
 
+struct MdiEdgeHit {
+  float x;
+  int8_t dir;
+};
+
 struct MdiRuntimeScratch {
   DecodedMdiEntry cache[kCacheSlots]{};
   uint32_t stamp = 0;
   uint8_t bucket[kMdiMaxBucketUncompBytes]{};
+  uint16_t cov[128]{};
+  MdiEdgeHit hits[96]{};
 };
 
 struct MdiSpan {
@@ -727,12 +734,10 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
   const float q_to_px = static_cast<float>(size_px) / 240.0f;
   const float px_to_q = 240.0f / static_cast<float>(size_px);
 
-  uint16_t cov[128]{};
-  struct EdgeHit {
-    float x;
-    int8_t dir;
-  };
-  EdgeHit hits[96];
+  MdiRuntimeScratch *sc = mdi_scratch();
+  if (sc == nullptr) return false;
+  uint16_t *const cov = sc->cov;
+  MdiEdgeHit *const hits = sc->hits;
 
   for (int py = 0; py < size_px; ++py) {
     for (int i = 0; i < size_px; ++i) cov[i] = 0;
@@ -771,7 +776,7 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
 
       if (hit_count < 2) continue;
       for (int i = 1; i < hit_count; ++i) {
-        const EdgeHit key = hits[i];
+        const MdiEdgeHit key = hits[i];
         int j = i - 1;
         while (j >= 0 && hits[j].x > key.x) {
           hits[j + 1] = hits[j];

@@ -1056,6 +1056,10 @@ struct SystemTakeoverState {
   }
 };
 
+// PSRAM-backed per-frame scratch singletons (eliminates ~1.1 KB from disp1's lambda stack frame).
+UiFrameContext &acquire_frame_context();
+const SystemTakeoverState &acquire_takeover_state(const UiFrameContext &ctx);
+
 inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
   const auto &rs = runtime_state();
   const bool va_preempt = should_va_takeover_preempt(

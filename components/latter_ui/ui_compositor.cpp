@@ -1391,6 +1391,18 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
   return false;
 }
 
+UiFrameContext &acquire_frame_context() {
+  static UiFrameContext *s_ctx = new UiFrameContext{};
+  *s_ctx = UiFrameContext{};
+  return *s_ctx;
+}
+
+const SystemTakeoverState &acquire_takeover_state(const UiFrameContext &ctx) {
+  static SystemTakeoverState *s_st = new SystemTakeoverState{};
+  *s_st = SystemTakeoverState::from_context(ctx);
+  return *s_st;
+}
+
 #endif  // __has_include("esphome/core/defines.h")
 
 }  // namespace latter_ui

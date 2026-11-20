@@ -746,7 +746,7 @@ void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ct
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
 
-  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  CameraRecord *cams = camera_records_scratch();
   const int cam_count = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
   const bool has_fallback_src = !ac.camera_stream_url.empty() || !ac.camera_snapshot_url.empty();
 

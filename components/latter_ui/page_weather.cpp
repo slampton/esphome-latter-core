@@ -690,7 +690,9 @@ void render_cumulus_cloud(esphome::display::Display &it, int bx, int by, float s
     int16_t y_bot;
     uint8_t top_band; // 0 = empty, 1 = col_rim, 2 = col_crest
   };
-  CumulusCol cols[kMaxCols];
+  // PSRAM scratch: keeps 2,688 B off ESPHome's 8 KB loopTask stack (even on cache-hit frames).
+  static CumulusCol *cols = static_cast<CumulusCol *>(spiram_malloc(sizeof(CumulusCol) * kMaxCols));
+  if (cols == nullptr) return;
   int n_cols = 0;
   int min_y = SCREEN_H;
   int max_y = 0;
@@ -807,7 +809,9 @@ void render_wispy_cloud_veil(esphome::display::Display &it, int center_x, int ba
     int16_t y_mid2;
     int16_t y_bot;
   };
-  VeilCol cols[kMaxVeilCols];
+  // PSRAM scratch: keeps 2,160 B off ESPHome's 8 KB loopTask stack.
+  static VeilCol *cols = static_cast<VeilCol *>(spiram_malloc(sizeof(VeilCol) * kMaxVeilCols));
+  if (cols == nullptr) return;
   int n_cols = 0;
   int min_y = SCREEN_H;
   int max_y = 0;

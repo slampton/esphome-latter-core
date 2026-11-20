@@ -56,7 +56,9 @@ void render_screensaver_aurora(esphome::display::Display &it, int cx, int cy, ui
     int16_t y2, top2, step2_fp;
     int16_t y3, top3, step3_fp;
   };
-  AuroraCol cols[MAX_COLS];
+  // PSRAM-backed scratch (>=128 B): keeps 3.8-4.4 KB off ESPHome's 8 KB loopTask stack.
+  static std::vector<AuroraCol> s_cols(static_cast<size_t>(MAX_COLS));
+  AuroraCol *const cols = s_cols.data();
   int num_cols = 0;
   int global_top = SCREEN_H;
   int global_bot = 0;
@@ -1559,7 +1561,7 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
   const bool live_popup = rs.cameras.doorbell_live_popup_active && is_cam_notif;
 
   // Lookup matching CameraRecord for capability gating (audio / talkback / area unlock)
-  CameraRecord cams[MAX_CAMERA_SLOTS]{};
+  CameraRecord *cams = camera_records_scratch();
   const int cam_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
   const int cam_idx = has_cam_ent ? find_camera_index_by_entity(cams, cam_cnt, st.notif_camera_entity.sv()) : -1;
   const CameraRecord *cam_rec = (cam_idx >= 0) ? &cams[cam_idx] : nullptr;

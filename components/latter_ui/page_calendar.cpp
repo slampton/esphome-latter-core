@@ -1370,9 +1370,11 @@ void render_calendar_page(esphome::display::Display &it, const UiFrameContext &c
       ? (static_cast<int>(ctx.now.hour) * 60 + static_cast<int>(ctx.now.minute))
       : -1;
 
-  CalendarSourceMeta sources[kMaxCalendarSources]{};
+  static std::vector<CalendarSourceMeta> s_sources(static_cast<size_t>(kMaxCalendarSources));
+  static std::vector<CalendarSourceMeta> s_writable(static_cast<size_t>(kMaxCalendarSources));
+  CalendarSourceMeta *sources = s_sources.data();
   const int source_cnt = parse_calendar_sources_meta(calendar_state().calendars_meta, sources);
-  CalendarSourceMeta writable_sources[kMaxCalendarSources]{};
+  CalendarSourceMeta *writable_sources = s_writable.data();
   const int writable_cnt = collect_writable_calendar_sources(
       calendar_state().calendars_meta, writable_sources, nullptr);
 

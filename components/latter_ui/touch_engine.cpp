@@ -33,6 +33,16 @@ namespace latter_ui {
 
 namespace {
 
+inline HomeActivityItem *touch_activity_fallback_scratch() {
+  static std::vector<HomeActivityItem> s_buf(static_cast<size_t>(kMaxHomeActivity));
+  return s_buf.data();
+}
+
+inline CalendarSourceMeta *touch_cal_sources_scratch() {
+  static std::vector<CalendarSourceMeta> s_buf(static_cast<size_t>(kMaxCalendarSources));
+  return s_buf.data();
+}
+
 inline bool resolve_sys_bri_slider_id(int16_t param, std::string_view auto_bri_mode,
                                       UiNumberId &out_id) noexcept {
   const bool ab_off = (auto_bri_mode == "Disabled" || auto_bri_mode.empty());
@@ -154,7 +164,7 @@ inline void open_calendar_composer(DeviceRuntimeState &rs,
 inline void submit_calendar_draft_event(DeviceRuntimeState &rs,
                                         const PersistedDevicePrefs &prefs,
                                         uint32_t now_ms) {
-  CalendarSourceMeta writable_sources[kMaxCalendarSources]{};
+  CalendarSourceMeta *writable_sources = touch_cal_sources_scratch();
   const int writable_cnt = collect_writable_calendar_sources(
       calendar_state().calendars_meta, writable_sources, nullptr);
   std::string_view cal_ent{};
@@ -2122,8 +2132,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
     int act_count = 0;
     const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
-    HomeActivityItem fallback_items[kMaxHomeActivity];
     if (act_count <= 0) {
+      HomeActivityItem *fallback_items = touch_activity_fallback_scratch();
       const auto &ms_hm = media_state();
       const bool m_play = is_music_playing_effective(
           !ms_hm.is_local, rt_.local_mp_playing, ms_hm.state, now_touch);
@@ -3218,7 +3228,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     if (rs.nav.home_subpage == 0) {
       if (h_dir != 0) {
         commit_swipe();
-        ShortcutItem dock_items[kMaxEffectiveDockItems]{};
+        ShortcutItem *dock_items = dock_items_scratch();
         const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
         const int dock_pages = std::max(1, (dock_cnt + 3) / 4);
         bool changed = false;
@@ -3697,8 +3707,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         std::string_view locs[kMaxCalendarLocations]{};
         opt_cnt = 1 + parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
       } else if (rs.cal.drilldown == CalDrilldown::PICK_CALENDAR) {
-        CalendarSourceMeta ws[kMaxCalendarSources]{};
-        opt_cnt = std::max(1, collect_writable_calendar_sources(calendar_state().calendars_meta, ws, nullptr));
+        opt_cnt = std::max(1, collect_writable_calendar_sources(calendar_state().calendars_meta, nullptr, nullptr));
       } else if (rs.cal.drilldown == CalDrilldown::PICK_REPEAT) {
         opt_cnt = 7;
       }
@@ -4220,8 +4229,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     } else if (tap_valid && rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0) {
       int act_count = 0;
       const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
-      HomeActivityItem fallback_items[kMaxHomeActivity];
       if (act_count <= 0) {
+        HomeActivityItem *fallback_items = touch_activity_fallback_scratch();
         const auto &ms_hm = media_state();
         const bool m_play = is_music_playing_effective(
             !ms_hm.is_local, rt_.local_mp_playing, ms_hm.state, now_rel);
@@ -4241,10 +4250,11 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
 
       if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          ShortcutItem dock_items[kMaxEffectiveDockItems]{};
+          ShortcutItem *dock_items = dock_items_scratch();
           const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
           if (hit->param >= 0 && hit->param < dock_cnt) {
-            activate_shortcut_item(dock_items[hit->param], ShortcutOrigin::HOME_DOCK, rs, rt_, now_rel);
+            const ShortcutItem chosen = dock_items[hit->param];
+            activate_shortcut_item(chosen, ShortcutOrigin::HOME_DOCK, rs, rt_, now_rel);
           }
         }
       } else if (wid == WidgetId::HOME_QUICK_BTN) {
@@ -5749,7 +5759,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           if (rs.cal.selected_event_idx >= 0 && rs.cal.selected_event_idx < store.count) {
             const auto &ev = store.events[rs.cal.selected_event_idx];
-            CalendarSourceMeta sources[kMaxCalendarSources]{};
+            CalendarSourceMeta *sources = touch_cal_sources_scratch();
             const int src_cnt = parse_calendar_sources_meta(calendar_state().calendars_meta, sources);
             const std::string_view ent_sv =
                 (static_cast<int>(ev.cal_idx) < src_cnt) ? std::string_view(sources[ev.cal_idx].entity_id)
