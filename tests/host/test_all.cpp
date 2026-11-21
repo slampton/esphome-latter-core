@@ -657,38 +657,42 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(0, 1, false, true, 3600) == 3600);
   LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(1, 1, true, false, 3600) == -1);
 
-  // 5. Production WeakLinkGate RSSI hysteresis (-65 dBm enter across 2 samples after 5s settle, -61 dBm clear after 120s hold)
+  // 5. Production WeakLinkGate RSSI hysteresis (-78 dBm enter across 2 samples after 5s settle, -74 dBm clear after 120s hold)
   LATTER_CHECK(!latter_ui::weak_link_can_sample(4064U, 3899U));  // post-association AGC settle guard (< 5s)
   LATTER_CHECK(latter_ui::weak_link_can_sample(8900U, 3899U));
   LATTER_CHECK(latter_ui::weak_link_can_sample(1000U, 0U));
 
-  // Single transient weak sample (-69 dBm followed by -55 dBm) must NOT latch weak_link
+  // Single transient weak sample (-82 dBm followed by -60 dBm) must NOT latch weak_link
   latter_ui::WeakLinkGate transient_gate{};
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-69, 10000U, transient_gate));
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-82, 10000U, transient_gate));
   LATTER_CHECK(transient_gate.below_count == 1U);
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-50, 20000U, transient_gate));
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-60, 20000U, transient_gate));
   LATTER_CHECK(transient_gate.below_count == 0U);
   LATTER_CHECK(!transient_gate.weak);
 
   latter_ui::WeakLinkGate gate{};
   uint32_t t = 10000;
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-55, t, gate));
+  // Normal weak-room RSSI (-72 dBm) stays allowed in light sleep under MAIN_XTAL_PU_DURING_LIGHT_SLEEP
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-72, t, gate));
+  t += 10000;
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-72, t, gate));
+  LATTER_CHECK(!gate.weak);
   for (int i = 0; i < 6; ++i) {
     t += 10000;
-    latter_ui::weak_link_feed_rssi(-74, t, gate);
+    latter_ui::weak_link_feed_rssi(-86, t, gate);
   }
   LATTER_CHECK(gate.weak);
 
   for (int i = 0; i < 5; ++i) {
     t += 10000;
-    LATTER_CHECK(latter_ui::weak_link_feed_rssi(-63, t, gate));
+    LATTER_CHECK(latter_ui::weak_link_feed_rssi(-76, t, gate));
   }
   LATTER_CHECK(gate.above_since_ms == 0);
 
   bool saw_hold_before_clear = false;
   for (int i = 0; i < 20; ++i) {
     t += 10000;
-    const bool w = latter_ui::weak_link_feed_rssi(-50, t, gate);
+    const bool w = latter_ui::weak_link_feed_rssi(-60, t, gate);
     if (gate.above_since_ms != 0 && (t - gate.above_since_ms) < latter_ui::kWeakLinkClearHoldMs) {
       LATTER_CHECK(w);
       saw_hold_before_clear = true;
@@ -699,8 +703,8 @@ void test_battery_model_and_power_policy() {
 
   // Disconnect resets transient/latched state while folding elapsed weak duration into weak_total_ms
   latter_ui::WeakLinkGate disc_gate{};
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-72, 10000U, disc_gate));
-  LATTER_CHECK(latter_ui::weak_link_feed_rssi(-72, 20000U, disc_gate));
+  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-84, 10000U, disc_gate));
+  LATTER_CHECK(latter_ui::weak_link_feed_rssi(-84, 20000U, disc_gate));
   latter_ui::weak_link_note_disconnect(25000U, disc_gate);
   LATTER_CHECK(!disc_gate.weak && !disc_gate.have && disc_gate.below_count == 0U);
   LATTER_CHECK(disc_gate.weak_total_ms == 5000U);
@@ -746,8 +750,8 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(batt_h.find("can_wake_for_on_battery_alarm()") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("step_thermal_foldback_policy") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("!can_wake_for_on_battery_alarm()") != std::string::npos);
-  LATTER_CHECK(latter_ui::kWeakLinkEnterDbm == -65);
-  LATTER_CHECK(latter_ui::kWeakLinkClearDbm == -61);
+  LATTER_CHECK(latter_ui::kWeakLinkEnterDbm == -78);
+  LATTER_CHECK(latter_ui::kWeakLinkClearDbm == -74);
   LATTER_CHECK(link_h.find("LATTER_WEAK_LINK_ENTER_DBM") != std::string::npos);
   LATTER_CHECK(link_h.find("kWeakLinkClearHoldMs = 120000U") != std::string::npos);
 }

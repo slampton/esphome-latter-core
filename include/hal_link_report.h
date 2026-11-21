@@ -97,11 +97,12 @@ inline void link_report_sample() {
 #endif
 }
 
-// Light-sleep RSSI gate: keeps chip awake when smoothed RSSI stays below kWeakLinkEnterDbm (-65 dBm
-// default) across 2 samples after post-association AGC settle (5 s), and clears after holding above
-// kWeakLinkClearDbm (-61 dBm default) for 2 minutes. Overridable via build_flags for RF bench tests.
+// Light-sleep RSSI gate: keeps chip awake when smoothed RSSI stays below kWeakLinkEnterDbm (-78 dBm
+// default, validated with MAIN_XTAL_PU_DURING_LIGHT_SLEEP down to -72 avg / -80 dBm) across 2 samples
+// after post-association AGC settle (5 s), and clears after holding above kWeakLinkClearDbm (-74 dBm
+// default) for 2 minutes. Overridable via build_flags for RF bench tests.
 #ifndef LATTER_WEAK_LINK_ENTER_DBM
-#define LATTER_WEAK_LINK_ENTER_DBM (-65)
+#define LATTER_WEAK_LINK_ENTER_DBM (-78)
 #endif
 #ifndef LATTER_WEAK_LINK_CLEAR_DBM
 #define LATTER_WEAK_LINK_CLEAR_DBM ((LATTER_WEAK_LINK_ENTER_DBM) + 4)
