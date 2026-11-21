@@ -213,9 +213,11 @@ void render_scrub_takeover(esphome::display::Display &it, const UiFrameContext &
   using esphome::display::TextAlign;
 
   const auto &ms = media_state();
+  const bool can_shuf = (ms.media_caps & kMediaCapShuffleSet) != 0U;
+  const bool can_rep = (ms.media_caps & kMediaCapRepeatSet) != 0U;
   const MusicScrubGeom g = compute_music_scrub_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
-  register_music_scrub_hits(frame_hits(), g);
+  register_music_scrub_hits(frame_hits(), g, can_shuf, can_rep);
 
   const std::string title_lbl = trk.title.empty() ? std::string("Track Scrubber") : trk.title;
   const std::string fit_t = fit_text_to_width_font(title_lbl, g.hdr_max_w, ctx.font_small);
@@ -271,16 +273,17 @@ void render_scrub_takeover(esphome::display::Display &it, const UiFrameContext &
   const int mode_cy = g.mode_y0 + g.mode_h / 2;
   const int mode_eh = std::clamp(g.mode_vis_h, 26, g.mode_h);
   ui::action_pill(it, g.shuf_x0, g.mode_btn_w, mode_cy, mode_eh,
-                  shuf_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                  shuf_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                  (can_shuf && shuf_on) ? ctx.theme_primary : ui::chrome_card_brd_off(),
+                  (can_shuf && shuf_on) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                   compact_pills ? (shuf_on ? "On" : "Shuf") : "Shuffle",
-                  shuf_on ? ctx.theme_primary : ctx.col_white, ctx.font_small,
-                  WidgetId::NONE, 0, 0, -1, "mdi:shuffle-variant");
+                  !can_shuf ? ctx.col_gray : (shuf_on ? ctx.theme_primary : ctx.col_white),
+                  ctx.font_small, WidgetId::NONE, 0, 0, -1, "mdi:shuffle-variant");
   ui::action_pill(it, g.rep_x0, g.mode_btn_w, mode_cy, mode_eh,
-                  rep_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                  rep_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                  rep_lbl, rep_on ? ctx.theme_primary : ctx.col_white, ctx.font_small,
-                  WidgetId::NONE, 0, 0, -1, rep_icon);
+                  (can_rep && rep_on) ? ctx.theme_primary : ui::chrome_card_brd_off(),
+                  (can_rep && rep_on) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                  rep_lbl,
+                  !can_rep ? ctx.col_gray : (rep_on ? ctx.theme_primary : ctx.col_white),
+                  ctx.font_small, WidgetId::NONE, 0, 0, -1, rep_icon);
   ui::action_pill(it, g.fav_x0, g.mode_btn_w, mode_cy, mode_eh,
                   fav_on ? ctx.col_red : ui::chrome_card_brd_off(),
                   fav_on ? ui::chrome_danger_bg() : ui::chrome_card_bg_off(),
@@ -1095,6 +1098,8 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
     const int pw = (strip_w - 2 * gap) / 3;
     const int sx0 = ctx.cx - strip_w / 2;
 
+    const bool can_shuf = (ms.media_caps & kMediaCapShuffleSet) != 0U;
+    const bool can_rep = (ms.media_caps & kMediaCapRepeatSet) != 0U;
     const bool shuf_on = ms.shuffle;
     const bool rep_on = (ms.repeat_mode != static_cast<uint8_t>(MusicRepeatMode::OFF));
     const bool compact_q = (pw < 118);
@@ -1107,16 +1112,21 @@ void render_music_browse_views(esphome::display::Display &it, const UiFrameConte
 
     const int q_hit_h = std::max(strip_h, std::min(min_hit, scale_y(44)));
     ui::action_pill(it, sx0, pw, strip_cy, strip_h,
-                    shuf_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                    shuf_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                    (can_shuf && shuf_on) ? ctx.theme_primary : ui::chrome_card_brd_off(),
+                    (can_shuf && shuf_on) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
                     compact_q ? (shuf_on ? "On" : "Shuf") : (shuf_on ? "Shuf On" : "Shuffle"),
-                    shuf_on ? ctx.theme_primary : ctx.col_white, ctx.font_small,
-                    WidgetId::MUSIC_SHUFFLE_BTN, kHitTap | kHitFocusSlot, 0, q_hit_h);
+                    !can_shuf ? ctx.col_gray : (shuf_on ? ctx.theme_primary : ctx.col_white),
+                    ctx.font_small,
+                    can_shuf ? WidgetId::MUSIC_SHUFFLE_BTN : WidgetId::NONE,
+                    can_shuf ? (kHitTap | kHitFocusSlot) : 0, 0, q_hit_h);
     ui::action_pill(it, sx0 + pw + gap, pw, strip_cy, strip_h,
-                    rep_on ? ctx.theme_primary : ui::chrome_card_brd_off(),
-                    rep_on ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                    rep_txt, rep_on ? ctx.theme_primary : ctx.col_white, ctx.font_small,
-                    WidgetId::MUSIC_REPEAT_BTN, kHitTap | kHitFocusSlot, 0, q_hit_h);
+                    (can_rep && rep_on) ? ctx.theme_primary : ui::chrome_card_brd_off(),
+                    (can_rep && rep_on) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                    rep_txt,
+                    !can_rep ? ctx.col_gray : (rep_on ? ctx.theme_primary : ctx.col_white),
+                    ctx.font_small,
+                    can_rep ? WidgetId::MUSIC_REPEAT_BTN : WidgetId::NONE,
+                    can_rep ? (kHitTap | kHitFocusSlot) : 0, 0, q_hit_h);
     ui::action_pill(it, sx0 + 2 * (pw + gap), pw, strip_cy, strip_h,
                     ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
                     "Clear", ctx.col_slate, ctx.font_small,
