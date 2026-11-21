@@ -845,7 +845,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 17U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 64U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 70U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 43U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
   // Universal shortcut routes + PageId::PINNED == 11 + PageId::CALENDAR == 12 + PageId::CAMERAS == 13
@@ -1086,7 +1086,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112005L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112006L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3420,7 +3420,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112005L, "LATTER_SDK_REV must match 2026112005L");
+  static_assert(LATTER_SDK_REV == 2026112006L, "LATTER_SDK_REV must match 2026112006L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -3430,7 +3430,8 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   static_assert(static_cast<size_t>(AreaCtxField::CAMERA_STREAM_URL) == 39U);
   static_assert(static_cast<size_t>(AreaCtxField::ALERT_CAMERA_ENTITY) == 40U);
   static_assert(static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL) == 41U);
-  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 42U);
+  static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);
+  static_assert(static_cast<size_t>(AreaCtxField::COUNT) == 43U);
 
   reset_runtime_state();
 
@@ -6356,7 +6357,7 @@ void test_quick_actions_d074() {
   using namespace latter_ui;
 
   // 1. Lockstep & WidgetId invariants + retired hold_crown_power_off / instant_crown_hibernate guards
-  LATTER_CHECK(LATTER_SDK_REV == 2026112005L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112006L);
   LATTER_CHECK(kPersistedPrefsVersion == 17U);
   LATTER_CHECK(static_cast<size_t>(PrefKey::COUNT) == 64U);
   LATTER_CHECK(static_cast<size_t>(DevicePrefsField::COUNT) == 70U);
@@ -6579,6 +6580,116 @@ void test_quick_actions_d074() {
   }
 }
 
+void test_ambient_light_brightness_d075() {
+  using namespace latter_ui;
+
+  // 1. parse_area_ambient_light handles valid, empty, and malformed inputs safely
+  int8_t pct = -1;
+  std::string lux;
+  LATTER_CHECK(parse_area_ambient_light("57|5.6", pct, lux));
+  LATTER_CHECK(pct == 57);
+  LATTER_CHECK(lux == "5.6");
+  LATTER_CHECK(parse_area_ambient_light("0|0", pct, lux));
+  LATTER_CHECK(pct == 0);
+  LATTER_CHECK(lux == "0");
+  LATTER_CHECK(parse_area_ambient_light("100|250", pct, lux));
+  LATTER_CHECK(pct == 100);
+  LATTER_CHECK(lux == "250");
+  LATTER_CHECK(!parse_area_ambient_light("", pct, lux));
+  LATTER_CHECK(pct == -1);
+  LATTER_CHECK(lux.empty());
+  LATTER_CHECK(!parse_area_ambient_light("101|999", pct, lux));
+  LATTER_CHECK(pct == -1);
+  LATTER_CHECK(!parse_area_ambient_light("abc|10", pct, lux));
+  LATTER_CHECK(pct == -1);
+
+  // 2. resolve_active_brightness_target in Ambient Light mode
+  PersistedDevicePrefs p{};
+  p.auto_brightness_mode = 3;  // "Ambient Light"
+  p.day_brightness = 90;       // Bright ceiling
+  p.night_brightness = 20;     // Dark floor
+  p.bedtime_brightness = 12;
+  p.bedtime_active = false;
+  LATTER_CHECK(std::string_view(pref_auto_brightness_mode_cstr(p)) == "Ambient Light");
+
+  // Dark floor (0%) -> 20%, Mid (50%) -> 55%, Bright ceiling (100%) -> 90%
+  const auto b_dark = resolve_active_brightness_target(p, "below_horizon", true, 22, 0, -1);
+  LATTER_CHECK(b_dark.kind == ActiveBrightnessTargetKind::AMBIENT);
+  LATTER_CHECK(b_dark.pct == 20U);
+
+  const auto b_mid = resolve_active_brightness_target(p, "below_horizon", true, 22, 50, -1);
+  LATTER_CHECK(b_mid.kind == ActiveBrightnessTargetKind::AMBIENT);
+  LATTER_CHECK(b_mid.pct == 55U);
+
+  const auto b_bright = resolve_active_brightness_target(p, "below_horizon", true, 22, 100, -1);
+  LATTER_CHECK(b_bright.kind == ActiveBrightnessTargetKind::AMBIENT);
+  LATTER_CHECK(b_bright.pct == 90U);
+
+  // Temporary Quick Actions override takes precedence over live ambient curve
+  const auto b_ovr = resolve_active_brightness_target(p, "below_horizon", true, 22, 50, 77);
+  LATTER_CHECK(b_ovr.kind == ActiveBrightnessTargetKind::AMBIENT_OVERRIDE);
+  LATTER_CHECK(b_ovr.pct == 77U);
+
+  // Bedtime Mode still wins over Ambient Light and temporary override
+  p.bedtime_active = true;
+  const auto b_bed = resolve_active_brightness_target(p, "above_horizon", true, 12, 100, 88);
+  LATTER_CHECK(b_bed.kind == ActiveBrightnessTargetKind::BEDTIME);
+  LATTER_CHECK(b_bed.pct == 12U);
+
+  // Missing Area illuminance sensor (-1) falls back cleanly to Sun Synchronized
+  p.bedtime_active = false;
+  const auto b_fb_night = resolve_active_brightness_target(p, "below_horizon", true, 22, -1, -1);
+  LATTER_CHECK(b_fb_night.kind == ActiveBrightnessTargetKind::NIGHT);
+  LATTER_CHECK(b_fb_night.pct == 20U);
+
+  const auto b_fb_day = resolve_active_brightness_target(p, "above_horizon", true, 12, -1, -1);
+  LATTER_CHECK(b_fb_day.kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(b_fb_day.pct == 90U);
+
+  // 3. V3DomainReducer triggers smooth brightness sync on area_ambient_light change and clears override on Area change
+  reset_runtime_state();
+  v3_domain_reducer().reset();
+  persisted_prefs() = p;
+  runtime_state().nav.display_power_state = 0;
+  runtime_state().nav.ambient_bri_override_pct = 75;
+
+  auto make_area_payload = [](uint32_t rev, std::string_view area_id, std::string_view amb) {
+    std::string out = "v3\x1f" "1\x1f" + std::to_string(rev);
+    for (size_t i = 3; i < static_cast<size_t>(AreaCtxField::COUNT); ++i) {
+      out.push_back(kProtocolFieldSep);
+      if (i == static_cast<size_t>(AreaCtxField::AREA_ID)) out.append(area_id);
+      else if (i == static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT)) out.append(amb);
+    }
+    return out;
+  };
+
+  V3ReduceContext rctx{};
+  rctx.now_ms = 5000U;
+  LATTER_CHECK(parse_v3_area_ctx_payload(make_area_payload(1U, "living_room", "58|5.6"),
+                                         area_ctx_state(), home_hub_state()));
+  LATTER_CHECK(area_ctx_state().area_ambient_pct == 58);
+  LATTER_CHECK(area_ctx_state().area_lux_display == "5.6");
+  const auto eff1 = v3_domain_reducer().reduce("area_context", rctx);
+  LATTER_CHECK(eff1.area_changed);
+  LATTER_CHECK(eff1.sync_display_brightness);
+  LATTER_CHECK(eff1.sync_display_brightness_smooth);
+  LATTER_CHECK(runtime_state().nav.ambient_bri_override_pct == -1);
+
+  // Same Area, same ambient light -> no redundant brightness sync
+  LATTER_CHECK(parse_v3_area_ctx_payload(make_area_payload(2U, "living_room", "58|5.6"),
+                                         area_ctx_state(), home_hub_state()));
+  const auto eff2 = v3_domain_reducer().reduce("area_context", rctx);
+  LATTER_CHECK(!eff2.sync_display_brightness);
+
+  // Same Area, ambient light changes -> smooth brightness sync
+  LATTER_CHECK(parse_v3_area_ctx_payload(make_area_payload(3U, "living_room", "82|18"),
+                                         area_ctx_state(), home_hub_state()));
+  const auto eff3 = v3_domain_reducer().reduce("area_context", rctx);
+  LATTER_CHECK(eff3.sync_display_brightness);
+  LATTER_CHECK(eff3.sync_display_brightness_smooth);
+  LATTER_CHECK(area_ctx_state().area_ambient_pct == 82);
+}
+
 }  // namespace
 
 int main() {
@@ -6614,6 +6725,7 @@ int main() {
   test_photo_frame_screensaver_day_night_sky_d067();
   test_gui_standardization_d070();
   test_quick_actions_d074();
+  test_ambient_light_brightness_d075();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

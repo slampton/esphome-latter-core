@@ -3907,9 +3907,19 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       if (qa_sl->widget_id == WidgetId::QUICK_BRI_SLIDER) {
         const auto bri = resolve_active_brightness_target(
             prefs, weather_state().sun_state, rt_.time_valid,
-            rt_.time_valid ? rt_.time_hour : 12);
-        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+            rt_.time_valid ? rt_.time_hour : 12,
+            area_ctx_state().area_ambient_pct, rs.nav.ambient_bri_override_pct);
         const int next_pct = std::clamp(1 + static_cast<int>(std::lround(qa_sl->norm_x(tx) * 99.0f)), 1, 100);
+        if (bri.kind == ActiveBrightnessTargetKind::AMBIENT ||
+            bri.kind == ActiveBrightnessTargetKind::AMBIENT_OVERRIDE) {
+          if (next_pct != static_cast<int>(bri.pct) && (now_u - last_disp_update_ms() >= 42U)) {
+            rs.nav.ambient_bri_override_pct = static_cast<int8_t>(next_pct);
+            rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+            rt_.schedule_disp();
+          }
+          return;
+        }
+        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
         const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
         if (next_pct != cur_pct && (now_u - last_disp_update_ms() >= 42U)) {
           rt_.set_num_val(nid, static_cast<float>(next_pct));
@@ -4195,11 +4205,17 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       } else if (start_slider->widget_id == WidgetId::QUICK_BRI_SLIDER) {
         const auto bri = resolve_active_brightness_target(
             prefs, weather_state().sun_state, rt_.time_valid,
-            rt_.time_valid ? rt_.time_hour : 12);
-        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+            rt_.time_valid ? rt_.time_hour : 12,
+            area_ctx_state().area_ambient_pct, rs.nav.ambient_bri_override_pct);
         const int next_pct = std::clamp(
             1 + static_cast<int>(std::lround(start_slider->norm_x(tp.x) * 99.0f)), 1, 100);
-        rt_.set_num_val(nid, static_cast<float>(next_pct));
+        if (bri.kind == ActiveBrightnessTargetKind::AMBIENT ||
+            bri.kind == ActiveBrightnessTargetKind::AMBIENT_OVERRIDE) {
+          rs.nav.ambient_bri_override_pct = static_cast<int8_t>(next_pct);
+        } else {
+          const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+          rt_.set_num_val(nid, static_cast<float>(next_pct));
+        }
         rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
         rt_.schedule_disp();
         gest.tap_cancelled = true;
@@ -4228,15 +4244,23 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
         const auto bri = resolve_active_brightness_target(
             prefs, weather_state().sun_state, rt_.time_valid,
-            rt_.time_valid ? rt_.time_hour : 12);
-        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
-        const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
-        const int next_pct = step_brightness_tap_10pct(cur_pct);
-        rt_.set_num_val(nid, static_cast<float>(next_pct));
+            rt_.time_valid ? rt_.time_hour : 12,
+            area_ctx_state().area_ambient_pct, rs.nav.ambient_bri_override_pct);
+        if (bri.kind == ActiveBrightnessTargetKind::AMBIENT ||
+            bri.kind == ActiveBrightnessTargetKind::AMBIENT_OVERRIDE) {
+          const int next_pct = step_brightness_tap_10pct(static_cast<int>(bri.pct));
+          rs.nav.ambient_bri_override_pct = static_cast<int8_t>(next_pct);
+        } else {
+          const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+          const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
+          const int next_pct = step_brightness_tap_10pct(cur_pct);
+          rt_.set_num_val(nid, static_cast<float>(next_pct));
+        }
         rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
         rt_.schedule_disp();
       } else if (wid == WidgetId::QUICK_BEDTIME_TOGGLE &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.nav.ambient_bri_override_pct = -1;
         rt_.sw_toggle(UiSwitchId::BEDTIME_MODE);
         rt_.schedule_disp();
       } else if (wid == WidgetId::QUICK_HIBERNATE_BTN &&
@@ -5255,7 +5279,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             }
           } else if (item_idx == 4) {
             const std::string next_m =
-                cycle_option(ab, {"Disabled", "Sun Synchronized", "Time Schedule"});
+                cycle_option(ab, {"Disabled", "Sun Synchronized", "Time Schedule", "Ambient Light"});
+            rs.nav.ambient_bri_override_pct = -1;
             rt_.set_select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE, next_m, true);
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
           } else if (item_idx == 6 && ab == "Time Schedule") {

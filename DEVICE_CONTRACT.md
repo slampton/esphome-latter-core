@@ -40,7 +40,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `42` total fields)
+### `sensor.<device>_area_context` (`AreaCtxField`, `43` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -85,6 +85,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `39` | `camera_stream_url` | `AreaCtxField::CAMERA_STREAM_URL` | `url` | Signed device-scoped base URL for live MJPEG single and 2x2 grid camera streaming |
 | `40` | `alert_camera_entity` | `AreaCtxField::ALERT_CAMERA_ENTITY` | `entity_id` | Camera entity ID associated with the active alert or doorbell notification |
 | `41` | `screensaver_photo_url` | `AreaCtxField::SCREENSAVER_PHOTO_URL` | `url` | Signed HTTP URL for the active Photo Frame screensaver image (un-dimmed, darken=1.0); empty when screensaver_style is not Photo Frame or the photo pool is empty |
+| `42` | `area_ambient_light` | `AreaCtxField::AREA_AMBIENT_LIGHT` | `string` | Calibrated active Area ambient light level ('<norm_pct_0_100>|<formatted_lux>', e.g. '57|5.6'); empty when no illuminance sensor is available for the active Area |
 
 ### `sensor.<device>_active_media` (`MediaField`, `24` total fields)
 
@@ -171,7 +172,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `9` | `battery_hibernate_timeout` | `DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT` | `string` | Battery deep sleep / hibernate timeout (5 min|10 min|15 min|30 min|Disabled) |
 | `10` | `screensaver_mode` | `DevicePrefsField::SCREENSAVER_MODE` | `string` | Screensaver activation policy when idle (Docked Only|Always|Never) |
 | `11` | `screensaver_style` | `DevicePrefsField::SCREENSAVER_STYLE` | `string` | Ambient screensaver style (Ambient Clock|Photo Frame|Aurora|Starfield|Digital Rain|Fireworks) |
-| `12` | `auto_brightness_mode` | `DevicePrefsField::AUTO_BRIGHTNESS_MODE` | `string` | Automatic brightness mode (Disabled|Sun Synchronized|Time Schedule) |
+| `12` | `auto_brightness_mode` | `DevicePrefsField::AUTO_BRIGHTNESS_MODE` | `string` | Automatic brightness mode (Disabled|Sun Synchronized|Time Schedule|Ambient Light) |
 | `13` | `manual_brightness` | `DevicePrefsField::MANUAL_BRIGHTNESS` | `u16` | Manual brightness target when auto brightness is Disabled (1..100%) |
 | `14` | `day_brightness` | `DevicePrefsField::DAY_BRIGHTNESS` | `u16` | Daytime brightness target (1..100%) |
 | `15` | `night_brightness` | `DevicePrefsField::NIGHT_BRIGHTNESS` | `u16` | Nighttime brightness target (1..100%) |
@@ -307,9 +308,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `42`
+- **Studio Wire Revision (`studio_rev`)**: `43`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
-- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
+- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
 - **Declarative `device_prefs` Specs**: `62` typed preference descriptors

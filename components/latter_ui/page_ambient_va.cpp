@@ -1792,19 +1792,27 @@ void render_quick_actions_overlay(esphome::display::Display &it, const UiFrameCo
 
   const auto bri = resolve_active_brightness_target(
       prefs, weather_state().sun_state, ctx.now.is_valid(),
-      ctx.now.is_valid() ? ctx.now.hour : 12);
+      ctx.now.is_valid() ? ctx.now.hour : 12,
+      ac.area_ambient_pct, rs.nav.ambient_bri_override_pct);
+
+  char bri_ctx_buf[32];
+  const char *bri_ctx_lbl = bri.context_label;
+  if (bri.kind == ActiveBrightnessTargetKind::AMBIENT && !ac.area_lux_display.empty()) {
+    std::snprintf(bri_ctx_buf, sizeof(bri_ctx_buf), "Ambient · %s lx", ac.area_lux_display.c_str());
+    bri_ctx_lbl = bri_ctx_buf;
+  }
 
   char sub_buf[64];
 #if LATTER_HAS_BATTERY
   if (std::isnan(rs.hw_batt_level)) {
-    std::snprintf(sub_buf, sizeof(sub_buf), "Battery · %s · %s", kUnknownGlyph, bri.context_label);
+    std::snprintf(sub_buf, sizeof(sub_buf), "Battery · %s · %s", kUnknownGlyph, bri_ctx_lbl);
   } else {
     const int batt_pct = std::clamp(static_cast<int>(std::lround(rs.hw_batt_level)), 0, 100);
     const char *pwr_lbl = rs.hw_batt_charging ? "Charging" : (rs.hw_usb_connected ? "USB" : "Battery");
-    std::snprintf(sub_buf, sizeof(sub_buf), "%s · %d%% · %s", pwr_lbl, batt_pct, bri.context_label);
+    std::snprintf(sub_buf, sizeof(sub_buf), "%s · %d%% · %s", pwr_lbl, batt_pct, bri_ctx_lbl);
   }
 #else
-  std::snprintf(sub_buf, sizeof(sub_buf), "Brightness: %s", bri.context_label);
+  std::snprintf(sub_buf, sizeof(sub_buf), "Brightness: %s", bri_ctx_lbl);
 #endif
   const int sub_max_w = std::min(kMaxContentColW, std::max(120, ly.safe_span(ly.sub_hdr_y, 16)));
   const std::string fit_sub = fit_text_to_width_font(std::string(sub_buf), sub_max_w, ctx.font_small);

@@ -495,6 +495,9 @@ struct AreaContextState {
   std::string local_tz_info = "";        // "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
   std::string world_clocks_summary = ""; // ";"-delimited "<iana>|<city>|<abbr>|<utc_offset_min>|<is_dst_0_or_1>"
   std::string screensaver_photo_url = "";
+  std::string area_ambient_light = "";   // "<norm_pct_0_100>|<formatted_lux>" (empty when unavailable)
+  int8_t area_ambient_pct = -1;          // 0..100 parsed calibrated ambient light; -1 when unavailable
+  std::string area_lux_display = "";     // formatted lux string (e.g. "5.6") for UI readouts
 };
 
 // Protocol v3 active_media state.
@@ -1003,8 +1006,8 @@ inline constexpr const char *const kScreensaverModeOpts[3] = {
     "Docked Only", "Always", "Never"};
 inline constexpr const char *const kScreensaverStyleOpts[6] = {
     "Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks"};
-inline constexpr const char *const kAutoBrightnessModeOpts[3] = {
-    "Disabled", "Sun Synchronized", "Time Schedule"};
+inline constexpr const char *const kAutoBrightnessModeOpts[4] = {
+    "Disabled", "Sun Synchronized", "Time Schedule", "Ambient Light"};
 inline constexpr const char *const kColorProfileOpts[5] = {
     "Steel Blue", "Pink", "Blue", "Green", "Custom"};
 inline constexpr const char *const kVaVisualProfileOpts[5] = {
@@ -1162,25 +1165,74 @@ enum class ActiveBrightnessTargetKind : uint8_t {
   DAY = 1,
   NIGHT = 2,
   BEDTIME = 3,
+  AMBIENT = 4,
+  AMBIENT_OVERRIDE = 5,
 };
 
 struct ActiveBrightnessTarget {
   ActiveBrightnessTargetKind kind{ActiveBrightnessTargetKind::MANUAL};
   PrefKey pref_key{PrefKey::MANUAL_BRIGHTNESS};
   uint8_t pct{80};
-  const char *context_label{"Manual"};  // "Bedtime", "Manual", "Auto · Day", "Auto · Night"
+  const char *context_label{"Manual"};  // "Bedtime", "Manual", "Auto · Day", "Auto · Night", "Ambient", "Ambient · Override"
 };
+
+inline bool parse_area_ambient_light(std::string_view raw, int8_t &out_pct, std::string &out_lux) {
+  out_pct = -1;
+  out_lux.clear();
+  if (raw.empty()) return false;
+  const size_t sep = raw.find('|');
+  const std::string_view pct_sv = (sep == std::string_view::npos) ? raw : raw.substr(0, sep);
+  if (pct_sv.empty()) return false;
+  int parsed = 0;
+  for (char ch : pct_sv) {
+    if (ch < '0' || ch > '9') return false;
+    parsed = parsed * 10 + (ch - '0');
+    if (parsed > 100) return false;
+  }
+  out_pct = static_cast<int8_t>(parsed);
+  if (sep != std::string_view::npos && sep + 1 < raw.size()) {
+    const std::string_view lux_sv = raw.substr(sep + 1);
+    const size_t take = std::min<size_t>(lux_sv.size(), 12U);
+    out_lux.assign(lux_sv.data(), take);
+  }
+  return true;
+}
 
 inline ActiveBrightnessTarget resolve_active_brightness_target(
     const PersistedDevicePrefs &prefs,
     std::string_view sun_state,
     bool time_valid,
-    int hour) noexcept {
+    int hour,
+    int area_ambient_pct = -1,
+    int ambient_override_pct = -1) noexcept {
   if (prefs.bedtime_active) {
     return {ActiveBrightnessTargetKind::BEDTIME, PrefKey::BEDTIME_BRIGHTNESS,
             prefs.bedtime_brightness_pct(), "Bedtime"};
   }
   const std::string_view mode = pref_auto_brightness_mode_cstr(prefs);
+  if (mode == "Ambient Light") {
+    if (ambient_override_pct >= 1 && ambient_override_pct <= 100) {
+      return {ActiveBrightnessTargetKind::AMBIENT_OVERRIDE, PrefKey::MANUAL_BRIGHTNESS,
+              static_cast<uint8_t>(ambient_override_pct), "Ambient · Override"};
+    }
+    if (area_ambient_pct >= 0 && area_ambient_pct <= 100) {
+      const int dark_pct = static_cast<int>(prefs.night_brightness_pct());
+      const int bright_pct = static_cast<int>(prefs.day_brightness_pct());
+      const int lo = std::min(dark_pct, bright_pct);
+      const int hi = std::max(dark_pct, bright_pct);
+      const int pct = std::clamp<int>(lo + (area_ambient_pct * (hi - lo) + 50) / 100, 1, 100);
+      return {ActiveBrightnessTargetKind::AMBIENT, PrefKey::DAY_BRIGHTNESS,
+              static_cast<uint8_t>(pct), "Ambient"};
+    }
+    // Missing/unavailable Area lux sensor: graceful Sun Synchronized fallback
+    const bool is_night = (sun_state == "below_horizon");
+    if (is_night) {
+      return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
+              prefs.night_brightness_pct(), "Ambient · Night"};
+    }
+    return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
+            prefs.day_brightness_pct(), "Ambient · Day"};
+  }
   if (mode == "Sun Synchronized") {
     const bool is_night = (sun_state == "below_horizon");
     if (is_night) {
@@ -1474,7 +1526,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.battery_hibernate_timeout >= 5) p.battery_hibernate_timeout = 2;
   if (p.screensaver_mode >= 3) p.screensaver_mode = 0;
   if (p.screensaver_style >= 6) p.screensaver_style = 0;
-  if (p.auto_brightness_mode >= 3) p.auto_brightness_mode = 1;
+  if (p.auto_brightness_mode >= 4) p.auto_brightness_mode = 1;
   p.manual_brightness = static_cast<uint8_t>(std::clamp<int>(p.manual_brightness, 1, 100));
   p.day_brightness = static_cast<uint8_t>(std::clamp<int>(p.day_brightness, 1, 100));
   p.night_brightness = static_cast<uint8_t>(std::clamp<int>(p.night_brightness, 1, 100));
@@ -1864,6 +1916,8 @@ struct NavRuntimeState {
   int display_power_state = 0;  // 0 = ACTIVE, 1 = SCREENSAVER, 2 = SCREEN_OFF / STANDBY
   uint32_t sleep_start_time = 0;
   uint32_t standby_entered_ms = 0;
+  int8_t ambient_bri_override_pct = -1;  // -1 = none, 1..100 = temporary Quick Actions override in Ambient Light mode
+  bool ambient_bri_ramp_pending = false; // true when sync_display_brightness should ramp smoothly (600 ms)
   bool wake_greeting_pending = true;
   bool is_hibernating = false;
   int hibernate_countdown_val = 0;
@@ -2986,6 +3040,8 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.local_tz_info            = std::string(f[static_cast<size_t>(AreaCtxField::LOCAL_TZ_INFO)]);
   st.world_clocks_summary     = std::string(f[static_cast<size_t>(AreaCtxField::WORLD_CLOCKS_SUMMARY)]);
   st.screensaver_photo_url    = std::string(f[static_cast<size_t>(AreaCtxField::SCREENSAVER_PHOTO_URL)]);
+  st.area_ambient_light       = std::string(f[static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT)]);
+  parse_area_ambient_light(st.area_ambient_light, st.area_ambient_pct, st.area_lux_display);
   const uint32_t raw_alarm_caps = v3_parse_u32(f[static_cast<size_t>(AreaCtxField::ALARM_CAPS)], 0U);
   st.alarm_caps = st.alarm_entity.empty()
                       ? 0U
@@ -6384,6 +6440,7 @@ struct V3DomainEffects {
   bool navigate_home_from_remote{false};
   bool navigate_start_screen_remote{false};
   bool sync_display_brightness{false};
+  bool sync_display_brightness_smooth{false};
   bool apply_device_prefs_effects{false};
 };
 
@@ -6394,6 +6451,7 @@ class V3DomainReducer {
 
  private:
   std::string prev_area_icon_{};
+  std::string prev_area_ambient_light_{};
   std::string prev_title_{};
   std::string prev_artist_{};
   std::string prev_album_{};

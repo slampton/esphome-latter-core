@@ -38,6 +38,8 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     const auto &st = area_ctx_state();
     const bool area_icon_changed = (st.area_icon != prev_area_icon_);
     prev_area_icon_ = st.area_icon;
+    const bool ambient_light_changed = (st.area_ambient_light != prev_area_ambient_light_);
+    prev_area_ambient_light_ = st.area_ambient_light;
 
     r.area.active_area_name = st.area_name;
     latter_area_label() = st.area_name;
@@ -48,6 +50,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     if (area_changed) {
       r.area.active_area_id = st.area_id;
+      r.nav.ambient_bri_override_pct = -1;
       if (was_unassigned && r.nav.gui_page == 6 && r.nav.area_subpage == 1) {
         r.nav.area_subpage = 0;
         r.area.browse_mode = "entities";
@@ -57,9 +60,20 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       eff.mark_dirty_full = true;
     } else if (st.area_id.empty() && !r.area.active_area_id.empty()) {
       r.area.active_area_id.clear();
+      r.nav.ambient_bri_override_pct = -1;
       eff.mark_dirty_full = true;
     } else if (area_icon_changed && r.nav.gui_page == 1) {
       eff.mark_dirty_full = true;
+    }
+
+    if ((ambient_light_changed || area_changed) &&
+        std::string_view(pref_auto_brightness_mode_cstr(prefs)) == "Ambient Light" &&
+        !prefs.bedtime_active) {
+      eff.sync_display_brightness = true;
+      eff.sync_display_brightness_smooth = (r.nav.display_power_state == 0);
+      if (r.nav.quick_actions_open && r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
+        eff.schedule_disp_update = true;
+      }
     }
 
     sync_audio_session_media_observation(ctx.local_mp_playing, ctx.local_mp_paused, ctx.now_ms);

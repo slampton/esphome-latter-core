@@ -236,7 +236,8 @@ enum class AreaCtxField : size_t {
   CAMERA_STREAM_URL = 39,  // camera_stream_url (url)
   ALERT_CAMERA_ENTITY = 40,  // alert_camera_entity (entity_id)
   SCREENSAVER_PHOTO_URL = 41,  // screensaver_photo_url (url)
-  COUNT = 42
+  AREA_AMBIENT_LIGHT = 42,  // area_ambient_light (string)
+  COUNT = 43
 };
 
 // Domain: active_media (sensor.<device>_active_media)

@@ -605,6 +605,8 @@ script:
           const uint32_t now_off_ms = millis();
           rs.nav.quick_actions_open = false;
           rs.nav.active_game = 0;
+          rs.nav.ambient_bri_override_pct = -1;
+          rs.nav.ambient_bri_ramp_pending = false;
           // Cut panel/backlight synchronously before audio/IMU I2C and pm_apply() so LightState::loop()
           // is never delayed by the quiet-loop interval (250/1000 ms), and skip a wasted full-frame blit
           // (render_system_takeovers skips buffer writes when display_power_state == 2).

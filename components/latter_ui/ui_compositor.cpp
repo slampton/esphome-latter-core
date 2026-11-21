@@ -862,15 +862,18 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
       ? 255U
       : static_cast<uint32_t>(std::clamp<int>(static_cast<int>(std::round(rs.hw_batt_level)), 0, 100));
   if (rs.nav.quick_actions_open) {
+    const auto &ac_qa = area_ctx_state();
     const auto bri = resolve_active_brightness_target(
         prefs, weather_state().sun_state, ctx.now.is_valid(),
-        ctx.now.is_valid() ? ctx.now.hour : 12);
+        ctx.now.is_valid() ? ctx.now.hour : 12,
+        ac_qa.area_ambient_pct, rs.nav.ambient_bri_override_pct);
     uint32_t qa_sig = 2166136261U;
     qa_sig = (qa_sig ^ batt_u8) * 16777619U;
     qa_sig = (qa_sig ^ (rs.hw_batt_charging ? 1U : 0U) ^ (rs.hw_usb_connected ? 2U : 0U)) * 16777619U;
     qa_sig = (qa_sig ^ static_cast<uint32_t>(std::clamp(ctx.spk_vol_pct, 0, 100))) * 16777619U;
     qa_sig = (qa_sig ^ static_cast<uint32_t>(bri.pct)) * 16777619U;
     qa_sig = (qa_sig ^ static_cast<uint32_t>(bri.kind)) * 16777619U;
+    for (unsigned char c : ac_qa.area_ambient_light) qa_sig = (qa_sig ^ c) * 16777619U;
     qa_sig = (qa_sig ^ (prefs.bedtime_active ? 1U : 0U)) * 16777619U;
     qa_sig = (qa_sig ^ static_cast<uint32_t>(prefs.screensaver_mode)) * 16777619U;
     if (ui_focus_active(ctx.now_ms)) {

@@ -168,6 +168,7 @@ esphome:
                 latter_ui::touch_engine().navigate_to_start_screen(now_ms);
               }
               if (eff.sync_display_brightness) {
+                latter_ui::runtime_state().nav.ambient_bri_ramp_pending = eff.sync_display_brightness_smooth;
                 id(sync_display_brightness).execute();
               }
               if (eff.ensure_anim_poller) {
@@ -227,7 +228,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026112005L;
+            constexpr long LATTER_YAML_REV = 2026112006L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -934,6 +935,7 @@ script:
             id(apply_theme_preset).execute();
           }
           if (eff & latter_ui::kPrefEffectBrightness) {
+            latter_ui::runtime_state().nav.ambient_bri_override_pct = -1;
             id(sync_display_brightness).execute();
           }
           if (eff & latter_ui::kPrefEffectScreensaverChange) {
@@ -1156,18 +1158,21 @@ script:
             rs.nav.standby_entered_ms = (now_st_ms != 0) ? now_st_ms : 1U;
           }
           const auto &prefs = latter_ui::persisted_prefs();
+          const auto &ac_bri = latter_ui::area_ctx_state();
           auto now = id(ha_time).now();
           if (!now.is_valid()) now = id(sntp_time).now();
+          const bool smooth_ramp = rs.nav.ambient_bri_ramp_pending;
+          rs.nav.ambient_bri_ramp_pending = false;
           const auto bri_tgt = latter_ui::resolve_active_brightness_target(
               prefs, latter_ui::weather_state().sun_state,
-              now.is_valid(), now.is_valid() ? now.hour : 12);
+              now.is_valid(), now.is_valid() ? now.hour : 12,
+              ac_bri.area_ambient_pct, rs.nav.ambient_bri_override_pct);
           float b_target = static_cast<float>(bri_tgt.pct) * 0.01f;
           if ((rs.nav.gui_page == 8 && rs.nav.tools_subpage == 5) || rs.alarms.find_my_active) {
             b_target = 1.00f;
           }
 
           if (rs.nav.display_power_state == 0 || rs.nav.display_power_state == 1) {
-            const auto &ac_bri = latter_ui::area_ctx_state();
             const bool photo_frame_art_active =
                 (id(screensaver_photo_art).get_width() > 0 && !ac_bri.screensaver_photo_url.empty()) ||
                 latter_ui::can_reuse_wallpaper_for_photo_frame(
@@ -1184,7 +1189,10 @@ script:
                 (rs.nav.display_power_state == 0) ? b_target : ss_bri;
             const auto &cv = id(display_brightness).current_values;
             if (!cv.is_on() || std::fabs(cv.get_brightness() - target_bri) >= 0.005f) {
-              id(display_brightness).turn_on().set_brightness(target_bri).perform();
+              auto call = id(display_brightness).turn_on();
+              call.set_brightness(target_bri);
+              call.set_transition_length((smooth_ramp && cv.is_on() && rs.nav.display_power_state == 0) ? 600U : 0U);
+              call.perform();
             }
           }
 

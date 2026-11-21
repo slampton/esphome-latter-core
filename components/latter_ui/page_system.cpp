@@ -245,15 +245,19 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                   prefs.is_24h_format ? "24-Hour" : "12-Hour");
     std::snprintf(disp_labels[3], sizeof(disp_labels[3]), "Color: %s", ctx.theme_palette_opt.c_str());
     const char *ab_s = (ctx.auto_brightness_opt == "Sun Synchronized") ? "Sun"
-                       : ((ctx.auto_brightness_opt == "Time Schedule") ? "Sched" : "Off");
+                       : ((ctx.auto_brightness_opt == "Time Schedule") ? "Sched"
+                       : ((ctx.auto_brightness_opt == "Ambient Light") ? "Ambient" : "Off"));
     std::snprintf(disp_labels[4], sizeof(disp_labels[4]), "Auto Bright: %s", ab_s);
     std::snprintf(disp_labels[5], sizeof(disp_labels[5]), "Brightness: %d%%",
                   std::clamp(ctx.manual_brightness_pct, 1, 100));
     format_schedule_range_label(ctx.day_start_hr, ctx.night_start_hr, prefs.is_24h_format,
                                 disp_labels[6], sizeof(disp_labels[6]));
-    std::snprintf(disp_labels[7], sizeof(disp_labels[7]), "Day Bri: %d%%",
+    const bool ab_amb = (ctx.auto_brightness_opt == "Ambient Light");
+    std::snprintf(disp_labels[7], sizeof(disp_labels[7]), "%s: %d%%",
+                  ab_amb ? "Bright Bri" : "Day Bri",
                   std::clamp(ctx.day_brightness_pct, 1, 100));
-    std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "Night Bri: %d%%",
+    std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "%s: %d%%",
+                  ab_amb ? "Dark Bri" : "Night Bri",
                   std::clamp(ctx.night_brightness_pct, 1, 100));
     std::snprintf(disp_labels[9], sizeof(disp_labels[9]), "Photo Clock: %s",
                   ctx.screensaver_photo_clock ? "On" : "Off");
