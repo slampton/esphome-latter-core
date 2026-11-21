@@ -3417,6 +3417,18 @@ def main(argv: list[str] | None = None) -> int:
                 failures.append(
                     f"[LIGHT SLEEP] {bf.name} with enable_light_sleep: true must set min_frequency: 80MHz"
                 )
+            beacon_init_py = (ROOT / "components" / "latter_beacon" / "__init__.py").read_text(encoding="utf-8")
+            for bt_opt in (
+                "CONFIG_BT_CTRL_MODEM_SLEEP",
+                "CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1",
+                "CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL",
+                "CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP",
+            ):
+                if bt_opt not in beacon_init_py:
+                    failures.append(
+                        f"[LIGHT SLEEP] components/latter_beacon/__init__.py missing {bt_opt} "
+                        "(required so on-chip BLE releases ESP_PM_NO_LIGHT_SLEEP during standby)"
+                    )
         if re.search(r"\bCONFIG_CACHE_L2_CACHE_LINE_128B\s*:", uncommented_yaml):
             failures.append(f"[P4 DMA] {bf.name} must never enable CONFIG_CACHE_L2_CACHE_LINE_128B")
         if re.search(r"\bCONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM\b", uncommented_yaml):

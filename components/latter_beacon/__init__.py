@@ -132,6 +132,16 @@ def _code_runs_from_psram() -> bool:
     )
 
 
+def _light_sleep_enabled() -> bool:
+    """Automatic light sleep is configured (power_management.enable_light_sleep or tickless idle)."""
+    pm_cfg = CORE.config.get("power_management")
+    entries = pm_cfg if isinstance(pm_cfg, list) else ([pm_cfg] if isinstance(pm_cfg, dict) else [])
+    if any(isinstance(e, dict) and e.get("enable_light_sleep") for e in entries):
+        return True
+    options = CORE.config.get("esp32", {}).get("framework", {}).get("sdkconfig_options", {})
+    return _sdkconfig_flag_enabled(options, "CONFIG_FREERTOS_USE_TICKLESS_IDLE")
+
+
 async def to_code(config: ConfigType) -> None:
     cg.add_global(cg.RawStatement('#include "esphome/components/latter_beacon/latter_beacon.h"'))
     uuid = config[CONF_UUID].hex
@@ -168,6 +178,15 @@ async def to_code(config: ConfigType) -> None:
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_MAX_ACT", 1)
     # Nothing scans: no scan duplicate-filter cache.
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_SCAN_DUPL", False)
+    # Enable BLE controller modem sleep on the main 40 MHz XTAL so an enabled on-chip BLE controller
+    # releases its ESP_PM_NO_LIGHT_SLEEP lock between advertising events (and while paused) on boards
+    # without an external 32.768 kHz crystal. Without MAIN_XTAL_PU_DURING_LIGHT_SLEEP, the controller
+    # blocks automatic light sleep completely (ls=0 / 0% sleep) throughout screen-off battery standby.
+    add_idf_sdkconfig_option("CONFIG_BT_CTRL_MODEM_SLEEP", True)
+    add_idf_sdkconfig_option("CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1", True)
+    add_idf_sdkconfig_option("CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL", True)
+    if _light_sleep_enabled():
+        add_idf_sdkconfig_option("CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP", True)
     # Controller code from flash instead of ROM + IRAM (frees over 20 KB of internal RAM). Its interrupt
     # is then not IRAM-safe, and ESP-IDF warns it may stall while flash is erased. With code and rodata
     # executing from PSRAM (every Latter S3 board) a flash erase keeps the cache and interrupts running,
