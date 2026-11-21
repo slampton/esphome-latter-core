@@ -441,7 +441,7 @@ struct HomeHubState {
   ThermostatZoneItem thermostats[kMaxThermostatZones]{};
   int entry_page = 0;
   int entry_count = 0;
-  int intercom_page = 0;
+  int broadcast_page = 0;
   EntryControlItem entries[kMaxEntryItems]{};
   int vacuum_idx = 0;
   int vacuum_count = 0;
@@ -477,7 +477,7 @@ struct AreaContextState {
   std::string camera_stream_url = "";
   std::string cameras_summary = "";
   std::string doorbell_talk_state = "";
-  std::string intercom_targets_summary = "";
+  std::string broadcast_phrases = "";
   int alert_id = -1;
   std::string alert_title = "";
   std::string alert_message = "";
@@ -2094,7 +2094,8 @@ struct IntercomRuntimeState {
   std::string cam_noise_reduction = "strong";
   std::string cam_code = "";
   uint32_t cam_status_ms = 0;
-  bool live_call_mode = true;
+  bool broadcast_dictation_active = false;
+  uint32_t broadcast_dictation_started_ms = 0;
   int cam_carousel_idx = 0;
   bool cam_call_active = false;
   bool cam_listen_active = false;
@@ -2793,30 +2794,6 @@ inline void sync_home_hub_for_active_area(std::string_view active_area_id,
   }
 }
 
-inline const EntryControlItem *resolve_doorbell_quick_unlock_target(
-    std::string_view camera_area_id = "",
-    const HomeHubState &hub = home_hub_state()) noexcept {
-  if (hub.entry_count <= 0) return nullptr;
-  if (!camera_area_id.empty()) {
-    for (int i = 0; i < hub.entry_count; ++i) {
-      if (hub.entries[i].is_lock && hub.entries[i].area_id == camera_area_id) {
-        return &hub.entries[i];
-      }
-    }
-  }
-  for (int i = 0; i < hub.entry_count; ++i) {
-    if (hub.entries[i].is_lock) return &hub.entries[i];
-  }
-  if (!camera_area_id.empty()) {
-    for (int i = 0; i < hub.entry_count; ++i) {
-      if (!hub.entries[i].is_lock && hub.entries[i].area_id == camera_area_id) {
-        return &hub.entries[i];
-      }
-    }
-  }
-  return &hub.entries[0];
-}
-
 inline ThermostatZoneItem *find_climate_item_by_id(std::string_view entity_id,
                                                    HomeHubState &hub = home_hub_state()) noexcept {
   if (entity_id.empty()) return nullptr;
@@ -2937,7 +2914,7 @@ inline bool parse_v3_area_ctx_payload(std::string_view payload,
   st.camera_stream_url        = std::string(f[static_cast<size_t>(AreaCtxField::CAMERA_STREAM_URL)]);
   st.cameras_summary          = std::string(f[static_cast<size_t>(AreaCtxField::CAMERAS_SUMMARY)]);
   st.doorbell_talk_state      = std::string(f[static_cast<size_t>(AreaCtxField::DOORBELL_TALK_STATE)]);
-  st.intercom_targets_summary = std::string(f[static_cast<size_t>(AreaCtxField::INTERCOM_TARGETS_SUMMARY)]);
+  st.broadcast_phrases        = std::string(f[static_cast<size_t>(AreaCtxField::BROADCAST_PHRASES)]);
   st.alert_id                 = v3_parse_int(f[static_cast<size_t>(AreaCtxField::ALERT_ID)], 0);
   st.alert_title              = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_TITLE)]);
   st.alert_message            = std::string(f[static_cast<size_t>(AreaCtxField::ALERT_MESSAGE)]);
@@ -5100,6 +5077,50 @@ inline void cancel_calendar_dictation(const char *msg,
   rs.cal.feedback_ms = now_ms;
 }
 
+inline bool broadcast_dictation_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+  return rs.intercom.broadcast_dictation_active;
+}
+
+inline void start_broadcast_dictation(uint32_t now_ms,
+                                      DeviceRuntimeState &rs = runtime_state()) {
+  rs.intercom.broadcast_dictation_active = true;
+  rs.intercom.broadcast_dictation_started_ms = now_ms;
+  rs.intercom.broadcast_feedback = "Listening...";
+  rs.intercom.broadcast_feedback_ms = now_ms;
+}
+
+inline bool finish_broadcast_dictation(std::string_view stt_text,
+                                       uint32_t now_ms,
+                                       DeviceRuntimeState &rs = runtime_state()) {
+  rs.intercom.broadcast_dictation_active = false;
+  rs.intercom.broadcast_dictation_started_ms = 0U;
+  std::string_view sv = trim_ascii_ws(stt_text);
+  if (sv.empty()) {
+    rs.intercom.broadcast_feedback = "Didn't catch that";
+    rs.intercom.broadcast_feedback_ms = now_ms;
+    return false;
+  }
+  std::string cleaned(sv.substr(0, 160U));
+  if (!cleaned.empty() && std::islower(static_cast<unsigned char>(cleaned[0]))) {
+    cleaned[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cleaned[0])));
+  }
+  rs.intercom.broadcast_message = std::move(cleaned);
+  rs.intercom.broadcast_feedback = "Broadcast sent";
+  rs.intercom.broadcast_feedback_ms = now_ms;
+  return true;
+}
+
+inline void cancel_broadcast_dictation(const char *msg,
+                                       uint32_t now_ms,
+                                       DeviceRuntimeState &rs = runtime_state()) {
+  rs.intercom.broadcast_dictation_active = false;
+  rs.intercom.broadcast_dictation_started_ms = 0U;
+  if (msg != nullptr && msg[0] != '\0') {
+    rs.intercom.broadcast_feedback = msg;
+    rs.intercom.broadcast_feedback_ms = now_ms;
+  }
+}
+
 // Parse Contract v3 packed browse/area slots ("name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current]\x1e...")
 inline size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
   for (size_t i = 0; i < max_slots; i++) {
@@ -5528,7 +5549,7 @@ inline bool is_sensitive_perimeter_action_impl(const std::string &domain_or_enti
   if (is_alarm_entity_target(domain_or_entity) && is_alarm_arm_action(action)) {
     return (effective_alarm_caps() & kAlarmCapCodeArm) != 0U;
   }
-  if (action == "unlock" || action == "unlock_door" || action == "open_cover") {
+  if (action == "unlock" || action == "open_cover") {
     return true;
   }
   if (domain_or_entity == "lock" && action == "open") {
@@ -6074,7 +6095,7 @@ inline int &home_hub_tab() { return home_hub_state().tab; }
 inline int &home_hub_mode_bar_page() { return home_hub_state().mode_bar_page; }
 inline int &home_hub_thermostat_idx() { return home_hub_state().thermostat_idx; }
 inline int &home_hub_entry_page() { return home_hub_state().entry_page; }
-inline int &home_hub_intercom_page() { return home_hub_state().intercom_page; }
+inline int &home_hub_broadcast_page() { return home_hub_state().broadcast_page; }
 inline int &home_hub_vacuum_idx() { return home_hub_state().vacuum_idx; }
 
 inline int collect_area_categories(std::string *out_cats) {
@@ -6412,7 +6433,6 @@ void reset_runtime_state(bool preserve_hooks = false);
 // ==============================================================================
 // Intercom & Camera State / Protocol v3 Summary Parsers & Stream URL Builders
 // ==============================================================================
-inline bool &intercom_live_call_mode() { return runtime_state().intercom.live_call_mode; }
 inline int &cam_carousel_idx() { return runtime_state().cameras.selected_idx; }
 inline bool &cam_call_active() { return runtime_state().intercom.cam_call_active; }
 inline bool &cam_listen_active() { return runtime_state().intercom.cam_listen_active; }
@@ -6460,25 +6480,17 @@ inline bool is_p4_live_doorbell_popup_enabled(
   return !ab.camera_entity.empty() || !ab.camera_url.empty();
 }
 
-struct IntercomTarget {
-  std::string id;
-  std::string label;
-  bool is_all{false};
-};
-
-inline int parse_intercom_targets(const std::string &raw, std::vector<IntercomTarget> &out) {
+inline int parse_broadcast_phrases(const std::string &raw, std::vector<std::string> &out) {
   out.clear();
   size_t start = 0;
-  while (start < raw.size()) {
+  while (start < raw.size() && out.size() < 12U) {
     const size_t sep = raw.find(kProtocolRecordSep, start);
     const std::string_view rec =
         (sep == std::string::npos) ? std::string_view(raw).substr(start)
                                    : std::string_view(raw).substr(start, sep - start);
-    if (!rec.empty()) {
-      std::string_view f[3];
-      if (v3_split_fields(rec, f, 3, '|') == 3 && !f[0].empty()) {
-        out.push_back(IntercomTarget{std::string(f[0]), std::string(f[1]), f[2] == "all"});
-      }
+    const std::string_view trimmed = trim_ascii_ws(rec);
+    if (!trimmed.empty()) {
+      out.emplace_back(trimmed.substr(0, 64U));
     }
     if (sep == std::string::npos) break;
     start = sep + 1;
@@ -6794,8 +6806,8 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       break;
     case 9:
       sub = home_hub_tab();
-      drill = (rs.intercom.live_call_mode ? 4 : 0) |
-              (((sub == HomeHubTab::INTERCOM ? home_hub_state().intercom_page
+      drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
+              (((sub == HomeHubTab::INTERCOM ? home_hub_state().broadcast_page
                                              : home_hub_state().entry_page) & 0x0F) << 3);
       break;
     case 10:

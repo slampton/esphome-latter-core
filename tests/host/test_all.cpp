@@ -1086,7 +1086,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112003L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112004L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3420,7 +3420,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112003L, "LATTER_SDK_REV must match 2026112003L");
+  static_assert(LATTER_SDK_REV == 2026112004L, "LATTER_SDK_REV must match 2026112004L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -3508,7 +3508,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(normalize_vacuum_state_str("error") == "Error");
   LATTER_CHECK(normalize_vacuum_state_str("docked") == "Docked");
 
-  // Multi-item Entry & Garage records + Area-aware doorbell quick-unlock target resolution (D-061)
+  // Multi-item Entry & Garage records (D-061 / D-073)
   LATTER_CHECK(hub.entries[0].is_lock && hub.entries[0].entity_id == "lock.front_door" &&
                hub.entries[0].name == "Front Door" && hub.entries[0].lock_state == LockState::LOCKED);
   LATTER_CHECK(hub.entries[1].is_lock && hub.entries[1].entity_id == "lock.back_door" &&
@@ -3517,10 +3517,6 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
                hub.entries[2].garage_state == GarageState::CLOSED);
   LATTER_CHECK(!hub.entries[3].is_lock && hub.entries[3].entity_id == "cover.workshop_garage" &&
                hub.entries[3].garage_state == GarageState::OPEN);
-  const auto *patio_unlock = resolve_doorbell_quick_unlock_target("patio", hub);
-  LATTER_CHECK(patio_unlock != nullptr && patio_unlock->entity_id == "lock.back_door");
-  const auto *def_unlock = resolve_doorbell_quick_unlock_target("driveway", hub);
-  LATTER_CHECK(def_unlock != nullptr && def_unlock->entity_id == "lock.front_door");
   LATTER_CHECK(find_climate_item_by_id_const("climate.office_mini", hub) != nullptr);
   LATTER_CHECK(find_climate_item_by_id_const("climate.upstairs", hub) != nullptr);
 
@@ -3552,7 +3548,6 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(empty_ent_ac.alarm_caps == 0U && effective_alarm_caps(empty_ent_ac) == 0U);
   LATTER_CHECK(effective_climate_caps(empty_ent_hub) == 0U);
   LATTER_CHECK(effective_vacuum_caps(empty_ent_hub) == 0U);
-  LATTER_CHECK(resolve_doorbell_quick_unlock_target("foyer", empty_ent_hub) == nullptr);
 
   // 2. Conditional Security Alarm buttons + FrameHitTable across all 5 flagship panels
   struct HubBoard {
@@ -4968,6 +4963,16 @@ void test_music_app_v3_d059() {
         LATTER_CHECK(r != nullptr && r->width() >= min_hit && r->height() >= min_hit);
       }
       LATTER_CHECK((ht.find_by_id(WidgetId::MUSIC_SCRUB_BAR)->flags & kHitHorizSlider) != 0U);
+
+      // Dynamic/radio queue or non-shuffle/repeat player omits locked hits without exposing backdrop inside bounds
+      FrameHitTable ht_locked{};
+      register_music_scrub_hits(ht_locked, sg, /*can_shuffle=*/false, /*can_repeat=*/false);
+      check_zero_aabb_overlaps(ht_locked, p.w, p.h);
+      LATTER_CHECK(ht_locked.find_by_id(WidgetId::MUSIC_SHUFFLE_BTN) == nullptr);
+      LATTER_CHECK(ht_locked.find_by_id(WidgetId::MUSIC_REPEAT_BTN) == nullptr);
+      LATTER_CHECK(ht_locked.find_by_id(WidgetId::MUSIC_FAVORITE_BTN) != nullptr);
+      LATTER_CHECK(ht_locked.hit_test(sg.shuf_x0 + sg.mode_btn_w / 2, sg.mode_y0 + sg.mode_h / 2, kHitTap) == nullptr);
+      LATTER_CHECK(ht_locked.hit_test(sg.rep_x0 + sg.mode_btn_w / 2, sg.mode_y0 + sg.mode_h / 2, kHitTap) == nullptr);
     }
 
     // ACTION_SHEET floating takeover (D-072: canonical slot5_* list_card_w x slot5_h stack + < Cancel, zero underlying rows)
@@ -6281,31 +6286,49 @@ void test_gui_standardization_d070() {
   const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
   LATTER_CHECK(cam_cpp.find("ui::header_pager_bar(") != std::string::npos);
   LATTER_CHECK(hub_cpp.find("ui::header_pager_bar(") != std::string::npos);
+  LATTER_CHECK(hub_cpp.find("ui::labeled_action_row(") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-070:") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-071:") != std::string::npos);
   LATTER_CHECK(ui_doc.find("### D-072:") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-073:") != std::string::npos);
 
-  // 7. D-072 Unlimited paginated Intercom targets (parse_intercom_targets handles >10 devices cleanly)
+  // 7. D-073 Dedicated Broadcast tab (parse_broadcast_phrases up to 12, inline STT dictation lifecycle,
+  //    VA takeover exemption on HOME_HUB, and button-only Entry & Garage)
   {
-    std::string raw_targets;
+    std::string raw_phrases;
     for (int i = 1; i <= 14; ++i) {
-      if (i > 1) raw_targets.push_back('\x1e');
-      raw_targets += "dev_" + std::to_string(i) + "|Area " + std::to_string(i) + "|device";
+      if (i > 1) raw_phrases.push_back('\x1e');
+      raw_phrases += "  Phrase " + std::to_string(i) + "  ";
     }
-    raw_targets.push_back('\x1e');
-    raw_targets += "all|All Displays|all";
-    std::vector<IntercomTarget> targets;
-    const int parsed = parse_intercom_targets(raw_targets, targets);
-    LATTER_CHECK(parsed == 15 && targets.size() == 15U);  // 14 devices + "All Displays"
-    LATTER_CHECK(targets[0].id == "dev_1" && targets[0].label == "Area 1" && !targets[0].is_all);
-    LATTER_CHECK(targets[13].id == "dev_14" && targets[13].label == "Area 14" && !targets[13].is_all);
-    LATTER_CHECK(targets[14].id == "all" && targets[14].label == "All Displays" && targets[14].is_all);
+    std::vector<std::string> phrases;
+    const int parsed = parse_broadcast_phrases(raw_phrases, phrases);
+    LATTER_CHECK(parsed == 12 && phrases.size() == 12U);
+    LATTER_CHECK(phrases[0] == "Phrase 1" && phrases[11] == "Phrase 12");
+
+    std::vector<std::string> empty_phrases;
+    LATTER_CHECK(parse_broadcast_phrases("", empty_phrases) == 0 && empty_phrases.empty());
+
+    DeviceRuntimeState brs{};
+    LATTER_CHECK(!broadcast_dictation_active(brs));
+    start_broadcast_dictation(1000U, brs);
+    LATTER_CHECK(broadcast_dictation_active(brs) && brs.intercom.broadcast_feedback == "Listening...");
+    LATTER_CHECK(!should_va_takeover_preempt(true, true, true, PageId::HOME_HUB, false));
+    LATTER_CHECK(finish_broadcast_dictation("  dinner is ready  ", 2000U, brs));
+    LATTER_CHECK(!broadcast_dictation_active(brs) &&
+                 brs.intercom.broadcast_message == "Dinner is ready" &&
+                 brs.intercom.broadcast_feedback == "Broadcast sent");
+    start_broadcast_dictation(3000U, brs);
+    LATTER_CHECK(!finish_broadcast_dictation("   ", 3500U, brs));
+    LATTER_CHECK(!broadcast_dictation_active(brs) && brs.intercom.broadcast_feedback == "Didn't catch that");
+    start_broadcast_dictation(4000U, brs);
+    cancel_broadcast_dictation("Cancelled", 4200U, brs);
+    LATTER_CHECK(!broadcast_dictation_active(brs) && brs.intercom.broadcast_feedback == "Cancelled");
   }
 
   // 6. D-071 Universal MDI icon catalog parity with Latter Studio & dynamic active Area dock icon
   for (std::string_view slug : {
            "mdi:pin", "mdi:music", "mdi:music-box-outline", "mdi:speaker-multiple",
-           "mdi:home", "mdi:shield-home", "mdi:phone-in-talk", "mdi:thermostat",
+           "mdi:home", "mdi:shield-home", "mdi:bullhorn", "mdi:microphone-off", "mdi:thermostat",
            "mdi:lock", "mdi:lock-open-variant", "mdi:garage", "mdi:garage-open",
            "mdi:robot-vacuum", "mdi:cctv", "mdi:view-grid", "mdi:video", "mdi:view-carousel",
            "mdi:cog", "mdi:cog-outline", "mdi:sofa", "mdi:floor-plan", "mdi:shimmer",

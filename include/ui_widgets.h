@@ -354,6 +354,23 @@ void list_row(esphome::display::Display &it, int cx, int cy, int w, int h,
 using TileDrawIconFn = void (*)(esphome::display::Display &it, int cx, int cy,
                                 int icon_r, esphome::Color col, bool shadow, void *user_ctx);
 
+// Button-only glass row (D-048 / D-070 / D-073):
+// Left: non-interactive bare shadowed optional icon + title + optional status (zero glass).
+// Right: single frosted-glass action_pill as the sole interactive control.
+void labeled_action_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                        const char *title, const char *status,
+                        esphome::Color title_c, esphome::Color status_c,
+                        esphome::display::BaseFont *title_font,
+                        esphome::display::BaseFont *status_font,
+                        const char *cta_label, int cta_w, int cta_h,
+                        esphome::Color cta_border_c, esphome::Color cta_bg_c,
+                        esphome::Color cta_text_c,
+                        esphome::display::BaseFont *cta_font,
+                        uint16_t cta_wid, uint8_t cta_flags = kHitTap | kHitFocusSlot,
+                        int16_t cta_param = 0, int cta_hit_h_min = -1,
+                        TileDrawIconFn draw_icon_fn = nullptr, void *icon_ctx = nullptr,
+                        esphome::Color icon_c = esphome::Color::WHITE);
+
 void grid_tile(esphome::display::Display &it, int cx, int cy, int w, int h,
                const char *label, bool active, bool disabled,
                esphome::Color accent_c, esphome::Color text_c,
@@ -436,8 +453,7 @@ enum class PinPadTargetKind : uint8_t {
   NONE = 0,
   AREA_ACTION = 1,
   ALARM_ACTION = 2,
-  DOORBELL_UNLOCK = 3,
-  SHORTCUT_ACTION = 4,
+  SHORTCUT_ACTION = 3,
 };
 
 struct PinPadModalState {

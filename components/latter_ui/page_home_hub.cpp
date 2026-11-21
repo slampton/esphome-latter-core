@@ -220,145 +220,98 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
                          const DeviceRuntimeState &rs, const AreaContextState &ac,
                          int content_top, int content_bot) {
   using esphome::Color;
-  using esphome::display::TextAlign;
 
   const int cx = ctx.cx;
-  const bool show_fb = !rs.intercom.broadcast_feedback.empty() &&
-                       (ctx.now_ms - rs.intercom.broadcast_feedback_ms < 2200U);
-  if (show_fb) {
+  const bool dictating = broadcast_dictation_active(rs);
+  const bool show_fb = dictating ||
+                       (!rs.intercom.broadcast_feedback.empty() &&
+                        (ctx.now_ms - rs.intercom.broadcast_feedback_ms < 2200U));
+  if (show_fb && !rs.intercom.broadcast_feedback.empty()) {
     const std::string fit_fb = fit_text_to_width_font(
         rs.intercom.broadcast_feedback, safe_span(layout().hdr_y, 16), ctx.font_small);
     render_page_header(it, cx, fit_fb, ctx.font_small, ctx.col_white);
   } else {
-    render_page_header(it, cx, "INTERCOM", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "BROADCAST", ctx.font_small, ctx.col_white);
   }
 
-  const int min_hit = UiLayout::mm_to_px(7.0f);
-  const bool live_mode = intercom_live_call_mode();
-  const EntryControlItem *unlock_target =
-      resolve_doorbell_quick_unlock_target(ac.area_id, home_hub_state());
-  const bool has_lock_or_garage = (unlock_target != nullptr);
-
-  // Top Segmented Toggle Pill: Broadcast | Call Display (aligned to ly.list_card_w, D-072)
   const auto &ly = layout();
-  const int seg_h = (SCREEN_H < 400) ? 28 : scale_y(34);
-  const int seg_cy = content_top + seg_h / 2;
-  const int seg_total_w = std::min(ly.list_card_w, band_safe_w(seg_cy, seg_h, 14));
-  ui::segmented_toggle(it, cx, seg_cy, seg_total_w, seg_h,
-                       "Broadcast", "Call Display", live_mode,
-                       ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate,
-                       WidgetId::INTERCOM_SEG_BROADCAST, WidgetId::INTERCOM_SEG_CALL);
+  const int min_hit = UiLayout::mm_to_px(7.0f);
+  std::vector<std::string> phrases;
+  const int total_cnt = parse_broadcast_phrases(ac.broadcast_phrases, phrases);
 
-  const int unlock_h = has_lock_or_garage ? ((SCREEN_H < 400) ? 28 : scale_y(34)) : 0;
-  const int unlock_cy = content_bot - unlock_h / 2;
-  const int rows_top = seg_cy + seg_h / 2 + std::max(6, scale_y(8));
-  const int rows_bot = has_lock_or_garage ? (unlock_cy - unlock_h / 2 - std::max(5, scale_y(6))) : content_bot;
-  const int rows_avail = std::max(90, rows_bot - rows_top);
+  const bool has_mic = (LATTER_HAS_MIC != 0);
+  const int speak_h = (SCREEN_H < 400) ? 36 : scale_y(44);
+  const int speak_hit_h = std::max(speak_h, min_hit);
+  const char *speak_lbl = dictating
+                              ? (rs.voice.vad_active ? "Listening..." : "Cancel")
+                              : "Speak";
+  const Color speak_brd = dictating ? ctx.col_red : ctx.theme_primary;
+  const Color speak_bg = dictating ? ui::chrome_danger_bg() : ui::chrome_card_bg_on();
+  const char *speak_mdi = dictating ? "mdi:microphone-off" : "mdi:microphone";
 
-  // D-072: Standard slot5_* list dimensions (list_card_w x slot5_h, slot5_stride gap when space permits)
-  const int stack_w = ly.list_card_w;
+  if (total_cnt <= 0) {
+    home_hub_broadcast_page() = 0;
+    const int mid_cy = (content_top + content_bot) / 2;
+    if (has_mic) {
+      const int speak_w = std::min({ly.list_card_w, band_safe_w(mid_cy, speak_h, 16)});
+      ui::action_pill_centered(it, cx, speak_w, mid_cy, speak_h,
+                               speak_brd, speak_bg, speak_lbl, ctx.col_white,
+                               ctx.font_small, WidgetId::INTERCOM_SPEAK_BTN,
+                               kHitTap | kHitFocusSlot, 0, speak_hit_h, speak_mdi);
+    } else {
+      render_empty_state(it, cx, mid_cy,
+                         "No Quick Phrases configured", ctx.font_small, ctx.col_slate);
+    }
+    return;
+  }
+
+  int rows_top = content_top;
+  if (has_mic) {
+    const int speak_cy = content_top + speak_h / 2 + std::max(2, scale_y(4));
+    const int speak_w = std::min({ly.list_card_w, band_safe_w(speak_cy, speak_h, 14)});
+    ui::action_pill_centered(it, cx, speak_w, speak_cy, speak_h,
+                             speak_brd, speak_bg, speak_lbl, ctx.col_white,
+                             ctx.font_small, WidgetId::INTERCOM_SPEAK_BTN,
+                             kHitTap | kHitFocusSlot, 0, speak_hit_h, speak_mdi);
+    rows_top = speak_cy + speak_h / 2 + std::max(6, scale_y(10));
+  }
+
+  const int rows_avail = std::max(90, content_bot - rows_top);
   const int card_h = ly.slot5_h;
   const int std_gap = std::max(4, ly.slot5_stride - card_h);
+  const int total_pages = std::max(1, (total_cnt + 2) / 3);
+  int &cur_pg = home_hub_broadcast_page();
+  cur_pg = std::clamp(cur_pg, 0, total_pages - 1);
+  const int base_idx = cur_pg * 3;
+  const int vis_cnt = std::min(3, total_cnt - base_idx);
+
   const int eff_gap = std::clamp((rows_avail - 3 * card_h) / 2, 4, std_gap);
-  const int block_h = 3 * card_h + 2 * eff_gap;
+  const int block_h = vis_cnt * card_h + std::max(0, vis_cnt - 1) * eff_gap;
   const int start_y0 = rows_top + std::max(0, (rows_avail - block_h) / 2);
-  const int hit_h = std::max(card_h, std::min(min_hit, card_h + eff_gap));
-  const int x0 = cx - stack_w / 2;
+  const int top_cy = start_y0 + card_h / 2;
+  const int bot_cy = start_y0 + std::max(0, vis_cnt - 1) * (card_h + eff_gap) + card_h / 2;
+  const int pips_inset = (total_pages > 1) ? 24 : 14;
+  const int stack_w = std::min({ly.list_card_w,
+                                band_safe_w(top_cy, card_h, pips_inset),
+                                band_safe_w(bot_cy, card_h, pips_inset)});
   const int bounce_y = edge_bounce().offset_px(
       PageId::HOME_HUB, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
 
-  if (!live_mode) {
-    static constexpr const char *kBroadcastLabels[3] = {
-        "Dinner Is Ready",
-        "Come Upstairs",
-        "Leaving Soon",
-    };
-    for (int i = 0; i < 3; ++i) {
-      const int cy_r = start_y0 + i * (card_h + eff_gap) + card_h / 2;
-      render_card_box(it, x0, cy_r - card_h / 2, stack_w, card_h,
-                      ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
-                      kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-      const int spk_r = std::clamp(card_h / 3, 9, scale_s(13));
-      ui::draw_icon_speaker(it, x0 + scale_x(22), cy_r, spk_r, ctx.theme_primary, true, true);
-      const std::string fit_l = fit_text_to_width_font(
-          std::string(kBroadcastLabels[i]), std::max(60, stack_w - scale_x(54)), ctx.font_small);
-      ui::shadow_print(it, x0 + scale_x(42), cy_r, ctx.font_small, ctx.col_white,
-                       TextAlign::CENTER_LEFT, fit_l.c_str());
-      frame_hits().add_centered_rect(cx, cy_r, stack_w, hit_h,
-                                     static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
-                                     kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-    }
-  } else if (cam_call_active()) {
-    // D-048: Print passive "Intercom Call Active" directly over wallpaper with kChromeShadow;
-    // glass is reserved exclusively for the interactive "End Call" button.
-    const int mid_cy = rows_top + rows_avail / 2;
-    const int st_y = mid_cy - std::max(16, rows_avail / 5);
-    auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
-    const std::string st_txt = cam_intercom_status().empty()
-        ? std::string("Intercom Call Active")
-        : cam_intercom_status();
-    const std::string fit_st = fit_text_to_width_font(
-        st_txt, std::max(80, band_safe_w(st_y, 28, 16)), st_font);
-    ui::shadow_print(it, cx, st_y, st_font, ctx.col_green, TextAlign::CENTER, fit_st.c_str());
-
-    const int btn_cy = mid_cy + std::max(18, rows_avail / 4);
-    const int end_h = std::clamp(rows_avail / 3 + 4, 34, scale_y(46));
-    const int end_w = std::min({kMaxContentColW, scale_x(164), band_safe_w(btn_cy, end_h, 16)});
-    ui::action_pill_centered(it, cx, end_w, btn_cy, end_h,
-                             ctx.col_red, ui::chrome_danger_bg(), "End Call", ctx.col_white,
-                             ctx.font_small, WidgetId::CAM_LISTEN_BTN, kHitTap | kHitFocusSlot, 0,
-                             std::max(end_h, std::min(min_hit, rows_avail / 2)));
-  } else {
-    // D-072: Unlimited paginated peer display target list (3 per page on standard slot5_* rows)
-    std::vector<IntercomTarget> targets;
-    const int total_cnt = parse_intercom_targets(ac.intercom_targets_summary, targets);
-    if (total_cnt <= 0) {
-      home_hub_intercom_page() = 0;
-      render_empty_state(it, cx, rows_top + rows_avail / 2,
-                         "No Peer Displays", ctx.font_small, ctx.col_slate);
-    } else {
-      const int total_pages = std::max(1, (total_cnt + 2) / 3);
-      int &cur_pg = home_hub_intercom_page();
-      cur_pg = std::clamp(cur_pg, 0, total_pages - 1);
-      const int base_idx = cur_pg * 3;
-      const int vis_cnt = std::min(3, total_cnt - base_idx);
-
-      for (int i = 0; i < vis_cnt; ++i) {
-        const int g_idx = base_idx + i;
-        const IntercomTarget &tgt = targets[static_cast<size_t>(g_idx)];
-        const int cy_r = start_y0 + i * (card_h + eff_gap) + card_h / 2 + bounce_y;
-        const Color acc = tgt.is_all ? ctx.theme_secondary : ctx.col_green;
-        render_card_box(it, x0, cy_r - card_h / 2, stack_w, card_h,
-                        ui::chrome_card_bg_off(), acc,
-                        kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-        fast_filled_circle_aa(it, x0 + scale_x(18), cy_r, std::max(4, scale_s(5)), acc);
-        const std::string fit_l = fit_text_to_width_font(
-            tgt.label, std::max(60, stack_w - scale_x(76)), ctx.font_small);
-        ui::shadow_print(it, x0 + scale_x(34), cy_r, ctx.font_small, ctx.col_white,
-                         TextAlign::CENTER_LEFT, fit_l.c_str());
-        ui::shadow_print(it, x0 + stack_w - scale_x(14), cy_r, ctx.font_small,
-                         tgt.is_all ? ctx.theme_secondary : ctx.col_white,
-                         TextAlign::CENTER_RIGHT, "Call");
-        frame_hits().add_centered_rect(cx, cy_r, stack_w, hit_h,
-                                       static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
-                                       kHitTap | kHitFocusSlot, static_cast<int16_t>(g_idx));
-      }
-      if (total_pages > 1) {
-        render_vertical_page_pips(it, cur_pg > 0, cur_pg + 1 < total_pages,
-                                  ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
-                                  ly.mode_bar_zone_top());
-      }
-    }
+  for (int i = 0; i < vis_cnt; ++i) {
+    const int g_idx = base_idx + i;
+    const int cy_r = start_y0 + i * (card_h + eff_gap) + card_h / 2 + bounce_y;
+    ui::list_row(it, cx, cy_r, stack_w, card_h,
+                 phrases[static_cast<size_t>(g_idx)].c_str(), nullptr,
+                 ui::chrome_card_bg_off(), ui::chrome_card_brd_on(),
+                 ctx.col_white, ctx.col_slate, ctx.font_small,
+                 static_cast<uint16_t>(WidgetId::INTERCOM_ROW_BASE + i),
+                 kHitTap | kHitFocusSlot, static_cast<int16_t>(g_idx),
+                 "mdi:bullhorn");
   }
-
-  if (unlock_target != nullptr) {
-    const int uw = std::min({kMaxContentColW, scale_x(164), band_safe_w(unlock_cy, unlock_h, 18)});
-    const char *u_lbl = unlock_target->is_lock ? "Unlock Entry" : "Open Garage";
-    ui::action_pill_centered(it, cx, uw, unlock_cy, unlock_h,
-                             ctx.col_warm_gold, ui::chrome_card_bg_on(),
-                             u_lbl, ctx.col_white, ctx.font_small,
-                             WidgetId::INTERCOM_UNLOCK_BTN, kHitTap | kHitFocusSlot, 0,
-                             std::max(unlock_h, std::min(min_hit, unlock_h + 8)));
+  if (total_pages > 1) {
+    render_vertical_page_pips(it, cur_pg > 0, cur_pg + 1 < total_pages,
+                              ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                              ly.mode_bar_zone_top());
   }
 }
 
@@ -387,57 +340,47 @@ void render_thermostat_tab(esphome::display::Display &it, const UiFrameContext &
   render_climate_controls_deck(it, ctx, rs, z, top_y, content_bot);
 }
 
+struct EntryIconCtx {
+  bool is_lock{true};
+  bool active_state{false};
+};
+
+void draw_entry_item_icon(esphome::display::Display &it, int cx, int cy, int r,
+                          esphome::Color col, bool shadow, void *user_ctx) {
+  const auto *ec = static_cast<const EntryIconCtx *>(user_ctx);
+  if (ec == nullptr) return;
+  if (ec->is_lock) {
+    ui::draw_icon_lock(it, cx, cy, r, col, ec->active_state, shadow);
+  } else {
+    ui::draw_icon_garage_door(it, cx, cy, r, col, ec->active_state, shadow);
+  }
+}
+
 void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
                        int cx, int cy, int card_w, int card_h, int hit_h,
                        bool is_lock, const char *title, const char *state_txt,
                        esphome::Color state_col, const char *cta_txt,
-                       esphome::Color cta_col, uint16_t card_wid, uint16_t btn_wid,
+                       esphome::Color cta_col, uint16_t btn_wid,
                        int16_t hit_param = 0) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  // D-048 / D-070: Single flat 2-zone glass card (zero glass-on-glass nesting!).
-  const int x0 = cx - card_w / 2;
-  const int y0 = cy - card_h / 2;
-  (void) render_card_box(it, x0, y0, card_w, card_h,
-                         ui::chrome_card_bg_on(), state_col,
-                         kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-
-  const int ir = std::min(ui::card_icon_r(card_h), scale_s(20));
-  const int icon_cx = x0 + ir + std::max(12, scale_x(16));
-  if (is_lock) {
-    const bool locked = (std::strcmp(state_txt, "Unlocked") != 0);
-    ui::draw_icon_lock(it, icon_cx, cy, ir, state_col, locked, true);
-  } else {
-    const bool open = (std::strcmp(state_txt, "Open") == 0);
-    ui::draw_icon_garage_door(it, icon_cx, cy, ir, state_col, open, true);
-  }
-
+  // D-048 / D-070 / D-073: Strict button-only glass — bare shadowed icon/label/status on the left,
+  // frosted-glass action pill on the right as the sole interactive control.
+  EntryIconCtx icon_ctx{
+      is_lock,
+      is_lock ? (std::strcmp(state_txt, "Unlocked") != 0) : (std::strcmp(state_txt, "Open") == 0),
+  };
   const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int right_zone_w = std::clamp(card_w / 3, std::max(72, std::min(min_hit, 84)), scale_x(112));
-  const int split_x = x0 + card_w - right_zone_w;
-  const int left_w = std::max(40, split_x - x0);
-  const int right_w = std::max(40, (x0 + card_w) - split_x);
-  const int cta_cx = split_x + right_w / 2;
-
-  const int txt_x0 = icon_cx + ir + std::max(10, scale_x(14));
-  const int txt_max_w = std::max(54, split_x - txt_x0 - scale_x(8));
+  const int cta_w = std::clamp(card_w / 3, std::max(84, min_hit), scale_x(122));
+  const int cta_h = std::clamp(card_h - scale_y(16), std::max(36, min_hit), scale_y(48));
   auto *pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
   auto *sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
-  const std::string fit_pri = fit_text_to_width_font(std::string(title), txt_max_w, pri_font);
-  const std::string fit_sec = fit_text_to_width_font(std::string(state_txt), txt_max_w, sec_font);
-  ui::shadow_print(it, txt_x0, cy - std::max(8, card_h / 6), pri_font,
-                   ctx.col_white, TextAlign::CENTER_LEFT, fit_pri.c_str());
-  ui::shadow_print(it, txt_x0, cy + std::max(9, card_h / 5), sec_font,
-                   state_col, TextAlign::CENTER_LEFT, fit_sec.c_str());
 
-  // Clean vertical hairline divider + bold right-zone CTA text (matches split_action_card_row)
-  fast_vline(it, split_x, y0 + scale_y(10), std::max(8, card_h - scale_y(20)), kChromeCardBorder);
-  const std::string fit_cta = fit_text_to_width_font(std::string(cta_txt), std::max(32, right_w - scale_x(12)), ctx.font_small);
-  ui::shadow_print(it, cta_cx, cy, ctx.font_small, cta_col, TextAlign::CENTER, fit_cta.c_str());
-
-  frame_hits().add_rect(x0, cy - hit_h / 2, left_w, hit_h, card_wid, kHitTap | kHitFocusSlot, hit_param);
-  frame_hits().add_rect(split_x, cy - hit_h / 2, right_w, hit_h, btn_wid, kHitTap | kHitFocusSlot, hit_param);
+  ui::labeled_action_row(
+      it, cx, cy, card_w, card_h,
+      title, state_txt, ctx.col_white, state_col, pri_font, sec_font,
+      cta_txt, cta_w, cta_h, cta_col, ui::chrome_card_bg_on(), ctx.col_white,
+      ctx.font_small, btn_wid, kHitTap | kHitFocusSlot, hit_param,
+      std::max(cta_h, std::min(hit_h, min_hit + 8)),
+      draw_entry_item_icon, &icon_ctx, state_col);
 }
 
 void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
@@ -488,7 +431,6 @@ void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
       const Color cta_col = (ls == LockState::UNLOCKED) ? ctx.col_green : ctx.col_warm_gold;
       render_entry_card(it, ctx, cx, cy_card, w_card, card_h, hit_h,
                         true, title, st_txt, st_col, cta_txt, cta_col,
-                        static_cast<uint16_t>(WidgetId::ENTRY_CARD_BASE + slot),
                         static_cast<uint16_t>(WidgetId::ENTRY_ACTION_BASE + slot),
                         static_cast<int16_t>(global_i));
     } else {
@@ -501,7 +443,6 @@ void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
       const Color cta_col = (gs == GarageState::OPEN) ? ctx.col_green : ctx.col_warm_gold;
       render_entry_card(it, ctx, cx, cy_card, w_card, card_h, hit_h,
                         false, title, st_txt, st_col, cta_txt, cta_col,
-                        static_cast<uint16_t>(WidgetId::ENTRY_CARD_BASE + slot),
                         static_cast<uint16_t>(WidgetId::ENTRY_ACTION_BASE + slot),
                         static_cast<int16_t>(global_i));
     }

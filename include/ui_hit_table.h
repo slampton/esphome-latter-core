@@ -150,7 +150,6 @@ namespace WidgetId {
   static constexpr uint16_t COVER_STOP_BTN     = 651;
   static constexpr uint16_t COVER_CLOSE_BTN    = 652;
   static constexpr uint16_t COVER_POS_SLIDER   = 653;
-  static constexpr uint16_t ENTRY_CARD_BASE    = 656;  // 656..657 (visible slot 0..1, param = global entry idx)
   static constexpr uint16_t ENTRY_ACTION_BASE  = 658;  // 658..659 (visible slot 0..1, param = global entry idx)
   static constexpr uint16_t LOCK_ACTION_BTN    = 660;
   static constexpr uint16_t ENTRY_LOCK_CARD    = 661;
@@ -193,12 +192,9 @@ namespace WidgetId {
   static constexpr uint16_t CAL_DELETE_BTN      = 800;
   static constexpr uint16_t CAL_ZOOM_IN_BTN     = 802;
   static constexpr uint16_t CAL_ZOOM_OUT_BTN    = 803;
-  static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..814 (param = target idx)
+  static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..814 (param = phrase idx)
   static constexpr uint16_t INTERCOM_PTT_BTN    = 815;
-  static constexpr uint16_t INTERCOM_MODE_BTN   = 816;
-  static constexpr uint16_t INTERCOM_SEG_BROADCAST = 817;
-  static constexpr uint16_t INTERCOM_SEG_CALL   = 818;
-  static constexpr uint16_t INTERCOM_UNLOCK_BTN = 819;
+  static constexpr uint16_t INTERCOM_SPEAK_BTN  = 816;
   static constexpr uint16_t CAM_PREV_BTN        = 820;
   static constexpr uint16_t CAM_NEXT_BTN        = 821;
   static constexpr uint16_t CAM_LISTEN_BTN      = 822;
@@ -1234,7 +1230,8 @@ inline constexpr MusicScrubGeom compute_music_scrub_geom(
   return g;
 }
 
-inline void register_music_scrub_hits(FrameHitTable &ht, const MusicScrubGeom &g) {
+inline void register_music_scrub_hits(
+    FrameHitTable &ht, const MusicScrubGeom &g, bool can_shuffle = true, bool can_repeat = true) {
   register_music_modal_backdrop_hits(ht, g.w, g.h, g.bounds_x0, g.bounds_y0, g.bounds_w, g.bounds_h);
   ht.add_rect(g.slider_x0, g.slider_y0, g.slider_w, g.slider_h,
               WidgetId::MUSIC_SCRUB_BAR, kHitTap | kHitHorizSlider | kHitFocusSlot);
@@ -1242,10 +1239,14 @@ inline void register_music_scrub_hits(FrameHitTable &ht, const MusicScrubGeom &g
               WidgetId::MUSIC_SCRUB_STEP_BACK, kHitTap | kHitFocusSlot);
   ht.add_rect(g.step_fwd_x0, g.step_y0, g.step_btn_w, g.step_h,
               WidgetId::MUSIC_SCRUB_STEP_FWD, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.shuf_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
-              WidgetId::MUSIC_SHUFFLE_BTN, kHitTap | kHitFocusSlot);
-  ht.add_rect(g.rep_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
-              WidgetId::MUSIC_REPEAT_BTN, kHitTap | kHitFocusSlot);
+  if (can_shuffle) {
+    ht.add_rect(g.shuf_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
+                WidgetId::MUSIC_SHUFFLE_BTN, kHitTap | kHitFocusSlot);
+  }
+  if (can_repeat) {
+    ht.add_rect(g.rep_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
+                WidgetId::MUSIC_REPEAT_BTN, kHitTap | kHitFocusSlot);
+  }
   ht.add_rect(g.fav_x0, g.mode_y0, g.mode_btn_w, g.mode_h,
               WidgetId::MUSIC_FAVORITE_BTN, kHitTap | kHitFocusSlot);
 }

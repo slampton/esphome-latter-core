@@ -702,7 +702,7 @@ const HsvUnitRgb *hsv_unit_lut_72() {
 
 bool is_sensitive_perimeter_action_impl(const std::string &domain_or_entity,
                                         const std::string &action, int level) {
-  if (action == "unlock" || action == "disarm" || action == "unlock_door" || action == "open_cover") {
+  if (action == "unlock" || action == "disarm" || action == "open_cover") {
     return true;
   }
   if (domain_or_entity == "lock" && action == "open") {
@@ -891,7 +891,7 @@ void draw_icon_droplet(esphome::display::Display &it, int cx, int cy, int r,
 
 void draw_icon_intercom_handset(esphome::display::Display &it, int cx, int cy, int r,
                                 esphome::Color col, bool shadow) {
-  draw_mdi_r(it, "mdi:phone-in-talk", cx, cy, r, col, shadow, "mdi:phone-in-talk");
+  draw_mdi_r(it, "mdi:bullhorn", cx, cy, r, col, shadow, "mdi:bullhorn");
 }
 
 void draw_icon_bell(esphome::display::Display &it, int cx, int cy, int r,
@@ -1033,7 +1033,7 @@ void draw_route_icon(esphome::display::Display &it, RouteId route, int cx, int c
       render_mdi_icon(it, "mdi:cog-outline", cx, cy, mdi_px, col, shadow, "mdi:cog");
       return;
     case RouteId::HOME_HUB_INTERCOM:
-      render_mdi_icon(it, "mdi:phone-in-talk", cx, cy, mdi_px, col, shadow, "mdi:home");
+      render_mdi_icon(it, "mdi:bullhorn", cx, cy, mdi_px, col, shadow, "mdi:home");
       return;
     case RouteId::HOME_HUB_THERMOSTAT:
       render_mdi_icon(it, "mdi:thermostat", cx, cy, mdi_px, col, shadow, "mdi:thermometer");
@@ -1631,6 +1631,58 @@ void list_row(esphome::display::Display &it, int cx, int cy, int w, int h,
   }
 
   frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, flags, param);
+}
+
+void labeled_action_row(esphome::display::Display &it, int cx, int cy, int w, int h,
+                        const char *title, const char *status,
+                        esphome::Color title_c, esphome::Color status_c,
+                        esphome::display::BaseFont *title_font,
+                        esphome::display::BaseFont *status_font,
+                        const char *cta_label, int cta_w, int cta_h,
+                        esphome::Color cta_border_c, esphome::Color cta_bg_c,
+                        esphome::Color cta_text_c,
+                        esphome::display::BaseFont *cta_font,
+                        uint16_t cta_wid, uint8_t cta_flags,
+                        int16_t cta_param, int cta_hit_h_min,
+                        TileDrawIconFn draw_icon_fn, void *icon_ctx,
+                        esphome::Color icon_c) {
+  const int eff_w = std::max(120, w);
+  const int eff_h = std::max(36, h);
+  const int x0 = cx - eff_w / 2;
+  const int x1 = x0 + eff_w;
+
+  const int eff_cta_h = std::clamp(cta_h, 30, eff_h);
+  const int eff_cta_w = std::clamp(cta_w, 64, std::max(64, (eff_w * 42) / 100));
+  const int cta_x0 = x1 - eff_cta_w;
+
+  int txt_x0 = x0 + scale_x(4);
+  if (draw_icon_fn != nullptr) {
+    const int ir = std::min(card_icon_r(eff_h), scale_s(20));
+    const int icon_cx = x0 + ir + scale_x(4);
+    draw_icon_fn(it, icon_cx, cy, ir, icon_c, true, icon_ctx);
+    txt_x0 = icon_cx + ir + std::max(10, scale_x(12));
+  }
+
+  const int gap = std::max(8, scale_x(12));
+  const int txt_max_w = std::max(44, cta_x0 - txt_x0 - gap);
+  const bool has_status = (status != nullptr && status[0] != '\0' && status_font != nullptr);
+
+  if (title != nullptr && title[0] != '\0' && title_font != nullptr) {
+    const std::string fit_title = fit_text_to_width_font(std::string(title), txt_max_w, title_font);
+    if (has_status) {
+      const std::string fit_status = fit_text_to_width_font(std::string(status), txt_max_w, status_font);
+      shadow_print(it, txt_x0, cy - std::max(8, eff_h / 6), title_font, title_c,
+                   esphome::display::TextAlign::CENTER_LEFT, fit_title.c_str());
+      shadow_print(it, txt_x0, cy + std::max(9, eff_h / 5), status_font, status_c,
+                   esphome::display::TextAlign::CENTER_LEFT, fit_status.c_str());
+    } else {
+      shadow_print(it, txt_x0, cy, title_font, title_c,
+                   esphome::display::TextAlign::CENTER_LEFT, fit_title.c_str());
+    }
+  }
+
+  action_pill(it, cta_x0, eff_cta_w, cy, eff_cta_h, cta_border_c, cta_bg_c,
+              cta_label, cta_text_c, cta_font, cta_wid, cta_flags, cta_param, cta_hit_h_min);
 }
 
 void grid_tile(esphome::display::Display &it, int cx, int cy, int w, int h,

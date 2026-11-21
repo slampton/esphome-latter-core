@@ -680,12 +680,19 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
                 "use named kChrome* or ctx.col_* tokens (D-070)"
             )
 
-        # 7. [UI LIST STANDARD] (D-072): 1-line lists use canonical slot5_* sizing & retire Enqueue/Bento helpers
-        for retired_tok in ("MUSIC_HEADER_ENQUEUE_BTN", "compute_music_bento_tile_geom", "parse_intercom_targets_list"):
+        # 7. [UI LIST STANDARD] (D-072 / D-073): 1-line lists use canonical slot5_* sizing & retire Enqueue/Bento/Intercom Unlock helpers
+        for retired_tok in (
+            "MUSIC_HEADER_ENQUEUE_BTN",
+            "compute_music_bento_tile_geom",
+            "parse_intercom_targets_list",
+            "INTERCOM_UNLOCK_BTN",
+            "INTERCOM_SEG_CALL",
+            "ENTRY_CARD_BASE",
+            "resolve_doorbell_quick_unlock_target",
+        ):
             if re.search(rf"\b{retired_tok}\b", pclean):
                 failures.append(
-                    f"[UI LIST STANDARD] {rel} references retired '{retired_tok}' — "
-                    "use canonical slot5_* list rows and unlimited parse_intercom_targets() (D-072)"
+                    f"[UI LIST STANDARD] {rel} references retired '{retired_tok}' (D-072 / D-073)"
                 )
         if page_cpp.name in ("page_music.cpp", "page_cameras.cpp", "page_home_hub.cpp"):
             if "list_card_w" not in pclean or "slot5_h" not in pclean:
@@ -693,7 +700,7 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
                     f"[UI LIST STANDARD] {rel} must size 1-line list/settings rows from UiPanelLayout::list_card_w & slot5_h (D-072)"
                 )
 
-    # Also check touch_engine.cpp for retired D-072 symbols
+    # Also check touch_engine.cpp for retired D-072 / D-073 symbols
     te_cpp_path = ROOT / "components" / "latter_ui" / "touch_engine.cpp"
     if te_cpp_path.is_file():
         te_clean = _strip_cpp_strings_and_comments(te_cpp_path.read_text(encoding="utf-8"))
@@ -702,10 +709,14 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
             "compute_music_bento_tile_geom",
             "open_music_header_action_sheet",
             "parse_intercom_targets_list",
+            "INTERCOM_UNLOCK_BTN",
+            "INTERCOM_SEG_CALL",
+            "ENTRY_CARD_BASE",
+            "resolve_doorbell_quick_unlock_target",
         ):
             if re.search(rf"\b{retired_tok}\b", te_clean):
                 failures.append(
-                    f"[UI LIST STANDARD] components/latter_ui/touch_engine.cpp references retired '{retired_tok}' (D-072)"
+                    f"[UI LIST STANDARD] components/latter_ui/touch_engine.cpp references retired '{retired_tok}' (D-072 / D-073)"
                 )
 
     # Also enforce [UI HEADER STANDARD] on ui_compositor.cpp global takeovers (OTA / Hibernating)

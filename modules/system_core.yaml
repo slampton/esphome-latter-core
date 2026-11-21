@@ -227,7 +227,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026112003L;
+            constexpr long LATTER_YAML_REV = 2026112004L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -887,6 +887,7 @@ script:
                 case C::STOP_DOORBELL_AUDIO: id(stop_doorbell_audio).execute(); break;
                 case C::START_DOORBELL_PTT: id(start_doorbell_ptt).execute(); break;
                 case C::START_CALENDAR_DICTATION: id(start_calendar_dictation).execute(); break;
+                case C::START_BROADCAST_DICTATION: id(start_broadcast_dictation).execute(); break;
                 case C::APPLY_DEVICE_PREFS_EFFECTS: id(apply_device_prefs_effects).execute(); break;
                 case C::NOTIFY_WEATHER_SIM_CHANGED:
                   latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));

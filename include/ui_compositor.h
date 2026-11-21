@@ -282,7 +282,7 @@ inline constexpr bool should_va_takeover_preempt(bool va_active, bool has_status
                                                  bool intercom_turn, int gui_page,
                                                  bool live_popup_active) noexcept {
   if (!va_active && !has_status_text) return false;
-  if (intercom_turn && (gui_page == PageId::CAMERAS || live_popup_active)) {
+  if (intercom_turn && (gui_page == PageId::CAMERAS || gui_page == PageId::HOME_HUB || live_popup_active)) {
     return false;
   }
   return true;
@@ -1116,7 +1116,9 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
 
 inline int compute_active_subpage_id() {
   const auto &rs = runtime_state();
-  const int hub_drill = rs.intercom.live_call_mode ? 4 : 0;
+  const int hub_drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
+                        ((home_hub_tab() == HomeHubTab::INTERCOM ? home_hub_state().broadcast_page
+                                                                 : home_hub_state().entry_page) << 3);
   int cal_vert_pg = rs.cal.overview_page;
   if (rs.cal.drilldown >= CalDrilldown::PICK_TITLE) {
     cal_vert_pg = rs.cal.picker_page;

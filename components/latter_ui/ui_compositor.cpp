@@ -971,6 +971,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     hh_sig = (hh_sig ^ static_cast<uint32_t>(ac.alarm_caps)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.thermostat_idx + 1)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.entry_page + 1)) * 16777619U;
+    hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.broadcast_page + 1)) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(hh.vacuum_idx + 1)) * 16777619U;
     hh_sig = (hh_sig ^ hh.local_mutation_seq) * 16777619U;
     hh_sig = (hh_sig ^ static_cast<uint32_t>(rs.cameras.selected_idx + 1)) * 16777619U;
@@ -993,7 +994,8 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
         (static_cast<uint32_t>(prefs.camera_carousel_interval & 3U) << 11) |
         (static_cast<uint32_t>(prefs.camera_framing & 1U) << 13) |
         (static_cast<uint32_t>(prefs.camera_stream_mode & 3U) << 14) |
-        (static_cast<uint32_t>(prefs.camera_doorbell_popup & 1U) << 16);
+        (static_cast<uint32_t>(prefs.camera_doorbell_popup & 1U) << 16) |
+        (rs.intercom.broadcast_dictation_active ? (1U << 17) : 0U);
     hh_sig = (hh_sig ^ flags) * 16777619U;
     sig ^= (hh_sig | 1U);
   } else if (rs.nav.gui_page == PageId::AREA) {
@@ -1234,7 +1236,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
       return true;
     }
     if (home_hub_tab() == HomeHubTab::INTERCOM &&
-        (rs.intercom.cam_call_active || rs.intercom.cam_intercom_ptt_active)) {
+        rs.intercom.broadcast_dictation_active) {
       return true;
     }
   }

@@ -124,7 +124,7 @@ inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {
     {RouteId::APP_GAMES, "app:games", "Games", false, ShortcutRouteCap::NONE},
     {RouteId::APP_CLOCK, "app:clock", "Clock Face", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_ALARM, "home_hub:alarm", "Security Alarm", false, ShortcutRouteCap::NONE},
-    {RouteId::HOME_HUB_INTERCOM, "home_hub:intercom", "Intercom", false, ShortcutRouteCap::NONE},
+    {RouteId::HOME_HUB_INTERCOM, "home_hub:intercom", "Broadcast", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_THERMOSTAT, "home_hub:thermostat", "Thermostat", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_ENTRY, "home_hub:entry", "Entry & Garage", false, ShortcutRouteCap::NONE},
     {RouteId::HOME_HUB_VACUUM, "home_hub:vacuum", "Robot Vacuum", false, ShortcutRouteCap::NONE},
@@ -217,7 +217,7 @@ enum class AreaCtxField : size_t {
   CAMERA_SNAPSHOT_URL = 20,  // camera_snapshot_url (url)
   CAMERAS_SUMMARY = 21,  // cameras_summary (records)
   DOORBELL_TALK_STATE = 22,  // doorbell_talk_state (string)
-  INTERCOM_TARGETS_SUMMARY = 23,  // intercom_targets_summary (records)
+  BROADCAST_PHRASES = 23,  // broadcast_phrases (records)
   ALERT_ID = 24,  // alert_id (u32)
   ALERT_TITLE = 25,  // alert_title (string)
   ALERT_MESSAGE = 26,  // alert_message (string)

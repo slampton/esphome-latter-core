@@ -393,6 +393,7 @@ enum class UiHostCmd : uint8_t {
   STOP_DOORBELL_AUDIO,
   START_DOORBELL_PTT,
   START_CALENDAR_DICTATION,
+  START_BROADCAST_DICTATION,
   APPLY_DEVICE_PREFS_EFFECTS,
   NOTIFY_WEATHER_SIM_CHANGED,
   SET_LOCAL_SPEAKER_VOL_PCT,
@@ -537,7 +538,7 @@ class TouchGestureEngine {
                                     const std::string &action, int level,
                                     const char *pin_prompt, uint32_t now_ms);
   bool gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms);
-  bool gate_or_dispatch_doorbell_unlock(uint32_t now_ms, bool from_intercom);
+  bool gate_or_dispatch_doorbell_unlock(uint32_t now_ms);
 };
 
 TouchGestureEngine &touch_engine();
