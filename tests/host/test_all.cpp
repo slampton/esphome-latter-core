@@ -746,8 +746,9 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(batt_h.find("can_wake_for_on_battery_alarm()") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("step_thermal_foldback_policy") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("!can_wake_for_on_battery_alarm()") != std::string::npos);
-  LATTER_CHECK(link_h.find("kWeakLinkEnterDbm = -65") != std::string::npos);
-  LATTER_CHECK(link_h.find("kWeakLinkClearDbm = -61") != std::string::npos);
+  LATTER_CHECK(latter_ui::kWeakLinkEnterDbm == -65);
+  LATTER_CHECK(latter_ui::kWeakLinkClearDbm == -61);
+  LATTER_CHECK(link_h.find("LATTER_WEAK_LINK_ENTER_DBM") != std::string::npos);
   LATTER_CHECK(link_h.find("kWeakLinkClearHoldMs = 120000U") != std::string::npos);
 }
 
