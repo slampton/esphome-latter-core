@@ -154,27 +154,29 @@ void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_char
 #if defined(USE_ESP32) && LATTER_HAS_BATTERY
   if (bus == nullptr) return;
   auto &tel = pmu_telemetry();
+  bool ok = false;
+  const float temp_c = hal_axp2101_read_die_temp_c(bus, ok);
+  if (ok) {
+    tel.die_temp_c = temp_c;
+  }
   if (!is_charging) {
     if (tel.thermal_foldback_active) {
       uint8_t v = 0;
-      if (axp_rd(bus, 0x62, &v)) {
-        axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(kBattChargeMa)));
+      if (axp_rd(bus, 0x62, &v) &&
+          axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(kBattChargeMa)))) {
         tel.icc_ma = kBattChargeMa;
+        tel.thermal_foldback_active = false;
       }
-      tel.thermal_foldback_active = false;
     }
     return;
   }
-  bool ok = false;
-  const float temp_c = hal_axp2101_read_die_temp_c(bus, ok);
   if (!ok) return;
-  tel.die_temp_c = temp_c;
   bool next_foldback = tel.thermal_foldback_active;
   int next_icc_ma = tel.icc_ma;
   if (!step_thermal_foldback_policy(true, temp_c, kBattChargeMa, next_foldback, next_icc_ma)) return;
   uint8_t v = 0;
-  if (axp_rd(bus, 0x62, &v)) {
-    axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(next_icc_ma)));
+  if (axp_rd(bus, 0x62, &v) &&
+      axp_wr(bus, 0x62, static_cast<uint8_t>((v & 0xE0) | axp2101_icc_code(next_icc_ma)))) {
     tel.thermal_foldback_active = next_foldback;
     tel.icc_ma = next_icc_ma;
     if (next_foldback) {
@@ -419,7 +421,7 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
           }
         }
         bm.update(vbat_mv, !vbus, static_cast<ChargePhase>(chg_state), BattLoad::SCREEN,
-                  boot_ms == 0U ? 1U : boot_ms, hw_gauge);
+                  boot_ms == 0U ? 1U : boot_ms, hw_gauge, tel.icc_ma);
         hal_battery_save_rtc_snapshot(bm);
         if (!std::isnan(bm.soc_display)) {
           rs.hw_batt_level = std::round(bm.soc_display);
@@ -453,7 +455,7 @@ bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus) {
     return false;
   }
   const time_t cur = std::time(nullptr);
-  if (cur < static_cast<time_t>(1700000000)) {
+  if (cur < static_cast<time_t>(1735689600LL)) {
     struct timeval tv {};
     tv.tv_sec = static_cast<time_t>(epoch64);
     tv.tv_usec = 0;
@@ -472,7 +474,7 @@ bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus) {
 #if defined(USE_ESP32) && LATTER_HAS_RTC
   if (bus == nullptr) return false;
   const time_t now = std::time(nullptr);
-  if (now < static_cast<time_t>(1700000000)) return false;
+  if (now < static_cast<time_t>(1735689600LL)) return false;
 
   static uint32_t s_last_sync_ms = 0;
   static int64_t s_last_sync_epoch = 0;
@@ -493,10 +495,28 @@ bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus) {
   // Ensure PCF85063 Control_1 (0x00) runs continuously (STOP=0) in 24-hour mode (12_24=0).
   uint8_t ctrl1 = 0;
   const uint8_t ctrl1_reg = 0x00;
+  bool ctrl1_fixed = false;
   if (bus->write_readv(kPcf85063Addr, &ctrl1_reg, 1, &ctrl1, 1) == esphome::i2c::ERROR_OK &&
       (ctrl1 & 0x22U) != 0U) {
     const uint8_t fix_ctrl1[2] = {0x00, static_cast<uint8_t>(ctrl1 & ~0x22U)};
     bus->write(kPcf85063Addr, fix_ctrl1, sizeof(fix_ctrl1));
+    ctrl1_fixed = true;
+  }
+
+  // Skip redundant 60s I2C register writes when PCF85063 already matches system UTC within < 2s.
+  if (!ctrl1_fixed) {
+    uint8_t cur_regs[7] = {};
+    const uint8_t start_reg = 0x04;
+    int64_t cur_rtc_epoch = 0;
+    if (bus->write_readv(kPcf85063Addr, &start_reg, 1, cur_regs, sizeof(cur_regs)) == esphome::i2c::ERROR_OK &&
+        pcf85063_regs_to_epoch(cur_regs, cur_rtc_epoch)) {
+      const int64_t hw_drift = static_cast<int64_t>(now) - cur_rtc_epoch;
+      if (hw_drift > -2 && hw_drift < 2) {
+        s_last_sync_ms = (now_ms == 0U) ? 1U : now_ms;
+        s_last_sync_epoch = static_cast<int64_t>(now);
+        return false;
+      }
+    }
   }
 
   const int sec = tm_utc.tm_sec > 59 ? 59 : (tm_utc.tm_sec < 0 ? 0 : tm_utc.tm_sec);

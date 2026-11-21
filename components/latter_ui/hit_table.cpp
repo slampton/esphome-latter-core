@@ -16,7 +16,7 @@ FrameHitTable &frame_hits() {
 
 void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
                              uint8_t flags, int16_t param, int hit_pad) {
-  if (w <= 0 || h <= 0 || count >= kMaxRegions) return;
+  if (w <= 0 || h <= 0) return;
   const int rx1 = x0 + w - 1;
   const int ry1 = y0 + h - 1;
   const uint8_t pad_u8 = static_cast<uint8_t>(
@@ -34,6 +34,7 @@ void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
       }
     }
   }
+  if (count >= kMaxRegions) return;
   HitRegion &reg = regions[count++];
   reg.x0 = static_cast<int16_t>(x0);
   reg.y0 = static_cast<int16_t>(y0);

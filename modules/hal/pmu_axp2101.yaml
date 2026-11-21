@@ -45,6 +45,11 @@ esphome:
                 const float lvl = std::round(bm.soc_display);
                 latter_ui::runtime_state().hw_batt_level = lvl;
                 id(batt_level).publish_state(lvl);
+              } else {
+                latter_ui::runtime_state().hw_batt_level = NAN;
+                if (id(batt_level).has_state() && !std::isnan(id(batt_level).state)) {
+                  id(batt_level).publish_state(NAN);
+                }
               }
             };
 
@@ -196,8 +201,10 @@ script:
           // gauge only with the Telemetry Profiler on. Skipped during an active voice turn to keep bus_internal
           // quiet: the model's cutoff and smoothing are debounced well past a voice turn.
           auto &rs = latter_ui::runtime_state();
-          if (rs.voice.active || rs.voice.tts_received) return;
           auto &bm = latter_ui::battery_model();
+          const bool near_cutoff = !rs.hw_usb_connected &&
+              (bm.cutoff_below_count > 0 || (bm.has_sample && bm.vrest_mv <= latter_ui::BatteryModel::kFastSampleMv));
+          if ((rs.voice.active || rs.voice.tts_received) && !near_cutoff) return;
           const uint32_t now_b = millis();
           const bool audio_load = id(speaker_enable).state ||
                                   id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING ||
@@ -249,36 +256,41 @@ script:
           // bits 2:0 charger phase. On battery the charger is idle by definition.
           uint8_t chg_state = static_cast<uint8_t>(latter_ui::ChargePhase::IDLE);
           bool is_charging = false;
+          bool stat1_valid = !vbus;
           static uint8_t last_stat1 = 0xFF;
           if (vbus) {
             uint8_t reg1 = 0x01;
             uint8_t stat1 = 0;
-            if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) != esphome::i2c::ERROR_OK) return;
-            chg_state = stat1 & 0x07;
-            is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
-            if ((stat1 & 0x67) != last_stat1) {  // direction + phase (other bits may toggle)
-              last_stat1 = stat1 & 0x67;
-              if (!bm.fault) {
-                uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
-                uint8_t rr = 0x00;
-                id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);
-                rr = 0x50;
-                id(bus_internal).write_readv(0x34, &rr, 1, &r50, 1);
-                rr = 0x48;
-                id(bus_internal).write_readv(0x34, &rr, 1, &r48, 1);
-                rr = 0x36;
-                id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
-                rr = 0x37;
-                id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
-                LATTER_PROF_LOGI("[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
-                         r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
-                         (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
+            if (id(bus_internal).write_readv(0x34, &reg1, 1, &stat1, 1) == esphome::i2c::ERROR_OK) {
+              stat1_valid = true;
+              chg_state = stat1 & 0x07;
+              is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
+              if ((stat1 & 0x67) != last_stat1) {  // direction + phase (other bits may toggle)
+                last_stat1 = stat1 & 0x67;
+                if (!bm.fault) {
+                  uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
+                  uint8_t rr = 0x00;
+                  id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);
+                  rr = 0x50;
+                  id(bus_internal).write_readv(0x34, &rr, 1, &r50, 1);
+                  rr = 0x48;
+                  id(bus_internal).write_readv(0x34, &rr, 1, &r48, 1);
+                  rr = 0x36;
+                  id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
+                  rr = 0x37;
+                  id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
+                  LATTER_PROF_LOGI("[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
+                           r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
+                           (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
+                }
               }
+            } else {
+              is_charging = rs.hw_batt_charging;
             }
           } else {
             last_stat1 = 0xFF;
           }
-          if (bat_present) {
+          if (bat_present && stat1_valid) {
             bm.note_charger_phase(vbus, static_cast<latter_ui::ChargePhase>(chg_state), now_b);
           }
           static bool fault_logged = false;
@@ -287,18 +299,20 @@ script:
                      (unsigned)bm.rapid_done_cycles);
           }
           fault_logged = bm.fault;
-          latter_ui::hal_axp2101_thermal_charge_foldback(id(bus_internal), is_charging);
-          const bool pub_charging = is_charging && !bm.fault;
-          rs.hw_batt_charging = pub_charging;
-          if (!id(batt_charging).has_state() || id(batt_charging).state != pub_charging) {
-            id(batt_charging).publish_state(pub_charging);
-          }
-          const char *chg_text =
-              bat_present ? latter_ui::battery_charge_state_text(!vbus, chg_state, bm.fault) : "No Battery";
-          static const char *last_chg_text = nullptr;  // string literals: compare by pointer
-          if (chg_text != last_chg_text) {
-            last_chg_text = chg_text;
-            id(batt_charge_state).publish_state(chg_text);
+          if (stat1_valid) {
+            latter_ui::hal_axp2101_thermal_charge_foldback(id(bus_internal), is_charging);
+            const bool pub_charging = is_charging && !bm.fault;
+            rs.hw_batt_charging = pub_charging;
+            if (!id(batt_charging).has_state() || id(batt_charging).state != pub_charging) {
+              id(batt_charging).publish_state(pub_charging);
+            }
+            const char *chg_text =
+                bat_present ? latter_ui::battery_charge_state_text(!vbus, chg_state, bm.fault) : "No Battery";
+            static const char *last_chg_text = nullptr;  // string literals: compare by pointer
+            if (chg_text != last_chg_text) {
+              last_chg_text = chg_text;
+              id(batt_charge_state).publish_state(chg_text);
+            }
           }
 
           // Battery model: VBAT (REG34/35), AXP2101 gauge (REG A4), load class, and cutoff.
@@ -317,12 +331,19 @@ script:
               } else if (rs.nav.display_power_state != 2) {
                 load = latter_ui::BattLoad::SCREEN;
               }
-              const bool cutoff = bm.update(vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state), load, now_b, hw_gauge);
+              const bool cutoff = bm.update(
+                  vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state),
+                  load, now_b, hw_gauge, latter_ui::pmu_telemetry().icc_ma);
               latter_ui::hal_battery_save_rtc_snapshot(bm);
               if (!std::isnan(bm.soc_display)) {
                 const float lvl = std::round(bm.soc_display);
                 rs.hw_batt_level = lvl;
                 id(batt_level).publish_state(lvl);
+              } else {
+                rs.hw_batt_level = NAN;
+                if (id(batt_level).has_state() && !std::isnan(id(batt_level).state)) {
+                  id(batt_level).publish_state(NAN);
+                }
               }
               if (bm.vraw_mv > 0) {
                 const float volts = static_cast<float>(bm.vraw_mv) / 1000.0f;

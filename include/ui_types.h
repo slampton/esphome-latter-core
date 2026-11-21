@@ -145,9 +145,13 @@ inline const esphome::Color kChromeKeyBg(20, 25, 33);
 inline const esphome::Color kChromeKeyBrd(44, 54, 68);
 inline const esphome::Color kChromeWheelInnerRing(70, 82, 96);
 inline const esphome::Color kChromeWheelOuterRing(42, 50, 62);
-inline const esphome::Color kChromeMuted(115, 128, 145);
-inline const esphome::Color kChromeSubtle(82, 94, 110);
+inline const esphome::Color kChromeMuted(140, 152, 168);
+inline const esphome::Color kChromeSubtle(128, 140, 156);
 inline const esphome::Color kChromeCustomSecondary(192, 192, 192);
+
+// Canonical Light Inspector color-temperature slider bounds (Kelvin).
+inline constexpr int kLightKelvinMin = 2700;
+inline constexpr int kLightKelvinMax = 6500;
 inline const esphome::Color kChromeLightFill(92, 68, 22);
 inline const esphome::Color kChromeCoverFill(34, 68, 96);
 inline const esphome::Color kChromeFanFill(24, 76, 64);
@@ -342,7 +346,8 @@ inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
   return (h > 0) && (y >= cy - h) && (y <= cy + h);
 #else
   (void)cy;
-  return (x >= inset && x < SCREEN_W - inset && y >= inset && y < SCREEN_H - inset);
+  return is_inside_bezel_for(
+      x, y, SCREEN_W, SCREEN_H, false, LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R);
 #endif
 }
 

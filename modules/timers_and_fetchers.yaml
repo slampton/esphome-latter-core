@@ -602,41 +602,10 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
-              return !rs.alert.active &&
-                     !(latter_ui::is_camera_view_active(rs) || latter_ui::is_calendar_map_view_active(rs));
+              return !rs.alert.active && !latter_ui::is_camera_view_active(rs);
           then:
             - lambda: |-
                 auto &rs = latter_ui::runtime_state();
                 latter_ui::cam_download_in_progress() = false;
                 rs.alert.loaded_camera_url = "";
                 latter_ui::release_art(id(camera_snapshot_art));
-
-  - id: fetch_calendar_map_snapshot
-    mode: restart
-    then:
-      - delay: 40ms
-      - if:
-          condition:
-            lambda: |-
-              const auto &rs = latter_ui::runtime_state();
-              if (!latter_ui::is_calendar_map_view_active(rs) || rs.cal.detail_map_url.empty()) {
-                return false;
-              }
-              #if !LATTER_CHIP_P4
-              if (id(camera_snapshot_art).get_width() == 0) {
-                latter_ui::sky_base_cache_drop();
-              }
-              #endif
-              return latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0);
-          then:
-            - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                const std::string &base_map_u = rs.cal.detail_map_url;
-                rs.alert.camera_url = base_map_u +
-                                      "&z=" + to_string(rs.cal.map_zoom) +
-                                      "&pan_x=" + to_string(rs.cal.map_pan_x) +
-                                      "&pan_y=" + to_string(rs.cal.map_pan_y);
-                ESP_LOGD("cal_map", "Fetching Calendar Map Snapshot: %s", rs.alert.camera_url.c_str());
-            - online_image.set_url:
-                id: camera_snapshot_art
-                url: !lambda 'return latter_ui::runtime_state().alert.camera_url;'

@@ -25,12 +25,13 @@ constexpr uint32_t kResetReleaseTimeoutId = 0x4C540001U;
 constexpr uint32_t kPostResetSettleTimeoutId = 0x4C540002U;
 }  // namespace
 
+#ifdef USE_ESP32
+void IRAM_ATTR LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
+#else
 void LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
-  store->irq_pending = true;
-  store->edge_count = store->edge_count + 1U;
-#if defined(USE_ESP32)
-  App.wake_loop_threadsafe();
 #endif
+  store->irq_pending.store(true, std::memory_order_relaxed);
+  store->edge_count.fetch_add(1U, std::memory_order_relaxed);
 }
 
 void LatterTouchscreen::set_protocol(::latter_ui::TouchHalProtocol proto) {
@@ -149,7 +150,7 @@ void LatterTouchscreen::update() {
 void LatterTouchscreen::pump_from_host() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
   const uint32_t now = millis();
-  const bool has_irq = this->irq_store_.irq_pending;
+  const bool has_irq = this->irq_store_.irq_pending.load(std::memory_order_relaxed);
   const bool poll_ready =
       (this->finger_down_ || this->interrupt_pin_ == nullptr) &&
       (this->last_service_ms_ == 0U || (now - this->last_service_ms_) >= this->active_poll_ms_);
@@ -162,7 +163,7 @@ void LatterTouchscreen::loop() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
   const uint32_t now = millis();
 
-  const uint32_t edges = this->irq_store_.edge_count;
+  const uint32_t edges = this->irq_store_.edge_count.load(std::memory_order_relaxed);
   if (edges != this->last_edge_snapshot_) {
     ::latter_ui::touch_hal_telemetry().irq_edges += (edges - this->last_edge_snapshot_);
     this->last_edge_snapshot_ = edges;
@@ -171,7 +172,7 @@ void LatterTouchscreen::loop() {
     }
   }
 
-  const bool has_irq = this->irq_store_.irq_pending;
+  const bool has_irq = this->irq_store_.irq_pending.load(std::memory_order_relaxed);
   const bool int_asserted =
       (this->interrupt_pin_ != nullptr) &&
       (this->interrupt_pin_->digital_read() == this->irq_active_high_);
@@ -293,8 +294,7 @@ bool LatterTouchscreen::init_controller_() {
 
 void LatterTouchscreen::service_once_(uint32_t now) {
   this->in_service_ = true;
-  const bool had_irq = this->irq_store_.irq_pending;
-  this->irq_store_.irq_pending = false;
+  const bool had_irq = this->irq_store_.irq_pending.exchange(false, std::memory_order_relaxed);
   this->poll_due_ = false;
   this->had_irq_this_pass_ = had_irq;
 
@@ -357,7 +357,17 @@ void LatterTouchscreen::service_once_(uint32_t now) {
       this->touch_hf_.stop();
       this->hf_held_ = false;
     }
+    for (auto &tp : this->touches_) {
+      if (tp.second.state == touchscreen::STATE_PRESSED || tp.second.state == touchscreen::STATE_UPDATED) {
+        tp.second.state |= touchscreen::STATE_RELEASING;
+      } else {
+        tp.second.state = touchscreen::STATE_RELEASED;
+      }
+    }
     this->send_touches_();
+    for (auto &tp : this->touches_) {
+      tp.second.state = touchscreen::STATE_RELEASED;
+    }
   }
 
   this->in_service_ = false;

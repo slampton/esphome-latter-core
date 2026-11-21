@@ -7,12 +7,12 @@
 # ==============================================================================
 
 binary_sensor:
-  # Bluetooth controller state as decided by apply_power_policy (Area presence beacon).
+  # Bluetooth controller state as decided by apply_power_policy (Area presence beacon; internal: reported via device_telemetry RPC).
   - platform: template
     name: "BLE Radio Active"
     id: ble_radio_active
     device_class: running
-    entity_category: diagnostic
+    internal: true
     icon: "mdi:bluetooth"
     lambda: 'return id(ble_ctrl).is_active();'
 
@@ -394,6 +394,14 @@ script:
               high_tput_needed, now_p,
               latter_ui::link_state().ha_connected, latter_ui::link_state().last_ha_connect_ms,
               va_radio_priority);
+          static int8_t s_prev_ble_active = -1;
+          const int8_t cur_ble_active = id(ble_ctrl).is_active() ? 1 : 0;
+          if (s_prev_ble_active != cur_ble_active) {
+            s_prev_ble_active = cur_ble_active;
+            if (latter_ui::link_state().ha_connected) {
+              id(publish_device_telemetry).execute();
+            }
+          }
 
           // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
           #if LATTER_HAS_IMU
@@ -588,6 +596,7 @@ script:
               (s_style == "Photo Frame") && !ac_ss.screensaver_photo_url.empty() && !ss_has_art;
           rs.music.screensaver_photo_failed = false;
           if (defer_photo_frame) {
+            id(publish_display_state).execute();
             id(fetch_screensaver_photo_now).execute();
           } else {
             id(sync_display_brightness).execute();
@@ -616,6 +625,7 @@ script:
           id(disp1).stop_poller();
           latter_ui::hal_set_display_brightness_f(&id(disp1), 0.0f);
           id(display_brightness).turn_off().perform();
+          id(publish_display_state).execute();
 
           if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
             latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
@@ -689,6 +699,7 @@ script:
                 (s_style == "Photo Frame") && !ac_sb.screensaver_photo_url.empty() && !sb_has_art;
             rs.music.screensaver_photo_failed = false;
             if (defer_photo_frame) {
+              id(publish_display_state).execute();
               id(fetch_screensaver_photo_now).execute();
             } else {
               id(sync_display_brightness).execute();
@@ -893,8 +904,23 @@ script:
                 latter_ui::flush_persisted_prefs_if_dirty();
                 latter_ui::save_hibernate_snapshot();
                 latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
-                id(sys_link_report).publish_state("hibernating");
-                esphome::voice_assistant::clean_disconnect_api_before_hibernate(id(va));
-            - delay: 250ms
+                if (latter_ui::link_state().ha_connected) {
+                  const std::string link_j = latter_ui::link_report_json(
+                      millis(), latter_ui::last_reset_reason(), /*hibernating=*/true);
+                  const int int_free_kb = static_cast<int>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U);
+                  const int int_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U);
+                  const int int_largest_kb = static_cast<int>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U);
+                  const int psram_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U);
+                  latter_actions::emit_device_telemetry(
+                      link_j, int_free_kb, int_min_kb, int_largest_kb, psram_min_kb,
+                      id(ble_ctrl).is_active(), latter_ui::profiler_enabled());
+                }
+            - wait_until:
+                condition:
+                  lambda: 'return !latter_rpc::has_pending_frames();'
+                timeout: 300ms
+            - delay: 60ms
+            - lambda: 'esphome::voice_assistant::clean_disconnect_api_before_hibernate(id(va));'
+            - delay: 200ms
             - safe_mode.mark_successful:
             - script.execute: hal_enter_hardware_hibernate

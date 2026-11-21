@@ -192,7 +192,7 @@ enum class ProtocolHeaderField : size_t {
   COUNT = 3
 };
 
-// Domain: area_context (sensor.<device>_area_context)
+// Domain: area_context
 enum class AreaCtxField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,
@@ -240,7 +240,7 @@ enum class AreaCtxField : size_t {
   COUNT = 43
 };
 
-// Domain: active_media (sensor.<device>_active_media)
+// Domain: active_media
 enum class MediaField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,
@@ -251,25 +251,24 @@ enum class MediaField : size_t {
   ALBUM = 6,  // album (string)
   DURATION = 7,  // duration (f32)
   POSITION = 8,  // position (f32)
-  POSITION_UPDATED_AT = 9,  // position_updated_at (u32)
-  VOLUME = 10,  // volume (u16)
-  MEDIA_TYPE = 11,  // media_type (string)
-  ART_URL = 12,  // art_url (url)
-  ACTIVE_SPEAKER = 13,  // active_speaker (entity_id)
-  SPEAKER_NAME = 14,  // speaker_name (string)
-  LAST_SPEAKER = 15,  // last_speaker (entity_id)
-  LOCAL_SPEAKER = 16,  // local_speaker (entity_id)
-  IS_LOCAL = 17,  // is_local (bool)
-  SHUFFLE = 18,  // shuffle (bool)
-  REPEAT = 19,  // repeat (string)
-  MUTED = 20,  // muted (bool)
-  FAVORITE = 21,  // favorite (bool)
-  QUEUE_COUNT = 22,  // queue_count (u16)
-  MEDIA_CAPS = 23,  // media_caps (u16)
-  COUNT = 24
+  VOLUME = 9,  // volume (u16)
+  MEDIA_TYPE = 10,  // media_type (string)
+  ART_URL = 11,  // art_url (url)
+  ACTIVE_SPEAKER = 12,  // active_speaker (entity_id)
+  SPEAKER_NAME = 13,  // speaker_name (string)
+  LAST_SPEAKER = 14,  // last_speaker (entity_id)
+  LOCAL_SPEAKER = 15,  // local_speaker (entity_id)
+  IS_LOCAL = 16,  // is_local (bool)
+  SHUFFLE = 17,  // shuffle (bool)
+  REPEAT = 18,  // repeat (string)
+  MUTED = 19,  // muted (bool)
+  FAVORITE = 20,  // favorite (bool)
+  QUEUE_COUNT = 21,  // queue_count (u16)
+  MEDIA_CAPS = 22,  // media_caps (u16)
+  COUNT = 23
 };
 
-// Domain: remote_config (sensor.<device>_remote_config)
+// Domain: remote_config
 enum class RemoteField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,
@@ -280,7 +279,7 @@ enum class RemoteField : size_t {
   COUNT = 6
 };
 
-// Domain: weather_forecast (sensor.<device>_weather_forecast)
+// Domain: weather_forecast
 enum class WeatherField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,
@@ -289,7 +288,7 @@ enum class WeatherField : size_t {
   TEMPERATURE = 4,  // temperature (f32)
   HUMIDITY = 5,  // humidity (f32)
   WIND_SPEED = 6,  // wind_speed (f32)
-  WIND_BEARING = 7,  // wind_bearing (string)
+  WIND_BEARING = 7,  // wind_bearing (f32)
   HIGH = 8,  // high (f32)
   LOW = 9,  // low (f32)
   FORECAST_5D = 10,  // forecast_5d (records)
@@ -299,10 +298,11 @@ enum class WeatherField : size_t {
   SUN_NEXT_RISING = 14,  // sun_next_rising (string)
   SUN_NEXT_SETTING = 15,  // sun_next_setting (string)
   MOON_PHASE = 16,  // moon_phase (string)
-  COUNT = 17
+  TEMP_UNIT = 17,  // temp_unit (string)
+  COUNT = 18
 };
 
-// Domain: calendar_agenda (sensor.<device>_calendar_agenda)
+// Domain: calendar_agenda
 enum class CalendarField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,
@@ -314,7 +314,7 @@ enum class CalendarField : size_t {
   COUNT = 7
 };
 
-// Domain: device_prefs (sensor.<device>_device_prefs)
+// Domain: device_prefs
 enum class DevicePrefsField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,
@@ -386,10 +386,11 @@ enum class DevicePrefsField : size_t {
   CAMERA_DOORBELL_POPUP = 67,  // camera_doorbell_popup (string)
   SCREENSAVER_PHOTO_CLOCK = 68,  // screensaver_photo_clock (bool)
   WEATHER_APP_BACKGROUND = 69,  // weather_app_background (bool)
-  COUNT = 70
+  DO_NOT_DISTURB = 70,  // do_not_disturb (bool)
+  COUNT = 71
 };
 
-// Domain: shortcuts (sensor.<device>_shortcuts)
+// Domain: shortcuts
 enum class ShortcutsField : size_t {
   HEADER_VERSION = 0,
   HEADER_EPOCH = 1,

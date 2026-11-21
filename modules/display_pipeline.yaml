@@ -120,7 +120,7 @@ image:
           latter_ui::last_cam_live_fetch_ms() = millis();
           rs.alert.loaded_camera_url = rs.alert.camera_url;
           if (rs.nav.display_power_state == 0 &&
-              (rs.alert.active || latter_ui::is_camera_view_active(rs) || latter_ui::is_calendar_map_view_active(rs))) {
+              (rs.alert.active || latter_ui::is_camera_view_active(rs))) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
       - script.execute: release_hidden_camera
@@ -146,7 +146,7 @@ light:
   - platform: monochromatic
     id: display_brightness
     name: "Display: Screen Backlight"
-    entity_category: diagnostic
+    internal: true
     output: backlight_brightness
     gamma_correct: 1.0
     default_transition_length: 0s

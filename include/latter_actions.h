@@ -3,8 +3,8 @@
 // ==============================================================================
 // Latter Core SDK: Typed Outbound Protocol v3 RPC Action Helpers (latter_actions.h)
 // ==============================================================================
-// Provides typed C++ wrappers around latter_rpc::emit(...) for all 17 outbound
-// RPC services declared in protocol/latter_v3.json so C++ touch/UI handlers and
+// Provides typed C++ wrappers around latter_rpc::emit(...) for all 20 outbound
+// RPC methods declared in protocol/latter_v3.json so C++ touch/UI handlers and
 // YAML scripts emit RPC calls directly without scratch YAML globals.
 // ==============================================================================
 
@@ -39,6 +39,46 @@ inline void emit_device_hello(OutboxT outbox = nullptr) {
     {"manifest", manifest_str},
     {"prefs_seq", seq_str},
     {"dirty_prefs", dirty_str},
+  });
+}
+
+// 1b. device_telemetry (Pillar 3 internal telemetry consolidation)
+template <typename OutboxT = std::nullptr_t>
+inline void emit_device_telemetry(std::string_view link_json,
+                                  int int_ram_free_kb,
+                                  int int_ram_min_kb,
+                                  int int_ram_largest_kb,
+                                  int psram_min_kb,
+                                  bool ble_active,
+                                  bool profiler_on,
+                                  OutboxT outbox = nullptr) {
+  const std::string free_str = std::to_string(std::max(0, int_ram_free_kb));
+  const std::string min_str = std::to_string(std::max(0, int_ram_min_kb));
+  const std::string blk_str = std::to_string(std::max(0, int_ram_largest_kb));
+  const std::string ps_str = std::to_string(std::max(0, psram_min_kb));
+  latter_rpc::emit(outbox, "device_telemetry", {
+    {"link_json", link_json},
+    {"int_ram_free_kb", free_str},
+    {"int_ram_min_kb", min_str},
+    {"int_ram_largest_kb", blk_str},
+    {"psram_min_kb", ps_str},
+    {"ble_active", ble_active ? "1" : "0"},
+    {"profiler_on", profiler_on ? "1" : "0"},
+  });
+}
+
+// 1c. display_state (Pillar 6 screen light & screensaver state sync)
+template <typename OutboxT = std::nullptr_t>
+inline void emit_display_state(int power_state,
+                               int brightness_pct,
+                               bool screensaver_active,
+                               OutboxT outbox = nullptr) {
+  const std::string pwr_str = std::to_string(std::clamp(power_state, 0, 2));
+  const std::string bri_str = std::to_string(std::clamp(brightness_pct, 1, 100));
+  latter_rpc::emit(outbox, "display_state", {
+    {"power_state", pwr_str},
+    {"brightness_pct", bri_str},
+    {"screensaver_active", screensaver_active ? "1" : "0"},
   });
 }
 
@@ -360,13 +400,31 @@ inline void emit_area_action(std::string_view entity_id,
   const std::string lvl_str = std::to_string(level);
   const std::string_view eff_area =
       !area_id.empty() ? area_id : std::string_view(latter_ui::runtime_state().area.active_area_id);
+  if (code.empty()) {
+    latter_rpc::emit(outbox, "area_action", {
+      {"entity_id", entity_id},
+      {"action", action},
+      {"level", lvl_str},
+      {"area_id", eff_area},
+      {"code", ""},
+    });
+    return;
+  }
+  std::string wrapped = latter_rpc::wrap_pin_code(entity_id, action, code);
+  if (wrapped.empty()) {
+#ifdef ESP_LOGW
+    ESP_LOGW("latter_rpc", "Blocked area_action PIN dispatch: session key unavailable or invalid PIN");
+#endif
+    return;
+  }
   latter_rpc::emit(outbox, "area_action", {
     {"entity_id", entity_id},
     {"action", action},
     {"level", lvl_str},
     {"area_id", eff_area},
-    {"code", code},
+    {"code", wrapped},
   });
+  latter_rpc::secure_zero_string(wrapped);
 }
 
 template <typename OutboxT = std::nullptr_t>
@@ -378,13 +436,21 @@ inline void emit_alarm_action(std::string_view action,
       {"entity_id", "home_hub.alarm"},
       {"action", action},
     });
-  } else {
-    latter_rpc::emit(outbox, "area_action", {
-      {"entity_id", "home_hub.alarm"},
-      {"action", action},
-      {"code", code},
-    });
+    return;
   }
+  std::string wrapped = latter_rpc::wrap_pin_code("home_hub.alarm", action, code);
+  if (wrapped.empty()) {
+#ifdef ESP_LOGW
+    ESP_LOGW("latter_rpc", "Blocked alarm_action PIN dispatch: session key unavailable or invalid PIN");
+#endif
+    return;
+  }
+  latter_rpc::emit(outbox, "area_action", {
+    {"entity_id", "home_hub.alarm"},
+    {"action", action},
+    {"code", wrapped},
+  });
+  latter_rpc::secure_zero_string(wrapped);
 }
 
 // 8. set_active_area
@@ -421,7 +487,7 @@ inline void emit_remote_action(int slot_1based,
   });
 }
 
-// 10. calendar_fetch (windowed events or geocoded map proxy URL)
+// 10. calendar_fetch (windowed events)
 template <typename OutboxT = std::nullptr_t>
 inline int emit_calendar_fetch_window(std::string_view start_date,
                                       std::string_view end_date,
@@ -436,19 +502,6 @@ inline int emit_calendar_fetch_window(std::string_view start_date,
     {"start_date", start_date},
     {"end_date", end_date},
     {"days", days_str},
-  });
-  return req_id;
-}
-
-template <typename OutboxT = std::nullptr_t>
-inline int emit_calendar_fetch_map(std::string_view location,
-                                   OutboxT outbox = nullptr) {
-  const int req_id = latter_rpc::issue_req_id(latter_rpc::SlotChannel::CALENDAR);
-  const std::string req_str = std::to_string(req_id);
-  latter_rpc::emit(outbox, "calendar_fetch", {
-    {"req_id", req_str},
-    {"mode", "map"},
-    {"location", location},
   });
   return req_id;
 }
@@ -514,7 +567,6 @@ inline void emit_doorbell_intercom(std::string_view action,
                                    int camera_index = 0,
                                    std::string_view message = "",
                                    std::string_view noise_reduction = "strong",
-                                   std::string_view code = "",
                                    OutboxT outbox = nullptr) {
   const std::string idx_str = std::to_string(std::max(0, camera_index));
   latter_rpc::emit(outbox, "doorbell_intercom", {
@@ -523,7 +575,6 @@ inline void emit_doorbell_intercom(std::string_view action,
     {"camera_index", idx_str},
     {"message", message},
     {"noise_reduction", noise_reduction},
-    {"code", code},
   });
 }
 
@@ -548,11 +599,27 @@ inline void emit_shortcut_action(std::string_view entity_id,
                                  std::string_view action,
                                  std::string_view code = "",
                                  OutboxT outbox = nullptr) {
+  if (code.empty()) {
+    latter_rpc::emit(outbox, "shortcut_action", {
+      {"entity_id", entity_id},
+      {"action", action},
+      {"code", ""},
+    });
+    return;
+  }
+  std::string wrapped = latter_rpc::wrap_pin_code(entity_id, action, code);
+  if (wrapped.empty()) {
+#ifdef ESP_LOGW
+    ESP_LOGW("latter_rpc", "Blocked shortcut_action PIN dispatch: session key unavailable or invalid PIN");
+#endif
+    return;
+  }
   latter_rpc::emit(outbox, "shortcut_action", {
     {"entity_id", entity_id},
     {"action", action},
-    {"code", code},
+    {"code", wrapped},
   });
+  latter_rpc::secure_zero_string(wrapped);
 }
 
 // 16. set_device_prefs (outbound local touchscreen/rotary preference edits)
@@ -618,6 +685,7 @@ inline void emit_timer_alarm_state(bool timer_running, bool timer_paused,
 
 struct TimerAlarmSyncTracker {
   bool inited = false;
+  bool pending_sync = false;
   bool running = false;
   bool paused = false;
   bool ringing = false;
@@ -653,12 +721,14 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   auto &tr = timer_alarm_sync_tracker();
   const bool any_active = (cur_run || cur_pau || cur_ring || cur_sw_run || cur_sw_pau);
   bool should_emit = false;
-  if (force_emit) {
+  if (force_emit || tr.pending_sync) {
     should_emit = true;
   } else if (force_if_active && any_active) {
     should_emit = true;
   } else if (!tr.inited) {
-    tr.inited = true;
+    if (!any_active && latter_ui::link_state().ha_connected) {
+      tr.inited = true;
+    }
     should_emit = any_active;
   } else if (cur_run != tr.running || cur_pau != tr.paused || cur_ring != tr.ringing ||
              cur_sw_run != tr.sw_running || cur_sw_pau != tr.sw_paused) {
@@ -686,7 +756,12 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   }
 
   if (!should_emit) return false;
+  if (!latter_ui::link_state().ha_connected) {
+    tr.pending_sync = true;
+    return false;
+  }
   tr.inited = true;
+  tr.pending_sync = false;
   tr.running = cur_run;
   tr.paused = cur_pau;
   tr.ringing = cur_ring;
@@ -695,12 +770,9 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   tr.sw_paused = cur_sw_pau;
   tr.last_emitted_sw_sec = cur_sw_sec;
   tr.last_emitted_ms = now_ms;
-  if (latter_ui::link_state().ha_connected) {
-    emit_timer_alarm_state(cur_run, cur_pau, cur_rem, cur_ring,
-                           cur_sw_run, cur_sw_pau, cur_sw_sec, outbox);
-    return true;
-  }
-  return false;
+  emit_timer_alarm_state(cur_run, cur_pau, cur_rem, cur_ring,
+                         cur_sw_run, cur_sw_pau, cur_sw_sec, outbox);
+  return true;
 }
 
 // Persist local alarm mutations (Time App toggle/editor, Home quick-disable, Once auto-clear)
@@ -744,6 +816,10 @@ inline DeviceCommandEffects handle_device_cmd_dismiss_ringing(uint32_t now_ms,
       }
     }
     rs.alarms.snooze_until = 0;
+    rs.alarms.snoozed_alarm_slot = 0;
+  } else if (rs.alarms.snooze_until != 0U) {
+    rs.alarms.snooze_until = 0;
+    rs.alarms.snoozed_alarm_slot = 0;
   }
   if (rs.timers.ringing) {
     rs.timers.va_timer_name.clear();

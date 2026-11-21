@@ -203,20 +203,25 @@ void test_protocol_v3_and_rpc() {
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
 
   media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "100";
-  media_t[static_cast<size_t>(latter_ui::MediaField::POSITION_UPDATED_AT)] = "1700000000";
   LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
   LATTER_CHECK(latter_ui::media_state().has_volume);
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
-  LATTER_CHECK(latter_ui::media_state().position_updated_at == 1700000000U);
+  static_assert(static_cast<size_t>(latter_ui::MediaField::COUNT) == 23U);
+  static_assert(static_cast<size_t>(latter_ui::WeatherField::TEMP_UNIT) == 17U);
+  static_assert(static_cast<size_t>(latter_ui::WeatherField::COUNT) == 18U);
 
   std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
   weather_t[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "sunny";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::TEMPERATURE)] = "68";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::WIND_BEARING)] = "247.5";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_STATE)] = "above_horizon";
   weather_t[static_cast<size_t>(latter_ui::WeatherField::MOON_PHASE)] = "waxing_gibbous";
+  weather_t[static_cast<size_t>(latter_ui::WeatherField::TEMP_UNIT)] = "C";
   LATTER_CHECK(latter_ui::parse_v3_weather_payload(build_v3_packet(10, 1, weather_t)));
   LATTER_CHECK(latter_ui::weather_state().condition == "sunny");
   LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
+  LATTER_CHECK(std::fabs(latter_ui::weather_state().wind_bearing - 247.5f) < 0.01f);
+  LATTER_CHECK(latter_ui::weather_state().temp_unit == "C");
   LATTER_CHECK(latter_ui::v3_mismatch_warn_count() == 0);
 
   // Min-field floor acceptance: exact kProtocolMinRequiredFields tokens succeeds and warns
@@ -255,7 +260,7 @@ void test_protocol_v3_and_rpc() {
   }
   uint32_t now_ms = 1000;
   latter_rpc::step_outbox_loop(now_ms);
-  now_ms += 30;
+  now_ms += 40;
   latter_rpc::step_outbox_loop(now_ms);
   latter_rpc::emit(&outbox, "device_hello", {
       {"contract", "3"},
@@ -543,7 +548,7 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(latter_ui::path_mohm_for_capacity(500) == 150);    // 500 mAh cell -> 30 + 120 mOhm
   LATTER_CHECK(latter_ui::path_mohm_for_capacity(1000) == 90);    // 1000 mAh cell -> 30 + 60 mOhm
   LATTER_CHECK(latter_ui::precharge_ma_for_capacity(0) == 50);    // 0 mAh guard -> 500 mAh fallback
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(0) == 25);       // 0.8C of 0 floored safely to 25 mA
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(0) == 100);      // 0.8C of 0 clamped safely to 100 mA AXP2101 ICC floor
   LATTER_CHECK(latter_ui::charge_ma_for_capacity(400) == 200);    // 400 mAh -> 200 mA (0.5C)
   LATTER_CHECK(latter_ui::charge_ma_for_capacity(500) == 200);    // 500 mAh -> 250 mA floored to 200 mA
   LATTER_CHECK(latter_ui::charge_ma_for_capacity(1000) == 500);   // 1000 mAh -> 500 mA (0.5C)
@@ -907,7 +912,8 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   LATTER_CHECK(sys_yaml.find("hal_prepare_touch_for_restart()") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("flush_persisted_prefs_if_dirty()") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
-  LATTER_CHECK(pwr_yaml.find("publish_state(\"hibernating\")") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("emit_device_telemetry(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("/*hibernating=*/true") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("area_changed") != std::string::npos);
 }
 
@@ -918,9 +924,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 17U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 64U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 70U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 1U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 65U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 71U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 43U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -996,7 +1002,8 @@ void test_device_prefs_v2_and_event_timer_sync() {
   const std::string compact_manifest = latter_ui::build_hardware_manifest_state_json();
   LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
-  LATTER_CHECK(compact_manifest.size() <= 230U);
+  LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
+  LATTER_CHECK(!compact_manifest.empty() && compact_manifest.size() <= 255U);
 
   // Ordered Area category CSV parser (custom order, dedup, unknown filtering, empty Area)
   std::string parsed_cats[8];
@@ -1162,7 +1169,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112006L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112007L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -1198,7 +1205,7 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
       latter_ui::ShortcutKind::ROUTE, latter_ui::RouteId::APP_PINNED, "app:pinned", "", "Pinned", "", false, -1});
   sc_save.dock_items.push_back(latter_ui::ShortcutItem{
       latter_ui::ShortcutKind::ENTITY, latter_ui::RouteId::NONE, "script.call_help", "turn_on",
-      "Call Thu", "mdi:bell-ring", true, -1});
+      "Call Jordan", "mdi:bell-ring", true, -1});
   sc_save.pinned_items.push_back(latter_ui::ShortcutItem{
       latter_ui::ShortcutKind::ROUTE, latter_ui::RouteId::WEATHER_MOON, "weather:moon", "", "Moon Phase", "", false, -1});
   LATTER_CHECK(latter_ui::save_hibernate_snapshot("PST8PDT,M3.2.0,M11.1.0/2"));
@@ -2758,7 +2765,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
   ac.area_id = "kitchen";
   ac.area_name = "Kitchen";
   ac.area_icon = "kitchen";
-  ac.site_id = "oakland";
+  ac.site_id = "example_site";
   ac.ble_closest_proxy = "proxy_kitchen";
   ac.available_domains = "light,climate";
   ac.wallpaper_url = "/api/latter/wp.jpg";
@@ -2779,7 +2786,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
   LATTER_CHECK(rt.area.active_area_id == "kitchen");
   LATTER_CHECK(rt.nav.area_subpage == 0);
   LATTER_CHECK(rt.area.domain_filter == "light");
-  LATTER_CHECK(latter_site_id() == "oakland");
+  LATTER_CHECK(latter_site_id() == "example_site");
 
   // Critical alert push on subsequent rev triggers banner + critical chime SFX 9
   ac.alert_id = 1;
@@ -2925,14 +2932,14 @@ void test_time_app_world_clocks_alarms_and_horology() {
                    "Bengaluru|Asia/Kolkata ; Hanoi|Asia/Bangkok ; Bangkok|Asia/Bangkok ")
                == "Kyoto|Asia/Tokyo;London|Europe/London;Bengaluru|Asia/Kolkata;Hanoi|Asia/Bangkok");
 
-  const LocalTzInfo tz = parse_local_tz_info("America/Los_Angeles|Oakland|PDT|-420|1");
-  LATTER_CHECK(tz.valid && tz.iana == "America/Los_Angeles" && tz.city == "Oakland");
+  const LocalTzInfo tz = parse_local_tz_info("America/Los_Angeles|Example City|PDT|-420|1");
+  LATTER_CHECK(tz.valid && tz.iana == "America/Los_Angeles" && tz.city == "Example City");
   LATTER_CHECK(tz.abbr == "PDT" && tz.utc_offset_min == -420 && tz.is_dst);
 
   PrefMask chg{};
   uint32_t eff = 0U;
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::LOCAL_CLOCK_LABEL, "  Oakland Studio  ", false, chg, eff));
-  LATTER_CHECK(std::string_view(p.local_clock_label) == "Oakland Studio");
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::LOCAL_CLOCK_LABEL, "  Example Studio  ", false, chg, eff));
+  LATTER_CHECK(std::string_view(p.local_clock_label) == "Example Studio");
   LATTER_CHECK(set_pref_by_key_str(p, PrefKey::LOCAL_CLOCK_LABEL, "", false, chg, eff));
   LATTER_CHECK(std::string_view(p.local_clock_label).empty());
   LATTER_CHECK(set_pref_by_key_str(p, PrefKey::SHOW_UTC_CLOCK, "1", false, chg, eff));
@@ -2960,7 +2967,7 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(set_pref_by_key_str(p, PrefKey::WORLD_CLOCKS, "", false, chg, eff));
   LATTER_CHECK(std::string_view(p.world_clocks_spec).empty());
 
-  // Wall-clock day delta: 2026-07-15 03:30:00 UTC (Oakland PDT -420 is 20:30 Tue; Tokyo +540 is 12:30 Wed => +1d)
+  // Wall-clock day delta: 2026-07-15 03:30:00 UTC (PDT -420 is 20:30 Tue; Tokyo +540 is 12:30 Wed => +1d)
   const uint32_t sample_epoch = 1784086200U;  // 03:30:00 UTC (divisible by 60)
   const int utc_sec_of_day = static_cast<int>(sample_epoch % 86400U);
   int h24 = 0, mm = 0, day_delta = 0;
@@ -3396,8 +3403,9 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(!evaluate_perimeter_action_blocked("block", "home_hub.garage", "turn_off", 0));
   LATTER_CHECK(evaluate_perimeter_pin_prompt("require_pin", "home_hub.garage", "turn_on", 100, caps_disarm_only, false));
 
-  // Canonical emit_alarm_action JSON framing (omits "code" when empty; includes "code" when provided)
+  // Canonical emit_alarm_action JSON framing (omits "code" when empty; wraps "v1:" when session key active; refuses plaintext PIN without key)
   MockRpcOutbox rpc_box{};
+  latter_rpc::clear_pin_session_key();
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   latter_actions::emit_alarm_action("arm_home", "", &rpc_box);
   LATTER_CHECK(!rpc_box.published.empty());
@@ -3405,13 +3413,29 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(rpc_box.published.back().find("\"action\":\"arm_home\"") != std::string::npos);
   LATTER_CHECK(rpc_box.published.back().find("\"code\"") == std::string::npos);
 
+  // Without session key, non-empty PIN must NOT emit plaintext PIN on outbox
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  rpc_box.published.clear();
+  latter_actions::emit_alarm_action("disarm", "2468", &rpc_box);
+  for (const auto &f : rpc_box.published) {
+    LATTER_CHECK(f.find("2468") == std::string::npos);
+  }
+
+  // With provisioned session key, non-empty PIN emits "v1:" wrapped ciphertext (never plaintext "2468")
+  LATTER_CHECK(latter_rpc::set_pin_session_key(
+      "01020304", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
+  LATTER_CHECK(latter_rpc::has_pin_session_key());
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   rpc_box.published.clear();
   latter_actions::emit_alarm_action("disarm", "2468", &rpc_box);
   LATTER_CHECK(!rpc_box.published.empty());
-  LATTER_CHECK(rpc_box.published.back().find("\"entity_id\":\"home_hub.alarm\"") != std::string::npos);
-  LATTER_CHECK(rpc_box.published.back().find("\"action\":\"disarm\"") != std::string::npos);
-  LATTER_CHECK(rpc_box.published.back().find("\"code\":\"2468\"") != std::string::npos);
+  std::string alarm_joined;
+  for (const auto &f : rpc_box.published) alarm_joined += f;
+  LATTER_CHECK(alarm_joined.find("\"entity_id\":\"home_hub.alarm\"") != std::string::npos);
+  LATTER_CHECK(alarm_joined.find("\"action\":\"disarm\"") != std::string::npos);
+  LATTER_CHECK(alarm_joined.find("\"code\":\"v1:01020304:") != std::string::npos);
+  LATTER_CHECK(alarm_joined.find("\"2468\"") == std::string::npos);
+  latter_rpc::clear_pin_session_key();
 
   // 3. Tools N-page launcher pagination & round vertical pips bezel-safe X scaling
   static_assert(tools_launcher_item_count_for(false, false) == 4);
@@ -3496,7 +3520,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112006L, "LATTER_SDK_REV must match 2026112006L");
+  static_assert(LATTER_SDK_REV == 2026112007L, "LATTER_SDK_REV must match 2026112007L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -4323,7 +4347,7 @@ void test_universal_shortcuts_and_pinned_app() {
 
   const std::string dock_blob =
       std::string("route|app:pinned||Pinned||0|-1") + kProtocolRecordSep +
-      "entity|script.call_thu|turn_on|Call Thu|mdi:bell-ring|1|-1" + kProtocolRecordSep +
+      "entity|script.call_jordan|turn_on|Call Jordan|mdi:bell-ring|1|-1" + kProtocolRecordSep +
       "route|weather:moon||Moon Phase||0|-1";
 
   // Intermediate chunks stage without prematurely committing
@@ -4341,7 +4365,7 @@ void test_universal_shortcuts_and_pinned_app() {
 
   // Now app:pinned is visible on the Home Dock!
   cnt = collect_effective_dock_items(dock_eff, kMaxEffectiveDockItems);
-  LATTER_CHECK(cnt == 4);  // Pinned, Call Thu, Moon Phase, Settings
+  LATTER_CHECK(cnt == 4);  // Pinned, Call Jordan, Moon Phase, Settings
   LATTER_CHECK(dock_eff[0].route_id == RouteId::APP_PINNED);
   LATTER_CHECK(dock_eff[1].kind == ShortcutKind::ENTITY && dock_eff[1].confirm);
   LATTER_CHECK(dock_eff[2].route_id == RouteId::WEATHER_MOON);
@@ -4366,24 +4390,31 @@ void test_universal_shortcuts_and_pinned_app() {
   build_shortcut_confirm_copy(lock_it, title, l1, l2, verb, danger);
   LATTER_CHECK(verb == "Unlock" && danger);
 
-  // 4. Outbound shortcut_action RPC outbox serialization
+  // 4. Outbound shortcut_action RPC outbox serialization (wrapped PIN via session key)
   struct FakeOutbox {
     std::vector<std::string> frames;
     void publish_state(const std::string &s) { frames.push_back(s); }
   } outbox;
+  LATTER_CHECK(latter_rpc::set_pin_session_key(
+      "0a0b0c0d", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"));
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  latter_actions::emit_shortcut_action("script.call_thu", "turn_on", "1234", &outbox);
+  latter_actions::emit_shortcut_action("script.call_jordan", "turn_on", "123456789012", &outbox);
   LATTER_CHECK(!outbox.frames.empty());
-  LATTER_CHECK(outbox.frames.back().find("\"s\":\"shortcut_action\"") != std::string::npos);
-  LATTER_CHECK(outbox.frames.back().find("\"entity_id\":\"script.call_thu\"") != std::string::npos);
+  std::string sc_joined;
+  for (const auto &f : outbox.frames) sc_joined += f;
+  LATTER_CHECK(sc_joined.find("\"s\":\"shortcut_action\"") != std::string::npos);
+  LATTER_CHECK(sc_joined.find("\"entity_id\":\"script.call_jordan\"") != std::string::npos);
+  LATTER_CHECK(sc_joined.find("\"code\":\"v1:0a0b0c0d:") != std::string::npos);
+  LATTER_CHECK(sc_joined.find("123456789012") == std::string::npos);
+  latter_rpc::clear_pin_session_key();
 }
 
 void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v17 schema invariants
-  static_assert(kPersistedPrefsVersion == 17U, "PersistedDevicePrefs must be bumped to v17");
+  // 1. Protocol v3 & PersistedDevicePrefs v1 schema invariants
+  static_assert(kPersistedPrefsVersion == 1U, "PersistedDevicePrefs clean v3.0.0 NVS version == 1");
   static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 52U);
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 54U);
@@ -4402,7 +4433,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DOORBELL_POPUP) == 67U);
   static_assert(static_cast<size_t>(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK) == 68U);
   static_assert(static_cast<size_t>(DevicePrefsField::WEATHER_APP_BACKGROUND) == 69U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 70U);
+  static_assert(static_cast<size_t>(DevicePrefsField::DO_NOT_DISTURB) == 70U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 71U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 46U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 48U);
@@ -4421,7 +4453,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DOORBELL_POPUP) == 61U);
   static_assert(static_cast<uint8_t>(PrefKey::SCREENSAVER_PHOTO_CLOCK) == 62U);
   static_assert(static_cast<uint8_t>(PrefKey::WEATHER_APP_BACKGROUND) == 63U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 64U);
+  static_assert(static_cast<uint8_t>(PrefKey::DO_NOT_DISTURB) == 64U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 65U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -4731,13 +4764,13 @@ void test_calendar_app_d058() {
 
   // 3. Protocol v3 calendar_agenda sources + locations_catalog parsing
   std::vector<std::string> cal_tok(static_cast<size_t>(CalendarField::COUNT), "");
-  cal_tok[static_cast<size_t>(CalendarField::SUMMARY)] = "TODAY 14:00|Design Review|Oakland HQ|0";
+  cal_tok[static_cast<size_t>(CalendarField::SUMMARY)] = "TODAY 14:00|Design Review|Example HQ|0";
   cal_tok[static_cast<size_t>(CalendarField::EVENT_COUNT)] = "1";
   cal_tok[static_cast<size_t>(CalendarField::CALENDARS_META)] =
       std::string("calendar.family|Family|0|1|1") + kProtocolRecordSep +
       "calendar.holidays|US Holidays|3|0|0";
   cal_tok[static_cast<size_t>(CalendarField::LOCATIONS_CATALOG)] =
-      std::string("Home") + kProtocolRecordSep + "Oakland HQ" + kProtocolRecordSep + "Gym";
+      std::string("Home") + kProtocolRecordSep + "Example HQ" + kProtocolRecordSep + "Gym";
   LATTER_CHECK(parse_v3_calendar_payload(build_v3_packet(12, 1, cal_tok)));
 
   CalendarSourceMeta sources[kMaxCalendarSources]{};
@@ -4749,7 +4782,7 @@ void test_calendar_app_d058() {
 
   std::string_view locs[kMaxCalendarLocations]{};
   const int loc_cnt = parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
-  LATTER_CHECK(loc_cnt == 3 && locs[1] == "Oakland HQ");
+  LATTER_CHECK(loc_cnt == 3 && locs[1] == "Example HQ");
 
   // 4. Multi-chunk latter_set_calendar_view atomic commit & query helpers
   auto make_ev_rec = [](const char *s_ymd, const char *e_ymd, int s_min, int e_min,
@@ -4775,7 +4808,7 @@ void test_calendar_app_d058() {
       kProtocolRecordSep +
       make_ev_rec("2026-11-17", "2026-11-17", 540, 600, 0, 0, "u2", "", "Morning Sync | Eng", "Lab", "");
   const std::string chunk1 =
-      make_ev_rec("2026-11-17", "2026-11-17", 840, 900, 0, 0, "u3", "r3", "Design Review", "Oakland HQ", "Bring prototype") +
+      make_ev_rec("2026-11-17", "2026-11-17", 840, 900, 0, 0, "u3", "r3", "Design Review", "Example HQ", "Bring prototype") +
       kProtocolRecordSep +
       make_ev_rec("2026-11-25", "2026-11-25", 1080, 1200, 0, 0, "u4", "", "Dinner", "Bistro", "");
 
@@ -4788,7 +4821,7 @@ void test_calendar_app_d058() {
   // zero mutation of store.window_start_ymd / store.count).
   {
     const std::string boot_summary =
-        std::string("All Day|Board Review|Oakland Lab|1") + kProtocolRecordSep +
+        std::string("All Day|Board Review|Example Lab|1") + kProtocolRecordSep +
         "14:00||HQ|0";
     CalendarWindowEvent *prev = calendar_summary_preview_scratch();
     const int prev_n = populate_calendar_summary_preview(boot_summary, 20261117, prev);
@@ -4796,20 +4829,20 @@ void test_calendar_app_d058() {
     LATTER_CHECK(prev[0].start_ymd == 20261117 && prev[0].end_ymd == 20261117);
     LATTER_CHECK(prev[0].all_day == 1U && prev[0].start_min == -1);
     LATTER_CHECK(std::string_view(prev[0].title) == "Board Review");
-    LATTER_CHECK(std::string_view(prev[0].location) == "Oakland Lab");
+    LATTER_CHECK(std::string_view(prev[0].location) == "Example Lab");
     LATTER_CHECK(prev[1].all_day == 0U && std::string_view(prev[1].title) == "Event");
     LATTER_CHECK(std::string_view(prev[1].location) == "HQ");
     LATTER_CHECK(store.window_start_ymd == 0 && store.count == 0);
   }
   // Chunk 0 of 2 stages without committing
-  LATTER_CHECK(!apply_calendar_view_action(7, 0, 2, "2026-10-15", "2027-01-20", "", chunk0));
+  LATTER_CHECK(!apply_calendar_view_action(7, 0, 2, "2026-10-15", "2027-01-20", chunk0));
   LATTER_CHECK(store.count == 0);
   // Chunk 1 with wrong req_id is rejected and aborts staging
-  LATTER_CHECK(!apply_calendar_view_action(99, 1, 2, "2026-10-15", "2027-01-20", "", chunk1));
+  LATTER_CHECK(!apply_calendar_view_action(99, 1, 2, "2026-10-15", "2027-01-20", chunk1));
   LATTER_CHECK(store.count == 0);
   // Valid 2-chunk sequence commits atomically
-  LATTER_CHECK(!apply_calendar_view_action(8, 0, 2, "2026-10-15", "2027-01-20", "", chunk0));
-  LATTER_CHECK(apply_calendar_view_action(8, 1, 2, "2026-10-15", "2027-01-20", "", chunk1));
+  LATTER_CHECK(!apply_calendar_view_action(8, 0, 2, "2026-10-15", "2027-01-20", chunk0));
+  LATTER_CHECK(apply_calendar_view_action(8, 1, 2, "2026-10-15", "2027-01-20", chunk1));
   LATTER_CHECK(store.count == 4);
   LATTER_CHECK(store.window_start_ymd == 20261015 && store.window_end_ymd == 20270120);
   // Literal '|' in title is preserved!
@@ -4832,9 +4865,8 @@ void test_calendar_app_d058() {
   const int dot_cnt = collect_calendar_day_dots(20261117, dots, store);
   LATTER_CHECK(dot_cnt == 2 && dots[0] == 1U && dots[1] == 0U);
 
-  // Map URL push (chunk_count == 0) updates detail_map_url without wiping store.events
-  LATTER_CHECK(apply_calendar_view_action(9, 0, 0, "", "", "http://192.168.1.10:8123/api/latter/map/desk?sig=ok", ""));
-  LATTER_CHECK(runtime_state().cal.detail_map_url.find("/api/latter/map/desk") != std::string::npos);
+  // Stale/older req_id (< committed req_id 8) is rejected without overwriting store.events
+  LATTER_CHECK(!apply_calendar_view_action(6, 0, 1, "2026-10-15", "2027-01-20", ""));
   LATTER_CHECK(store.count == 4);
 
   // 5. Inline STT dictation & idle return-to-home protection while composing
@@ -4860,7 +4892,7 @@ void test_calendar_app_d058() {
   latter_actions::emit_calendar_create_event(
       "calendar.family", "Team Sync", false,
       "2026-11-18 09:00:00", "2026-11-18 10:00:00",
-      "Oakland HQ", "FREQ=WEEKLY", &cal_box);
+      "Example HQ", "FREQ=WEEKLY", &cal_box);
   uint32_t pump_ms = 1000U;
   while (latter_rpc::has_pending_frames()) {
     latter_rpc::step_outbox_loop(pump_ms += 100U);
@@ -5594,7 +5626,7 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(cal_src.find("temp_store") == std::string::npos);
   LATTER_CHECK(cal_src.find("populate_calendar_summary_preview(") != std::string::npos);
   LATTER_CHECK(s3_yaml.find("CONFIG_ESP_MAIN_TASK_STACK_SIZE: \"16384\"") != std::string::npos);
-  LATTER_CHECK(th_src.find("IRAM_ATTR") == std::string::npos);
+  LATTER_CHECK(th_src.find("IRAM_ATTR") != std::string::npos);
   LATTER_CHECK(mdi_src.find("DecodedMdiEntry g_mdi_cache[") == std::string::npos);
   LATTER_CHECK(mdi_src.find("uint8_t g_bucket_scratch[") == std::string::npos);
   LATTER_CHECK(mdi_src.find("MdiRuntimeScratch *mdi_scratch()") != std::string::npos);
@@ -5692,7 +5724,7 @@ void test_bedtime_mode_d063() {
   LATTER_CHECK(p.bedtime_active && p.bedtime_schedule);
   LATTER_CHECK(std::string_view(pref_bedtime_display_cstr(p)) == "Ambient Clock");
   LATTER_CHECK(p.bedtime_start_hour == 21U && p.bedtime_end_hour == 6U);
-  p_check: {
+  {
     PersistedDevicePrefs fp = p;
     fp.screensaver_style = 5U;  // Fireworks in daytime
     LATTER_CHECK(std::string_view(effective_screensaver_style_cstr(fp)) == "Ambient Clock");
@@ -5715,7 +5747,6 @@ void test_bedtime_mode_d063() {
   LATTER_CHECK(std::string_view(sched_buf) == "Schedule: 07:00-20:00");
   format_schedule_range_label(0, 12, false, sched_buf, sizeof(sched_buf));
   LATTER_CHECK(std::string_view(sched_buf) == "Schedule: 12AM-12PM");
-  (void)0;
 }
 
 void test_full_spectrum_brightness_d065() {
@@ -6173,7 +6204,9 @@ void test_photo_frame_screensaver_day_night_sky_d067() {
     const PrefMask hi_mask =
         pref_key_bit(PrefKey::SCREENSAVER_PHOTO_CLOCK) | pref_key_bit(PrefKey::WEATHER_APP_BACKGROUND);
     LATTER_CHECK(hi_mask.lo == ((1ULL << 62) | (1ULL << 63)) && hi_mask.hi == 0ULL);
-    LATTER_CHECK(pref_key_bit(PrefKey::COUNT).lo == 0ULL && pref_key_bit(PrefKey::COUNT).hi == 1ULL);
+    LATTER_CHECK(pref_key_bit(PrefKey::DO_NOT_DISTURB).lo == 0ULL &&
+                 pref_key_bit(PrefKey::DO_NOT_DISTURB).hi == 1ULL);
+    LATTER_CHECK(pref_key_bit(PrefKey::COUNT).lo == 0ULL && pref_key_bit(PrefKey::COUNT).hi == 2ULL);
     const std::string enc = encode_prefs_mask(hi_mask, persisted_prefs());
     LATTER_CHECK(enc.find("screensaver_photo_clock=0") != std::string::npos);
     LATTER_CHECK(enc.find("weather_app_background=1") != std::string::npos);
@@ -6433,16 +6466,17 @@ void test_quick_actions_d074() {
   using namespace latter_ui;
 
   // 1. Lockstep & WidgetId invariants + retired hold_crown_power_off / instant_crown_hibernate guards
-  LATTER_CHECK(LATTER_SDK_REV == 2026112006L);
-  LATTER_CHECK(kPersistedPrefsVersion == 17U);
-  LATTER_CHECK(static_cast<size_t>(PrefKey::COUNT) == 64U);
-  LATTER_CHECK(static_cast<size_t>(DevicePrefsField::COUNT) == 70U);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112007L);
+  LATTER_CHECK(kPersistedPrefsVersion == 1U);
+  LATTER_CHECK(static_cast<size_t>(PrefKey::COUNT) == 65U);
+  LATTER_CHECK(static_cast<size_t>(DevicePrefsField::COUNT) == 71U);
   LATTER_CHECK(WidgetId::QUICK_VOL_SLIDER == 70);
   LATTER_CHECK(WidgetId::QUICK_BRI_SLIDER == 71);
   LATTER_CHECK(WidgetId::QUICK_BEDTIME_TOGGLE == 72);
   LATTER_CHECK(WidgetId::QUICK_HIBERNATE_BTN == 73);
   LATTER_CHECK(WidgetId::QUICK_SCREEN_OFF_BTN == 74);
   LATTER_CHECK(WidgetId::QUICK_SCREENSAVER_BTN == 75);
+  LATTER_CHECK(WidgetId::QUICK_DND_TOGGLE == 76);
 
   // 2. Context-aware resolve_active_brightness_target() across all modes & edge cases
   PersistedDevicePrefs p{};
@@ -6576,21 +6610,19 @@ void test_quick_actions_d074() {
   };
   for (const auto &g : kFiveGeoms) {
     const auto ly = compute_panel_layout(g.w, g.h, g.round, g.wearable, g.ppi);
-    const int min_dim = (g.w < g.h) ? g.w : g.h;
-    const int top_edge_y = g.round ? scale_min_for(54, min_dim) : mm_to_px_for(5.2f, g.ppi);
-    const int home_zone_y = g.round ? scale_min_for(412, min_dim) : (g.h - mm_to_px_for(5.2f, g.ppi));
+    const int top_edge_y = compute_top_edge_zone_y(g.w, g.h, g.round, g.wearable, g.ppi);
 
-    // top_edge_zone_y() is positive, mirrors bottom home_zone_y(), and clears Row 0 & middle canvas
+    // top_edge_zone_y() is positive and stays strictly above sub_hdr_y & Row 0 scroll zone
     LATTER_CHECK(top_edge_y > 0);
-    LATTER_CHECK(top_edge_y == (g.h - home_zone_y));
+    LATTER_CHECK(top_edge_y <= ly.sub_hdr_y - 6);
     LATTER_CHECK(top_edge_y < (ly.slot5_y(0) - ly.slot5_h / 2));
     LATTER_CHECK(top_edge_y < (g.h / 4));
 
-    // Quick Actions 4 rows on slot5_y(0..3) + list_card_w x slot5_h + < Back at back_y
+    // Quick Actions 5 rows on slot5_y(0..4) (Vol, Bri, Bedtime, DND, Power CTA) + < Back at back_y
     if (g.w > 520) {
       LATTER_CHECK(ly.list_card_w <= kMaxContentColW);
     }
-    for (int r = 0; r < 4; ++r) {
+    for (int r = 0; r < 5; ++r) {
       const int cy_r = ly.slot5_y(r);
       const int span_r = band_safe_span_for(cy_r, ly.slot5_h, g.w, g.h, g.round, g.wearable, 12);
       LATTER_CHECK(span_r >= ly.list_card_w);
@@ -6600,13 +6632,13 @@ void test_quick_actions_d074() {
         LATTER_CHECK(cur_top > prev_bot);  // Strictly non-overlapping rows
       }
     }
-    LATTER_CHECK((ly.slot5_y(3) + ly.slot5_h / 2) < (ly.back_y - 12));
+    LATTER_CHECK((ly.slot5_y(4) + ly.slot5_h / 2) < (ly.back_y - 12));
 
-    // Mains 2-pill row ("Screensaver" + "Screen Off") via compute_action_pill_row on Row 3
+    // Mains 2-pill row ("Screensaver" + "Screen Off") via compute_action_pill_row on Row 4
     if (!g.has_battery) {
       HomeHubPillGeom pwr_geoms[2]{};
       const int gn = compute_action_pill_row(
-          2, ly.slot5_y(3), ly.slot5_h, ly.list_card_w, ly.list_card_w / 2,
+          2, ly.slot5_y(4), ly.slot5_h, ly.list_card_w, ly.list_card_w / 2,
           scale_x_for(10, g.w), g.w, g.h, g.round, g.wearable, g.ppi, pwr_geoms, 14);
       LATTER_CHECK(gn == 2);
       LATTER_CHECK(pwr_geoms[0].w >= 80 && pwr_geoms[1].w >= 80);
@@ -6766,6 +6798,184 @@ void test_ambient_light_brightness_d075() {
   LATTER_CHECK(area_ctx_state().area_ambient_pct == 82);
 }
 
+void test_phase4_security_dnd_hit_targets_and_iso_tz() {
+  using namespace latter_ui;
+
+  // 1. AutoBrightnessMode::AmbientLight == 3 & ShortcutsState::kMaxDockItems == 24
+  static_assert(static_cast<uint8_t>(AutoBrightnessMode::AmbientLight) == 3U);
+  static_assert(ShortcutsState::kMaxDockItems == 24U);
+  {
+    PersistedDevicePrefs p{};
+    p.auto_brightness_mode = 3U;
+    LATTER_CHECK(p.auto_brightness_enum() == AutoBrightnessMode::AmbientLight);
+
+    // 24 dock items parse without truncation
+    reset_all_v3_rev_guards();
+    shortcuts_state() = ShortcutsState{};
+    std::string dock24;
+    for (int i = 0; i < 24; ++i) {
+      if (i > 0) dock24.push_back(kProtocolRecordSep);
+      dock24 += "entity|light.item_" + std::to_string(i) + "|toggle|Light " + std::to_string(i) + "|mdi:lightbulb|0|0";
+    }
+    std::vector<std::string> sc_tok(static_cast<size_t>(ShortcutsField::COUNT), "");
+    sc_tok[static_cast<size_t>(ShortcutsField::CHUNK_INDEX)] = "0";
+    sc_tok[static_cast<size_t>(ShortcutsField::CHUNK_COUNT)] = "1";
+    sc_tok[static_cast<size_t>(ShortcutsField::DOCK_ITEMS)] = dock24;
+    sc_tok[static_cast<size_t>(ShortcutsField::PINNED_TOTAL)] = "0";
+    LATTER_CHECK(parse_v3_shortcuts_payload(build_v3_packet(24, 1, sc_tok)));
+    LATTER_CHECK(shortcuts_state().dock_items.size() == 24U);
+  }
+
+  // 2. Append-only PersistedDevicePrefs prefix loader (kPersistedPrefsVersion == 1U)
+  {
+    PersistedDevicePrefs src{};
+    src.day_brightness = 77U;
+    src.do_not_disturb = true;
+    const size_t prefix_len = offsetof(PersistedDevicePrefs, do_not_disturb);
+    PersistedDevicePrefs dst{};
+    dst.do_not_disturb = false;
+    LATTER_CHECK(load_persisted_prefs_from_buffer(&src, prefix_len, dst));
+    LATTER_CHECK(dst.day_brightness == 77U);
+    LATTER_CHECK(!dst.do_not_disturb);  // Missing tail field keeps clean default false!
+
+    LATTER_CHECK(load_persisted_prefs_from_buffer(&src, sizeof(PersistedDevicePrefs), dst));
+    LATTER_CHECK(dst.do_not_disturb);
+
+    // Corrupt magic/version rejected
+    PersistedDevicePrefs bad = src;
+    bad.version = 17U;
+    PersistedDevicePrefs clean{};
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&bad, sizeof(bad), clean));
+  }
+
+  // 3. Session-key PIN wrapping ("v1:<kid>:<nonce_hex>:<ct_hex>:<tag_hex>") & secure_zero_string
+  {
+    latter_rpc::clear_pin_session_key();
+    LATTER_CHECK(!latter_rpc::has_pin_session_key());
+    LATTER_CHECK(latter_rpc::wrap_pin_code("lock.front_door", "unlock", "123456").empty());
+
+    LATTER_CHECK(latter_rpc::set_pin_session_key(
+        "11223344", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
+    LATTER_CHECK(latter_rpc::has_pin_session_key());
+    const std::string w1 = latter_rpc::wrap_pin_code("lock.front_door", "unlock", "987654321012");
+    const std::string w2 = latter_rpc::wrap_pin_code("lock.front_door", "unlock", "987654321012");
+    LATTER_CHECK(w1.rfind("v1:11223344:", 0) == 0U);
+    LATTER_CHECK(w2.rfind("v1:11223344:", 0) == 0U);
+    LATTER_CHECK(w1 != w2);  // Fresh per-wrap nonce!
+    LATTER_CHECK(w1.find("987654321012") == std::string::npos);
+
+    std::string secret = "123456789012";
+    const char *raw_ptr = secret.data();
+    const size_t raw_len = secret.size();
+    latter_rpc::secure_zero_string(secret);
+    for (size_t i = 0; i < raw_len; ++i) {
+      LATTER_CHECK(raw_ptr[i] == '\0');
+    }
+    latter_rpc::clear_pin_session_key();
+    LATTER_CHECK(!latter_rpc::has_pin_session_key());
+  }
+
+  // 4. Pillar 7 Do Not Disturb alert policy & alarm_output_volume (20..100% scaled via media_dac_volume)
+  {
+    LATTER_CHECK(should_suppress_alert_in_dnd(true, AlertPriority::Normal, false));
+    LATTER_CHECK(!should_suppress_alert_in_dnd(true, AlertPriority::Critical, false));
+    // Doorbell under DND shows silent D-066 visual popup (never suppressed visually, chime suppressed)
+    LATTER_CHECK(!should_suppress_alert_in_dnd(true, AlertPriority::Normal, true));
+    LATTER_CHECK(should_suppress_alert_chime_in_dnd(true, static_cast<int>(AlertPriority::Normal), true));
+    LATTER_CHECK(!should_suppress_alert_chime_in_dnd(true, static_cast<int>(AlertPriority::Critical), false));
+    LATTER_CHECK(!should_suppress_alert_in_dnd(false, AlertPriority::Normal, false));
+
+    PersistedDevicePrefs vp{};
+    vp.alert_volume = 20U;
+    LATTER_CHECK(std::fabs(alarm_output_volume(static_cast<float>(vp.alert_volume), 0.0f) - 0.28f) < 0.001f);
+    vp.alert_volume = 65U;
+    LATTER_CHECK(std::fabs(alarm_output_volume(static_cast<float>(vp.alert_volume), 0.0f) - 0.685f) < 0.001f);
+    vp.alert_volume = 100U;
+    LATTER_CHECK(std::fabs(alarm_output_volume(static_cast<float>(vp.alert_volume), 0.0f) - 1.00f) < 0.001f);
+    LATTER_CHECK(std::fabs(alarm_output_volume(20.0f, 0.80f) - media_dac_volume(0.80f)) < 0.001f);
+  }
+
+  // 5. 5-Geometry rounded-corner SDF bezel check, >= 7.0 mm Area toggle width, & kMaxRegions in-place update
+  {
+    struct Panel5 {
+      int w;
+      int h;
+      bool round;
+      bool wearable;
+      int ppi;
+      int corner_r;
+    };
+    constexpr Panel5 kP5[5] = {
+        {466, 466, true,  false, 266, 233},
+        {480, 480, false, false, 313, 20},
+        {410, 502, false, true,  315, 98},
+        {320, 480, false, false, 165, 20},
+        {720, 720, false, false, 254, 20},
+    };
+    for (const auto &g : kP5) {
+      LATTER_CHECK(is_inside_bezel_for(g.w / 2, g.h / 2, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      // Extreme clipped corner (6, 6) is outside rounded corner SDF on all 5 panels!
+      LATTER_CHECK(!is_inside_bezel_for(6, 6, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      LATTER_CHECK(!is_inside_bezel_for(g.w - 7, g.h - 7, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+
+      const int min_hit = std::max(scale_s_for(36, std::min(g.w, g.h)), mm_to_px_for(7.0f, g.ppi));
+      const int div_off = compute_area_card_div_offset(g.w, g.h, g.ppi);
+      LATTER_CHECK(div_off >= min_hit);
+
+      const auto ly = compute_panel_layout(g.w, g.h, g.round, g.wearable, g.ppi);
+      const int card_max_pad = std::max(0, (ly.area_card3_stride - ly.area_card3_h - 1) / 2);
+      const int card_pad = std::min(card_max_pad, std::max(0, (min_hit - ly.area_card3_h + 1) / 2));
+      LATTER_CHECK(ly.area_card3_h + 2 * card_pad >= min_hit);
+    }
+
+    // FrameHitTable::add_rect updates existing (widget_id, param) even when count == kMaxRegions
+    FrameHitTable ht{};
+    for (uint8_t i = 0; i < FrameHitTable::kMaxRegions; ++i) {
+      ht.add_rect(i * 4, 10, 20, 20, static_cast<uint16_t>(100U + i), kHitTap, 0);
+    }
+    LATTER_CHECK(ht.count == FrameHitTable::kMaxRegions);
+    ht.add_rect(50, 80, 120, 44, 105U, kHitTap | kHitFocusSlot, 0, 8);
+    const HitRegion *updated = ht.find_by_id_param(105U, 0);
+    LATTER_CHECK(updated != nullptr && updated->x0 == 50 && updated->y0 == 80 && updated->hit_pad == 8);
+  }
+
+  // 6. °C -> °F pleasant-weather conversion & zero-sscanf ISO-8601 TZ offset formatting
+  {
+    LATTER_CHECK(std::fabs(weather_temp_to_fahrenheit(22.0f, "C") - 71.6f) < 0.05f);
+    LATTER_CHECK(std::fabs(weather_temp_to_fahrenheit(22.0f, "°C") - 71.6f) < 0.05f);
+    LATTER_CHECK(std::fabs(weather_temp_to_fahrenheit(72.0f, "F") - 72.0f) < 0.05f);
+
+    char out[24]{};
+    // UTC 'Z' converted to PDT (-420 min): 2026-07-15T13:45:00Z -> 06:45 AM / 06:45
+    LATTER_CHECK(format_iso_time_with_offset("2026-07-15T13:45:00Z", false, -420, out, sizeof(out)));
+    LATTER_CHECK(std::string_view(out) == "6:45 AM");
+    LATTER_CHECK(format_iso_time_with_offset("2026-07-15T13:45:00.123456+00:00", true, -420, out, sizeof(out)));
+    LATTER_CHECK(std::string_view(out) == "06:45");
+    // Source offset +02:00 converted to -08:00 (-480 min): 16:30+02:00 == 14:30Z == 06:30 local
+    LATTER_CHECK(format_iso_time_with_offset("2026-11-21T16:30:00+02:00", true, -480, out, sizeof(out)));
+    LATTER_CHECK(std::string_view(out) == "06:30");
+    // Naive local timestamp (no TZ suffix) preserves wall-clock hour/minute directly
+    LATTER_CHECK(format_iso_time_with_offset("2026-11-21T06:52:00", false, -480, out, sizeof(out)));
+    LATTER_CHECK(std::string_view(out) == "6:52 AM");
+    // Invalid / unavailable inputs return kUnknownGlyph
+    LATTER_CHECK(!format_iso_time_with_offset("unavailable", true, 0, out, sizeof(out)));
+  }
+
+  // 7. Calendar View Map retirement & zero-sscanf source invariants
+  {
+    const std::string cal_cpp = read_repo_file("../../components/latter_ui/page_calendar.cpp");
+    const std::string wth_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+    const std::string tch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+    const std::string gui_yml = read_repo_file("../../guis/universal/gui.yaml");
+    LATTER_CHECK(cal_cpp.find("render_map_drilldown") == std::string::npos);
+    LATTER_CHECK(cal_cpp.find("CAL_VIEW_MAP_BTN") == std::string::npos);
+    LATTER_CHECK(tch_cpp.find("CAL_VIEW_MAP_BTN") == std::string::npos);
+    LATTER_CHECK(tch_cpp.find("FETCH_CALENDAR_MAP_SNAPSHOT") == std::string::npos);
+    LATTER_CHECK(gui_yml.find("is_calendar_map_view_active") == std::string::npos);
+    LATTER_CHECK(wth_cpp.find("sscanf") == std::string::npos);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -6802,6 +7012,7 @@ int main() {
   test_gui_standardization_d070();
   test_quick_actions_d074();
   test_ambient_light_brightness_d075();
+  test_phase4_security_dnd_hit_targets_and_iso_tz();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

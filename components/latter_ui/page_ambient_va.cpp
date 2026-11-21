@@ -1620,12 +1620,11 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
     // Top title over live video (D-060 / D-070 canonical font_small col_white header)
     render_page_header(it, cx, fit_title, ctx.font_small, st.col_white);
 
-    // Tap video area -> Expand into full Cameras app
-    frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::NOTIF_EXPAND_BTN, kHitTap);
-
     // Live PTT talk banner keeps video 100% visible during talk!
     if (rs.voice.intercom_turn) {
       const int ptt_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 62);
+      const int ptt_top = std::max(1, ptt_y - ly.min_hit_px() / 2 - scale_y(8));
+      frame_hits().add_rect(0, 0, SCREEN_W, ptt_top, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
       render_doorbell_ptt_banner(it, ctx, ptt_y);
       return;
     }
@@ -1657,6 +1656,12 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
       r1[r1_cnt++] = {cam_rec->unlock_is_lock() ? "Unlock" : "Open", WidgetId::NOTIF_UNLOCK_BTN,
                       st.col_gold, ui::chrome_card_bg_on(), st.col_white, 0, nullptr};
     }
+    // Tap video area -> Expand into full Cameras app (param=1 so Expand pill param=0 never
+    // overwrites this entry, and clamped above action-pill Pass-2 >= 7.0 mm halos!).
+    const int top_btn_y = (r1_cnt > 0) ? row1_y : row2_y;
+    const int btn_pad = std::max(0, (ly.min_hit_px() - btn_h + 1) / 2);
+    const int media_tap_h = std::max(1, top_btn_y - btn_h / 2 - btn_pad - 1);
+    frame_hits().add_rect(0, 0, SCREEN_W, media_tap_h, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
     const int stack_row_w = ui::compute_uniform_stack_w(
         (r1_cnt > 0) ? row1_y : row2_y, row2_y, btn_h, scale_x(376), 14);
     if (r1_cnt > 0) {
@@ -1724,8 +1729,13 @@ void render_notification_overlay(esphome::display::Display &it, const UiFrameCon
       }
     }
 
-    // Tap snapshot -> jump directly into Cameras Single live video
-    frame_hits().add_rect(snap_vp.x0, snap_vp.y0, snap_vp.w, snap_vp.h, WidgetId::NOTIF_VIEW_BTN, kHitTap);
+    // Tap snapshot -> jump directly into Cameras Single live video (param=1 so View pill param=0
+    // keeps its own entry, and clamped above bottom pill Pass-2 >= 7.0 mm halo!).
+    const int snap_btn_pad = std::max(0, (ly.min_hit_px() - btn_h + 1) / 2);
+    const int max_snap_y1 = btn_y - btn_h / 2 - snap_btn_pad - 2;
+    const int snap_tap_h = std::max(1, std::min(snap_vp.h, max_snap_y1 - snap_vp.y0 + 1));
+    frame_hits().add_rect(snap_vp.x0, snap_vp.y0, snap_vp.w, snap_tap_h,
+                          WidgetId::NOTIF_VIEW_BTN, kHitTap, 1);
 
     // Bottom buttons: Answer (if audio/talkback) | View | Dismiss (D-070 canonical action_pill_row)
     ui::ActionPillSpec sb[3]{};
@@ -1844,8 +1854,13 @@ void render_quick_actions_overlay(esphome::display::Display &it, const UiFrameCo
                       ctx.font_small, st.theme_primary, st.col_white, st.col_slate,
                       WidgetId::QUICK_BEDTIME_TOGGLE, 0);
 
-  // Row 3: Power Action CTA (full stadium pill)
-  const int cta_y = ly.slot5_y(3);
+  // Row 3: Do Not Disturb toggle (Pillar 7 — D-074)
+  ui::toggle_card_row(it, cx, ly.slot5_y(3), row_w, row_h, "Do Not Disturb", prefs.do_not_disturb,
+                      ctx.font_small, st.theme_primary, st.col_white, st.col_slate,
+                      WidgetId::QUICK_DND_TOGGLE, 0);
+
+  // Row 4: Power Action CTA (full stadium pill)
+  const int cta_y = ly.slot5_y(4);
 #if LATTER_HAS_BATTERY
   ui::action_pill_centered(it, cx, std::min(row_w, scale_x(220)), cta_y, row_h,
                            st.col_red, ui::chrome_danger_bg(), "Hibernate", st.col_white,

@@ -9,7 +9,7 @@
 - **Record Separator**: `0x1E` (`\x1e`, ASCII Record Separator `␞`) with pipe (`|`) subfields inside record lists
 - **Absent Values**: A field with no value is the empty string, never a placeholder (none, NONE, None, unknown, unavailable, Idle, Unassigned) or a made-up number. A state field carries only the values its description lists.
 - **Inbound Channel (`HA -> Device`)**: Home Assistant pushes each domain's `payload` (`v3␟<epoch>␟<rev>␟...`) directly via the bound ESPHome Native API action `esphome.<node>_latter_push_v3` (`domain`, `payload`) resolved by `esphome_device_id`.
-- **Outbound Channel (`Device -> HA`)**: Devices emit bound RPC frames (`<boot_hex>:<seq>:<part>/<total>|<json>`) on their diagnostic `text_sensor` (`System: RPC Outbox`), eliminating `allow_service_calls` and `target_device` spoofing.
+- **Outbound Channel (`Device -> HA`)**: Devices emit bound RPC frames (`<boot_hex>:<seq>:<part>/<total>|<json>`) on their hidden transport `text_sensor` (`latter_rpc_outbox`), eliminating `allow_service_calls` and `target_device` spoofing.
 - **Revision Guard & Version Tolerance**:
   - `epoch` (`u32`, non-zero): Generated randomly when the Home Assistant coordinator starts. If `in_epoch != cur_epoch`, the device accepts the frame unconditionally and updates `cur_epoch` and `cur_rev`.
   - `rev` (`u32`, `>= 1`): Monotonic per-domain revision counter bumped only when that domain's body fields change. Frames with `rev == 0` are rejected; within the same `epoch`, frames with `in_rev <= cur_rev` are ignored.
@@ -40,7 +40,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 
 ## 2. Domain Payloads
 
-### `sensor.<device>_area_context` (`AreaCtxField`, `43` total fields)
+### `area_context` (`AreaCtxField`, `43` total fields)
 
 Active Area state, climate/security/cover summaries, camera/intercom directories, and alert banner.
 
@@ -87,9 +87,9 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `41` | `screensaver_photo_url` | `AreaCtxField::SCREENSAVER_PHOTO_URL` | `url` | Signed HTTP URL for the active Photo Frame screensaver image (un-dimmed, darken=1.0); empty when screensaver_style is not Photo Frame or the photo pool is empty |
 | `42` | `area_ambient_light` | `AreaCtxField::AREA_AMBIENT_LIGHT` | `string` | Calibrated active Area ambient light level ('<norm_pct_0_100>|<formatted_lux>', e.g. '57|5.6'); empty when no illuminance sensor is available for the active Area |
 
-### `sensor.<device>_active_media` (`MediaField`, `24` total fields)
+### `active_media` (`MediaField`, `23` total fields)
 
-Active media player state, metadata, timestamped playback progress, artwork URL, and speaker routing.
+Active media player state, metadata, playback progress, artwork URL, and speaker routing.
 
 | Index | Field | C++ Enum | Type | Description |
 | :---: | :--- | :--- | :---: | :--- |
@@ -98,24 +98,23 @@ Active media player state, metadata, timestamped playback progress, artwork URL,
 | `5` | `artist` | `MediaField::ARTIST` | `string` | Track artist |
 | `6` | `album` | `MediaField::ALBUM` | `string` | Album title |
 | `7` | `duration` | `MediaField::DURATION` | `f32` | Track duration in seconds |
-| `8` | `position` | `MediaField::POSITION` | `f32` | Track position in seconds at position_updated_at |
-| `9` | `position_updated_at` | `MediaField::POSITION_UPDATED_AT` | `u32` | Unix epoch seconds when position was sampled |
-| `10` | `volume` | `MediaField::VOLUME` | `u16` | Volume percentage (0..100) |
-| `11` | `media_type` | `MediaField::MEDIA_TYPE` | `string` | Media content type |
-| `12` | `art_url` | `MediaField::ART_URL` | `url` | Signed HTTP URL for album art proxy |
-| `13` | `active_speaker` | `MediaField::ACTIVE_SPEAKER` | `entity_id` | Active media_player entity ID |
-| `14` | `speaker_name` | `MediaField::SPEAKER_NAME` | `string` | Friendly name of active speaker |
-| `15` | `last_speaker` | `MediaField::LAST_SPEAKER` | `entity_id` | Previously active media_player entity ID |
-| `16` | `local_speaker` | `MediaField::LOCAL_SPEAKER` | `entity_id` | Device's own local media_player entity ID |
-| `17` | `is_local` | `MediaField::IS_LOCAL` | `bool` | 1 if active_speaker is this device's own speaker, else 0 |
-| `18` | `shuffle` | `MediaField::SHUFFLE` | `bool` | 1 if shuffle is enabled on the active speaker/queue, else 0 |
-| `19` | `repeat` | `MediaField::REPEAT` | `string` | Active speaker/queue repeat mode (off|all|one); empty when unknown |
-| `20` | `muted` | `MediaField::MUTED` | `bool` | 1 if the active speaker or volume target is muted, else 0 |
-| `21` | `favorite` | `MediaField::FAVORITE` | `bool` | 1 if the current track is marked favorite in Music Assistant, else 0 |
-| `22` | `queue_count` | `MediaField::QUEUE_COUNT` | `u16` | Total items in the active Music Assistant playback queue (0 when empty or non-MA) |
-| `23` | `media_caps` | `MediaField::MEDIA_CAPS` | `u16` | Active speaker capability bitmask (1=pause, 2=seek, 4=volume_set, 8=volume_mute, 16=previous_track, 32=next_track, 64=shuffle_set, 128=repeat_set, 256=grouping, 512=music_assistant, 1024=favorite) |
+| `8` | `position` | `MediaField::POSITION` | `f32` | Track position in seconds |
+| `9` | `volume` | `MediaField::VOLUME` | `u16` | Volume percentage (0..100) |
+| `10` | `media_type` | `MediaField::MEDIA_TYPE` | `string` | Media content type |
+| `11` | `art_url` | `MediaField::ART_URL` | `url` | Signed HTTP URL for album art proxy |
+| `12` | `active_speaker` | `MediaField::ACTIVE_SPEAKER` | `entity_id` | Active media_player entity ID |
+| `13` | `speaker_name` | `MediaField::SPEAKER_NAME` | `string` | Friendly name of active speaker |
+| `14` | `last_speaker` | `MediaField::LAST_SPEAKER` | `entity_id` | Previously active media_player entity ID |
+| `15` | `local_speaker` | `MediaField::LOCAL_SPEAKER` | `entity_id` | Device's own local media_player entity ID |
+| `16` | `is_local` | `MediaField::IS_LOCAL` | `bool` | 1 if active_speaker is this device's own speaker, else 0 |
+| `17` | `shuffle` | `MediaField::SHUFFLE` | `bool` | 1 if shuffle is enabled on the active speaker/queue, else 0 |
+| `18` | `repeat` | `MediaField::REPEAT` | `string` | Active speaker/queue repeat mode (off|all|one); empty when unknown |
+| `19` | `muted` | `MediaField::MUTED` | `bool` | 1 if the active speaker or volume target is muted, else 0 |
+| `20` | `favorite` | `MediaField::FAVORITE` | `bool` | 1 if the current track is marked favorite in Music Assistant, else 0 |
+| `21` | `queue_count` | `MediaField::QUEUE_COUNT` | `u16` | Total items in the active Music Assistant playback queue (0 when empty or non-MA) |
+| `22` | `media_caps` | `MediaField::MEDIA_CAPS` | `u16` | Active speaker capability bitmask (1=pause, 2=seek, 4=volume_set, 8=volume_mute, 16=previous_track, 32=next_track, 64=shuffle_set, 128=repeat_set, 256=grouping, 512=music_assistant, 1024=favorite) |
 
-### `sensor.<device>_remote_config` (`RemoteField`, `6` total fields)
+### `remote_config` (`RemoteField`, `6` total fields)
 
 Universal TV/AV remote slot directory and active remote selection.
 
@@ -125,7 +124,7 @@ Universal TV/AV remote slot directory and active remote selection.
 | `4` | `configured_count` | `RemoteField::CONFIGURED_COUNT` | `u16` | Number of configured remotes in active group |
 | `5` | `slots_summary` | `RemoteField::SLOTS_SUMMARY` | `records` | 0x1E-joined index|label|entity_id|kind|area_id|state remote records (configured slots only, up to 10; index is the 1-based slot; kind is remote or media_player, the domain of entity_id) |
 
-### `sensor.<device>_weather_forecast` (`WeatherField`, `17` total fields)
+### `weather_forecast` (`WeatherField`, `18` total fields)
 
 Current outdoor weather telemetry and 5-day daily forecast.
 
@@ -135,7 +134,7 @@ Current outdoor weather telemetry and 5-day daily forecast.
 | `4` | `temperature` | `WeatherField::TEMPERATURE` | `f32` | Current outdoor temperature |
 | `5` | `humidity` | `WeatherField::HUMIDITY` | `f32` | Current outdoor relative humidity percentage |
 | `6` | `wind_speed` | `WeatherField::WIND_SPEED` | `f32` | Current wind speed |
-| `7` | `wind_bearing` | `WeatherField::WIND_BEARING` | `string` | Wind cardinal direction or bearing |
+| `7` | `wind_bearing` | `WeatherField::WIND_BEARING` | `f32` | Wind bearing in degrees (0..360) |
 | `8` | `high` | `WeatherField::HIGH` | `f32` | Today's forecast high temperature |
 | `9` | `low` | `WeatherField::LOW` | `f32` | Today's forecast low temperature |
 | `10` | `forecast_5d` | `WeatherField::FORECAST_5D` | `records` | 0x1E-joined day|cond|high|low daily forecast records (up to 5; day MON..SUN in local time; cond is the Home Assistant condition; high and low are whole degrees in the weather entity's unit, empty when unknown) |
@@ -145,8 +144,9 @@ Current outdoor weather telemetry and 5-day daily forecast.
 | `14` | `sun_next_rising` | `WeatherField::SUN_NEXT_RISING` | `string` | Next sunrise ISO-8601 UTC timestamp |
 | `15` | `sun_next_setting` | `WeatherField::SUN_NEXT_SETTING` | `string` | Next sunset ISO-8601 UTC timestamp |
 | `16` | `moon_phase` | `WeatherField::MOON_PHASE` | `string` | Lunar phase slug (new_moon|waxing_crescent|first_quarter|waxing_gibbous|full_moon|waning_gibbous|last_quarter|waning_crescent) |
+| `17` | `temp_unit` | `WeatherField::TEMP_UNIT` | `string` | Outdoor temperature unit ('C' or 'F') |
 
-### `sensor.<device>_calendar_agenda` (`CalendarField`, `7` total fields)
+### `calendar_agenda` (`CalendarField`, `7` total fields)
 
 Upcoming calendar agenda events and next-event headline.
 
@@ -157,7 +157,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `70` total fields)
+### `device_prefs` (`DevicePrefsField`, `71` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -230,8 +230,9 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `67` | `camera_doorbell_popup` | `DevicePrefsField::CAMERA_DOORBELL_POPUP` | `string` | Doorbell ring popup media mode on hardware-JPEG devices (Snapshot|Live Video) |
 | `68` | `screensaver_photo_clock` | `DevicePrefsField::SCREENSAVER_PHOTO_CLOCK` | `bool` | 1 = show subtle clock overlay on Photo Frame screensaver, else 0 |
 | `69` | `weather_app_background` | `DevicePrefsField::WEATHER_APP_BACKGROUND` | `bool` | 1 = show live animated weather sky background in the Sky & Weather app, else 0 |
+| `70` | `do_not_disturb` | `DevicePrefsField::DO_NOT_DISTURB` | `bool` | 1 = Do Not Disturb active, else 0 |
 
-### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
+### `shortcuts` (`ShortcutsField`, `8` total fields)
 
 App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant entity actions with live state), chunked across <=24-item frames for unlimited pages.
 
@@ -239,7 +240,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | :---: | :--- | :--- | :---: | :--- |
 | `3` | `chunk_index` | `ShortcutsField::CHUNK_INDEX` | `u16` | 0-based chunk index (0 .. chunk_count - 1) |
 | `4` | `chunk_count` | `ShortcutsField::CHUNK_COUNT` | `u16` | Total chunks in this shortcuts snapshot (>= 1; commits atomically on chunk_index + 1 == chunk_count) |
-| `5` | `dock_items` | `ShortcutsField::DOCK_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state App Dock shortcut records (sent on chunk_index == 0, up to 16; empty until configured so device uses defaults.dock_routes; Settings is always appended last) |
+| `5` | `dock_items` | `ShortcutsField::DOCK_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state App Dock shortcut records (sent on chunk_index == 0, up to 24; empty until configured so device uses defaults.dock_routes; Settings is always appended last) |
 | `6` | `pinned_total` | `ShortcutsField::PINNED_TOTAL` | `u16` | Total configured Pinned App items across all chunks (0 auto-hides app:pinned on the App Dock) |
 | `7` | `pinned_items` | `ShortcutsField::PINNED_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state Pinned App shortcut records for this chunk (up to 24 per chunk, rendered 6 per page) |
 
@@ -251,18 +252,19 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `latter_push_v3` | `domain: string`, `payload: string` | Push a revision-guarded Protocol v3 domain payload directly to the bound Device over the ESPHome Native API |
 | `latter_set_beacon_uuid` | `uuid: string` | Provision the System's random 128-bit BLE iBeacon UUID into NVS and restart advertising if active |
 | `latter_factory_reset` | *(none)* | Reset to defaults: erases every saved setting (the whole NVS partition, including the Wi-Fi driver's cached network data and RF calibration) and reboots. Compiled-in Wi-Fi credentials and the API key are kept, so the device rejoins Home Assistant unchanged |
-| `latter_device_command` | `command: string` | Execute a typed Device lifecycle, diagnostic, or UI command (restart|find_my|activate_screensaver|trigger_va|log_memory_report|dismiss_ringing|cancel_timer|reset_stopwatch) |
+| `latter_device_command` | `command: string` | Execute a typed Device lifecycle, display, telemetry, security, or UI command (restart|find_my|activate_screensaver|deactivate_screensaver|wake_screen|screen_off|set_screen_bri:<1..100>|set_profiler_on|set_profiler_off|request_telemetry|set_pin_key:<key_id>:<hex_key>|trigger_va|dismiss_ringing|cancel_timer|reset_stopwatch) |
 | `latter_set_slots` | `is_area_slots: bool`, `req_id: int`, `mode: string`, `page: int`, `total_pages: int`, `slots: string` | Push paginated media/speaker/queue/search browse slots or Area/Site entity control slots to the device (0x1E-joined name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current] records) |
 | `latter_set_music_lyrics` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `track_key: string`, `synced: bool`, `lines: string` | Push full-track LRC timestamp-synced or plain lyrics (up to 128 lines across multi-chunk frames; lines is 0x1E-joined '<t_ms>\x1f<text>' records where t_ms >= 0 for synced LRC lines and -1 for plain unsynced lines) |
-| `latter_set_calendar_view` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `window_start: string`, `window_end: string`, `map_url: string`, `events: string` | Push chunked windowed calendar events (up to 64 events across multi-chunk frames) or a signed on-demand Event Details map URL to the device |
+| `latter_set_calendar_view` | `req_id: int`, `chunk_index: int`, `chunk_count: int`, `window_start: string`, `window_end: string`, `events: string` | Push chunked windowed calendar events (up to 64 events across multi-chunk frames) to the device |
 | `latter_show_notification` | `title: string`, `message: string`, `priority: string`, `duration: int`, `chime: bool`, `camera_url: string`, `camera_entity: string`, `alert_id: int` | Wake display, show an on-screen alert banner (priority normal|warning|critical, duration 3-60 s, default 10), optionally play the embedded WAV chime and show a camera snapshot or live doorbell video; alert_id > 0 deduplicates repeats |
-| `latter_ui_input` | `action: string`, `delta: int` | Remote navigation input: action up|down|left|right|select|back|home (canonical navigation actions); delta overrides the step for directional actions (0 = derive from action) |
 
 ## 4. Firmware RPC Outbox Methods (`latter_rpc_outbox`)
 
 | Method | Canonical Outbox Fields | Description |
 | :--- | :--- | :--- |
 | `device_hello` | `contract`, `boot_id`, `manifest`, `prefs_seq`, `dirty_prefs` | Device-initiated handshake sent when Home Assistant connects to the ESPHome API, carrying optional NVS preference sync state |
+| `device_telemetry` | `link_json`, `int_ram_free_kb`, `int_ram_min_kb`, `int_ram_largest_kb`, `psram_min_kb`, `ble_active`, `profiler_on` | Periodic and on-demand device link, heap, PSRAM, BLE, and profiler telemetry reported to Home Assistant |
+| `display_state` | `power_state`, `brightness_pct`, `screensaver_active` | Report physical display power, perceptual brightness percentage, and screensaver transitions to Home Assistant |
 | `music_browse` | `req_id`, `mode`, `page`, `page_size`, `search`, `speaker`, `last_speaker`, `album_sort`, `artist_album_sort`, `podcast_sort` | Browse speakers, library, favorites, playlists, artists, albums, tracks, podcasts, active queue, artist/album bios, or fetch full-track lyrics (lyrics_fetch) |
 | `set_active_speaker` | `entity_id`, `transfer_queue` | Select the active media_player target for a Latter device |
 | `media_command` | `command`, `seek_position`, `entity_id`, `media_id`, `media_type`, `enqueue`, `radio_mode`, `queue_item_id`, `pos_shift`, `group_members` | Execute transport, seek, play_media (enqueue play|next|add|replace + radio_mode), queue manipulation (queue_play, queue_move, queue_delete), player toggles (mute_toggle, shuffle_toggle, repeat_cycle, favorite_toggle, lyrics_fetch), or speaker grouping on the active speaker |
@@ -271,11 +273,11 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `area_action` | `entity_id`, `action`, `level`, `area_id`, `code` | Execute an explicit domain action on an Area or specific entity |
 | `set_active_area` | `area_id` | Set the active Area context for a Latter device (an on-device Area pick). Whether media follows is the Device's Latter setting |
 | `remote_action` | `slot`, `action`, `command`, `hold_secs` | Send a TV/AV remote command or select active remote slot |
-| `calendar_fetch` | `req_id`, `mode`, `start_date`, `end_date`, `days`, `location` | Fetch windowed calendar events for a date range or mint a signed Event Details map URL |
+| `calendar_fetch` | `req_id`, `mode`, `start_date`, `end_date`, `days` | Fetch windowed calendar events for a date range |
 | `calendar_create_event` | `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `all_day`, `start_date`, `end_date`, `location`, `rrule` | Create a timed, all-day, or recurring event on a writable Home Assistant calendar |
 | `calendar_delete_event` | `calendar_entity`, `uid`, `recurrence_id` | Delete an event or recurring instance from a writable Home Assistant calendar |
 | `intercom_broadcast` | `message` | Broadcast a voice announcement to configured broadcast speakers, chosen speakers, or occupied Areas |
-| `doorbell_intercom` | `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction`, `code` | Doorbell talkback and requests (talk_message, quick_reply, listen_start, listen_stop, set_noise_reduction) |
+| `doorbell_intercom` | `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction` | Doorbell talkback and requests (talk_message, quick_reply, listen_start, listen_stop, set_noise_reduction) |
 | `save_custom_color` | `hex_color` | Save a custom RGB accent color from the on-device color wheel |
 | `shortcut_action` | `entity_id`, `action`, `code` | Execute an allowlisted Home Assistant entity action from a configured App Dock or Pinned shortcut |
 | `set_device_prefs` | `base_seq`, `changes` | Persist on-device settings edits back to the Device subentry and increment prefs_seq |
@@ -285,32 +287,17 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 | Service | Canonical Fields | Description |
 | :--- | :--- | :--- |
-| `latter.device_hello` | `target_device`, `contract`, `boot_id`, `manifest`, `prefs_seq`, `dirty_prefs` | Device-initiated handshake sent by an ESPHome Latter node on API connection to report its contract version, boot ID, and hardware manifest. |
-| `latter.music_browse` | `target_device`, `req_id`, `mode`, `page`, `page_size`, `search`, `speaker`, `last_speaker`, `album_sort`, `artist_album_sort`, `podcast_sort` | Browse Music Assistant speakers, library, podcasts, queues, lyrics, and artist/album bios and push paginated slots to the ESPHome device. |
-| `latter.set_active_speaker` | `entity_id`, `transfer_queue`, `target_device` | Change the active target media_player for the ESPHome device and optionally transfer the active playback queue. |
-| `latter.media_volume` | `target_device`, `entity_id`, `action`, `volume_level` | Set or step the volume, or toggle mute, on the active speaker. If a volume override is mapped for that speaker (for example an AV receiver), the change goes to the override entity. |
-| `latter.set_active_area` | `area_id`, `target_device` | Switch the active area context by area_id or area name. The device's speaker follows to the new area when the device's "Media follows this Device" setting is on. On roaming devices with Voice Follows Me enabled, this also moves the device's Home Assistant Area so area-aware Assist commands target it. |
-| `latter.remote_action` | `slot`, `action`, `command`, `hold_secs`, `target_device` | Select one of the up to 10 configured TV remote slots or send a remote command. |
-| `latter.area_browse` | `target_device`, `req_id`, `mode`, `area_id`, `domain_filter`, `page`, `page_size` | Browse Home Assistant areas, curated area entities, or home-wide alarm entities and push paginated slots to the ESPHome device. |
-| `latter.area_action` | `target_device`, `entity_id`, `area_id`, `action`, `level`, `code` | Execute a normalized area control, light color/Kelvin, thermostat, lock, vacuum, or home security alarm action. |
-| `latter.calendar_fetch` | `target_device`, `req_id`, `mode`, `start_date`, `end_date`, `days`, `location` | Fetch windowed system calendar events or mint a signed location map URL and push calendar view frames to the ESPHome device. |
-| `latter.calendar_create_event` | `target_device`, `calendar_entity`, `summary`, `start_date_time`, `end_date_time`, `all_day`, `start_date`, `end_date`, `location`, `rrule`, `description` | Create a timed, all-day, or recurring event on a writable system calendar and refresh the calendar store. |
-| `latter.calendar_delete_event` | `target_device`, `calendar_entity`, `uid`, `recurrence_id`, `recurrence_range` | Delete an event or recurring instance from a writable system calendar and refresh the calendar store. |
-| `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a TTS announcement or recorded audio clip to configured broadcast speakers, explicitly chosen speakers, the speakers in occupied Areas ('occupied_areas'), or the speakers in a person's current Area ('person.<slug>'), automatically excluding the calling Device and Latter displays in Bedtime Mode. |
-| `latter.media_command` | `target_device`, `command`, `entity_id`, `seek_position`, `media_id`, `media_type`, `enqueue`, `radio_mode`, `queue_item_id`, `pos_shift`, `group_members` | Run a playback, queue, or toggle command (play, pause, toggle, next, previous, stop, seek, play_media, clear_queue, queue_play, queue_move, queue_delete, mute_toggle, shuffle_toggle, repeat_cycle, favorite_toggle, lyrics_fetch, join, unjoin) on the active speaker. If the device restarted or slept and its Sendspin buffer is empty, play re-streams the Music Assistant queue. |
 | `latter.notify` | `target_device`, `title`, `message`, `priority`, `duration`, `chime`, `announce`, `camera_entity` | Show an on-screen notification, with an optional chime and an optional camera snapshot, on a specific device, the devices in occupied Areas ('occupied_areas'), the devices assigned to a person ('person.<slug>'), or all displays ('all'). |
-| `latter.save_custom_color` | `target_device`, `hex_color`, `name` | Save a custom hex color from the on-device or Studio Color Wheel into the System-Wide Color Library and apply it to the target device. |
-| `latter.shortcut_action` | `target_device`, `entity_id`, `action`, `code` | Execute a configured App Dock or Pinned Home Assistant entity action on behalf of a bound Latter Device, enforcing allowlist membership and Perimeter Security Policy. |
-| `latter.doorbell_intercom` | `target_device`, `action`, `camera_entity`, `camera_index`, `message`, `noise_reduction`, `code` | Listen to a doorbell camera's noise-reduced audio on a Latter device, reply by push-to-talk or quick reply (spoken with TTS on the camera's media_player), or select a carousel camera. There is no live device-to-door audio. |
+| `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a TTS announcement or recorded audio clip to configured broadcast speakers, explicitly chosen speakers, the speakers in occupied Areas ('occupied_areas'), or the speakers in a person's current Area ('person.<slug>'), automatically excluding the calling Device and Latter displays in Bedtime Mode or Do Not Disturb. |
+| `latter.set_active_area` | `area_id`, `target_device` | Switch the active area context by area_id or area name. The device's speaker follows to the new area when the device's "Media follows this Device" setting is on. On roaming devices with Voice Follows Me enabled, this also moves the device's Home Assistant Area so area-aware Assist commands target it. |
+| `latter.set_active_speaker` | `entity_id`, `transfer_queue`, `target_device` | Change the active target media_player for the ESPHome device and optionally transfer the active playback queue. |
 | `latter.reset_device` | `target_device`, `device_settings`, `latter_options` | Reset a Latter device. Device settings erases everything saved on the device (its settings and the Wi-Fi driver's cached data) and restarts it; Wi-Fi credentials and the API key are compiled into the firmware, so it rejoins Home Assistant unchanged. Latter options puts this device's Latter options back to the defaults it got when it was added, keeping its ESPHome binding and its Music Assistant player link. |
-| `latter.set_device_prefs` | `target_device`, `base_seq`, `changes` | Apply on-device preference updates from a bound Latter Device (or admin automation) into the Device's sleep-safe subentry configuration. |
-| `latter.timer_alarm_state` | `target_device`, `timer_running`, `timer_paused`, `remaining_sec`, `ringing`, `stopwatch_running`, `stopwatch_paused`, `stopwatch_elapsed_sec` | Event-driven timer, stopwatch, and alarm state update reported by a bound Latter Device. |
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `43`
-- **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
-- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
+- **Studio Wire Revision (`studio_rev`)**: `44`
+- **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `deactivate_screensaver`, `wake_screen`, `screen_off`, `set_profiler_on`, `set_profiler_off`, `request_telemetry`, `trigger_va`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
+- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `62` typed preference descriptors
+- **Declarative `device_prefs` Specs**: `63` typed preference descriptors

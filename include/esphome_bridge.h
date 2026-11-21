@@ -38,7 +38,7 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include "latter_state.h"
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026112006L
+#define LATTER_SDK_REV 2026112007L
 #endif
 
 namespace esphome {
@@ -271,7 +271,13 @@ inline void handle_ota_error(DispT *disp, bool &ota_in_progress, int &ota_progre
   notif_duration_ms = 5000U;
   notif_start_ms = now_m;
   notif_active = true;
-  handle_ota_end(disp, ota_in_progress, ota_progress_pct);
+  display_lifecycle().on_ota_end(now_m);
+  stall_guard_pause(false);
+  wifi_power_ota_end();
+  if (disp != nullptr) {
+    disp->start_poller();
+    disp->update();
+  }
 }
 
 template <typename DispT>
@@ -288,6 +294,9 @@ inline void handle_ota_error(DispT *const *disp_ptr, bool &ota_in_progress, int 
 
 template <typename DispT>
 inline void handle_ota_error(DispT *disp_or_ptr, uint32_t now_m, DeviceRuntimeState &rt = runtime_state()) {
+  rt.alert.priority_level = AlertPriority::Normal;
+  rt.nav.display_power_state = 0;
+  rt.nav.sleep_start_time = now_m;
   handle_ota_error(disp_or_ptr, rt.nav.ota_in_progress, rt.nav.ota_progress_pct,
                    rt.alert.active, rt.alert.title, rt.alert.message,
                    rt.alert.priority, rt.alert.duration_ms, rt.alert.start_ms, now_m);

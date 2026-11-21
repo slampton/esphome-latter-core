@@ -41,7 +41,7 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.11.0
   project:
-    name: "slampton.desk-assistant-p4-86"
+    name: "latter.desk-assistant-p4-86"
     version: "${version}"
 
 update:

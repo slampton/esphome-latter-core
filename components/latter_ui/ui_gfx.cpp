@@ -144,10 +144,10 @@ bool IRAM_ATTR fb_clear_chunk_done(async_memcpy_handle_t, async_memcpy_event_t *
 constexpr uint32_t kFbPpaRowPx = 128;
 constexpr size_t kFbPpaRowBytes = kFbPpaRowPx * sizeof(uint16_t);
 constexpr size_t kFbPpaMaxRows = 16383;
-int64_t g_fb_clear_done_us = 0;
+std::atomic<int64_t> g_fb_clear_done_us{0};
 
 bool IRAM_ATTR fb_clear_ppa_done(ppa_client_handle_t, ppa_event_data_t *, void *) {
-  g_fb_clear_done_us = esp_timer_get_time();
+  g_fb_clear_done_us.store(esp_timer_get_time(), std::memory_order_release);
   g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
   return false;
 }
@@ -349,7 +349,7 @@ void fb_clear_wait() {
       }
     }
     ESP_LOGI("disp_fb", "PPA fill verified: %u KB in %ld us", static_cast<unsigned>(st.interior_len / 1024),
-             static_cast<long>(g_fb_clear_done_us - st.ppa_t0_us));
+             static_cast<long>(g_fb_clear_done_us.load(std::memory_order_acquire) - st.ppa_t0_us));
   }
 #endif
 #endif
@@ -1025,6 +1025,10 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
     }
   }
 
+  const int eff_cy0 = std::max(0, cy0);
+  const int eff_cy1 = std::min(SCREEN_H - 1, cy1);
+  if (eff_cy1 < eff_cy0) return;
+
 #ifdef USE_ESP32
   if (bpp == 1) {
     int span_count = 0;
@@ -1033,15 +1037,17 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
       const uint16_t hw = lut[1];
       for (int i = 0; i < span_count; i++) {
         const int py = y_start + spans[i].y;
-        if (py < cy0 || py > cy1) continue;
+        if (py < eff_cy0 || py > eff_cy1) continue;
         int px = x_start + spans[i].x;
         int len = spans[i].len;
+        if (px >= SCREEN_W || len <= 0) continue;
         if (px < 0) {
           len += px;
           px = 0;
         }
         if (px + len > SCREEN_W) len = SCREEN_W - px;
-        uint16_t *dst = fb + py * SCREEN_W + px;
+        if (len <= 0) continue;
+        uint16_t *dst = fb + static_cast<size_t>(py) * SCREEN_W + static_cast<size_t>(px);
         for (int k = 0; k < len; k++) dst[k] = hw;
       }
       return;
@@ -1063,7 +1069,7 @@ void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::displ
     uint8_t pixel_data = 0;
     for (int gy = 0; gy < glyph->height; gy++) {
       const int py = gy0 + gy;
-      uint16_t *row = (py >= cy0 && py <= cy1) ? fb + py * SCREEN_W : nullptr;
+      uint16_t *row = (py >= eff_cy0 && py <= eff_cy1) ? (fb + static_cast<size_t>(py) * SCREEN_W) : nullptr;
       for (int gx = 0; gx < glyph->width; gx++) {
         uint8_t pixel = 0;
         for (int bit = 0; bit < bpp; bit++) {
@@ -1137,6 +1143,10 @@ void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome:
         (std::min(31, r) << 11) | (std::min(63, g) << 5) | std::min(31, b)));
   };
 
+  const int eff_cy0 = std::max(0, cy0);
+  const int eff_cy1 = std::min(SCREEN_H - 1, cy1);
+  if (eff_cy1 < eff_cy0) return;
+
 #ifdef USE_ESP32
   if (bpp == 1) {
     int span_count = 0;
@@ -1144,15 +1154,17 @@ void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome:
     if (spans != nullptr) {
       for (int i = 0; i < span_count; i++) {
         const int py = y_start + spans[i].y;
-        if (py < cy0 || py > cy1) continue;
+        if (py < eff_cy0 || py > eff_cy1) continue;
         int px = x_start + spans[i].x;
         int len = spans[i].len;
+        if (px >= SCREEN_W || len <= 0) continue;
         if (px < 0) {
           len += px;
           px = 0;
         }
         if (px + len > SCREEN_W) len = SCREEN_W - px;
-        uint16_t *dst = fb + py * SCREEN_W + px;
+        if (len <= 0) continue;
+        uint16_t *dst = fb + static_cast<size_t>(py) * SCREEN_W + static_cast<size_t>(px);
         for (int k = 0; k < len; k++) blend_px(dst[k], a_clamped);
       }
       return;
@@ -1174,7 +1186,7 @@ void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome:
     uint8_t pixel_data = 0;
     for (int gy = 0; gy < glyph->height; gy++) {
       const int py = gy0 + gy;
-      uint16_t *row = (py >= cy0 && py <= cy1) ? fb + py * SCREEN_W : nullptr;
+      uint16_t *row = (py >= eff_cy0 && py <= eff_cy1) ? (fb + static_cast<size_t>(py) * SCREEN_W) : nullptr;
       for (int gx = 0; gx < glyph->width; gx++) {
         uint8_t pixel = 0;
         for (int bit = 0; bit < bpp; bit++) {
@@ -1265,24 +1277,27 @@ void dim_rgb565_row_dither(uint16_t *row_buf, int span_w, int mul_q8, int x0, in
 
 void blit_dimmed_rgb565_scanline(esphome::display::Display &it, int start_x, int y, int span_w,
                                  const uint16_t *src_row, int mul_q8, uint16_t *fallback_row_buf) {
-  if (span_w <= 0 || !row_in_clip_band(y) || src_row == nullptr) return;
+  if (span_w <= 0 || y < 0 || y >= SCREEN_H || !row_in_clip_band(y) || src_row == nullptr) return;
+  if (start_x >= SCREEN_W) return;
+  if (start_x < 0) {
+    const int skip = -start_x;
+    if (skip >= span_w) return;
+    src_row += skip;
+    span_w -= skip;
+    start_x = 0;
+  }
+  if (start_x + span_w > SCREEN_W) {
+    span_w = SCREEN_W - start_x;
+  }
+  if (span_w <= 0) return;
   if (mul_q8 >= 256) {
     blit_rgb565_scanline(it, start_x, y, span_w, src_row, false);
     return;
   }
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
-    if (start_x < 0) {
-      src_row -= start_x;
-      span_w += start_x;
-      start_x = 0;
-    }
-    if (start_x + span_w > SCREEN_W) {
-      span_w = SCREEN_W - start_x;
-    }
-    if (span_w <= 0) return;
     if (mul_q8 < 0) mul_q8 = 0;
-    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + start_x;
+    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(start_x);
     const uint8_t *th = kBayer4[y & 3];
     const uint32_t m = static_cast<uint32_t>(mul_q8);
     const int mode = active_frame_endian_mode();

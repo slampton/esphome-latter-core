@@ -164,15 +164,20 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     if (trigger_alert_banner(st.alert_title, st.alert_message, st.alert_priority, st.alert_duration,
                              st.alert_camera_url, st.alert_id, ctx.now_ms, true, r.alert,
                              st.alert_camera_entity)) {
-      const bool suppressed =
+      const bool is_doorbell = !r.alert.camera_entity.empty() || !r.alert.camera_url.empty();
+      const bool dnd_suppressed = should_suppress_alert_in_dnd(
+          prefs.do_not_disturb, static_cast<int>(r.alert.priority_level), is_doorbell);
+      const bool bedtime_suppressed =
           should_suppress_alert_in_bedtime(prefs.bedtime_active, r.alert.priority_level);
-      if (suppressed) {
-        if (r.nav.display_power_state != 0) {
+      if (dnd_suppressed || bedtime_suppressed) {
+        if (dnd_suppressed || r.nav.display_power_state != 0) {
           r.alert.active = false;
         }
       } else {
         eff.alert_triggered = true;
-        if (st.alert_chime && !r.voice.active && !r.voice.tts_received) {
+        const bool chime_suppressed = should_suppress_alert_chime_in_dnd(
+            prefs.do_not_disturb, static_cast<int>(r.alert.priority_level), is_doorbell);
+        if (st.alert_chime && !chime_suppressed && !r.voice.active && !r.voice.tts_received) {
           eff.alert_sfx_id =
               (r.alert.priority == "critical" || r.alert.priority == "warning") ? 9 : 6;
         }
@@ -544,6 +549,10 @@ AlarmTickEffects TimerAlarmController::tick_alarms_1s(bool time_valid, uint32_t 
       rs.nav.home_subpage = 0;
     }
     rs.alarms.snooze_until = 0;
+    if (rs.alarms.snoozed_alarm_slot >= 1 && rs.alarms.snoozed_alarm_slot <= 3) {
+      rs.alarms.ringing_idx = rs.alarms.snoozed_alarm_slot;
+    }
+    rs.alarms.snoozed_alarm_slot = 0;
     rs.alarms.ringing = true;
     stamp_ringing_start_(now_ms);
     eff.snooze_fired = true;
@@ -590,6 +599,10 @@ AlarmTickEffects TimerAlarmController::tick_alarms_1s(bool time_valid, uint32_t 
       rs.alarms.last_fired_epoch_min = em;
       rs.alarms.ringing = true;
       rs.alarms.ringing_idx = trig_idx;
+      if (rs.alarms.snoozed_alarm_slot == trig_idx) {
+        rs.alarms.snooze_until = 0;
+        rs.alarms.snoozed_alarm_slot = 0;
+      }
       stamp_ringing_start_(now_ms);
       eff.triggered_idx = trig_idx;
     }
@@ -686,6 +699,7 @@ bool TimerAlarmController::snooze_active_alarm(bool time_valid, uint32_t now_epo
                                                uint32_t now_ms) noexcept {
   auto &rs = runtime_state();
   if (!rs.alarms.ringing) return false;
+  rs.alarms.snoozed_alarm_slot = rs.alarms.ringing_idx;
   rs.alarms.snooze_until = (time_valid ? now_epoch : (now_ms / 1000U)) + kSnoozeSeconds;
   rs.alarms.ringing = false;
   if (!rs.timers.ringing) ringing_started_ms_ = 0U;
@@ -699,6 +713,7 @@ bool TimerAlarmController::dismiss_ringing() noexcept {
   }
   rs.timers.ringing = false;
   rs.alarms.ringing = false;
+  rs.alarms.snoozed_alarm_slot = 0;
   rs.alarms.find_my_active = false;
   ringing_started_ms_ = 0U;
   return true;
@@ -726,6 +741,7 @@ void reset_runtime_state(bool preserve_hooks) {
   const auto saved_on_disc = rt.on_ha_client_disconnected;
   const auto saved_on_push = rt.on_v3_domain_pushed;
   const auto saved_on_cmd = rt.on_device_command;
+  const auto saved_on_hello = rt.on_hello_sent;
 
   rt = DeviceRuntimeState{};
   if (preserve_hooks) {
@@ -740,6 +756,7 @@ void reset_runtime_state(bool preserve_hooks) {
     rt.on_ha_client_disconnected = saved_on_disc;
     rt.on_v3_domain_pushed = saved_on_push;
     rt.on_device_command = saved_on_cmd;
+    rt.on_hello_sent = saved_on_hello;
   }
 
   link_state() = LinkState{};
@@ -758,7 +775,10 @@ void reset_runtime_state(bool preserve_hooks) {
 
   va_display_restore() = VaDisplayRestore{};
   radio_boost_until_ms() = 0U;
+  screen_off_tap_state().reset();
+  bedtime_schedule_tracker().reset();
   latter_actions::timer_alarm_sync_tracker() = latter_actions::TimerAlarmSyncTracker{};
+  latter_rpc::clear_pin_session_key();
 
   audio_session().reset();
   audio_arbitrator().reset();

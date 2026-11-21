@@ -33,7 +33,7 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.11.0
   project:
-    name: "slampton.remote-assistant-p4-35"
+    name: "latter.remote-assistant-p4-35"
     version: "${version}"
 
 update:

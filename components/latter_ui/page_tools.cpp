@@ -244,16 +244,16 @@ void render_stopwatch_subpage(esphome::display::Display &it, const UiFrameContex
   ui::render_center_arbor_aa(it, cx, cy, ctx.theme_secondary, ctx.col_dark_gray, ctx.col_white);
 
   // Hit-table order: dial face start/pause -> LAP/RESET circles -> Back
+  const int sw_min_r = (layout().min_hit_px() + 1) / 2;
+  const int sw_pad = std::max(8, sw_min_r - btn_r);
   frame_hits().add_rect(scale_min(40), scale_min(69),
                         SCREEN_W - 2 * scale_min(40), scale_min(210),
                         WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
   frame_hits().add_circle(btn_lap_x, btn_y, btn_r,
-                          WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
+                          WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, sw_pad);
   frame_hits().add_circle(btn_rst_x, btn_y, btn_r,
-                          WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, 8);
+                          WidgetId::SW_RESET_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, sw_pad);
 
-  render_glass_card(it, cx - scale_min(58), layout().back_y - scale_min(15), scale_min(116), scale_min(30),
-                    scale_min(15), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back", ctx.col_white);
 }
 #endif
@@ -547,10 +547,13 @@ void render_calculator_subpage(esphome::display::Display &it, const UiFrameConte
         ui::draw_icon_minus(it, kx_mid, ky_mid, std::max(7, scale_s(9)), text_c, true);
       }
 
+      const int min_px = layout().min_hit_px();
+      const int calc_pad = std::max(
+          0, (std::max(min_px - (eff_key_w + 4), min_px - (eff_key_h + 6)) + 1) / 2);
       frame_hits().add_centered_rect(kx_mid, ky_mid, eff_key_w + 4, eff_key_h + 6,
                                      WidgetId::CALC_KEY_BASE + key_idx,
                                      kHitTap | kHitFocusSlot,
-                                     static_cast<int16_t>(key_idx));
+                                     static_cast<int16_t>(key_idx), calc_pad);
     }
   }
 

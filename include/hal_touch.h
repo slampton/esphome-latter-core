@@ -11,15 +11,19 @@
 //   - High-rate 8-10 ms active-finger tracking while pressed (even on level-hold INT)
 //   - Hardware-verified finger lift (0 ms touch_timeout -> zero +120 ms lag)
 //   - Race-free GT911 0x814E ack (never clears 0x814E when status & 0x80 == 0)
-//   - IRAM GPIO ISR App.wake_loop_threadsafe() + wake_pulse latch for <40 ms taps
+//   - Strictly IRAM-safe atomic GPIO ISR + wake_pulse latch for <40 ms taps
 // ==============================================================================
 
 #if __has_include("esphome/core/defines.h")
 #include "esphome/core/defines.h"
 #endif
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#ifdef USE_ESP32
+#include <esp_attr.h>
+#endif
 
 namespace latter_ui {
 
@@ -209,9 +213,13 @@ inline void hal_touch_pump() noexcept {
 namespace esphome::latter_core {
 
 struct LatterTouchIrqStore {
-  volatile bool irq_pending{false};
-  volatile uint32_t edge_count{0};
+  std::atomic<bool> irq_pending{false};
+  std::atomic<uint32_t> edge_count{0};
+#ifdef USE_ESP32
+  static void IRAM_ATTR gpio_intr(LatterTouchIrqStore *store);
+#else
   static void gpio_intr(LatterTouchIrqStore *store);
+#endif
 };
 
 class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice {

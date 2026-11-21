@@ -457,6 +457,9 @@ enum class PinPadTargetKind : uint8_t {
 };
 
 struct PinPadModalState {
+  static constexpr uint8_t kMinDigits = 4;
+  static constexpr uint8_t kMaxDigits = 12;
+  static constexpr uint32_t kAutoDismissMs = 30000U;
   bool open{false};
   PinPadTargetKind target{PinPadTargetKind::NONE};
   char digits[13]{};
@@ -464,6 +467,7 @@ struct PinPadModalState {
   char prompt[40]{};
   char error_msg[32]{};
   uint32_t error_ms{0};
+  uint32_t last_activity_ms{0};
 };
 
 PinPadModalState &pin_pad_state();

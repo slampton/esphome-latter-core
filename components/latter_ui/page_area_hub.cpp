@@ -240,8 +240,9 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
         const int bx1 = k_bar_x0 + ((b + 1) * k_bar_w) / 24;
         fill_rect_row_major(it, bx0, k_cy + scale_y(6), std::max(2, bx1 - bx0), scale_y(16), band_c);
       }
-      const int k_clamped = std::max(2700, std::min(6500, light_insp_kelvin()));
-      const int k_knob_x = k_bar_x0 + ((k_clamped - 2700) * k_bar_w) / (6500 - 2700);
+      const int k_clamped = std::max(kLightKelvinMin, std::min(kLightKelvinMax, light_insp_kelvin()));
+      const int k_knob_x =
+          k_bar_x0 + ((k_clamped - kLightKelvinMin) * k_bar_w) / (kLightKelvinMax - kLightKelvinMin);
       fast_filled_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(10), col_white);
       fast_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
       char k_buf[48];
@@ -319,8 +320,11 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   for (char &c : hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
   std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
   render_page_header(it, cx, fit_hdr.c_str(), font_small, col_white);
-  frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(250), scale_y(36),
-                                 WidgetId::AREA_PICKER_PILL, kHitTap | kHitFocusSlot);
+  const int hdr_hit_w = std::max(scale_x(250), layout().min_hit_px());
+  const int hdr_hit_h = scale_y(36);
+  const int hdr_hit_pad = std::max(0, (layout().min_hit_px() - hdr_hit_h + 1) / 2);
+  frame_hits().add_centered_rect(cx, layout().hdr_y, hdr_hit_w, hdr_hit_h,
+                                 WidgetId::AREA_PICKER_PILL, kHitTap | kHitFocusSlot, 0, hdr_hit_pad);
 
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(area_action_feedback, scale_x(280), font_small);
@@ -461,7 +465,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       }
     }
 
-    draw_tall_card_icon(r_left + scale_x(32), y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
+    draw_tall_card_icon((r_left + r_div_x) / 2, y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
     fast_line(it, r_div_x, y_mid - scale_y(22), r_div_x, y_mid + scale_y(22), brd_c);
 
     std::string clean_name = strip_trailing_paren_state(raw_name);
@@ -516,9 +520,11 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const Color sub_c = is_act ? theme_secondary : kChromeMuted;
     ui::shadow_print(it, r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
 
+    const int card_max_pad = std::max(0, (layout().area_card3_stride - r_card_h - 1) / 2);
+    const int card_hit_pad = std::min(card_max_pad, std::max(0, (layout().min_hit_px() - r_card_h + 1) / 2));
     frame_hits().add_rect(r_left, y_mid - r_card_h / 2, r_div_x - r_left, r_card_h,
                           static_cast<uint16_t>(WidgetId::AREA_CARD_TOGGLE + idx),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx), card_hit_pad);
 
     int right_limit = r_right;
     if (dtype == "light") {
@@ -530,9 +536,11 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
       fast_filled_circle_aa(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, kChromeRgbRed);
       fast_filled_circle_aa(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, kChromeRgbGreen);
       fast_filled_circle_aa(it, ox,             y_mid + scale_s(5), dot_r, kChromeRgbBlue);
+      const int orb_min_r = (layout().min_hit_px() + 1) / 2;
+      const int orb_pad = std::max(scale_s(14), orb_min_r - orb_r);
       frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
-                              static_cast<int16_t>(idx), scale_s(14));
+                              static_cast<int16_t>(idx), orb_pad);
     } else if (has_slider || dtype == "climate") {
       // Subtle right-chevron cue indicating tap-to-inspect Position / Speed (D-050).
       ui::draw_icon_chevron(it, r_right - scale_x(18), y_mid, std::max(5, scale_s(7)),
@@ -544,7 +552,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
     const int body_w = std::max(8, right_limit - (r_div_x + 1));
     frame_hits().add_rect(r_div_x + 1, y_mid - r_card_h / 2, body_w, r_card_h,
                           static_cast<uint16_t>(WidgetId::AREA_CARD_TAP + idx),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx));
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(idx), card_hit_pad);
   }
 
   if (!any_card) {

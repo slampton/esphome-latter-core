@@ -952,28 +952,36 @@ void render_wispy_cloud_veil(esphome::display::Display &it, int center_x, int ba
 // ------------------------------------------------------------------------------
 // 6. Weather Suite Formatters, Simulation Override & Forecast Glyph Engine
 // ------------------------------------------------------------------------------
-std::string format_iso_time(const std::string &iso_str, bool is_24h) {
-  if (iso_str.empty() || iso_str == "unknown" || iso_str == "unavailable") return kUnknownGlyph;
-  int yr = 0, mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
-  if (sscanf(iso_str.c_str(), "%d-%d-%dT%d:%d:%d", &yr, &mo, &dy, &hr, &mn, &sc) < 5) return kUnknownGlyph;
-  int y = yr - (mo <= 2 ? 1 : 0);
-  int era = (y >= 0 ? y : y - 399) / 400;
-  int yoe = y - era * 400;
-  int doy = (153 * (mo > 2 ? mo - 3 : mo + 9) + 2) / 5 + dy - 1;
-  int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  long long days = (long long)era * 146097 + doe - 719468;
-  time_t t = (time_t)(days * 86400LL + hr * 3600LL + mn * 60LL + sc);
+void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz) {
+  if (out == nullptr || out_sz == 0U) return;
+  ParsedIsoTimestamp ts{};
+  if (!parse_iso_timestamp_components(iso_str, ts)) {
+    std::snprintf(out, out_sz, "%s", kUnknownGlyph);
+    return;
+  }
+  if (!ts.has_tz) {
+    format_hhmm_clock_to(ts.hour, ts.minute, is_24h, out, out_sz);
+    return;
+  }
+  const LocalTzInfo tz = parse_local_tz_info(area_ctx_state().local_tz_info);
+  if (tz.valid) {
+    (void)format_iso_time_with_offset(iso_str, is_24h, tz.utc_offset_min, out, out_sz);
+    return;
+  }
+  const time_t t = static_cast<time_t>(ts.utc_epoch_sec);
   struct tm tm_loc = {};
   portable_localtime(&t, &tm_loc);
-  char buf[16];
-  if (is_24h) {
-    snprintf(buf, sizeof(buf), "%02d:%02d", tm_loc.tm_hour, tm_loc.tm_min);
-  } else {
-    int h12 = tm_loc.tm_hour % 12;
-    if (h12 == 0) h12 = 12;
-    snprintf(buf, sizeof(buf), "%d:%02d %s", h12, tm_loc.tm_min, tm_loc.tm_hour >= 12 ? "PM" : "AM");
-  }
+  format_hhmm_clock_to(tm_loc.tm_hour, tm_loc.tm_min, is_24h, out, out_sz);
+}
+
+std::string format_iso_time(const std::string &iso_str, bool is_24h) {
+  char buf[24];
+  format_iso_time_to(iso_str, is_24h, buf, sizeof(buf));
   return std::string(buf);
+}
+
+std::string format_iso_time(const std::string &iso_str) {
+  return format_iso_time(iso_str, persisted_prefs().is_24h_format);
 }
 
 const char *wind_bearing_to_cardinal(float deg) {

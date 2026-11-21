@@ -177,11 +177,6 @@ void draw_cal_plus(esphome::display::Display &it, int cx, int cy, int r,
   ui::draw_icon_plus(it, cx, cy, r, col, shadow);
 }
 
-void draw_cal_minus(esphome::display::Display &it, int cx, int cy, int r,
-                    esphome::Color col, bool shadow, void *) {
-  ui::draw_icon_minus(it, cx, cy, r, col, shadow);
-}
-
 void draw_cal_mic(esphome::display::Display &it, int cx, int cy, int r,
                   esphome::Color col, bool shadow, void *) {
   ui::draw_icon_mic(it, cx, cy, r, col, shadow);
@@ -869,24 +864,12 @@ void render_detail_drilldown(esphome::display::Display &it,
                      TextAlign::CENTER, "No additional details");
   }
 
-  // Interactive Action Row (View Map & Delete Event) — exact outer-box stadium pills
+  // Interactive Action Row (Delete Event; View Map retired per 100% Zero-WAN Policy)
   const int btn_h = std::max(44, scale_y(44));
   const int row_safe = band_safe_span_for(
       btn_y, btn_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 18);
 
-  if (has_loc && can_del) {
-    const ui::ActionPillSpec specs[2] = {
-        {"View Map", WidgetId::CAL_VIEW_MAP_BTN, ctx.theme_primary, kChromeGlassTint, ctx.col_white, 0, nullptr},
-        {"Delete", WidgetId::CAL_DELETE_BTN, ctx.col_red, ui::chrome_danger_bg(), ctx.col_white, 0, nullptr},
-    };
-    ui::action_pill_row(it, btn_y, btn_h, kMaxContentColW, scale_x(184), scale_x(10), specs, 2, ctx.font_small, 18);
-  } else if (has_loc) {
-    const int btn_w = std::min({scale_x(216), row_safe, kMaxContentColW});
-    ui::action_pill_centered(it, cx, btn_w, btn_y, btn_h,
-                             ctx.theme_primary, kChromeGlassTint,
-                             "View Map", ctx.col_white, ctx.font_small,
-                             WidgetId::CAL_VIEW_MAP_BTN, kHitTap | kHitFocusSlot);
-  } else if (can_del) {
+  if (can_del) {
     const int btn_w = std::min({scale_x(216), row_safe, kMaxContentColW});
     ui::action_pill_centered(it, cx, btn_w, btn_y, btn_h,
                              ctx.col_red, ui::chrome_danger_bg(),
@@ -895,62 +878,6 @@ void render_detail_drilldown(esphome::display::Display &it,
   }
 
   render_back_button(it, cx, ctx.font_small, ly.back_y, "< Back");
-}
-
-void render_map_drilldown(esphome::display::Display &it,
-                          const UiFrameContext &ctx,
-                          const DeviceRuntimeState &rs) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
-  const auto &ly = layout();
-  const std::string &base_map_u = rs.cal.detail_map_url;
-  const bool has_map_img = !base_map_u.empty() &&
-                           ctx.camera_snapshot_art.valid() &&
-                           ctx.camera_snapshot_art.width > 16 &&
-                           ctx.camera_snapshot_art.height > 16 &&
-                           !rs.alert.loaded_camera_url.empty() &&
-                           rs.alert.loaded_camera_url.find(base_map_u) != std::string::npos;
-
-  if (has_map_img) {
-    render_album_art_canvas(it, ctx.camera_snapshot_art, ctx.cx, false, false, false, false);
-
-    const int map_hdr_w = std::min(scale_x(278), safe_span(scale_y(41), 16));
-    char z_prefix[16];
-    std::snprintf(z_prefix, sizeof(z_prefix), "z%d • ", rs.cal.map_zoom);
-    const std::string loc_hdr = fit_text_to_width_font(
-        std::string(z_prefix) + rs.cal.detail_map_location, map_hdr_w - 16, ctx.font_small);
-    render_card_box(it, ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
-                    kChromeGlassTint, ctx.theme_primary, kRadiusCardPx());
-    ui::shadow_print(it, ctx.cx, scale_y(41), ctx.font_small, ctx.col_white, TextAlign::CENTER, loc_hdr.c_str());
-    frame_hits().add_rect(ctx.cx - map_hdr_w / 2, scale_y(24), map_hdr_w, scale_y(34),
-                          WidgetId::CAL_TODAY_BTN, kHitTap | kHitFocusSlot);
-
-    const int z_by = ly.map_zoom_y;
-    const int z_lx = ly.map_zoom_left_x();
-    const int z_rx = ly.map_zoom_right_x();
-    const int z_r  = scale_s(21);
-    ui::icon_circle_button(it, z_lx, z_by, z_r, kChromeGlassTint,
-                           (rs.cal.map_zoom > 10) ? ctx.theme_primary : kChromeCardBorder,
-                           (rs.cal.map_zoom > 10) ? ctx.col_white : ctx.col_slate,
-                           draw_cal_minus, nullptr,
-                           WidgetId::CAL_ZOOM_OUT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                           0, scale_s(16));
-    ui::icon_circle_button(it, z_rx, z_by, z_r, kChromeGlassTint,
-                           (rs.cal.map_zoom < 18) ? ctx.theme_primary : kChromeCardBorder,
-                           (rs.cal.map_zoom < 18) ? ctx.col_white : ctx.col_slate,
-                           draw_cal_plus, nullptr,
-                           WidgetId::CAL_ZOOM_IN_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                           0, scale_s(16));
-
-    render_glass_card(it, ctx.cx - scale_x(64), ly.back_y - scale_y(16), scale_x(128), scale_y(32),
-                      scale_s(16), kChromeGlassTint, -1, GlassVariant::Clear, ctx.col_white);
-  } else {
-    render_page_header(it, ctx.cx, "EVENT MAP", ctx.font_small, ctx.col_white);
-    render_empty_state(it, ctx.cx, scale_y(222), "Loading OpenStreetMap...", ctx.font_small, ctx.theme_secondary);
-  }
-
-  render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Back", ctx.col_white);
 }
 
 void render_add_step1(esphome::display::Display &it,
@@ -1277,12 +1204,22 @@ void render_calendar_page(esphome::display::Display &it, const UiFrameContext &c
   const auto &prefs = persisted_prefs();
   const auto &store = calendar_window_store();
 
+  const bool time_ok = ctx.now.is_valid() && ctx.now.year >= 2020;
   const int32_t today_ymd = resolve_today_ymd(ctx);
-  if (rs.cal.selected_ymd <= 0) {
+  static bool s_anchored_valid_time = false;
+  if (!time_ok) {
+    s_anchored_valid_time = false;
+  }
+  if (rs.cal.selected_ymd <= 0 ||
+      (time_ok && !s_anchored_valid_time && rs.cal.selected_ymd == 20260101)) {
     rs.cal.selected_ymd = today_ymd;
   }
-  if (rs.cal.draft_ymd <= 0) {
-    rs.cal.draft_ymd = rs.cal.selected_ymd;
+  if (rs.cal.draft_ymd <= 0 ||
+      (time_ok && !s_anchored_valid_time && rs.cal.draft_ymd == 20260101)) {
+    rs.cal.draft_ymd = today_ymd;
+  }
+  if (time_ok) {
+    s_anchored_valid_time = true;
   }
   const int now_min = ctx.now.is_valid()
       ? (static_cast<int>(ctx.now.hour) * 60 + static_cast<int>(ctx.now.minute))
@@ -1296,10 +1233,6 @@ void render_calendar_page(esphome::display::Display &it, const UiFrameContext &c
   const int writable_cnt = collect_writable_calendar_sources(
       calendar_state().calendars_meta, writable_sources, nullptr);
 
-  if (rs.cal.drilldown == CalDrilldown::MAP) {
-    render_map_drilldown(it, ctx, rs);
-    return;
-  }
   if (rs.cal.drilldown == CalDrilldown::DETAIL) {
     render_detail_drilldown(it, ctx, rs, prefs, today_ymd, store, sources, source_cnt);
     return;

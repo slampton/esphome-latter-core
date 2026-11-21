@@ -148,8 +148,8 @@ inline void weak_link_note_disconnect(uint32_t now_ms, WeakLinkGate &g = weak_li
 
 inline bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g = weak_link_gate()) {
   if (g.last_sample_ms != 0 && now_ms - g.last_sample_ms < kWeakLinkSampleMs) return g.weak;
-  g.last_sample_ms = (now_ms == 0U) ? 1U : now_ms;
   if (rssi <= -127 || rssi >= 0) return g.weak;
+  g.last_sample_ms = (now_ms == 0U) ? 1U : now_ms;
   const float r = static_cast<float>(rssi);
   g.ema = g.have ? g.ema + kWeakLinkEmaAlpha * (r - g.ema) : r;
   g.have = true;
@@ -281,6 +281,61 @@ inline std::string link_report_log_line(uint32_t now_ms, const char *reset_reaso
     ESP_LOGI("PROF", "[PROF:LINK] %s", line.c_str());
   }
   return line;
+}
+
+inline std::string link_report_json(uint32_t now_ms, const char *reset_reason, bool hibernating = false) {
+  const LinkReport &r = link_report();
+  const uint32_t down_ms = (r.ha_clients == 0) ? now_ms - r.ha_gap_start_ms : 0U;
+  const uint32_t gap_ms = (down_ms > r.ha_gap_max_ms) ? down_ms : r.ha_gap_max_ms;
+  const long rssi_avg = (r.rssi_samples > 0)
+                            ? static_cast<long>(r.rssi_sum / static_cast<int32_t>(r.rssi_samples))
+                            : 0L;
+  const long rssi_min = (r.rssi_samples > 0) ? static_cast<long>(r.rssi_min) : 0L;
+  const uint32_t wlk = link_report_permille(weak_link_ms(now_ms), now_ms);
+  const FlashWriteStats &fw = g_flash_write_stats;
+  char rssi_fields[64];
+  if (r.rssi_samples > 0) {
+    std::snprintf(rssi_fields, sizeof(rssi_fields), "\"rssi_avg\":%ld,\"rssi_min\":%ld,", rssi_avg, rssi_min);
+  } else {
+    std::snprintf(rssi_fields, sizeof(rssi_fields), "\"rssi_avg\":null,\"rssi_min\":null,");
+  }
+  char safe_rst[36]{};
+  if (reset_reason != nullptr) {
+    size_t out_i = 0;
+    for (size_t i = 0; reset_reason[i] != '\0' && out_i + 1U < sizeof(safe_rst); ++i) {
+      const char ch = reset_reason[i];
+      if (ch != '"' && ch != '\\' && static_cast<unsigned char>(ch) >= 0x20U) {
+        safe_rst[out_i++] = ch;
+      }
+    }
+    safe_rst[out_i] = '\0';
+  }
+  char buf[384];
+  const int len = std::snprintf(
+      buf, sizeof(buf),
+      "{\"state\":\"%s\",\"up_s\":%lu,\"rst\":\"%s\",\"bto\":%lu,\"disc\":%lu,\"rsn\":%lu,"
+      "%s\"rssi_n\":%lu,\"wlk_pm\":%lu,\"api\":%lu,\"ha\":%lu,\"gap_s\":%lu,\"down_s\":%lu,"
+      "\"nvs_w\":%lu,\"nvs_e\":%lu,\"nvs_max_ms\":%lu}",
+      hibernating ? "hibernating" : "online",
+      static_cast<unsigned long>(now_ms / 1000U),
+      safe_rst,
+      static_cast<unsigned long>(r.beacon_timeouts.load(std::memory_order_relaxed)),
+      static_cast<unsigned long>(r.disconnects.load(std::memory_order_relaxed)),
+      static_cast<unsigned long>(r.last_reason.load(std::memory_order_relaxed)),
+      rssi_fields,
+      static_cast<unsigned long>(r.rssi_samples),
+      static_cast<unsigned long>(wlk),
+      static_cast<unsigned long>(r.api_connects),
+      static_cast<unsigned long>(r.ha_connects),
+      static_cast<unsigned long>(gap_ms / 1000U),
+      static_cast<unsigned long>(down_ms / 1000U),
+      static_cast<unsigned long>(fw.nvs_writes.load(std::memory_order_relaxed)),
+      static_cast<unsigned long>(fw.erases.load(std::memory_order_relaxed)),
+      static_cast<unsigned long>((fw.nvs_max_us.load(std::memory_order_relaxed) + 999U) / 1000U));
+  if (len < 0 || static_cast<size_t>(len) >= sizeof(buf)) {
+    return hibernating ? "{\"state\":\"hibernating\"}" : "{\"state\":\"online\"}";
+  }
+  return std::string(buf, static_cast<size_t>(len));
 }
 
 }  // namespace latter_ui

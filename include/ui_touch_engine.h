@@ -386,7 +386,6 @@ enum class UiHostCmd : uint8_t {
   TRIGGER_FIRMWARE_UPDATE,
   APPLY_THEME_PRESET,
   MENU_SCROLL_TRANSITION,
-  FETCH_CALENDAR_MAP_SNAPSHOT,
   FETCH_ON_DEMAND_CAMERA,
   RELEASE_CAMERA_ART,
   SYNC_CAMERA_STREAM,
@@ -445,6 +444,7 @@ enum class UiSwitchId : uint8_t {
   VA_WAKE_SCREEN,
   SCREENSAVER_PHOTO_CLOCK,
   BEDTIME_MODE,
+  DO_NOT_DISTURB,
 };
 
 enum class UiNumberId : uint8_t {
@@ -530,15 +530,20 @@ class TouchGestureEngine {
   bool music_vol_dragging_{false};
   bool music_scrub_dragging_{false};
   bool music_scroll_dragging_{false};
+  bool wheel_drag_dirty_{false};
+  bool pending_doorbell_unlock_{false};
   int music_scroll_last_y_{0};
+  std::string pending_pin_feedback_{};
 
   bool try_commit_long_press_(uint32_t now_ms);
   bool try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms);
   bool handle_pin_pad_tap(int tx, int ty, uint32_t now_ms);
   bool gate_or_dispatch_area_action(const std::string &domain_or_entity,
                                     const std::string &action, int level,
-                                    const char *pin_prompt, uint32_t now_ms);
-  bool gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms);
+                                    const char *pin_prompt, uint32_t now_ms,
+                                    std::string_view success_feedback = "");
+  bool gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms,
+                                     std::string_view success_feedback = "");
   bool gate_or_dispatch_doorbell_unlock(uint32_t now_ms);
 };
 

@@ -5,5 +5,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 .esphome/
+.ci_*.yaml
+*.obj
+.coverage
 .DS_Store
 Thumbs.db

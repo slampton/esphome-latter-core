@@ -57,6 +57,8 @@ bool AudioSessionController::should_auto_open_music_page(int current_gui_page,
                                                          bool alert_or_ringing,
                                                          uint32_t now_ms,
                                                          bool ota_or_hibernating) noexcept {
+  if (alert_or_ringing || ota_or_hibernating) return false;
+
   const MusicPlayIntent eff_intent = active_play_intent(now_ms);
   intent_set_ms_ = 0U;
   play_intent_ = MusicPlayIntent::ExternalOrUserExplicit;
@@ -65,7 +67,6 @@ bool AudioSessionController::should_auto_open_music_page(int current_gui_page,
   session_active_playback_ = true;
   phase_ = AudioSessionPhase::MusicPlaying;
 
-  if (alert_or_ringing || ota_or_hibernating) return false;
   if (!home_screen_enabled && start_screen_page != 2) return false;
   if (eff_intent != MusicPlayIntent::ExternalOrUserExplicit) return false;
   if (was_continuous_session && current_gui_page != 2) return false;
@@ -237,7 +238,8 @@ AudioArbitratorActions AudioPathArbitrator::step(uint32_t now_ms,
   if (echo_stage_ == EchoGateStage::QuietSpeaker) {
     const uint32_t elapsed = static_cast<uint32_t>(now_ms - echo_stage_start_ms_);
     const uint32_t last_loud = echo_last_loud_ms().load(std::memory_order_relaxed);
-    const uint32_t quiet_ms = (now_ms >= last_loud) ? (now_ms - last_loud) : 0U;
+    const uint32_t raw_quiet = static_cast<uint32_t>(now_ms - last_loud);
+    const uint32_t quiet_ms = (raw_quiet < 0x80000000U) ? raw_quiet : 0U;
     if (!in.phys_spk_has_buffered ||
         quiet_ms > kEchoQuietSilenceGapMs ||
         elapsed >= kEchoQuietSpeakerTimeoutMs) {
@@ -297,6 +299,7 @@ AudioPathArbitrator &audio_arbitrator() noexcept {
 // ==============================================================================
 
 void IntercomSessionController::reset() noexcept {
+  latter_rpc::secure_zero_string(runtime_state().intercom.cam_code);
   const HostStopHwFn saved_stop = host_stop_hw_;
   *this = IntercomSessionController{};
   host_stop_hw_ = saved_stop;
@@ -312,8 +315,8 @@ void IntercomSessionController::emit_current_cmd() {
           : resolve_active_carousel_camera_id(ac.cameras_summary, ac.camera_snapshot_url);
   latter_actions::emit_doorbell_intercom(
       ic.cam_action, cam_ent, cam_carousel_idx(),
-      ic.cam_message, ic.cam_noise_reduction, ic.cam_code);
-  ic.cam_code.clear();
+      ic.cam_message, ic.cam_noise_reduction);
+  latter_rpc::secure_zero_string(ic.cam_code);
 }
 
 void IntercomSessionController::start_call(uint32_t now_ms) {
@@ -609,7 +612,7 @@ bool media_play_slot(int slot_1based, uint32_t now_ms) {
   auto &rs = runtime_state();
   auto &m = rs.music;
   auto &ms = media_state();
-  const int idx = std::clamp(slot_1based - 1, 0, 4);
+  const int idx = std::clamp(slot_1based - 1, 0, LATTER_SLOT_COUNT - 1);
   const auto &item = rs.music_slots()[idx];
   m.selected_slot_name = item.name;
   m.selected_slot_id = item.id;

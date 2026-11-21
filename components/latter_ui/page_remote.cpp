@@ -103,7 +103,9 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
     const int p_r = scale_s(18);
     const int p_gap = scale_x(8);
 
-    const int y0_pwr = layout().slot5_y(0);
+    const int bounce_y = edge_bounce().offset_px(
+        PageId::REMOTE, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
+    const int y0_pwr = layout().slot5_y(0) + bounce_y;
     render_card_box(it, row_x0, y0_pwr - row_h / 2, full_w, row_h, card_bg, col_red, kRadiusCardPx());
     ui::shadow_print(it, cx, y0_pwr, font_small, col_white, TextAlign::CENTER, "Toggle Power");
     frame_hits().add_centered_rect(cx, y0_pwr, full_w, row_h,
@@ -111,8 +113,6 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
 
     const int start_idx = cur_page * 4;
     const int vis_count = std::min(4, std::max(0, valid_count - start_idx));
-    const int bounce_y = edge_bounce().offset_px(
-        PageId::REMOTE, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     for (int row = 0; row < vis_count; row++) {
       const int s_idx = valid_slots[start_idx + row];
       const int y_mid = layout().slot5_y(row + 1) + bounce_y;
@@ -171,8 +171,11 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   for (char &c : upper_title) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
   std::string disp_title = fit_text_to_width_font(upper_title, safe_span(layout().hdr_y, 20), font_small);
   render_page_header(it, cx, disp_title.c_str(), font_small, col_white);
-  frame_hits().add_centered_rect(cx, layout().hdr_y, scale_x(260), scale_y(36),
-                                 WidgetId::REMOTE_SLOT_PILL, kHitTap | kHitFocusSlot);
+  const int slot_hit_w = std::max(scale_x(260), layout().min_hit_px());
+  const int slot_hit_h = scale_y(36);
+  const int slot_hit_pad = std::max(0, (layout().min_hit_px() - slot_hit_h + 1) / 2);
+  frame_hits().add_centered_rect(cx, layout().hdr_y, slot_hit_w, slot_hit_h,
+                                 WidgetId::REMOTE_SLOT_PILL, kHitTap | kHitFocusSlot, 0, slot_hit_pad);
   if (is_fb) {
     std::string fit_fb = fit_text_to_width_font(remote_action_feedback, safe_span(layout().sub_hdr_y, 20), font_small);
     render_sub_header(it, cx, fit_fb.c_str(), font_small, theme_secondary);

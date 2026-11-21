@@ -53,9 +53,9 @@ constexpr int kBattCapacityMah = LATTER_BATTERY_MAH;
 
 constexpr int batt_clamp_int(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
-// AXP2101 constant-charge current (REG62 bits 4:0): 25 mA steps up to 200 mA, then 100 mA steps to 1000 mA.
+// AXP2101 constant-charge current (REG62 bits 4:0): clamped >= 100 mA, 25 mA steps up to 200 mA, then 100 mA steps to 1000 mA.
 constexpr int axp2101_icc_floor_ma(int ma) {
-  return ma < 25 ? 25 : (ma <= 200 ? (ma / 25) * 25 : (ma >= 1000 ? 1000 : 200 + ((ma - 200) / 100) * 100));
+  return ma < 100 ? 100 : (ma <= 200 ? (ma / 25) * 25 : (ma >= 1000 ? 1000 : 200 + ((ma - 200) / 100) * 100));
 }
 constexpr uint8_t axp2101_icc_code(int ma) {
   return static_cast<uint8_t>(ma <= 200 ? ma / 25 : 8 + (ma - 200) / 100);
@@ -322,12 +322,12 @@ struct BatteryModel {
   bool settling(uint32_t now_ms) const { return static_cast<int32_t>(settle_until_ms - now_ms) > 0; }
 
   bool update(int vbat_mv, bool batt, ChargePhase ph, BattLoad ld, uint32_t now_ms,
-              int hw_gauge_pct = -1, int capacity_mah = kBattCapacityMah) {
+              int hw_gauge_pct = -1, int capacity_mah = kBattCapacityMah, int active_chg_ma = -1) {
     (void)hw_gauge_pct;  // AXP2101 uncalibrated OTP gauge is diagnostic telemetry only (no step cliff)
     if (now_ms == 0) now_ms = 1;
+    if (vbat_mv < kVbatMinValidMv || vbat_mv > kVbatMaxValidMv) return false;
     const uint32_t dt_ms = has_sample ? now_ms - last_sample_ms : 0U;
     last_sample_ms = now_ms;
-    if (vbat_mv < kVbatMinValidMv || vbat_mv > kVbatMaxValidMv) return false;
     const bool first = !has_sample;
     const bool plug_change = has_sample && batt != on_battery;
     const bool was_full = full_latched;
@@ -338,7 +338,7 @@ struct BatteryModel {
     load = ld;
 
     const int path_mohm = kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
-    const int chg_ma = charge_ma_for_capacity(capacity_mah);
+    const int chg_ma = (active_chg_ma > 0) ? active_chg_ma : charge_ma_for_capacity(capacity_mah);
     const int pre_ma = precharge_ma_for_capacity(capacity_mah);
 
     int comp_mv = 0;
@@ -346,6 +346,13 @@ struct BatteryModel {
       comp_mv = batt_load_ma(ld) * path_mohm / 1000;
     } else if (ph == ChargePhase::CC) {
       comp_mv = -(chg_ma * path_mohm / 1000);
+    } else if (ph == ChargePhase::CV && !fault) {
+      const float cv_frac = (cv_start_ms != 0U && now_ms > cv_start_ms)
+                                ? std::min(1.0f, static_cast<float>(now_ms - cv_start_ms) /
+                                                     static_cast<float>(kCvNominalMs))
+                                : 0.0f;
+      comp_mv = -static_cast<int>(
+          std::lround(static_cast<float>(chg_ma * path_mohm) * (1.0f - cv_frac) / 1000.0f));
     } else if (ph == ChargePhase::PRECHARGE || ph == ChargePhase::TRICKLE) {
       comp_mv = -(pre_ma * path_mohm / 1000);
     }
@@ -412,18 +419,24 @@ struct BatteryModel {
         cv_start_ms = 0;
         const float s = soc_model > kCvRampCeilPct ? kCvRampCeilPct : soc_model;
         if (first || settle || std::isnan(soc_display) || s > soc_display) soc_display = s;
+      } else if (fault) {
+        cv_start_ms = 0;
+        // Open/missing cell fault on VBUS: hold last valid battery SoC (or NAN if never sampled on cell)
+        // instead of reporting ~100% from the floating 4.20 V charger rail.
       } else {
         cv_start_ms = 0;
         soc_display = soc_model;
       }
     }
-    if (soc_display < 0.0f) soc_display = 0.0f;
-    if (soc_display > 100.0f) soc_display = 100.0f;
+    if (!std::isnan(soc_display)) {
+      if (soc_display < 0.0f) soc_display = 0.0f;
+      if (soc_display > 100.0f) soc_display = 100.0f;
+    }
 
-    if (batt && !low && soc_display <= kLowPct) {
+    if (batt && !std::isnan(soc_display) && !low && soc_display <= kLowPct) {
       low = true;
       low_notice_pending = true;
-    } else if (low && (!batt || soc_display >= kLowClearPct)) {
+    } else if (low && (!batt || (!std::isnan(soc_display) && soc_display >= kLowClearPct))) {
       low = false;
       low_notice_pending = false;
     }

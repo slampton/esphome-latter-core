@@ -109,7 +109,7 @@ struct UiLayout {
   constexpr int area_card3_y(int idx_0_to_2) const { return base.area_card3_y(idx_0_to_2); }
   constexpr int area_card_left() const { return cx - (area_card3_w / 2); }
   constexpr int area_card_right() const { return cx + (area_card3_w / 2); }
-  constexpr int area_card_div_x() const { return area_card_left() + scale_x(64); }
+  constexpr int area_card_div_x() const { return area_card_left() + std::max(scale_x(64), min_hit_px()); }
   constexpr int area_card_orb_x() const { return area_card_right() - scale_x(28); }
   constexpr int hit_area_card3(int tx, int ty) const {
     const int hw = (area_card3_w / 2) + 10;
@@ -265,21 +265,8 @@ struct UiLayout {
   constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - scale_x(22)); }
   constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : scale_x(42)); }
 
-  // 9. Single-Source Calendar Map Floating Zoom Button Geometry
-  int map_zoom_y = scale_y(233);
-  constexpr int map_zoom_left_x() const { return is_round ? 44 : scale_x(34); }
-  constexpr int map_zoom_right_x() const { return w - map_zoom_left_x(); }
-  constexpr bool hit_map_zoom_out(int tx, int ty) const {
-    const int r = scale_s(45);
-    return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx <= map_zoom_left_x() + r);
-  }
-  constexpr bool hit_map_zoom_in(int tx, int ty) const {
-    const int r = scale_s(45);
-    return (ty >= map_zoom_y - r && ty <= map_zoom_y + r && tx >= map_zoom_right_x() - r);
-  }
-
-  // 10. Physical kinematic touch thresholds in millimetres (docs/device-ui-design.md D-049),
-  //     converted with LATTER_PANEL_PPI so tap_max() (1.65 mm) < swipe_min() (2.35 mm) across all panels.
+  // 9. Physical kinematic touch thresholds in millimetres (docs/device-ui-design.md D-049),
+  //    converted with LATTER_PANEL_PPI so tap_max() (1.65 mm) < swipe_min() (2.35 mm) across all panels.
   constexpr int drag_start() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).slider_start_px; }
   constexpr int swipe_flick() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
   constexpr int flick_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
@@ -294,7 +281,9 @@ struct UiLayout {
   constexpr int canvas_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
   constexpr int fast_pan() const { return mm_to_px(10.5f); }
   constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }                      // 16 px band below in-app content
-  constexpr int top_edge_zone_y() const { return is_round ? scale_min(54) : mm_to_px(5.2f); }      // 54 px: pull-down Quick Actions starts here
+  constexpr int top_edge_zone_y() const {
+    return compute_top_edge_zone_y(w, h, is_round, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+  }
   constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
   constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
   constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }

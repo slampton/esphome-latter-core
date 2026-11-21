@@ -144,6 +144,49 @@ def scan_board_yaml(board_id: str) -> dict[str, Any]:
     }
 
 
+def _parse_top_level_substitutions(text: str) -> dict[str, str]:
+    subs: dict[str, str] = {}
+    in_subs = False
+    for raw in strip_comments(text).splitlines():
+        if not raw.strip():
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        if indent == 0:
+            in_subs = raw.strip() == "substitutions:"
+            continue
+        if in_subs and ":" in raw:
+            key, val = raw.strip().split(":", 1)
+            subs[key.strip()] = val.strip().strip('"').strip("'")
+    return subs
+
+
+def _resolve_api_reboot_timeout(
+    base_text: str, board_text: str, dev_text: str
+) -> str | None:
+    subs: dict[str, str] = {}
+    for src in (base_text, board_text, dev_text):
+        subs.update(_parse_top_level_substitutions(src))
+
+    raw_val: str | None = None
+    for src in (base_text, board_text, dev_text):
+        in_api = False
+        for ln in strip_comments(src).splitlines():
+            if not ln.strip():
+                continue
+            indent = len(ln) - len(ln.lstrip(" "))
+            if indent == 0:
+                in_api = ln.strip() == "api:"
+                continue
+            if in_api and indent == 2 and ln.lstrip().startswith("reboot_timeout:"):
+                raw_val = ln.split(":", 1)[1].strip().strip('"').strip("'")
+    if raw_val is None:
+        return None
+    m_sub = re.fullmatch(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", raw_val)
+    if m_sub:
+        return subs.get(m_sub.group(1))
+    return raw_val
+
+
 def device_for_board(board_id: str) -> Path | None:
     for dev in sorted(DEVICES_DIR.glob("*.yaml")):
         m = BOARD_INCLUDE_RE.search(dev.read_text(encoding="utf-8"))
@@ -393,15 +436,18 @@ def check_board(
                 err(
                     f"LATTER_BLE_MINOR={scan['flags'].get('LATTER_BLE_MINOR')} does not equal facts ble_minor"
                 )
-        if str(
-            facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY")
-        ) == "0" and "reboot_timeout: 0s" not in (dev_text + scan["text"]):
+        if str(facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY")) == "0":
             # Mobile devices must never reboot when Home Assistant is unreachable.
             base_mod = (REPO / "modules" / "base.yaml").read_text(
                 encoding="utf-8"
             )
-            if "${api_reboot_timeout}" not in base_mod:
-                err("mobile board without reboot_timeout: 0s")
+            eff_reboot = _resolve_api_reboot_timeout(
+                base_mod, scan["text"], dev_text
+            )
+            if eff_reboot != "0s":
+                err(
+                    f"mobile board api.reboot_timeout must resolve to '0s', got {eff_reboot!r}"
+                )
     release_yml = (REPO / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )

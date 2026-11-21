@@ -32,7 +32,7 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.11.0
   project:
-    name: "slampton.wrist-assist-206"
+    name: "latter.wrist-assist-206"
     version: "${version}"
 
 update:

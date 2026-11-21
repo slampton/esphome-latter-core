@@ -875,6 +875,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     qa_sig = (qa_sig ^ static_cast<uint32_t>(bri.kind)) * 16777619U;
     for (unsigned char c : ac_qa.area_ambient_light) qa_sig = (qa_sig ^ c) * 16777619U;
     qa_sig = (qa_sig ^ (prefs.bedtime_active ? 1U : 0U)) * 16777619U;
+    qa_sig = (qa_sig ^ (prefs.do_not_disturb ? 1U : 0U)) * 16777619U;
     qa_sig = (qa_sig ^ static_cast<uint32_t>(prefs.screensaver_mode)) * 16777619U;
     if (ui_focus_active(ctx.now_ms)) {
       qa_sig = (qa_sig ^ (0x80U | static_cast<uint32_t>(ui_focus_index() & 0x3F))) * 16777619U;
@@ -944,13 +945,16 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (!rs.stopwatch.running && rs.stopwatch.elapsed_ms > 0U) {
       act_mask |= (1U << 12);
     }
+    const int snoozed_slot = (rs.alarms.snooze_until > 0) ? snoozed_alarm_slot() : -1;
     if (rs.alarms.snooze_until > 0) {
       act_mask |= (1U << 3);
-    } else {
+    }
+    if (rs.alarms.snooze_until == 0 || snoozed_slot >= 1) {
       const int cur_h = ctx.now.is_valid() ? ctx.now.hour : -1;
       const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
       const int cur_dow = ctx.now.is_valid() ? ctx.now.day_of_week : -1;
       for (int ai = 0; ai < 3; ++ai) {
+        if (rs.alarms.snooze_until > 0 && (ai + 1) == snoozed_slot) continue;
         const auto &ap = prefs.alarms[ai];
         const int mins_u = next_alarm_minutes_until(
             ap.hour, ap.minute, ap.enabled, ap.recurrence, cur_h, cur_m, cur_dow);
@@ -1061,10 +1065,6 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_time_field)) * 16777619U;
     cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_cal_idx)) * 16777619U;
     cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.draft_rrule_idx)) * 16777619U;
-    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.map_zoom)) * 16777619U;
-    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.map_pan_x + 4096)) * 16777619U;
-    cl_sig = (cl_sig ^ static_cast<uint32_t>(rs.cal.map_pan_y + 4096)) * 16777619U;
-    cl_sig = (cl_sig ^ static_cast<uint32_t>(ctx.camera_snapshot_art.width)) * 16777619U;
     cl_sig = (cl_sig ^ static_cast<uint32_t>(prefs.calendar_lookahead_days)) * 16777619U;
     cl_sig = (cl_sig ^ static_cast<uint32_t>(prefs.calendar_week_start)) * 16777619U;
     const bool fb_vis = !rs.cal.feedback_text.empty() &&
@@ -1159,6 +1159,12 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
       }
     }
     sig ^= (mu_sig | 1U);
+  } else if (rs.nav.gui_page == PageId::SYSTEM) {
+    uint32_t sy_sig = 2166136261U;
+    sy_sig = (sy_sig ^ (prefs.bedtime_active ? 1U : 0U)) * 16777619U;
+    sy_sig = (sy_sig ^ (prefs.do_not_disturb ? 2U : 0U)) * 16777619U;
+    sy_sig = (sy_sig ^ device_prefs_state().rev ^ prefs.prefs_seq) * 16777619U;
+    sig ^= (sy_sig | 1U);
   }
   return sig;
 }

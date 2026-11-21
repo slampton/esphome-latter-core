@@ -60,6 +60,7 @@ namespace WidgetId {
   static constexpr uint16_t QUICK_HIBERNATE_BTN   = 73;
   static constexpr uint16_t QUICK_SCREEN_OFF_BTN  = 74;
   static constexpr uint16_t QUICK_SCREENSAVER_BTN = 75;
+  static constexpr uint16_t QUICK_DND_TOGGLE      = 76;
 
   static constexpr uint16_t CONFIRM_CANCEL     = 100;
   static constexpr uint16_t CONFIRM_ACCEPT     = 101;
@@ -508,6 +509,33 @@ inline constexpr int safe_span_for(int y, int screen_w, int screen_h, bool is_ro
   return (half_w > 0) ? (2 * half_w) : 0;
 }
 
+inline constexpr bool is_inside_bezel_for(int x, int y, int screen_w, int screen_h,
+                                          bool is_round, bool is_wearable = false,
+                                          int inset = 5, int corner_r = -1) noexcept {
+  if (x < inset || x >= screen_w - inset || y < inset || y >= screen_h - inset) return false;
+  if (is_round) {
+    const int min_d = (screen_w < screen_h) ? screen_w : screen_h;
+    const int r = (min_d / 2) - inset;
+    if (r <= 0) return false;
+    const int dx = x - (screen_w / 2);
+    const int dy = y - (screen_h / 2);
+    return (dx * dx + dy * dy) <= (r * r);
+  }
+  const int cr = (corner_r >= 0) ? corner_r : default_corner_r_for(screen_w, false, is_wearable);
+  if (cr <= inset) return true;
+  int dx = 0;
+  if (x < cr) dx = cr - x;
+  else if (x >= screen_w - cr) dx = x - (screen_w - 1 - cr);
+  int dy = 0;
+  if (y < cr) dy = cr - y;
+  else if (y >= screen_h - cr) dy = y - (screen_h - 1 - cr);
+  if (dx > 0 && dy > 0) {
+    const int r_eff = cr - inset;
+    return (dx * dx + dy * dy) <= (r_eff * r_eff);
+  }
+  return true;
+}
+
 struct UiPanelLayout {
   int w{466};
   int h{466};
@@ -593,10 +621,11 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.slot5_stride = (h > 520) ? ((h * 63) / 466) : 63;
   L.slot5_h = (h > 520) ? ((h * 44) / 466) : 44;
   L.slot5_cy = (h > 520) ? L.cy : 236;
-  L.area_card3_stride = (h > 520) ? ((h * 76) / 466) : 76;
-  L.area_card3_h = (h > 520) ? ((h * 64) / 466) : 64;
+  const bool hi_ppi_compact_rect = (!is_round && h >= 480 && h <= 520 && ppi >= 280);
+  L.area_card3_stride = (h > 520) ? ((h * 76) / 466) : (hi_ppi_compact_rect ? (is_wearable ? 92 : 90) : 76);
+  L.area_card3_h = (h > 520) ? ((h * 64) / 466) : (hi_ppi_compact_rect ? 76 : 64);
   L.area_card3_w = (w < 380) ? (w - 68) : ((w > 520) ? std::min(480, (w * 316) / 466) : 316);
-  L.area_card3_cy = (h > 520) ? ((h * 208) / 466) : 208;
+  L.area_card3_cy = (h > 520) ? ((h * 208) / 466) : (hi_ppi_compact_rect ? (is_wearable ? 230 : 222) : 208);
   L.tool_card3_stride = (h > 520) ? ((h * 100) / 466) : 100;
   L.tool_card3_h = (h > 520) ? ((h * 74) / 466) : 74;
   L.tool_card3_w = (w < 380) ? (w - 36) : ((w > 520) ? std::min(480, (w * 316) / 466) : 316);
@@ -614,6 +643,20 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   const int min_dock_hit = mm_to_px_for(3.6f, ppi);
   L.dock_hit_r = ((L.dock_r + 16) > min_dock_hit) ? (L.dock_r + 16) : min_dock_hit;
   return L;
+}
+
+inline constexpr int compute_top_edge_zone_y(int w, int h, bool is_round,
+                                             bool is_wearable, int ppi) noexcept {
+  const int min_d = (w < h) ? w : h;
+  if (is_round) return scale_min_for(54, min_d);
+  const auto L = compute_panel_layout(w, h, is_round, is_wearable, ppi);
+  return std::min(mm_to_px_for(5.2f, ppi), std::max(16, L.sub_hdr_y - 8));
+}
+
+inline constexpr int compute_area_card_div_offset(int w, int h, int ppi) noexcept {
+  const int min_d = (w < h) ? w : h;
+  const int min_hit = std::max(scale_s_for(36, min_d), mm_to_px_for(7.0f, ppi));
+  return std::max(scale_x_for(64, w), min_hit);
 }
 
 // ==============================================================================

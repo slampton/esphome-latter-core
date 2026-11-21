@@ -22,6 +22,7 @@ static const char *const TAG = "latter_beacon";
 
 static constexpr uint32_t STEP_TIMEOUT_MS = 1000;
 static constexpr uint32_t RETRY_AFTER_FAILURE_MS = 60000;
+static constexpr uint32_t RETRY_MAX_BACKOFF_MS = 300000;
 static constexpr uint8_t CONFIG_STEP_COUNT = 3;  // reset, advertising parameters, advertising data
 
 static constexpr uint16_t HCI_OP_RESET = 0x0C03;
@@ -219,7 +220,9 @@ bool LatterBeacon::set_uuid_hex(std::string_view uuid_str) {
   return true;
 }
 
-bool LatterBeacon::is_failed() const { return this->failed_ && millis() < this->retry_after_ms_; }
+bool LatterBeacon::is_failed() const {
+  return this->failed_ && static_cast<int32_t>(millis() - this->retry_after_ms_) < 0;
+}
 
 bool LatterBeacon::send_adv_enable_(bool enable, uint32_t now_ms) {
   const uint8_t pkt[] = {0x01, 0x0A, 0x20, 0x01, static_cast<uint8_t>(enable ? 0x01 : 0x00)};
@@ -230,6 +233,7 @@ bool LatterBeacon::send_adv_enable_(bool enable, uint32_t now_ms) {
   this->cmd_in_flight_ = true;
   this->cmd_opcode_ = HCI_OP_LE_SET_ADV_ENABLE;
   this->cmd_sent_ms_ = now_ms;
+  this->step_wait_ms_ = now_ms;
   return true;
 }
 
@@ -242,6 +246,7 @@ bool LatterBeacon::harvest_cmd_complete_() {
   }
   this->cmd_in_flight_ = false;
   this->cmd_opcode_ = 0;
+  this->step_wait_ms_ = millis();
 
   // HCI 0x0C (Command Disallowed) on LE_Set_Adv_Enable means advertising was already in that state.
   const bool benign_disallowed = (opcode == HCI_OP_LE_SET_ADV_ENABLE && status == 0x0C);
@@ -255,6 +260,8 @@ bool LatterBeacon::harvest_cmd_complete_() {
     if (this->step_ >= CONFIG_STEP_COUNT) {
       this->configured_ = true;
     }
+  } else if (opcode == HCI_OP_LE_SET_ADV_ENABLE && this->active_ && this->adv_enabled_) {
+    this->fail_streak_ = 0;
   }
   return true;
 }
@@ -263,12 +270,14 @@ void LatterBeacon::enable() {
   if (this->active_ || this->is_failed())
     return;
   this->failed_ = false;
+  const uint32_t now = millis();
 
   // Warm resume path (<1 ms): controller / esp_hosted pipe is already up from a prior pause().
   if (this->transport_ready_) {
     const bool was_paused = this->paused_;
     this->paused_ = false;
     this->active_ = true;
+    this->step_wait_ms_ = now;
     if (this->cmd_in_flight_ && s_cmd_complete.load(std::memory_order_acquire)) {
       this->harvest_cmd_complete_();
       if (!this->transport_ready_)
@@ -277,7 +286,11 @@ void LatterBeacon::enable() {
     if (was_paused && !this->cmd_in_flight_ && this->configured_ && !this->adv_enabled_ &&
         this->transport_can_send_()) {
       // Skip transport_up_(), HCI_Reset, Set_Adv_Params, and Set_Adv_Data: send ONLY LE_Set_Adv_Enable(0x01).
-      this->send_adv_enable_(true, millis());
+      if (!this->send_adv_enable_(true, now)) {
+        this->stop_(nullptr);
+        this->fail_("LE_Set_Adv_Enable(1) send", -1);
+        return;
+      }
     }
     this->enable_loop();
     return;
@@ -297,6 +310,7 @@ void LatterBeacon::enable() {
   this->step_ = 0;
   this->cmd_in_flight_ = false;
   this->cmd_opcode_ = 0;
+  this->step_wait_ms_ = millis();
   this->enable_loop();
 }
 
@@ -305,6 +319,8 @@ void LatterBeacon::pause() {
     return;
   this->paused_ = true;
   this->active_ = false;
+  const uint32_t now = millis();
+  this->step_wait_ms_ = now;
 
   if (this->cmd_in_flight_ && s_cmd_complete.load(std::memory_order_acquire)) {
     this->harvest_cmd_complete_();
@@ -322,7 +338,11 @@ void LatterBeacon::pause() {
       return;
     }
     if (this->transport_can_send_()) {
-      this->send_adv_enable_(false, millis());
+      if (!this->send_adv_enable_(false, now)) {
+        this->stop_(nullptr);
+        this->fail_("LE_Set_Adv_Enable(0) send", -1);
+        return;
+      }
     }
   }
   this->enable_loop();
@@ -331,9 +351,26 @@ void LatterBeacon::pause() {
 void LatterBeacon::disable() {
   if (!this->transport_ready_ && !this->active_ && !this->paused_)
     return;
-  if (this->transport_ready_ && this->adv_enabled_ && this->transport_can_send_()) {
-    const uint8_t pkt[] = {0x01, 0x0A, 0x20, 0x01, 0x00};
-    this->transport_send_(pkt, sizeof(pkt));
+  if (this->transport_ready_) {
+    const uint32_t wait_in_flight_ms = millis();
+    while (this->cmd_in_flight_ && !s_cmd_complete.load(std::memory_order_acquire) &&
+           static_cast<uint32_t>(millis() - wait_in_flight_ms) < 20U) {
+      delay(1);
+    }
+    if (this->cmd_in_flight_ && s_cmd_complete.load(std::memory_order_acquire)) {
+      (void)this->harvest_cmd_complete_();
+    }
+    if (this->transport_ready_ && this->adv_enabled_ && this->transport_can_send_()) {
+      s_cmd_complete.store(false, std::memory_order_relaxed);
+      const uint8_t pkt[] = {0x01, 0x0A, 0x20, 0x01, 0x00};
+      if (this->transport_send_(pkt, sizeof(pkt))) {
+        const uint32_t wait_stop_ms = millis();
+        while (!s_cmd_complete.load(std::memory_order_acquire) &&
+               static_cast<uint32_t>(millis() - wait_stop_ms) < 20U) {
+          delay(1);
+        }
+      }
+    }
   }
   this->stop_("Advertising stopped, controller released");
 }
@@ -351,6 +388,7 @@ void LatterBeacon::stop_(const char *log_what) {
   this->step_ = 0;
   this->cmd_in_flight_ = false;
   this->cmd_opcode_ = 0;
+  this->step_wait_ms_ = 0;
   s_cmd_complete.store(false, std::memory_order_relaxed);
   this->disable_loop();
   if (log_what != nullptr) {
@@ -366,7 +404,7 @@ void LatterBeacon::loop() {
   const uint32_t now = millis();
   if (this->cmd_in_flight_) {
     if (!s_cmd_complete.load(std::memory_order_acquire)) {
-      if (now - this->cmd_sent_ms_ > STEP_TIMEOUT_MS) {
+      if (static_cast<uint32_t>(now - this->cmd_sent_ms_) > STEP_TIMEOUT_MS) {
         const uint8_t failed_step = this->step_;
         this->stop_(nullptr);
         this->fail_("HCI command timeout, step", failed_step);
@@ -380,7 +418,13 @@ void LatterBeacon::loop() {
   if (this->paused_) {
     if (this->adv_enabled_) {
       if (this->transport_can_send_()) {
-        this->send_adv_enable_(false, now);
+        if (!this->send_adv_enable_(false, now)) {
+          this->stop_(nullptr);
+          this->fail_("LE_Set_Adv_Enable(0) send", -1);
+        }
+      } else if (static_cast<uint32_t>(now - this->step_wait_ms_) > STEP_TIMEOUT_MS) {
+        this->stop_(nullptr);
+        this->fail_("HCI pause TX stall", 0);
       }
       return;
     }
@@ -395,24 +439,42 @@ void LatterBeacon::loop() {
   }
 
   if (!this->configured_) {
-    if (!this->transport_can_send_())
+    if (!this->transport_can_send_()) {
+      if (static_cast<uint32_t>(now - this->step_wait_ms_) > STEP_TIMEOUT_MS) {
+        const uint8_t stalled_step = this->step_;
+        this->stop_(nullptr);
+        this->fail_("HCI config TX stall, step", stalled_step);
+      }
       return;
+    }
     s_cmd_complete.store(false, std::memory_order_relaxed);
     if (this->send_step_(this->step_)) {
       this->cmd_in_flight_ = true;
       this->cmd_opcode_ = step_opcode(this->step_);
       this->cmd_sent_ms_ = now;
+      this->step_wait_ms_ = now;
+    } else {
+      const uint8_t failed_step = this->step_;
+      this->stop_(nullptr);
+      this->fail_("HCI config send, step", failed_step);
     }
     return;
   }
 
   if (!this->adv_enabled_) {
     if (this->transport_can_send_()) {
-      this->send_adv_enable_(true, now);
+      if (!this->send_adv_enable_(true, now)) {
+        this->stop_(nullptr);
+        this->fail_("LE_Set_Adv_Enable(1) send", -1);
+      }
+    } else if (static_cast<uint32_t>(now - this->step_wait_ms_) > STEP_TIMEOUT_MS) {
+      this->stop_(nullptr);
+      this->fail_("HCI adv enable TX stall", 0);
     }
     return;
   }
 
+  this->fail_streak_ = 0;
   this->disable_loop();
   ESP_LOGD(TAG, "Advertising (major %u, minor %u)", this->major_, this->minor_);
   this->log_internal_heap_("advertising");
@@ -457,10 +519,15 @@ bool LatterBeacon::send_step_(uint8_t step) {
 }
 
 void LatterBeacon::fail_(const char *what, int err) {
+  const uint8_t shift = std::min<uint8_t>(this->fail_streak_, 3U);
+  const uint32_t backoff_ms = std::min<uint32_t>(RETRY_AFTER_FAILURE_MS << shift, RETRY_MAX_BACKOFF_MS);
+  if (this->fail_streak_ < 10U) {
+    ++this->fail_streak_;
+  }
   ESP_LOGE(TAG, "Beacon start failed: %s (%d); retrying in %u s", what, err,
-           static_cast<unsigned>(RETRY_AFTER_FAILURE_MS / 1000U));
+           static_cast<unsigned>(backoff_ms / 1000U));
   this->failed_ = true;
-  this->retry_after_ms_ = millis() + RETRY_AFTER_FAILURE_MS;
+  this->retry_after_ms_ = millis() + backoff_ms;
   this->disable_loop();
 }
 

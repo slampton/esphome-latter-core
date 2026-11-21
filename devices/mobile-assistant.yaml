@@ -32,7 +32,7 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.11.0
   project:
-    name: "slampton.mobile-assistant-216"
+    name: "latter.mobile-assistant-216"
     version: "${version}"
 
 update:

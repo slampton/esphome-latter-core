@@ -89,7 +89,9 @@ class LatterBeacon : public Component {
   bool cmd_in_flight_{false};
   uint16_t cmd_opcode_{0};
   uint32_t cmd_sent_ms_{0};
+  uint32_t step_wait_ms_{0};
   uint32_t retry_after_ms_{0};
+  uint8_t fail_streak_{0};
   bool failed_{false};
   bool profile_logging_{false};
 };

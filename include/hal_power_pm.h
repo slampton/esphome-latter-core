@@ -527,46 +527,41 @@ inline RaiseToWakeDetector &raise_wake_detector() {
   return raise_to_wake();
 }
 
+struct ScreenOffTapState {
+  uint32_t first_tap_ms = 0U;
+  void reset() noexcept { first_tap_ms = 0U; }
+};
+
+inline ScreenOffTapState &screen_off_tap_state() noexcept {
+  static ScreenOffTapState s{};
+  return s;
+}
+
 inline bool tap_wake_needs_double_tap(std::string_view tw_mode, bool usb_on) {
   return (tw_mode == "Double Tap") && !usb_on;
 }
 
-inline bool tap_wake_needs_double_tap(bool usb_on) {
-#if LATTER_IS_WEARABLE
-  return !usb_on;
-#else
-  (void)usb_on;
-  return false;
-#endif
-}
-
 inline bool accept_screen_off_tap(std::string_view tw_mode, bool usb_on, uint32_t now_ms) {
-  static uint32_t first_tap_ms = 0;
+  auto &st = screen_off_tap_state();
   if (tw_mode == "Disabled") {
-    first_tap_ms = 0;
+    st.first_tap_ms = 0U;
     return false;
   }
   if (tw_mode == "Docked Only") {
-    first_tap_ms = 0;
+    st.first_tap_ms = 0U;
     return usb_on;
   }
   if (!tap_wake_needs_double_tap(tw_mode, usb_on)) {
-    first_tap_ms = 0;
+    st.first_tap_ms = 0U;
     return true;
   }
-  if (first_tap_ms == 0 || (now_ms - first_tap_ms) > 450U) {
-    first_tap_ms = (now_ms == 0) ? 1U : now_ms;
+  if (st.first_tap_ms == 0U || (now_ms - st.first_tap_ms) > 450U) {
+    st.first_tap_ms = (now_ms == 0U) ? 1U : now_ms;
     return false;
   }
-  if ((now_ms - first_tap_ms) < 35U) return false;
-  first_tap_ms = 0;
+  if ((now_ms - st.first_tap_ms) < 35U) return false;
+  st.first_tap_ms = 0U;
   return true;
-}
-
-inline bool accept_screen_off_tap(bool usb_on, uint32_t now_ms) {
-  return accept_screen_off_tap(
-      tap_wake_needs_double_tap(usb_on) ? std::string_view{"Double Tap"} : std::string_view{"Single Tap"},
-      usb_on, now_ms);
 }
 
 inline constexpr uint32_t kBatteryMotionWindowMs = 35000U;
@@ -590,6 +585,7 @@ inline bool battery_motion_allowed(bool usb_on, uint32_t now_ms, uint32_t last_t
 struct WifiPowerState {
   bool hp_held{false};
   bool base_valid{false};
+  bool ota_active{false};
   int base{-1};
   bool pulse{false};
   uint32_t offsite_since_ms{0};
@@ -614,8 +610,9 @@ inline int wifi_ps_mode_now() {
 #ifdef USE_WIFI
 template <typename WifiT>
 inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int display_power_state) {
-#if !LATTER_IS_STATIONARY
   if (wifi == nullptr) return;
+  auto &st = wifi_power_state();
+#if !LATTER_IS_STATIONARY
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
   (void)display_power_state;
   const auto base = esphome::wifi::WIFI_POWER_SAVE_LIGHT;
@@ -626,8 +623,7 @@ inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int disp
   const auto base = (display_power_state == 2) ? esphome::wifi::WIFI_POWER_SAVE_HIGH
                                                : esphome::wifi::WIFI_POWER_SAVE_LIGHT;
 #endif
-  auto &st = wifi_power_state();
-  bool want_hp = high_tput_needed;
+  bool want_hp = high_tput_needed || st.ota_active;
   if (st.pulse) {
     st.pulse = false;
   }
@@ -645,20 +641,27 @@ inline void apply_wifi_power_policy(WifiT *wifi, bool high_tput_needed, int disp
     st.hp_held = false;
   }
 #else
-  (void)wifi;
   (void)high_tput_needed;
   (void)display_power_state;
+  if (st.ota_active && !st.hp_held) {
+    st.hp_held = wifi->request_high_performance();
+  } else if (!st.ota_active && st.hp_held) {
+    wifi->release_high_performance();
+    st.hp_held = false;
+  }
 #endif
 }
 #endif
 
 inline void wifi_power_ota_begin() {
-#ifdef USE_ESP32
-  esp_wifi_set_ps(WIFI_PS_NONE);
-#endif
+  wifi_power_state().ota_active = true;
 }
 
-inline void wifi_power_ota_end() { wifi_power_state().base_valid = false; }
+inline void wifi_power_ota_end() {
+  auto &st = wifi_power_state();
+  st.ota_active = false;
+  st.base_valid = false;
+}
 
 inline uint32_t &radio_boost_until_ms() {
   static uint32_t until = 0;
@@ -715,6 +718,11 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
       ESP_LOGD("ble", "Disabling BLE radio (%s)", is_hibernating ? "hibernating" : "OTA in progress");
       ble_ctrl->disable();
     }
+#ifdef USE_WIFI
+    if (ota_in_progress && !is_hibernating && wifi != nullptr) {
+      apply_wifi_power_policy(wifi, true, display_power_state);
+    }
+#endif
     return;
   }
 
@@ -736,7 +744,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
         !beacon_paused && beacon_boot_gate_open(wifi_connected, ha_connected, last_ha_connect_ms, now_ms);
     if (ble_ctrl != nullptr) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
-      const bool radio_ready = wifi_connected && (now_ms > 8000U);
+      const bool radio_ready = wifi_connected && (ha_connected || now_ms > 8000U);
 #else
       const bool radio_ready = wifi_connected;
 #endif
@@ -796,6 +804,11 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
             if (ws.backoff_stage < 2) ws.backoff_stage++;
             ws.pause_until_ms = (now_ms + pause_ms) | 1U;
             ESP_LOGI("power", "Off-site standby: pausing Wi-Fi scan for %lus", static_cast<unsigned long>(pause_ms / 1000U));
+            if (ws.hp_held) {
+              wifi->release_high_performance();
+              ws.hp_held = false;
+            }
+            ws.base_valid = false;
             wifi->disable();
             return;
           }

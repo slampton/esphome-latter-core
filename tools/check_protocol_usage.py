@@ -24,10 +24,27 @@ CPP_SCAN_DIRS = ("include", "components")
 KEY_RE = re.compile(r"^(\s*)(?:-\s+)?([A-Za-z_][A-Za-z0-9_]*):(?:\s+(.*))?$")
 EMIT_HEAD_RE = re.compile(r'(?:::)?latter_rpc::emit\s*\([^,\r\n]+,\s*"([a-z_][a-z0-9_]*)"')
 PAIR_KEY_RE = re.compile(r'\{\s*"([a-z_][a-z0-9_]*)"\s*,')
+CPP_COMMENT_OR_STR_RE = re.compile(
+    r'R"([A-Za-z0-9_]*)\([\s\S]*?\)\1"|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|/\*[\s\S]*?\*/|//[^\n]*'
+)
 
 
 def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
+
+
+def _blank_cpp_comments(text: str) -> str:
+    """Blank C++ comments while preserving string/char literals (e.g. 'https://...') and exact offsets."""
+
+    def _repl(m: re.Match[str]) -> str:
+        tok = m.group(0)
+        if tok.startswith("//"):
+            return " " * len(tok)
+        if tok.startswith("/*"):
+            return "".join("\n" if ch == "\n" else " " for ch in tok)
+        return tok
+
+    return CPP_COMMENT_OR_STR_RE.sub(_repl, text)
 
 
 def _child_keys(lines: list[str], start: int, parent_indent: int) -> tuple[dict[str, str], int]:
@@ -54,8 +71,7 @@ def _child_keys(lines: list[str], start: int, parent_indent: int) -> tuple[dict[
 
 
 def _extract_emit_calls(text: str, rel: str, calls: list[tuple[str, str, set[str]]]) -> None:
-    # Blank single-line comments while preserving exact line numbers and indices
-    clean_text = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
+    clean_text = _blank_cpp_comments(text)
     for m in EMIT_HEAD_RE.finditer(clean_text):
         svc = m.group(1)
         line_no = clean_text.count("\n", 0, m.start()) + 1

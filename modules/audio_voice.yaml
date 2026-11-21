@@ -1355,20 +1355,40 @@ script:
       - lambda: 'latter_ui::audio_arbitrator().cancel_media_idle_debounce();'
       - if:
           condition:
-            lambda: 'return !id(speaker_enable).state;'
+            lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
           then:
             - script.execute: enable_speaker_path
             - script.wait: enable_speaker_path
-            - lambda: |-
-                const float alert_pct = static_cast<float>(latter_ui::persisted_prefs().alert_volume);
-                const float sfx_v = latter_ui::alarm_output_volume(alert_pct, id(latter_media_player).volume);
-                id(physical_speaker).set_volume(sfx_v);
-                id(hal_set_dac_mute).execute(false);
+      - lambda: |-
+          const float alert_pct = static_cast<float>(latter_ui::persisted_prefs().alert_volume);
+          const float sfx_v = latter_ui::alarm_output_volume(alert_pct, id(latter_media_player).volume);
+          id(physical_speaker).set_volume(sfx_v);
+          id(hal_set_dac_mute).execute(false);
       - media_player.play_media:
           id: latter_sound_player
           media_url: !lambda |-
             const int n = (sfx_id >= 1 && sfx_id <= 14) ? sfx_id : 1;
             return "audio-file://sound_sfx_" + std::to_string(n);
+      - if:
+          condition:
+            media_player.is_playing: latter_media_player
+          then:
+            - wait_until:
+                condition:
+                  lambda: 'return id(sound_mixing_input).is_running();'
+                timeout: 250ms
+            - wait_until:
+                condition:
+                  lambda: 'return !id(sound_mixing_input).is_running();'
+                timeout: 4s
+            - lambda: |-
+                const auto &rs = latter_ui::runtime_state();
+                if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
+                    !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active) {
+                  float v = id(latter_media_player).volume;
+                  if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                  id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+                }
       - if:
           condition:
             lambda: 'return latter_ui::runtime_state().nav.active_game == 0;'

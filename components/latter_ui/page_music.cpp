@@ -711,6 +711,56 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
   const int live_act_idx = lyr.synced ? lyr.find_active_line(pos_ms) : -1;
 
   const int n_lines = static_cast<int>(std::min<size_t>(lyr.lines.size(), kMaxMusicLyricLines));
+  struct LyricWrapEntry {
+    uint8_t body_cnt{1};
+    uint8_t act_cnt{1};
+    std::string body_sub[4]{};
+    std::string act_sub[4]{};
+  };
+  struct LyricWrapCache {
+    std::string track_key{};
+    uint32_t rev{0xFFFFFFFFU};
+    int line_count{-1};
+    int wrap_w{-1};
+    const void *active_font{nullptr};
+    const void *body_font{nullptr};
+    std::vector<LyricWrapEntry> entries{kMaxMusicLyricLines};
+  };
+  static LyricWrapCache s_wrap_cache{};
+  if (s_wrap_cache.track_key != cur_key ||
+      s_wrap_cache.rev != lyr.rev ||
+      s_wrap_cache.line_count != n_lines ||
+      s_wrap_cache.wrap_w != wrap_w ||
+      s_wrap_cache.active_font != active_font ||
+      s_wrap_cache.body_font != body_font) {
+    s_wrap_cache.track_key = cur_key;
+    s_wrap_cache.rev = lyr.rev;
+    s_wrap_cache.line_count = n_lines;
+    s_wrap_cache.wrap_w = wrap_w;
+    s_wrap_cache.active_font = active_font;
+    s_wrap_cache.body_font = body_font;
+    if (s_wrap_cache.entries.size() < kMaxMusicLyricLines) {
+      s_wrap_cache.entries.resize(kMaxMusicLyricLines);
+    }
+    for (int i = 0; i < n_lines; ++i) {
+      auto &ent = s_wrap_cache.entries[static_cast<size_t>(i)];
+      const std::string txt = lyr.lines[static_cast<size_t>(i)].text.empty()
+                                  ? std::string("♪")
+                                  : lyr.lines[static_cast<size_t>(i)].text;
+      ent.body_cnt = static_cast<uint8_t>(
+          std::max(1, ui::wrap_text_lines(txt, wrap_w, body_font, ent.body_sub, 4)));
+      if (active_font != body_font) {
+        ent.act_cnt = static_cast<uint8_t>(
+            std::max(1, ui::wrap_text_lines(txt, wrap_w, active_font, ent.act_sub, 4)));
+      } else {
+        ent.act_cnt = ent.body_cnt;
+        for (int s = 0; s < static_cast<int>(ent.body_cnt); ++s) {
+          ent.act_sub[s] = ent.body_sub[s];
+        }
+      }
+    }
+  }
+
   static std::vector<int> s_doc_buf(kMaxMusicLyricLines * 3U);
   int *const doc_y0 = s_doc_buf.data();
   int *const doc_y1 = doc_y0 + kMaxMusicLyricLines;
@@ -719,13 +769,9 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
 
   for (int i = 0; i < n_lines; ++i) {
     const bool is_act = lyr.synced && (i == live_act_idx);
-    esphome::display::BaseFont *f = is_act ? active_font : body_font;
     const int lh = is_act ? active_lh : body_lh;
-    std::string sub[4];
-    const std::string txt = lyr.lines[static_cast<size_t>(i)].text.empty()
-                                ? std::string("♪")
-                                : lyr.lines[static_cast<size_t>(i)].text;
-    const int sc = std::max(1, ui::wrap_text_lines(txt, wrap_w, f, sub, 4));
+    const auto &ent = s_wrap_cache.entries[static_cast<size_t>(i)];
+    const int sc = static_cast<int>(is_act ? ent.act_cnt : ent.body_cnt);
     doc_y0[i] = cur_doc_y;
     doc_y1[i] = cur_doc_y + sc * lh;
     doc_cy[i] = (doc_y0[i] + doc_y1[i]) / 2;
@@ -755,11 +801,9 @@ void render_lyrics_view(esphome::display::Display &it, const UiFrameContext &ctx
                                        : mix_color_q8(ctx.col_white, ctx.col_slate, 124);
     }
 
-    std::string sub[4];
-    const std::string txt = lyr.lines[static_cast<size_t>(i)].text.empty()
-                                ? std::string("♪")
-                                : lyr.lines[static_cast<size_t>(i)].text;
-    const int sc = std::max(1, ui::wrap_text_lines(txt, wrap_w, f, sub, 4));
+    const auto &ent = s_wrap_cache.entries[static_cast<size_t>(i)];
+    const int sc = static_cast<int>(is_act ? ent.act_cnt : ent.body_cnt);
+    const std::string *sub = is_act ? ent.act_sub : ent.body_sub;
 
     for (int s = 0; s < sc; ++s) {
       const int draw_cy = scr_y0 + s * lh + lh / 2;

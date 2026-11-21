@@ -196,7 +196,7 @@ void render_game_marbles(Display &it, const UiFrameContext &ctx,
         high_score_marbles = game_score;
         is_new_high = true;
       }
-      if (is_new_high) save_persisted_prefs();
+      if (is_new_high) schedule_persisted_prefs_save(now_ms);
     }
   }
   int time_remaining = static_cast<int>(std::ceil(time_left_f));
@@ -420,7 +420,7 @@ void render_game_marbles(Display &it, const UiFrameContext &ctx,
         if (game_score > high_score_marbles) {
           high_score_marbles = game_score;
           is_new_high = true;
-          save_persisted_prefs();
+          schedule_persisted_prefs_save(now_ms);
         }
       }
     }
@@ -777,14 +777,14 @@ void render_game_archery(Display &it, const UiFrameContext &ctx,
             high_score_archery = arch_score;
             is_new_high = true;
           }
-          if (is_new_high) save_persisted_prefs();
+          if (is_new_high) schedule_persisted_prefs_save(now_ms);
           round_num++;
           round_pts = 0;
           round_banner_ms = now_ms;
           pending_game_sfx() = 5;
         } else {
           round_over = true;
-          if (is_new_high) save_persisted_prefs();
+          if (is_new_high) schedule_persisted_prefs_save(now_ms);
         }
       }
     }
@@ -1285,7 +1285,7 @@ void render_game_bricks(Display &it, const UiFrameContext &ctx,
           high_score_bricks = bo_score;
           is_new_high = true;
         }
-        if (is_new_high) save_persisted_prefs();
+        if (is_new_high) schedule_persisted_prefs_save(now_ms);
         wave_num++;
         if (lives_left < 3) lives_left++;
         std::snprintf(banner_text, sizeof(banner_text), "WAVE %d CLEAR! +%d", wave_num - 1, wave_bonus);
@@ -1304,7 +1304,7 @@ void render_game_bricks(Display &it, const UiFrameContext &ctx,
             high_score_bricks = bo_score;
             is_new_high = true;
           }
-          if (is_new_high) save_persisted_prefs();
+          if (is_new_high) schedule_persisted_prefs_save(now_ms);
         }
       }
     }
@@ -1804,8 +1804,8 @@ void render_game_chomp(Display &it, const UiFrameContext &ctx,
           snack_score += 3;
           if (snack_score > high_score_chomp) {
             high_score_chomp = snack_score;
+            schedule_persisted_prefs_save(now_ms);
           }
-          save_persisted_prefs();
           level_clear_until_ms = now_ms + 3000U;
           in_celebration = true;
           pending_game_sfx() = 5;
@@ -2028,10 +2028,10 @@ void render_game_2048(Display &it, const UiFrameContext &ctx,
       spawn_tile();
       if (!has_moves()) {
         game_over = true;
-        if (new_hs) save_persisted_prefs();
+        if (new_hs) schedule_persisted_prefs_save(now_ms);
         pending_game_sfx() = 14;
       } else {
-        if (just_won_2048 && new_hs) save_persisted_prefs();
+        if (just_won_2048 && new_hs) schedule_persisted_prefs_save(now_ms);
         pending_game_sfx() = just_won_2048 ? 5 : (merged_any ? 10 : 11);
       }
     }
@@ -2190,8 +2190,8 @@ void render_game_memory(Display &it, const UiFrameContext &ctx,
                 mem_score += round_num * 250;
                 if (mem_score > high_score_memory) {
                   high_score_memory = mem_score;
+                  schedule_persisted_prefs_save(now_ms);
                 }
-                save_persisted_prefs();
                 round_num++;
                 pending_game_sfx() = 5;
                 shuffle_deck();
@@ -2620,7 +2620,7 @@ void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
     out_pitch_delta = clean_pitch - zero_pitch;
   }
 
-  if (touch_gesture().active && touch_gesture().last_y < scale_y(376) &&
+  if (touch_gesture().active && touch_gesture().last_y < (layout().back_y - scale_y(50)) &&
       (LATTER_HAS_IMU == 0 || touch_gesture().max_travel >= scale_s(10))) {
     float span = static_cast<float>(std::max(110, scale_s(160)));
     out_roll_delta = std::clamp(((touch_gesture().last_x - SCREEN_CX) / span) * 28.0f, -35.0f, 35.0f);
@@ -2650,7 +2650,7 @@ void render_games_page(Display &it, const UiFrameContext &ctx) {
   if (rs.nav.active_game <= 0) {
     if (s_prev_active_game != 0) {
       s_prev_active_game = 0;
-      save_persisted_prefs();
+      flush_persisted_prefs_if_dirty();
     }
     render_games_launcher(it, ctx, rs.nav.game_carousel_idx,
                           rs.nav.menu_scroll_active, rs.nav.menu_scroll_dir,

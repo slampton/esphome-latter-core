@@ -32,7 +32,7 @@ esphome:
   friendly_name: ${friendly_name}
   min_version: 2026.11.0
   project:
-    name: "slampton.pocket-assistant-175c"
+    name: "latter.pocket-assistant-175c"
     version: "${version}"
 
 update:

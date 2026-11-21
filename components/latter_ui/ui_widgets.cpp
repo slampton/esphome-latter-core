@@ -335,13 +335,14 @@ void render_back_button(esphome::display::Display &it, int cx, esphome::display:
   }
   fast_print(it, cx + 1, back_lbl_y + 1, font, kChromeShadow, esphome::display::TextAlign::CENTER, label);
   fast_print(it, cx, back_lbl_y, font, text_col, esphome::display::TextAlign::CENTER, label);
-#if LATTER_ROUND_DISPLAY
-  frame_hits().add_rect(116, 404, 235, 62, WidgetId::BACK_BUTTON, kHitTap);
-#else
-  const int bh = scale_y(64);
-  const int bw = scale_x(120);
-  frame_hits().add_rect(cx - bw, SCREEN_H - bh, 2 * bw + 1, bh, WidgetId::BACK_BUTTON, kHitTap);
-#endif
+  const auto ly = layout();
+  const int hit_y0 = std::clamp(back_lbl_y - scale_y(22), 0, SCREEN_H - 1);
+  const int hit_h = std::max(1, SCREEN_H - hit_y0);
+  const int max_span = std::max(ly.min_hit_px(), ly.safe_span(back_lbl_y, 8));
+  const int hit_w = std::min(max_span, std::max(scale_x(235), ly.min_hit_px() * 2));
+  const int hit_pad = std::max(0, (ly.min_hit_px() - hit_h + 1) / 2);
+  frame_hits().add_rect(cx - hit_w / 2, hit_y0, hit_w, hit_h,
+                        WidgetId::BACK_BUTTON, kHitTap, 0, hit_pad);
 }
 
 void render_page_header(esphome::display::Display &it, int cx, const char *title,
@@ -1727,7 +1728,8 @@ void icon_circle_button(esphome::display::Display &it, int cx, int cy, int r,
   }
   if (widget_id != WidgetId::NONE) {
     const int min_r = (layout().min_hit_px() + 1) / 2;
-    const int pad = (hit_pad >= 0) ? hit_pad : std::max(scale_s(6), min_r - eff_r);
+    const int req_pad = std::max(0, min_r - eff_r);
+    const int pad = (hit_pad >= 0) ? std::max(hit_pad, req_pad) : std::max(scale_s(6), req_pad);
     frame_hits().add_circle(cx, cy, eff_r, widget_id, flags, param, pad);
   }
 }
@@ -1744,7 +1746,9 @@ void keypad_button(esphome::display::Display &it, int cx, int cy, int w, int h,
     shadow_print(it, cx, cy, font, text_c, esphome::display::TextAlign::CENTER, label);
   }
   if (widget_id != WidgetId::NONE) {
-    frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, kHitTap | kHitFocusSlot, param);
+    const int min_px = layout().min_hit_px();
+    const int req_pad = std::max(0, (std::max(min_px - eff_w, min_px - eff_h) + 1) / 2);
+    frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, kHitTap | kHitFocusSlot, param, req_pad);
   }
 }
 
@@ -1981,12 +1985,15 @@ void pin_pad_scrub() {
   g_pin_pad.open = false;
   g_pin_pad.target = PinPadTargetKind::NONE;
   g_pin_pad.error_msg[0] = '\0';
+  g_pin_pad.error_ms = 0;
+  g_pin_pad.last_activity_ms = 0;
 }
 
 void pin_pad_open(PinPadTargetKind kind, const char *prompt_label) {
   pin_pad_scrub();
   g_pin_pad.open = true;
   g_pin_pad.target = kind;
+  g_pin_pad.last_activity_ms = esphome::millis();
   if (prompt_label != nullptr) {
     std::strncpy(g_pin_pad.prompt, prompt_label, sizeof(g_pin_pad.prompt) - 1);
     g_pin_pad.prompt[sizeof(g_pin_pad.prompt) - 1] = '\0';
@@ -1996,18 +2003,22 @@ void pin_pad_open(PinPadTargetKind kind, const char *prompt_label) {
 }
 
 bool pin_pad_press_digit(uint8_t digit) {
-  if (digit > 9 || g_pin_pad.len >= 8) return false;
+  if (digit > 9 || g_pin_pad.len >= PinPadModalState::kMaxDigits) return false;
   g_pin_pad.digits[g_pin_pad.len++] = static_cast<char>('0' + digit);
   g_pin_pad.digits[g_pin_pad.len] = '\0';
   g_pin_pad.error_msg[0] = '\0';
+  g_pin_pad.last_activity_ms = esphome::millis();
   return true;
 }
 
 void pin_pad_backspace() {
   if (g_pin_pad.len > 0) {
-    g_pin_pad.digits[--g_pin_pad.len] = '\0';
+    volatile char *p = g_pin_pad.digits;
+    --g_pin_pad.len;
+    p[g_pin_pad.len] = '\0';
   }
   g_pin_pad.error_msg[0] = '\0';
+  g_pin_pad.last_activity_ms = esphome::millis();
 }
 
 bool is_perimeter_action_blocked(const std::string &policy, const std::string &domain_or_entity,
@@ -2045,13 +2056,17 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
   if (show_err) {
     shadow_print(it, cx, disp_y, font_small, col_white, esphome::display::TextAlign::CENTER, st.error_msg);
   } else if (st.len == 0) {
-    shadow_print(it, cx, disp_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "4-8 Digits");
+    shadow_print(it, cx, disp_y, font_small, col_slate, esphome::display::TextAlign::CENTER, "4-12 Digits");
   } else {
-    const int dot_step = scale_x(18);
+    const int max_step = scale_x(18);
+    const int dot_step = (st.len > 1)
+        ? std::min(max_step, std::max(scale_x(12), (disp_w - scale_x(20)) / (static_cast<int>(st.len) - 1)))
+        : max_step;
+    const int dot_r = (st.len > 9) ? std::max(3, scale_s(4)) : scale_s(5);
     const int start_x = cx - ((static_cast<int>(st.len) - 1) * dot_step) / 2;
     for (uint8_t i = 0; i < st.len; i++) {
-      fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step + 1, disp_y + 1, scale_s(5), kChromeShadow);
-      fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step, disp_y, scale_s(5), col_white);
+      fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step + 1, disp_y + 1, dot_r, kChromeShadow);
+      fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step, disp_y, dot_r, col_white);
     }
   }
   fast_hline(it, cx - disp_w / 2, disp_y + scale_y(16), disp_w, show_err ? col_red : chrome_card_brd_on());
@@ -2090,9 +2105,17 @@ void pin_pad_modal(esphome::display::Display &it, int cx, int cy, uint32_t now_m
                   (is_ok || is_del) ? font_small : font_key, kWids[idx], static_cast<int16_t>(idx));
   }
 
-  render_back_button(it, cx, font_small, layout().back_y, "< Cancel");
-  frame_hits().add_centered_rect(cx, layout().back_y, scale_x(150), scale_y(36),
-                                 WidgetId::PIN_PAD_CANCEL, kHitTap, 0);
+  const auto ly = layout();
+  const int cancel_y = LATTER_ROUND_DISPLAY ? ly.back_y : kBackLabelY;
+  fast_print(it, cx + 1, cancel_y + 1, font_small, kChromeShadow, esphome::display::TextAlign::CENTER, "< Cancel");
+  fast_print(it, cx, cancel_y, font_small, kChromeBackLabel, esphome::display::TextAlign::CENTER, "< Cancel");
+  const int cancel_y0 = std::clamp(cancel_y - scale_y(22), 0, SCREEN_H - 1);
+  const int cancel_h = std::max(1, SCREEN_H - cancel_y0);
+  const int cancel_max_w = std::max(ly.min_hit_px(), ly.safe_span(cancel_y, 8));
+  const int cancel_w = std::min(cancel_max_w, std::max(scale_x(200), ly.min_hit_px() * 2));
+  const int cancel_pad = std::max(0, (ly.min_hit_px() - cancel_h + 1) / 2);
+  frame_hits().add_rect(cx - cancel_w / 2, cancel_y0, cancel_w, cancel_h,
+                        WidgetId::PIN_PAD_CANCEL, kHitTap | kHitFocusSlot, 0, cancel_pad);
 }
 
 // ==============================================================================
@@ -2353,16 +2376,16 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
 
   const int text_x = x0 + scale_x(16);
   const int max_text_w = std::max(scale_x(40), split_w - scale_x(24));
+  const char *safe_pri = (primary_txt != nullptr) ? primary_txt : "";
   if (secondary_txt != nullptr && secondary_txt[0] != '\0') {
-    const std::string pri_clamped = fit_text_to_width_font_base(primary_txt, max_text_w, font_pri);
+    const std::string pri_clamped = fit_text_to_width_font_base(safe_pri, max_text_w, font_pri);
     const std::string sec_clamped = fit_text_to_width_font_base(secondary_txt, max_text_w, font_sec);
     fast_print(it, text_x + 1, cy - scale_y(9) + 1, font_pri, kChromeShadow, TextAlign::CENTER_LEFT, pri_clamped.c_str());
     fast_print(it, text_x, cy - scale_y(9), font_pri, pri_col, TextAlign::CENTER_LEFT, pri_clamped.c_str());
     fast_print(it, text_x + 1, cy + scale_y(13) + 1, font_sec, kChromeShadow, TextAlign::CENTER_LEFT, sec_clamped.c_str());
     fast_print(it, text_x, cy + scale_y(13), font_sec, sec_col, TextAlign::CENTER_LEFT, sec_clamped.c_str());
   } else {
-    const std::string pri_clamped = fit_text_to_width_font_base(
-        (primary_txt != nullptr) ? primary_txt : "", max_text_w, font_pri);
+    const std::string pri_clamped = fit_text_to_width_font_base(safe_pri, max_text_w, font_pri);
     fast_print(it, text_x + 1, cy + 1, font_pri, kChromeShadow, TextAlign::CENTER_LEFT, pri_clamped.c_str());
     fast_print(it, text_x, cy, font_pri, pri_col, TextAlign::CENTER_LEFT, pri_clamped.c_str());
   }
@@ -2382,10 +2405,13 @@ void split_action_card_row(esphome::display::Display &it, int cx, int cy, int w,
                     action_on ? kChromePauseGlyph : kChromePlayGlyph, false);
   }
 
+  const auto ly = layout();
+  const int max_gap_pad = std::max(0, (ly.tool_card3_stride - h - 1) / 2);
+  const int card_pad = std::min(max_gap_pad, std::max(0, (ly.min_hit_px() - h + 1) / 2));
   frame_hits().add_rect(x0, y0, split_w, h,
-                        left_wid, kHitTap | kHitFocusSlot, param);
+                        left_wid, kHitTap | kHitFocusSlot, param, card_pad);
   frame_hits().add_rect(div_x, y0, right_w, h,
-                        right_wid, kHitTap | kHitFocusSlot, param);
+                        right_wid, kHitTap | kHitFocusSlot, param, card_pad);
 }
 
 }  // namespace ui

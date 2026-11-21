@@ -97,13 +97,51 @@ inline void do_execute_area_action() {
   auto &ar = runtime_state().area;
   latter_actions::emit_area_action(
       ar.target_entity_id, ar.target_action, ar.target_level, ar.active_area_id, ar.target_code);
+  latter_rpc::secure_zero_string(ar.target_code);
   ar.target_code.clear();
 }
 
 inline void do_execute_alarm_action() {
   auto &ar = runtime_state().area;
   latter_actions::emit_alarm_action(ar.alarm_service, ar.target_code);
+  latter_rpc::secure_zero_string(ar.target_code);
   ar.target_code.clear();
+}
+
+inline void apply_optimistic_area_entity_dispatch(
+    const std::string &entity_id, const std::string &action, DeviceRuntimeState &rs) {
+  if (entity_id.empty()) return;
+  auto &hub = home_hub_state();
+  for (int i = 0; i < hub.entry_count; ++i) {
+    auto &item = hub.entries[i];
+    if (item.entity_id != entity_id) continue;
+    if (item.is_lock) {
+      if (action == "lock") {
+        item.lock_state = LockState::LOCKED;
+        ++hub.local_mutation_seq;
+      } else if (action == "unlock") {
+        item.lock_state = LockState::UNLOCKED;
+        ++hub.local_mutation_seq;
+      }
+    } else {
+      if (action == "open_cover") {
+        item.garage_state = GarageState::OPEN;
+        ++hub.local_mutation_seq;
+      } else if (action == "close_cover") {
+        item.garage_state = GarageState::CLOSED;
+        ++hub.local_mutation_seq;
+      }
+    }
+  }
+  auto *slots = rs.area_entity_slots();
+  for (size_t i = 0; i < LATTER_CARD_SLOT_COUNT; ++i) {
+    if (slots[i].id != entity_id) continue;
+    if (action == "turn_on" || action == "open_cover" || action == "unlock") {
+      slots[i].active = true;
+    } else if (action == "turn_off" || action == "close_cover" || action == "lock") {
+      slots[i].active = false;
+    }
+  }
 }
 
 inline void do_save_custom_color_to_latter() {
@@ -590,7 +628,7 @@ inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouc
     stop_broadcast_dictation_if_active(rs, rt, now_ms);
     enter_cameras_app(-1, "", false, rs, rt, now_ms);
   } else {
-    if (is_camera_view_active(rs) || is_calendar_map_view_active(rs)) {
+    if (is_camera_view_active(rs)) {
       leave_home_hub_cameras_if_active(rs, rt, now_ms);
     }
     stop_calendar_dictation_if_active(rs, rt, now_ms);
@@ -1248,9 +1286,13 @@ inline void handle_home_activity_action(const HomeActivityItem *items, int count
     } else if (kind == 4) {
       if (s_idx == 0) {
         rs.alarms.snooze_until = 0;
+        snoozed_alarm_slot() = 0;
       } else if (s_idx >= 1 && s_idx <= 3) {
         prefs.alarms[s_idx - 1].enabled = false;
-        if (rs.alarms.ringing_idx == s_idx) rs.alarms.snooze_until = 0;
+        if (rs.alarms.ringing_idx == s_idx || snoozed_alarm_slot() == s_idx) {
+          rs.alarms.snooze_until = 0;
+          snoozed_alarm_slot() = 0;
+        }
         latter_actions::sync_local_alarms_edit(now_ms);
       }
     } else if (kind == 6) {
@@ -1486,10 +1528,14 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
     intercom_session().stop_call_with_hw(now_ms);
   }
-  const bool was_cam_page = is_camera_view_active(rs) || is_calendar_map_view_active(rs);
+  const bool was_cam_page = is_camera_view_active(rs);
   stop_calendar_dictation_if_active(rs, rt_, now_ms);
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   ui::pin_pad_scrub();
+  latter_rpc::secure_zero_string(rs.area.target_code);
+  rs.area.target_code.clear();
+  pending_pin_feedback_.clear();
+  pending_doorbell_unlock_ = false;
   shortcut_confirm_state().clear();
   rs.nav.quick_actions_open = false;
   rs.nav.shortcut_origin = ShortcutOrigin::NONE;
@@ -1566,10 +1612,14 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
     intercom_session().stop_call_with_hw(now_ms);
   }
-  const bool was_cam_page = is_camera_view_active(rs) || is_calendar_map_view_active(rs);
+  const bool was_cam_page = is_camera_view_active(rs);
   stop_calendar_dictation_if_active(rs, rt_, now_ms);
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   ui::pin_pad_scrub();
+  latter_rpc::secure_zero_string(rs.area.target_code);
+  rs.area.target_code.clear();
+  pending_pin_feedback_.clear();
+  pending_doorbell_unlock_ = false;
   shortcut_confirm_state().clear();
   rs.nav.quick_actions_open = false;
   rs.nav.shortcut_origin = ShortcutOrigin::NONE;
@@ -1617,6 +1667,14 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
                          hit->widget_id == WidgetId::BACK_BUTTON)) {
     if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
       ui::pin_pad_scrub();
+      latter_rpc::secure_zero_string(rs.area.target_code);
+      rs.area.target_code.clear();
+      rs.area.action_feedback.clear();
+      pending_pin_feedback_.clear();
+      pending_doorbell_unlock_ = false;
+      rs.nav.pending_shortcut_entity_id.clear();
+      rs.nav.pending_shortcut_action.clear();
+      rs.nav.pending_shortcut_label.clear();
       mark_dirty_full();
       rt_.schedule_disp();
     }
@@ -1629,6 +1687,7 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
       hit->widget_id <= WidgetId::PIN_PAD_KEY_BASE + 9) {
     if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
       ui::pin_pad_press_digit(static_cast<uint8_t>(hit->widget_id - WidgetId::PIN_PAD_KEY_BASE));
+      st.last_activity_ms = now_ms;
       rt_.schedule_disp();
     }
     return true;
@@ -1636,27 +1695,40 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
   if (hit->widget_id == WidgetId::PIN_PAD_BACKSPACE) {
     if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
       ui::pin_pad_backspace();
+      st.last_activity_ms = now_ms;
       rt_.schedule_disp();
     }
     return true;
   }
   if (hit->widget_id == WidgetId::PIN_PAD_SUBMIT) {
     if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
-      if (st.len < 4) {
-        std::snprintf(st.error_msg, sizeof(st.error_msg), "Enter 4-8 digits");
+      if (st.len < ui::PinPadModalState::kMinDigits || st.len > ui::PinPadModalState::kMaxDigits) {
+        std::snprintf(st.error_msg, sizeof(st.error_msg), "Enter 4-12 digits");
         st.error_ms = now_ms;
+        st.last_activity_ms = now_ms;
         rt_.schedule_disp();
         return true;
       }
       std::string pin_str(st.digits, st.len);
       const auto target = st.target;
+      const std::string ok_fb = std::move(pending_pin_feedback_);
+      const bool db_unlock = pending_doorbell_unlock_;
+      pending_pin_feedback_.clear();
+      pending_doorbell_unlock_ = false;
       ui::pin_pad_scrub();
       if (target == ui::PinPadTargetKind::AREA_ACTION) {
         rs.area.target_code = pin_str;
+        if (!ok_fb.empty()) rs.area.action_feedback = ok_fb;
+        if (db_unlock) {
+          cam_intercom_status() = "UNLOCKING...";
+          rs.intercom.cam_status_ms = now_ms;
+        }
+        apply_optimistic_area_entity_dispatch(rs.area.target_entity_id, rs.area.target_action, rs);
         rs.area.feedback_timer = now_ms;
         do_execute_area_action();
       } else if (target == ui::PinPadTargetKind::ALARM_ACTION) {
         rs.area.target_code = pin_str;
+        if (!ok_fb.empty()) rs.area.action_feedback = ok_fb;
         rs.area.feedback_timer = now_ms;
         do_execute_alarm_action();
       } else if (target == ui::PinPadTargetKind::SHORTCUT_ACTION) {
@@ -1671,7 +1743,8 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
         rs.nav.pending_shortcut_action.clear();
         rs.nav.pending_shortcut_label.clear();
       }
-      std::fill(pin_str.begin(), pin_str.end(), '\0');
+      latter_rpc::secure_zero_string(pin_str);
+      pin_str.clear();
       mark_dirty_full();
       rt_.schedule_disp();
     }
@@ -1682,10 +1755,13 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
 
 bool TouchGestureEngine::gate_or_dispatch_area_action(const std::string &domain_or_entity,
                                                       const std::string &action, int level,
-                                                      const char *pin_prompt, uint32_t now_ms) {
+                                                      const char *pin_prompt, uint32_t now_ms,
+                                                      std::string_view success_feedback) {
   auto &rs = runtime_state();
   const std::string &pol = area_ctx_state().security_pin_policy;
   if (ui::is_perimeter_action_blocked(pol, domain_or_entity, action, level)) {
+    pending_pin_feedback_.clear();
+    pending_doorbell_unlock_ = false;
     rs.area.action_feedback = "Blocked by Security Policy";
     rs.area.feedback_timer = now_ms;
     rt_.schedule_disp();
@@ -1694,21 +1770,36 @@ bool TouchGestureEngine::gate_or_dispatch_area_action(const std::string &domain_
   rs.area.target_action = action;
   rs.area.target_level = level;
   if (ui::requires_perimeter_pin_prompt(pol, domain_or_entity, action, level)) {
+    pending_pin_feedback_ = std::string(success_feedback);
+    rs.area.action_feedback.clear();
     ui::pin_pad_open(ui::PinPadTargetKind::AREA_ACTION, pin_prompt);
+    ui::pin_pad_state().last_activity_ms = (now_ms == 0U) ? 1U : now_ms;
     mark_dirty_full();
     rt_.schedule_disp();
     return false;
   }
+  pending_pin_feedback_.clear();
+  if (!success_feedback.empty()) {
+    rs.area.action_feedback = std::string(success_feedback);
+  }
+  if (pending_doorbell_unlock_) {
+    cam_intercom_status() = "UNLOCKING...";
+    rs.intercom.cam_status_ms = now_ms;
+    pending_doorbell_unlock_ = false;
+  }
+  apply_optimistic_area_entity_dispatch(rs.area.target_entity_id, action, rs);
   rs.area.feedback_timer = now_ms;
   do_execute_area_action();
   rt_.schedule_disp();
   return true;
 }
 
-bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms) {
+bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms,
+                                                       std::string_view success_feedback) {
   auto &rs = runtime_state();
   const std::string &pol = area_ctx_state().security_pin_policy;
   if (ui::is_perimeter_action_blocked(pol, "home_hub.alarm", action, 100)) {
+    pending_pin_feedback_.clear();
     rs.area.action_feedback = "Blocked by Security Policy";
     rs.area.feedback_timer = now_ms;
     rt_.schedule_disp();
@@ -1716,11 +1807,18 @@ bool TouchGestureEngine::gate_or_dispatch_alarm_action(const std::string &action
   }
   rs.area.alarm_service = action;
   if (ui::requires_perimeter_pin_prompt(pol, "home_hub.alarm", action, 100)) {
+    pending_pin_feedback_ = std::string(success_feedback);
+    rs.area.action_feedback.clear();
     ui::pin_pad_open(ui::PinPadTargetKind::ALARM_ACTION,
                      (action == "disarm") ? "PIN TO DISARM" : "PIN TO ARM");
+    ui::pin_pad_state().last_activity_ms = (now_ms == 0U) ? 1U : now_ms;
     mark_dirty_full();
     rt_.schedule_disp();
     return false;
+  }
+  pending_pin_feedback_.clear();
+  if (!success_feedback.empty()) {
+    rs.area.action_feedback = std::string(success_feedback);
   }
   rs.area.feedback_timer = now_ms;
   mark_dirty_full();
@@ -1745,13 +1843,13 @@ bool TouchGestureEngine::gate_or_dispatch_doorbell_unlock(uint32_t now_ms) {
   }
   rs.area.target_entity_id = cam->unlock_entity;
   if (!cam->unlock_is_lock()) {
-    rs.area.action_feedback = "Opening Garage...";
-    return gate_or_dispatch_area_action(cam->unlock_entity, "open_cover", 100, "GARAGE DOOR PIN", now_ms);
+    pending_doorbell_unlock_ = false;
+    return gate_or_dispatch_area_action(
+        cam->unlock_entity, "open_cover", 100, "GARAGE DOOR PIN", now_ms, "Opening Garage...");
   }
-  rs.area.action_feedback = "Unlocking...";
-  cam_intercom_status() = "UNLOCKING...";
-  rs.intercom.cam_status_ms = now_ms;
-  return gate_or_dispatch_area_action(cam->unlock_entity, "unlock", 100, "UNLOCK DOOR PIN", now_ms);
+  pending_doorbell_unlock_ = true;
+  return gate_or_dispatch_area_action(
+      cam->unlock_entity, "unlock", 100, "UNLOCK DOOR PIN", now_ms, "Unlocking...");
 }
 
 void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
@@ -1809,6 +1907,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
   gest.sample_count = 1;
   gest.start_ms = now_touch;
   gest.last_touch_ms = now_touch;
+  wheel_drag_dirty_ = false;
   last_user_touch_ms() = now_touch;
 
   // Priority 1: Alarm / Timer / Find-My Ringing Takeover (above Voice Assistant!)
@@ -1826,6 +1925,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
     if (rs.alarms.ringing) {
       if (t_hit != nullptr && t_hit->widget_id == WidgetId::ALERT_SNOOZE_BTN) {
+        snoozed_alarm_slot() =
+            (rs.alarms.ringing_idx >= 1 && rs.alarms.ringing_idx <= 3) ? rs.alarms.ringing_idx : 1;
         rs.alarms.snooze_until = (rt_.time_epoch > 0) ? (rt_.time_epoch + 300U)
                                                       : ((now_touch / 1000U) + 300U);
         rs.alarms.ringing = false;
@@ -1846,6 +1947,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         }
         rs.alarms.ringing = false;
         rs.alarms.snooze_until = 0;
+        snoozed_alarm_slot() = 0;
         latter_actions::check_and_emit_timer_alarm_state(now_touch);
         last_screen_wake_ms() = now_touch;
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
@@ -2628,6 +2730,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if (wid == WidgetId::COLOR_WHEEL_RING) {
         float hue = 0.0f, sat = 1.0f;
         if (ui::hsv_wheel_pick(touch.x, touch.y, SCREEN_CX, scale_y(244), 132, 58, hue, sat)) {
+          wheel_drag_dirty_ = true;
           light_insp_hue_deg() = hue;
           light_insp_sat() = sat;
           update_light_inspector_hex(hue, sat);
@@ -2637,15 +2740,17 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       if (wid == WidgetId::LIGHT_TEMP_SLIDER) {
         const float f = hit->norm_x(touch.x);
-        const int raw_k = 2000 + static_cast<int>(f * 4500.0f);
-        light_insp_kelvin() = std::clamp(((raw_k + 50) / 100) * 100, 2000, 6500);
+        const int raw_k =
+            kLightKelvinMin + static_cast<int>(f * static_cast<float>(kLightKelvinMax - kLightKelvinMin));
+        light_insp_kelvin() = std::clamp(((raw_k + 50) / 100) * 100, kLightKelvinMin, kLightKelvinMax);
         rt_.schedule_disp();
         return;
       }
       if (wid == WidgetId::LIGHT_BRI_SLIDER) {
         const float f = hit->norm_x(touch.x);
         const int raw_b = static_cast<int>(f * 100.0f);
-        light_insp_bri_pct() = std::clamp(((raw_b + 2) / 5) * 5, 5, 100);
+        const int min_b = (light_insp_domain() == "cover") ? 0 : 5;
+        light_insp_bri_pct() = std::clamp(((raw_b + 2) / 5) * 5, min_b, 100);
         rt_.schedule_disp();
         return;
       }
@@ -3062,21 +3167,30 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     return;
   }
 
-  // Page 12: Dedicated 4-Tab Calendar App (Overview, Day, Week, Month + Event Details/Map/Composer)
+  // Page 12: Dedicated 4-Tab Calendar App (Overview, Day, Week, Month + Event Details/Composer)
   if (rs.nav.gui_page == PageId::CALENDAR) {
+    const bool touch_time_ok = rt_.time_valid && rt_.time_year >= 2020;
     const int32_t today_ymd = resolve_touch_today_ymd(rt_);
-    if (rs.cal.selected_ymd <= 0) rs.cal.selected_ymd = today_ymd;
-    if (rs.cal.draft_ymd <= 0) rs.cal.draft_ymd = rs.cal.selected_ymd;
+    static bool s_touch_cal_anchored = false;
+    if (!touch_time_ok) {
+      s_touch_cal_anchored = false;
+    }
+    if (rs.cal.selected_ymd <= 0 ||
+        (touch_time_ok && !s_touch_cal_anchored && rs.cal.selected_ymd == 20260101)) {
+      rs.cal.selected_ymd = today_ymd;
+    }
+    if (rs.cal.draft_ymd <= 0 ||
+        (touch_time_ok && !s_touch_cal_anchored && rs.cal.draft_ymd == 20260101)) {
+      rs.cal.draft_ymd = today_ymd;
+    }
+    if (touch_time_ok) {
+      s_touch_cal_anchored = true;
+    }
 
     if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
       gest.active = false;
       if (rs.cal.delete_confirm_open) {
         rs.cal.delete_confirm_open = false;
-      } else if (rs.cal.drilldown == CalDrilldown::MAP) {
-        rs.cal.drilldown = CalDrilldown::DETAIL;
-        rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-        rs.alert.loaded_camera_url.clear();
-        rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
       } else if (rs.cal.drilldown == CalDrilldown::DETAIL) {
         rs.cal.drilldown = CalDrilldown::NONE;
       } else if (rs.cal.drilldown >= CalDrilldown::PICK_TITLE &&
@@ -3114,7 +3228,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
           std::snprintf(d_str, sizeof(d_str), "%u", static_cast<unsigned>(next_d));
           uint32_t eff = 0U;
           if (latter_actions::record_local_pref_edit(PrefKey::CALENDAR_LOOKAHEAD_DAYS, d_str, now_touch, eff)) {
-            device_prefs_state().last_effects = eff;
+            device_prefs_state().last_effects |= eff;
             rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
           }
           rs.cal.overview_page = 0;
@@ -3229,7 +3343,8 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
                                   rs.voice.intercom_turn, rs.nav.gui_page,
                                   rs.cameras.doorbell_live_popup_active) &&
       rs.nav.active_game == 0 &&
-      gest.start_y <= ly.top_edge_zone_y() && v_dir < 0) {
+      gest.start_y <= ly.top_edge_zone_y() && v_dir < 0 &&
+      frame_hits().hit_test(gest.start_x, gest.start_y, kHitHorizSlider | kHitVertSlider) == nullptr) {
     commit_swipe();
     rs.nav.quick_actions_open = true;
     mark_dirty_full();
@@ -3722,25 +3837,9 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 13. Page 12: Calendar App (Unified Canvas + Mode Bar 4-Tab Swipe, Vertical Event Paging & Map Pan)
+  // 13. Page 12: Calendar App (Unified Canvas + Mode Bar 4-Tab Swipe & Vertical Event Paging)
   if (rs.nav.gui_page == PageId::CALENDAR) {
     if (rs.cal.delete_confirm_open) return false;
-    if (rs.cal.drilldown == CalDrilldown::MAP) {
-      if (is_release && (h_dir != 0 || v_dir != 0)) {
-        commit_swipe();
-        if (std::abs(dx) >= std::abs(dy)) {
-          const int step_x = (std::abs(dx) >= ly.fast_pan()) ? 2 : 1;
-          rs.cal.map_pan_x = std::clamp(rs.cal.map_pan_x + ((dx < 0) ? step_x : -step_x), -4, 4);
-        } else {
-          const int step_y = (std::abs(dy) >= ly.fast_pan()) ? 2 : 1;
-          rs.cal.map_pan_y = std::clamp(rs.cal.map_pan_y + ((dy < 0) ? step_y : -step_y), -4, 4);
-        }
-        rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-        rt_.schedule_disp();
-        return true;
-      }
-      return false;
-    }
 
     if (rs.cal.drilldown >= CalDrilldown::PICK_TITLE &&
         rs.cal.drilldown <= CalDrilldown::PICK_REPEAT &&
@@ -4023,8 +4122,9 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     }
     if (sl_hit->widget_id == WidgetId::LIGHT_TEMP_SLIDER &&
         rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
-      const int raw_k = 2000 + static_cast<int>(sl_hit->norm_x(tx) * 4500.0f);
-      const int next_k = std::clamp(((raw_k + 50) / 100) * 100, 2000, 6500);
+      const int raw_k = kLightKelvinMin +
+          static_cast<int>(sl_hit->norm_x(tx) * static_cast<float>(kLightKelvinMax - kLightKelvinMin));
+      const int next_k = std::clamp(((raw_k + 50) / 100) * 100, kLightKelvinMin, kLightKelvinMax);
       if (next_k != light_insp_kelvin() && (now_u - last_disp_update_ms() >= 42U)) {
         light_insp_kelvin() = next_k;
         rt_.schedule_disp();
@@ -4073,16 +4173,18 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
 
   // Light Inspector HSV Wheel continuous drag (Area Subpage 2, light domain)
   if (rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
-      light_insp_domain() == "light" && light_insp_mode() == 0 &&
-      (now_u - last_disp_update_ms() >= 42U)) {
+      light_insp_domain() == "light" && light_insp_mode() == 0) {
     float hue = 0.0f, sat = 1.0f;
     if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(244), 132, 58, hue, sat)) {
+      wheel_drag_dirty_ = true;
       gest.axis_lock = GestureAxisLock::Slider;
       gest.tap_cancelled = true;
       light_insp_hue_deg() = hue;
       light_insp_sat() = sat;
       update_light_inspector_hex(hue, sat);
-      rt_.schedule_disp();
+      if (now_u - last_disp_update_ms() >= 42U) {
+        rt_.schedule_disp();
+      }
       return;
     }
   }
@@ -4098,6 +4200,21 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
 
 void TouchGestureEngine::tick(uint32_t now_ms) {
   auto &rs = runtime_state();
+  auto &pp = ui::pin_pad_state();
+  if (pp.open && pp.last_activity_ms > 0U &&
+      static_cast<uint32_t>(now_ms - pp.last_activity_ms) >= ui::PinPadModalState::kAutoDismissMs) {
+    ui::pin_pad_scrub();
+    latter_rpc::secure_zero_string(rs.area.target_code);
+    rs.area.target_code.clear();
+    rs.area.action_feedback.clear();
+    pending_pin_feedback_.clear();
+    pending_doorbell_unlock_ = false;
+    rs.nav.pending_shortcut_entity_id.clear();
+    rs.nav.pending_shortcut_action.clear();
+    rs.nav.pending_shortcut_label.clear();
+    mark_dirty_full();
+    rt_.schedule_disp();
+  }
   auto &sc = shortcut_confirm_state();
   if (sc.open && sc.opened_ms > 0U &&
       static_cast<uint32_t>(now_ms - sc.opened_ms) >= ShortcutConfirmState::kAutoDismissMs) {
@@ -4263,6 +4380,10 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rs.nav.ambient_bri_override_pct = -1;
         rt_.sw_toggle(UiSwitchId::BEDTIME_MODE);
         rt_.schedule_disp();
+      } else if (wid == WidgetId::QUICK_DND_TOGGLE &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rt_.sw_toggle(UiSwitchId::DO_NOT_DISTURB);
+        rt_.schedule_disp();
       } else if (wid == WidgetId::QUICK_HIBERNATE_BTN &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
 #if LATTER_HAS_BATTERY
@@ -4326,16 +4447,26 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         gest.tap_cancelled = true;
       } else if (start_slider->widget_id == WidgetId::LIGHT_TEMP_SLIDER &&
                  rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
+        const int raw_k = kLightKelvinMin +
+            static_cast<int>(start_slider->norm_x(tp.x) * static_cast<float>(kLightKelvinMax - kLightKelvinMin));
+        light_insp_kelvin() = std::clamp(((raw_k + 50) / 100) * 100, kLightKelvinMin, kLightKelvinMax);
         rs.area.target_entity_id = light_insp_entity_id();
         rs.area.target_action = "set_kelvin";
         rs.area.target_level = light_insp_kelvin();
         rs.area.feedback_timer = now_rel;
         do_execute_area_action();
+        gest.tap_cancelled = true;
         rt_.schedule_disp();
       } else if (start_slider->widget_id == WidgetId::LIGHT_BRI_SLIDER &&
                  rs.nav.gui_page == PageId::AREA && rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL) {
         const std::string &idom = light_insp_domain();
-        const int pct = light_insp_bri_pct();
+        const int raw_b = static_cast<int>(start_slider->norm_x(tp.x) * 100.0f);
+        const int min_b = (idom == "cover") ? 0 : 5;
+        const int pct = std::clamp(((raw_b + 2) / 5) * 5, min_b, 100);
+        light_insp_bri_pct() = pct;
+        if (idom == "cover" || idom == "fan") {
+          light_insp_active() = (pct > 0);
+        }
         const int sl_i = light_insp_slot();
         if (sl_i >= 0 && sl_i < 3) {
           rs.area_entity_slots()[sl_i].level = pct;
@@ -4354,6 +4485,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         }
         rs.area.feedback_timer = now_rel;
         do_execute_area_action();
+        gest.tap_cancelled = true;
         rt_.schedule_disp();
       } else if (start_slider->widget_id == WidgetId::SYS_BRI_SLIDER &&
                  rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 2) {
@@ -4384,16 +4516,23 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
                light_insp_domain() == "light" && light_insp_mode() == 0) {
       float hue = 0.0f, sat = 1.0f;
-      if (ui::hsv_wheel_pick(tp.x, tp.y, SCREEN_CX, scale_y(244), 132, 58, hue, sat)) {
+      const bool picked = ui::hsv_wheel_pick(tp.x, tp.y, SCREEN_CX, scale_y(244), 132, 58, hue, sat);
+      if (picked) {
         light_insp_hue_deg() = hue;
         light_insp_sat() = sat;
         update_light_inspector_hex(hue, sat);
+      }
+      if (picked || wheel_drag_dirty_) {
+        wheel_drag_dirty_ = false;
+        gest.tap_cancelled = true;
         rs.area.target_entity_id = light_insp_entity_id();
         rs.area.target_action = "set_color";
         rs.area.target_level = light_insp_bri_pct();
         rs.area.feedback_timer = now_rel;
         do_execute_area_action();
         rt_.schedule_disp();
+      } else {
+        (void)try_commit_kinematic_swipe_(true, now_rel);
       }
     } else {
       // 2. Evaluate Unified Kinematic Swipe / Fast-Flick Commit Across All Pages
@@ -4546,7 +4685,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           const bool next_v = (item_idx == 4) ? !prefs.home_sun : !prefs.home_moon;
           uint32_t eff = 0U;
           if (latter_actions::record_local_pref_edit(pk, next_v ? "1" : "0", now_rel, eff)) {
-            device_prefs_state().last_effects = eff;
+            device_prefs_state().last_effects |= eff;
             rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
           }
           rt_.schedule_disp();
@@ -5214,11 +5353,14 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                           {"5 min", "10 min", "15 min", "30 min", "Disabled"}));
 #endif
         } else if (idx == 7) {
+          rs.nav.ambient_bri_override_pct = -1;
           rt_.sw_toggle(UiSwitchId::BEDTIME_MODE);
         } else if (idx == 8) {
           rt_.set_select_opt(UiSelectId::BEDTIME_DISPLAY,
                              cycle_option(rt_.select_opt(UiSelectId::BEDTIME_DISPLAY),
                                           {"Screen Off", "Ambient Clock"}));
+        } else if (idx == 9) {
+          rt_.sw_toggle(UiSwitchId::DO_NOT_DISTURB);
         }
         rt_.schedule_disp();
       } else if (rs.nav.system_menu_mode == 2 &&
@@ -5517,18 +5659,16 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               launch_dock_app(PageId::MUSIC, rs, rt_, now_rel);
             } else {
               rs.area.target_entity_id = sl.id;
-              const bool prev_act = sl.active;
               const bool next_act = (sl.type == "scene") ? true : !sl.active;
-              sl.active = next_act;
               std::string verb = "toggle";
               if (sl.type == "scene") verb = "turn_on";
               else if (sl.type == "cover") verb = next_act ? "open_cover" : "close_cover";
               else if (sl.type == "lock" || sl.id.rfind("lock.", 0) == 0) verb = next_act ? "unlock" : "lock";
               else verb = next_act ? "turn_on" : "turn_off";
-              rs.area.action_feedback = strip_trailing_paren_state(sl.name);
-              if (!gate_or_dispatch_area_action(sl.id, verb, next_act ? 100 : 0,
-                                                "PERIMETER PIN", now_rel)) {
-                sl.active = prev_act;
+              const std::string ok_fb = strip_trailing_paren_state(sl.name);
+              if (gate_or_dispatch_area_action(sl.id, verb, next_act ? 100 : 0,
+                                               "PERIMETER PIN", now_rel, ok_fb)) {
+                sl.active = next_act;
               }
             }
           }
@@ -5678,8 +5818,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
               "Arming Night...",
               "Arming Vacation...",
           };
-          rs.area.action_feedback = kAlarmFb[mode_i];
-          gate_or_dispatch_alarm_action(kAlarmActs[mode_i], now_rel);
+          gate_or_dispatch_alarm_action(kAlarmActs[mode_i], now_rel, kAlarmFb[mode_i]);
         } else if (home_hub_tab() == HomeHubTab::INTERCOM) {
           if (wid == WidgetId::INTERCOM_SPEAK_BTN &&
               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -5791,33 +5930,23 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             if (e_idx >= 0 && e_idx < hub.entry_count) {
               auto &item = hub.entries[e_idx];
               if (item.is_lock) {
-                const LockState prev_l = item.lock_state;
-                const bool want_lock = (prev_l == LockState::UNLOCKED);
-                item.lock_state = want_lock ? LockState::LOCKED : LockState::UNLOCKED;
-                ++hub.local_mutation_seq;
+                const bool want_lock = (item.lock_state == LockState::UNLOCKED);
                 rs.area.target_entity_id = item.entity_id;
-                rs.area.action_feedback =
+                const std::string ok_fb =
                     (!item.name.empty() ? item.name : std::string("Door Lock")) +
                     (want_lock ? ": Locked" : ": Unlocked");
-                if (!gate_or_dispatch_area_action(item.entity_id, want_lock ? "lock" : "unlock",
-                                                  want_lock ? 100 : 0, "UNLOCK DOOR PIN", now_rel)) {
-                  item.lock_state = prev_l;
-                  ++hub.local_mutation_seq;
-                }
+                (void)gate_or_dispatch_area_action(
+                    item.entity_id, want_lock ? "lock" : "unlock",
+                    want_lock ? 100 : 0, "UNLOCK DOOR PIN", now_rel, ok_fb);
               } else {
-                const GarageState prev_g = item.garage_state;
-                const bool want_open = (prev_g != GarageState::OPEN);
-                item.garage_state = want_open ? GarageState::OPEN : GarageState::CLOSED;
-                ++hub.local_mutation_seq;
+                const bool want_open = (item.garage_state != GarageState::OPEN);
                 rs.area.target_entity_id = item.entity_id;
                 const std::string g_lbl = !item.name.empty() ? item.name : std::string("Garage Door");
-                rs.area.action_feedback =
+                const std::string ok_fb =
                     (want_open ? "Opening " : "Closing ") + g_lbl + "...";
-                if (!gate_or_dispatch_area_action(item.entity_id, want_open ? "open_cover" : "close_cover",
-                                                  want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel)) {
-                  item.garage_state = prev_g;
-                  ++hub.local_mutation_seq;
-                }
+                (void)gate_or_dispatch_area_action(
+                    item.entity_id, want_open ? "open_cover" : "close_cover",
+                    want_open ? 100 : 0, "GARAGE DOOR PIN", now_rel, ok_fb);
               }
             }
           }
@@ -5909,13 +6038,16 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         if (wid == WidgetId::ALARM_SNOOZE_CANCEL &&
             touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.alarms.snooze_until = 0;
+          snoozed_alarm_slot() = 0;
           rt_.schedule_disp();
         } else if (wid >= WidgetId::ALARM_TOGGLE_BASE && wid < WidgetId::ALARM_TOGGLE_BASE + 3 &&
                    touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int a_idx = std::clamp(static_cast<int>(hit->param), 0, 2);
           prefs.alarms[a_idx].enabled = !prefs.alarms[a_idx].enabled;
-          if (!prefs.alarms[a_idx].enabled && rs.alarms.ringing_idx == a_idx + 1) {
+          if (!prefs.alarms[a_idx].enabled &&
+              (rs.alarms.ringing_idx == a_idx + 1 || snoozed_alarm_slot() == a_idx + 1)) {
             rs.alarms.snooze_until = 0;
+            snoozed_alarm_slot() = 0;
           }
           latter_actions::sync_local_alarms_edit(now_rel);
           rt_.schedule_disp();
@@ -5961,49 +6093,9 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           mark_dirty_full();
           rt_.schedule_disp();
         }
-      } else if (rs.cal.drilldown == CalDrilldown::MAP) {
-        if (wid == WidgetId::CAL_ZOOM_OUT_BTN && rs.cal.map_zoom > 10 &&
-            touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-          rs.cal.map_zoom--;
-          rs.cal.map_pan_x /= 2;
-          rs.cal.map_pan_y /= 2;
-          rt_.schedule_disp();
-          rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-        } else if (wid == WidgetId::CAL_ZOOM_IN_BTN && rs.cal.map_zoom < 18 &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-          rs.cal.map_zoom++;
-          rs.cal.map_pan_x = std::clamp(rs.cal.map_pan_x * 2, -4, 4);
-          rs.cal.map_pan_y = std::clamp(rs.cal.map_pan_y * 2, -4, 4);
-          rt_.schedule_disp();
-          rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-        } else if (wid == WidgetId::CAL_TODAY_BTN &&
-                   (rs.cal.map_pan_x != 0 || rs.cal.map_pan_y != 0) &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          rs.cal.map_pan_x = 0;
-          rs.cal.map_pan_y = 0;
-          rt_.cmd(UiHostCmd::FETCH_CALENDAR_MAP_SNAPSHOT);
-          rt_.schedule_disp();
-        }
       } else if (rs.cal.drilldown == CalDrilldown::DETAIL) {
-        if (wid == WidgetId::CAL_VIEW_MAP_BTN &&
-            rs.cal.selected_event_idx >= 0 && rs.cal.selected_event_idx < store.count &&
+        if (wid == WidgetId::CAL_DELETE_BTN &&
             touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const auto &ev = store.events[rs.cal.selected_event_idx];
-          if (ev.location[0] != '\0') {
-            rs.cal.detail_map_location = ev.location;
-            rs.cal.detail_map_url.clear();
-            rs.cal.map_zoom = 15;
-            rs.cal.map_pan_x = 0;
-            rs.cal.map_pan_y = 0;
-            rs.cal.drilldown = CalDrilldown::MAP;
-            rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
-            rs.alert.loaded_camera_url.clear();
-            latter_actions::emit_calendar_fetch_map(ev.location);
-            mark_dirty_full();
-            rt_.schedule_disp();
-          }
-        } else if (wid == WidgetId::CAL_DELETE_BTN &&
-                   touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.cal.delete_confirm_open = true;
           mark_dirty_full();
           rt_.schedule_disp();
@@ -6501,6 +6593,14 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
   if (act == "back") {
     if (ui::pin_pad_state().open) {
       ui::pin_pad_scrub();
+      latter_rpc::secure_zero_string(rs.area.target_code);
+      rs.area.target_code.clear();
+      rs.area.action_feedback.clear();
+      pending_pin_feedback_.clear();
+      pending_doorbell_unlock_ = false;
+      rs.nav.pending_shortcut_entity_id.clear();
+      rs.nav.pending_shortcut_action.clear();
+      rs.nav.pending_shortcut_label.clear();
       ui_focus_index() = 0;
       mark_dirty_full();
       rt_.schedule_disp();
@@ -6736,7 +6836,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;
   if (latter_actions::record_local_pref_edit(pk, opt, now_ms, eff)) {
-    device_prefs_state().last_effects = eff;
+    device_prefs_state().last_effects |= eff;
     cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }
 }
@@ -6753,6 +6853,7 @@ bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
     case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
     case W::SCREENSAVER_PHOTO_CLOCK: return p.screensaver_photo_clock;
     case W::BEDTIME_MODE: return p.bedtime_active;
+    case W::DO_NOT_DISTURB: return p.do_not_disturb;
   }
   return false;
 }
@@ -6772,11 +6873,12 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
     case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
     case W::SCREENSAVER_PHOTO_CLOCK: pk = K::SCREENSAVER_PHOTO_CLOCK; next_val = !p.screensaver_photo_clock; break;
     case W::BEDTIME_MODE: pk = K::BEDTIME_ACTIVE; next_val = !p.bedtime_active; break;
+    case W::DO_NOT_DISTURB: pk = K::DO_NOT_DISTURB; next_val = !p.do_not_disturb; break;
   }
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;
   if (latter_actions::record_local_pref_edit(pk, next_val ? "1" : "0", esphome::millis(), eff)) {
-    device_prefs_state().last_effects = eff;
+    device_prefs_state().last_effects |= eff;
     cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }
 }
@@ -6836,7 +6938,7 @@ void UiTouchRuntime::set_num_val(UiNumberId nid, float val) const {
   if (n <= 0) return;
   uint32_t eff = 0U;
   if (latter_actions::record_local_pref_edit(pk, std::string_view(buf, static_cast<size_t>(n)), now_ms, eff)) {
-    device_prefs_state().last_effects = eff;
+    device_prefs_state().last_effects |= eff;
     cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }
 }

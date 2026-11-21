@@ -79,6 +79,7 @@ static constexpr uint32_t kWakeGreetingFadeMs = 1200U;
 static constexpr uint32_t kWakeGreetingTotalMs = kWakeGreetingHoldMs + kWakeGreetingFadeMs;
 
 int &home_activity_overlay_page();
+int &snoozed_alarm_slot() noexcept;
 uint32_t &wake_greeting_start_ms();
 bool &wake_greeting_latched();
 bool is_wake_greeting_visible(uint32_t now_ms, bool enabled);
@@ -104,7 +105,8 @@ int collect_home_activities(
     HomeActivityItem out_items[kMaxHomeActivity],
     int cur_hour = -1, int cur_min = -1,
     const std::string &calendar_agenda_raw = "",
-    int cur_day_of_week = -1);
+    int cur_day_of_week = -1,
+    int snoozed_slot = -1);
 
 int get_activity_overlay_card_y(int vis_count, int row_idx);
 
@@ -133,6 +135,8 @@ void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int 
                                      float accel_x = 0.0f, float accel_y = 0.0f,
                                      bool show_celestial = true);
 void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night);
+void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz);
+std::string format_iso_time(const std::string &iso_str);
 
 // ------------------------------------------------------------------------------
 // 5. Shared Area, Home Hub, Tools, Comms & Games State

@@ -164,7 +164,7 @@ inline float alarm_output_volume(float alert_vol_pct, float media_volume) noexce
   float a = alert_vol_pct;
   if (std::isnan(a) || a <= 0.0f) a = 80.0f;
   a = std::clamp(a, 20.0f, 100.0f);
-  const float level = 0.90f - ((100.0f - a) * 0.18f * 2.0f / 255.0f);
+  const float level = media_dac_volume(a / 100.0f);
   return std::clamp(std::max(level, media_dac_volume(media_volume)), 0.10f, 1.0f);
 }
 

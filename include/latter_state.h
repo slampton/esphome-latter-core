@@ -9,6 +9,7 @@
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -273,6 +274,7 @@ enum class AutoBrightnessMode : uint8_t {
   Disabled        = 0,
   SunSynchronized = 1,
   TimeSchedule    = 2,
+  AmbientLight    = 3,
 };
 
 enum class ColorProfilePref : uint8_t {
@@ -512,7 +514,6 @@ struct MediaState {
   std::string album = "";
   float duration = 0.0f;
   float position = 0.0f;
-  uint32_t position_updated_at = 0;
   uint32_t position_updated_ms = 0;
   float volume = 0.5f;
   bool has_volume = false;
@@ -572,6 +573,7 @@ struct WeatherState {
   std::string sun_next_rising = "";
   std::string sun_next_setting = "";
   std::string moon_phase = "";
+  std::string temp_unit = "F";
 };
 
 // Protocol v3 calendar_agenda state.
@@ -620,7 +622,7 @@ struct ShortcutItem {
 };
 
 struct ShortcutsState {
-  static constexpr size_t kMaxDockItems = 16;
+  static constexpr size_t kMaxDockItems = 24;
   static constexpr size_t kMaxPinnedItems = 256;
   uint32_t epoch = 0;
   uint32_t rev = 0;
@@ -658,7 +660,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 17U;
+static constexpr uint16_t kPersistedPrefsVersion = 1U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -726,7 +728,8 @@ enum class PrefKey : uint8_t {
   CAMERA_DOORBELL_POPUP = 61,
   SCREENSAVER_PHOTO_CLOCK = 62,
   WEATHER_APP_BACKGROUND = 63,
-  COUNT = 64,
+  DO_NOT_DISTURB = 64,
+  COUNT = 65,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 128U,
               "PrefKey::COUNT must remain < 128 to fit in 128-bit PrefMask.");
@@ -783,6 +786,7 @@ inline constexpr PrefMask pref_mask_all(uint8_t count) noexcept {
 }
 
 // Side-effect bitmask returned when device_prefs or local preferences mutate.
+static constexpr uint32_t kPrefEffectNone              = 0U;
 static constexpr uint32_t kPrefEffectWakeWordSync      = 1U << 0;
 static constexpr uint32_t kPrefEffectWakeWordSens      = 1U << 1;
 static constexpr uint32_t kPrefEffectBrightness        = 1U << 2;
@@ -890,6 +894,7 @@ struct PersistedDevicePrefs {
   uint8_t camera_framing = 0;              // 0..1 ("Uncropped", "Fill")
   uint8_t camera_stream_mode = 0;          // 0..2 ("Auto", "Low Bandwidth", "Snapshots")
   uint8_t camera_doorbell_popup = 0;       // 0..1 ("Snapshot", "Live Video"; P4-only for Live Video)
+  bool do_not_disturb = false;             // Appended v3.0+ tail field: Do Not Disturb mode
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
@@ -908,7 +913,7 @@ struct PersistedDevicePrefs {
     return static_cast<ScreensaverStyle>((screensaver_style < 6U) ? screensaver_style : 0U);
   }
   constexpr AutoBrightnessMode auto_brightness_enum() const noexcept {
-    return static_cast<AutoBrightnessMode>((auto_brightness_mode < 3U) ? auto_brightness_mode : 1U);
+    return static_cast<AutoBrightnessMode>((auto_brightness_mode < 4U) ? auto_brightness_mode : 1U);
   }
   constexpr ColorProfilePref color_profile_enum() const noexcept {
     return static_cast<ColorProfilePref>((color_profile < 5U) ? color_profile : 0U);
@@ -956,8 +961,13 @@ struct PersistedDevicePrefs {
   }
 };
 
-static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>,
-              "PersistedDevicePrefs must remain a POD blob for ESPPreferenceObject.");
+static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs> &&
+                  std::is_standard_layout_v<PersistedDevicePrefs>,
+              "PersistedDevicePrefs must remain standard-layout and trivially copyable for NVS.");
+static constexpr size_t kPersistedPrefsMinSize = offsetof(PersistedDevicePrefs, do_not_disturb);
+static_assert(kPersistedPrefsMinSize > offsetof(PersistedDevicePrefs, camera_doorbell_popup) &&
+                  kPersistedPrefsMinSize < sizeof(PersistedDevicePrefs),
+              "Append-only NVS tail fields must be placed strictly at the end of PersistedDevicePrefs.");
 static_assert(std::char_traits<char>::length(kDefaultToolsItems) < sizeof(PersistedDevicePrefs::tools_items),
               "PersistedDevicePrefs::tools_items must fit kDefaultToolsItems.");
 static_assert(std::char_traits<char>::length(kDefaultGamesItems) < sizeof(PersistedDevicePrefs::games_items),
@@ -974,6 +984,7 @@ struct DevicePrefsState {
   std::string tools_items = kDefaultToolsItems;
   std::string games_items = kDefaultGamesItems;
   bool weather_app_background = true;
+  bool do_not_disturb = false;
 };
 
 inline DevicePrefsState &device_prefs_state() {
@@ -1106,6 +1117,32 @@ inline constexpr bool should_suppress_alert_in_bedtime(bool bedtime_active,
   return bedtime_active && (prio != AlertPriority::Critical);
 }
 
+// Decision #4: Under Do Not Disturb, suppress normal/warning notifications & chimes;
+// doorbell rings (!camera_entity.empty() / !camera_url.empty()) still show the silent
+// visual popup (chime = false), while true critical non-doorbell security/safety alerts
+// break through with both visual popup and audible chime.
+inline constexpr bool should_suppress_alert_in_dnd(bool dnd_active,
+                                                   int priority_level,
+                                                   bool is_doorbell) noexcept {
+  if (!dnd_active) return false;
+  if (is_doorbell) return false;
+  return priority_level != static_cast<int>(AlertPriority::Critical);
+}
+
+inline constexpr bool should_suppress_alert_in_dnd(bool dnd_active,
+                                                   AlertPriority prio,
+                                                   bool is_doorbell = false) noexcept {
+  return should_suppress_alert_in_dnd(dnd_active, static_cast<int>(prio), is_doorbell);
+}
+
+inline constexpr bool should_suppress_alert_chime_in_dnd(bool dnd_active,
+                                                         int priority_level,
+                                                         bool is_doorbell) noexcept {
+  if (!dnd_active) return false;
+  if (is_doorbell) return true;
+  return priority_level != static_cast<int>(AlertPriority::Critical);
+}
+
 struct BedtimeScheduleTracker {
   bool initialized = false;
   bool prev_in_window = false;
@@ -1176,6 +1213,62 @@ struct ActiveBrightnessTarget {
   const char *context_label{"Manual"};  // "Bedtime", "Manual", "Auto · Day", "Auto · Night", "Ambient", "Ambient · Override"
 };
 
+inline constexpr std::string_view utf8_safe_prefix(std::string_view sv, size_t max_bytes) noexcept {
+  if (sv.size() <= max_bytes) return sv;
+  if (max_bytes == 0U) return {};
+  size_t end = max_bytes;
+  while (end > 0U && (static_cast<unsigned char>(sv[end]) & 0xC0U) == 0x80U) {
+    --end;
+  }
+  if (end > 0U) {
+    size_t lead = end - 1U;
+    while (lead > 0U && (static_cast<unsigned char>(sv[lead]) & 0xC0U) == 0x80U) {
+      --lead;
+    }
+    const unsigned char lb = static_cast<unsigned char>(sv[lead]);
+    size_t seq_len = 1U;
+    if ((lb & 0x80U) == 0x00U) seq_len = 1U;
+    else if ((lb & 0xE0U) == 0xC0U) seq_len = 2U;
+    else if ((lb & 0xF0U) == 0xE0U) seq_len = 3U;
+    else if ((lb & 0xF8U) == 0xF0U) seq_len = 4U;
+    else return sv.substr(0U, lead);
+    if (lead + seq_len > end) {
+      end = lead;
+    }
+  }
+  return sv.substr(0U, end);
+}
+
+inline std::string v3_unescape_subfield(std::string_view sv) {
+  if (sv.find('\\') == std::string_view::npos) {
+    return std::string(sv);
+  }
+  std::string out;
+  out.reserve(sv.size());
+  for (size_t i = 0; i < sv.size(); ++i) {
+    if (sv[i] == '\\' && (i + 1U) < sv.size()) {
+      const char nxt = sv[i + 1U];
+      if (nxt == '\\') {
+        out.push_back('\\');
+        ++i;
+        continue;
+      }
+      if (nxt == 'p') {
+        out.push_back('|');
+        ++i;
+        continue;
+      }
+      if (nxt == 's') {
+        out.push_back(';');
+        ++i;
+        continue;
+      }
+    }
+    out.push_back(sv[i]);
+  }
+  return out;
+}
+
 inline bool parse_area_ambient_light(std::string_view raw, int8_t &out_pct, std::string &out_lux) {
   out_pct = -1;
   out_lux.clear();
@@ -1191,9 +1284,8 @@ inline bool parse_area_ambient_light(std::string_view raw, int8_t &out_pct, std:
   }
   out_pct = static_cast<int8_t>(parsed);
   if (sep != std::string_view::npos && sep + 1 < raw.size()) {
-    const std::string_view lux_sv = raw.substr(sep + 1);
-    const size_t take = std::min<size_t>(lux_sv.size(), 12U);
-    out_lux.assign(lux_sv.data(), take);
+    const std::string_view lux_sv = utf8_safe_prefix(raw.substr(sep + 1), 12U);
+    out_lux.assign(lux_sv.data(), lux_sv.size());
   }
   return true;
 }
@@ -1209,56 +1301,59 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
     return {ActiveBrightnessTargetKind::BEDTIME, PrefKey::BEDTIME_BRIGHTNESS,
             prefs.bedtime_brightness_pct(), "Bedtime"};
   }
-  const std::string_view mode = pref_auto_brightness_mode_cstr(prefs);
-  if (mode == "Ambient Light") {
-    if (ambient_override_pct >= 1 && ambient_override_pct <= 100) {
-      return {ActiveBrightnessTargetKind::AMBIENT_OVERRIDE, PrefKey::MANUAL_BRIGHTNESS,
-              static_cast<uint8_t>(ambient_override_pct), "Ambient · Override"};
-    }
-    if (area_ambient_pct >= 0 && area_ambient_pct <= 100) {
-      const int dark_pct = static_cast<int>(prefs.night_brightness_pct());
-      const int bright_pct = static_cast<int>(prefs.day_brightness_pct());
-      const int lo = std::min(dark_pct, bright_pct);
-      const int hi = std::max(dark_pct, bright_pct);
-      const int pct = std::clamp<int>(lo + (area_ambient_pct * (hi - lo) + 50) / 100, 1, 100);
-      return {ActiveBrightnessTargetKind::AMBIENT, PrefKey::DAY_BRIGHTNESS,
-              static_cast<uint8_t>(pct), "Ambient"};
-    }
-    // Missing/unavailable Area lux sensor: graceful Sun Synchronized fallback
-    const bool is_night = (sun_state == "below_horizon");
-    if (is_night) {
-      return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
-              prefs.night_brightness_pct(), "Ambient · Night"};
-    }
-    return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
-            prefs.day_brightness_pct(), "Ambient · Day"};
-  }
-  if (mode == "Sun Synchronized") {
-    const bool is_night = (sun_state == "below_horizon");
-    if (is_night) {
-      return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
-              prefs.night_brightness_pct(), "Auto · Night"};
-    }
-    return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
-            prefs.day_brightness_pct(), "Auto · Day"};
-  }
-  if (mode == "Time Schedule") {
-    const int day_h = static_cast<int>(prefs.day_start_hour);
-    const int night_h = static_cast<int>(prefs.night_start_hour);
-    bool is_day = true;
-    if (time_valid) {
-      if (day_h < night_h) {
-        is_day = (hour >= day_h && hour < night_h);
-      } else {
-        is_day = (hour >= day_h || hour < night_h);
+  switch (prefs.auto_brightness_enum()) {
+    case AutoBrightnessMode::AmbientLight: {
+      if (ambient_override_pct >= 1 && ambient_override_pct <= 100) {
+        return {ActiveBrightnessTargetKind::AMBIENT_OVERRIDE, PrefKey::MANUAL_BRIGHTNESS,
+                static_cast<uint8_t>(ambient_override_pct), "Ambient · Override"};
       }
+      if (area_ambient_pct >= 0 && area_ambient_pct <= 100) {
+        const int dark_pct = static_cast<int>(prefs.night_brightness_pct());
+        const int bright_pct = static_cast<int>(prefs.day_brightness_pct());
+        const int lo = std::min(dark_pct, bright_pct);
+        const int hi = std::max(dark_pct, bright_pct);
+        const int pct = std::clamp<int>(lo + (area_ambient_pct * (hi - lo) + 50) / 100, 1, 100);
+        return {ActiveBrightnessTargetKind::AMBIENT, PrefKey::DAY_BRIGHTNESS,
+                static_cast<uint8_t>(pct), "Ambient"};
+      }
+      // Missing/unavailable Area lux sensor: graceful Sun Synchronized fallback
+      const bool is_night = (sun_state == "below_horizon");
+      if (is_night) {
+        return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
+                prefs.night_brightness_pct(), "Ambient · Night"};
+      }
+      return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
+              prefs.day_brightness_pct(), "Ambient · Day"};
     }
-    if (is_day) {
+    case AutoBrightnessMode::SunSynchronized: {
+      const bool is_night = (sun_state == "below_horizon");
+      if (is_night) {
+        return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
+                prefs.night_brightness_pct(), "Auto · Night"};
+      }
       return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
               prefs.day_brightness_pct(), "Auto · Day"};
     }
-    return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
-            prefs.night_brightness_pct(), "Auto · Night"};
+    case AutoBrightnessMode::TimeSchedule: {
+      const int day_h = static_cast<int>(prefs.day_start_hour);
+      const int night_h = static_cast<int>(prefs.night_start_hour);
+      bool is_day = true;
+      if (time_valid) {
+        if (day_h < night_h) {
+          is_day = (hour >= day_h && hour < night_h);
+        } else {
+          is_day = (hour >= day_h || hour < night_h);
+        }
+      }
+      if (is_day) {
+        return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
+                prefs.day_brightness_pct(), "Auto · Day"};
+      }
+      return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
+              prefs.night_brightness_pct(), "Auto · Night"};
+    }
+    case AutoBrightnessMode::Disabled:
+      break;
   }
   return {ActiveBrightnessTargetKind::MANUAL, PrefKey::MANUAL_BRIGHTNESS,
           prefs.manual_brightness_pct(), "Manual"};
@@ -1292,9 +1387,9 @@ inline const char *pref_camera_doorbell_popup_cstr(const PersistedDevicePrefs &p
 template <size_t N>
 inline void copy_bounded_cstr(char (&dst)[N], std::string_view src) {
   static_assert(N > 0, "Destination buffer must be non-empty");
-  const size_t n = (src.size() < (N - 1)) ? src.size() : (N - 1);
-  if (n > 0) std::memcpy(dst, src.data(), n);
-  dst[n] = '\0';
+  const std::string_view safe = utf8_safe_prefix(src, N - 1U);
+  if (!safe.empty()) std::memcpy(dst, safe.data(), safe.size());
+  dst[safe.size()] = '\0';
 }
 
 inline std::string_view trim_ascii_ws(std::string_view sv) noexcept {
@@ -1557,6 +1652,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
     device_prefs_state().tools_items = p.tools_items;
     device_prefs_state().games_items = p.games_items;
     device_prefs_state().weather_app_background = p.weather_app_background;
+    device_prefs_state().do_not_disturb = p.do_not_disturb;
   }
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
@@ -1654,6 +1750,28 @@ inline esphome::ESPPreferenceObject &persisted_prefs_handle() {
 }
 #endif
 
+// Append-only prefix loader (Decision #10): accepts any NVS blob in [kPersistedPrefsMinSize, sizeof(PersistedDevicePrefs)]
+// and zero-initializes newly appended tail fields without wiping NVS across post-v3.0 firmware upgrades.
+inline bool load_persisted_prefs_from_buffer(const void *buf, size_t len,
+                                             PersistedDevicePrefs &out = persisted_prefs()) {
+  if (buf == nullptr || len < kPersistedPrefsMinSize || len > sizeof(PersistedDevicePrefs)) {
+    return false;
+  }
+  PersistedDevicePrefs loaded{};
+  std::memcpy(&loaded, buf, len);
+  if (loaded.magic != kPersistedPrefsMagic || loaded.version != kPersistedPrefsVersion) {
+    return false;
+  }
+  for (auto &a : loaded.alarms) {
+    if (a.hour > 23) a.hour = 7;
+    if (a.minute > 59) a.minute = 0;
+    if (a.recurrence > 3) a.recurrence = 0;
+  }
+  clamp_prefs_to_capabilities(loaded);
+  out = loaded;
+  return true;
+}
+
 inline bool load_persisted_prefs() {
   auto &st = device_prefs_state();
   st.loaded = true;
@@ -1662,15 +1780,7 @@ inline bool load_persisted_prefs() {
   if (esphome::global_preferences == nullptr) return false;
   PersistedDevicePrefs loaded{};
   if (persisted_prefs_handle().load(&loaded) &&
-      loaded.magic == kPersistedPrefsMagic &&
-      loaded.version == kPersistedPrefsVersion) {
-    for (auto &a : loaded.alarms) {
-      if (a.hour > 23) a.hour = 7;
-      if (a.minute > 59) a.minute = 0;
-      if (a.recurrence > 3) a.recurrence = 0;
-    }
-    clamp_prefs_to_capabilities(loaded);
-    persisted_prefs() = loaded;
+      load_persisted_prefs_from_buffer(&loaded, sizeof(loaded), persisted_prefs())) {
     return true;
   }
 #endif
@@ -1862,6 +1972,7 @@ struct AlarmRuntimeState {
   int edit_idx = 0;
   bool ringing = false;
   int ringing_idx = 0;
+  int snoozed_alarm_slot = 0;
   uint32_t snooze_until = 0;
   uint32_t last_fired_epoch_min = 0;
   bool find_my_active = false;
@@ -1933,6 +2044,8 @@ struct NavRuntimeState {
   float marble_touch_x = -1.0f;
   float marble_touch_y = -1.0f;
   bool game_btn_pressed = false;
+  int last_pub_display_power_state = -1;
+  int last_pub_display_bri_pct = -1;
 };
 
 inline constexpr size_t kMaxMusicLyricLines = 128;
@@ -2300,6 +2413,7 @@ struct DeviceRuntimeState {
   void (*on_ha_client_disconnected)(const std::string &client_info) = nullptr;
   void (*on_v3_domain_pushed)(std::string_view domain) = nullptr;
   void (*on_device_command)(std::string_view command) = nullptr;
+  void (*on_hello_sent)() = nullptr;
 
   DeviceRuntimeState() {
     for (size_t i = 0; i < kSlotsPerPage; ++i) {
@@ -2809,11 +2923,11 @@ inline int parse_thermostats_summary_records(std::string_view raw,
     const size_t got = v3_split_fields(recs[r], cols, 8U, '|');
     if (got < expected_cols || cols[0].empty()) continue;
     auto &dst = out_items[cnt++];
-    dst.entity_id = std::string(cols[0]);
-    dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
+    dst.entity_id = v3_unescape_subfield(cols[0]);
+    dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : v3_unescape_subfield(cols[1]);
     const size_t off = has_area_col ? 1U : 0U;
-    dst.area_id = has_area_col ? std::string(cols[2]) : std::string{};
-    dst.mode = std::string(cols[2U + off]);
+    dst.area_id = has_area_col ? v3_unescape_subfield(cols[2]) : std::string{};
+    dst.mode = v3_unescape_subfield(cols[2U + off]);
     const uint32_t raw_caps = v3_parse_u32(cols[5U + off], 0U);
     dst.caps = (raw_caps != 0U) ? static_cast<uint16_t>(raw_caps & 0xFFFFU) : kClimateCapDefault;
     const bool is_celsius = (dst.caps & kClimateCapCelsius) != 0U;
@@ -2840,9 +2954,9 @@ inline int parse_entry_controls_records(std::string_view locks_raw,
       std::string_view cols[5]{};
       if (v3_split_fields(recs[r], cols, 5U, '|') < 4U || cols[0].empty()) continue;
       auto &dst = out_items[cnt++];
-      dst.entity_id = std::string(cols[0]);
-      dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
-      dst.area_id = std::string(cols[2]);
+      dst.entity_id = v3_unescape_subfield(cols[0]);
+      dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : v3_unescape_subfield(cols[1]);
+      dst.area_id = v3_unescape_subfield(cols[2]);
       dst.is_lock = true;
       dst.lock_state = parse_lock_state_str(cols[3]);
     }
@@ -2854,9 +2968,9 @@ inline int parse_entry_controls_records(std::string_view locks_raw,
       std::string_view cols[5]{};
       if (v3_split_fields(recs[r], cols, 5U, '|') < 4U || cols[0].empty()) continue;
       auto &dst = out_items[cnt++];
-      dst.entity_id = std::string(cols[0]);
-      dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
-      dst.area_id = std::string(cols[2]);
+      dst.entity_id = v3_unescape_subfield(cols[0]);
+      dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : v3_unescape_subfield(cols[1]);
+      dst.area_id = v3_unescape_subfield(cols[2]);
       dst.is_lock = false;
       dst.garage_state = parse_garage_state_str(cols[3]);
     }
@@ -2875,9 +2989,9 @@ inline int parse_vacuums_summary_records(std::string_view raw,
     std::string_view cols[6]{};
     if (v3_split_fields(recs[r], cols, 6U, '|') < 5U || cols[0].empty()) continue;
     auto &dst = out_items[cnt++];
-    dst.entity_id = std::string(cols[0]);
-    dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : std::string(cols[1]);
-    dst.area_id = std::string(cols[2]);
+    dst.entity_id = v3_unescape_subfield(cols[0]);
+    dst.name = cols[1].empty() ? fallback_entity_label_sv(cols[0]) : v3_unescape_subfield(cols[1]);
+    dst.area_id = v3_unescape_subfield(cols[2]);
     dst.state = normalize_vacuum_state_str(cols[3]);
     const uint32_t raw_caps = v3_parse_u32(cols[4], 0U);
     dst.caps = (raw_caps != 0U) ? static_cast<uint16_t>(raw_caps & 0xFFFFU) : kVacuumCapDefault;
@@ -3246,7 +3360,6 @@ inline bool parse_v3_media_payload(std::string_view payload,
   st.album          = std::string(f[static_cast<size_t>(MediaField::ALBUM)]);
   st.duration            = v3_parse_float(f[static_cast<size_t>(MediaField::DURATION)], 0.0f);
   st.position            = v3_parse_float(f[static_cast<size_t>(MediaField::POSITION)], 0.0f);
-  st.position_updated_at = v3_parse_u32(f[static_cast<size_t>(MediaField::POSITION_UPDATED_AT)], 0);
   if (now_ms != 0U) {
     st.position_updated_ms = now_ms;
   }
@@ -3278,6 +3391,12 @@ inline bool parse_v3_media_payload(std::string_view payload,
   return true;
 }
 
+inline bool parse_v3_active_media_payload(std::string_view payload,
+                                          MediaState &st = media_state(),
+                                          uint32_t now_ms = 0) {
+  return parse_v3_media_payload(payload, st, now_ms);
+}
+
 // Parse Protocol v3 remote_config payload ("v3\x1f<epoch>\x1f<rev>\x1f<active_slot>\x1f<count>\x1f<slots_summary>")
 inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st = remote_state()) {
   constexpr size_t kCount = static_cast<size_t>(RemoteField::COUNT);
@@ -3294,6 +3413,16 @@ inline bool parse_v3_remote_payload(std::string_view payload, RemoteState &st = 
   st.configured_count = v3_parse_int(f[static_cast<size_t>(RemoteField::CONFIGURED_COUNT)], 0);
   st.slots_summary    = std::string(f[static_cast<size_t>(RemoteField::SLOTS_SUMMARY)]);
   return true;
+}
+
+inline constexpr const char *normalize_weather_temp_unit(std::string_view sv) noexcept {
+  while (!sv.empty() && (sv.front() == ' ' || sv.front() == '\t')) sv.remove_prefix(1);
+  while (!sv.empty() && (sv.back() == ' ' || sv.back() == '\t')) sv.remove_suffix(1);
+  if (sv == "C" || sv == "c" || sv == "\xC2\xB0" "C" || sv == "\xC2\xB0" "c" ||
+      sv == "celsius" || sv == "CELSIUS") {
+    return "C";
+  }
+  return "F";
 }
 
 // Parse Protocol v3 weather payload ("v3\x1f<epoch>\x1f<rev>\x1f...")
@@ -3321,6 +3450,7 @@ inline bool parse_v3_weather_payload(std::string_view payload, WeatherState &st 
   st.sun_next_rising  = std::string(f[static_cast<size_t>(WeatherField::SUN_NEXT_RISING)]);
   st.sun_next_setting = std::string(f[static_cast<size_t>(WeatherField::SUN_NEXT_SETTING)]);
   st.moon_phase       = std::string(f[static_cast<size_t>(WeatherField::MOON_PHASE)]);
+  st.temp_unit        = normalize_weather_temp_unit(f[static_cast<size_t>(WeatherField::TEMP_UNIT)]);
   return true;
 }
 
@@ -3390,15 +3520,15 @@ inline bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) 
     if (target_sv == "app:settings") {
       out_item.route_id = RouteId::SETTINGS_ROOT;
       out_item.target = "app:settings";
-      out_item.label = label_sv.empty() ? "Settings" : std::string(label_sv);
+      out_item.label = label_sv.empty() ? "Settings" : v3_unescape_subfield(label_sv);
     } else {
       const auto *spec = find_shortcut_route(target_sv);
       if (spec == nullptr) return false;
       out_item.route_id = spec->id;
       out_item.target = spec->token;
-      out_item.label = label_sv.empty() ? std::string(spec->label) : std::string(label_sv);
+      out_item.label = label_sv.empty() ? std::string(spec->label) : v3_unescape_subfield(label_sv);
     }
-    out_item.icon = std::string(icon_sv);
+    out_item.icon = v3_unescape_subfield(icon_sv);
     out_item.confirm = false;
     out_item.state = -1;
     return true;
@@ -3410,10 +3540,10 @@ inline bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) 
     }
     out_item.kind = ShortcutKind::ENTITY;
     out_item.route_id = RouteId::NONE;
-    out_item.target = std::string(target_sv);
-    out_item.action = std::string(action_sv);
-    out_item.label = label_sv.empty() ? std::string(target_sv) : std::string(label_sv);
-    out_item.icon = std::string(icon_sv);
+    out_item.target = v3_unescape_subfield(target_sv);
+    out_item.action = v3_unescape_subfield(action_sv);
+    out_item.label = label_sv.empty() ? out_item.target : v3_unescape_subfield(label_sv);
+    out_item.icon = v3_unescape_subfield(icon_sv);
     out_item.confirm = v3_parse_bool(confirm_sv);
     const int parsed_state = v3_parse_int(state_sv, -1);
     out_item.state = static_cast<int8_t>(std::clamp(parsed_state, -1, 2));
@@ -3843,10 +3973,10 @@ inline LocalTzInfo parse_local_tz_info(std::string_view raw) {
   if (raw.empty()) return info;
   std::string_view cols[5];
   if (v3_split_fields(raw, cols, 5, '|') != 5 || cols[0].empty()) return info;
-  info.iana = std::string(cols[0]);
-  info.city = cols[1].empty() ? city_from_iana_fallback(cols[0]) : std::string(cols[1]);
+  info.iana = v3_unescape_subfield(cols[0]);
+  info.city = cols[1].empty() ? city_from_iana_fallback(info.iana) : v3_unescape_subfield(cols[1]);
   info.utc_offset_min = std::clamp(v3_parse_int(cols[3], 0), -840, 840);
-  info.abbr = cols[2].empty() ? format_utc_offset_str(info.utc_offset_min) : std::string(cols[2]);
+  info.abbr = cols[2].empty() ? format_utc_offset_str(info.utc_offset_min) : v3_unescape_subfield(cols[2]);
   info.is_dst = v3_parse_bool(cols[4]);
   info.valid = true;
   return info;
@@ -3895,7 +4025,7 @@ inline int collect_active_world_clocks(const PersistedDevicePrefs &p,
       out_entries[total++] = WorldClockEntry{
           iana,
           custom_lbl.empty() ? city_from_iana_fallback(iana) : custom_lbl,
-          matched_cols[2].empty() ? format_utc_offset_str(off) : std::string(matched_cols[2]),
+          matched_cols[2].empty() ? format_utc_offset_str(off) : v3_unescape_subfield(matched_cols[2]),
           off,
           v3_parse_bool(matched_cols[4]),
           false,
@@ -4054,6 +4184,7 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::CAMERA_DOORBELL_POPUP: return "camera_doorbell_popup";
     case PrefKey::SCREENSAVER_PHOTO_CLOCK: return "screensaver_photo_clock";
     case PrefKey::WEATHER_APP_BACKGROUND: return "weather_app_background";
+    case PrefKey::DO_NOT_DISTURB: return "do_not_disturb";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -4125,6 +4256,7 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::CAMERA_DOORBELL_POPUP: return pref_camera_doorbell_popup_cstr(p);
     case PrefKey::SCREENSAVER_PHOTO_CLOCK: return p.screensaver_photo_clock ? "1" : "0";
     case PrefKey::WEATHER_APP_BACKGROUND: return p.weather_app_background ? "1" : "0";
+    case PrefKey::DO_NOT_DISTURB: return p.do_not_disturb ? "1" : "0";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -4373,6 +4505,13 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
       }
       return chg;
     }
+    case PrefKey::DO_NOT_DISTURB: {
+      const bool chg = apply_bool(p.do_not_disturb, kPrefEffectNone);
+      if (chg && &p == &persisted_prefs()) {
+        device_prefs_state().do_not_disturb = p.do_not_disturb;
+      }
+      return chg;
+    }
     case PrefKey::COUNT:
       break;
   }
@@ -4396,10 +4535,14 @@ inline std::string encode_prefs_mask(PrefMask mask, const PersistedDevicePrefs &
   return out;
 }
 
+inline std::string format_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs()) {
+  return encode_prefs_mask(p.dirty_mask, p);
+}
+
 // On first-time adoption (prefs_seq == 0), advertise compiled board defaults (excluding
-// ble_beacon_enabled, world_clocks, alarms_summary, local_clock_label, tools_items, and
-// games_items unless explicitly edited locally) so Latter seeds board-appropriate defaults
-// without clobbering Studio-configured lists.
+// ble_beacon_enabled, world_clocks, alarms_summary, local_clock_label, tools_items,
+// games_items, bedtime_active, and do_not_disturb unless explicitly edited locally) so
+// Latter seeds board-appropriate defaults without clobbering Studio-configured lists.
 inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs()) {
   if (p.prefs_seq == 0) {
     constexpr PrefMask kAllMask = pref_mask_all(static_cast<uint8_t>(PrefKey::COUNT));
@@ -4410,7 +4553,8 @@ inline std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persi
         pref_key_bit(PrefKey::LOCAL_CLOCK_LABEL) |
         pref_key_bit(PrefKey::TOOLS_ITEMS) |
         pref_key_bit(PrefKey::GAMES_ITEMS) |
-        pref_key_bit(PrefKey::BEDTIME_ACTIVE);
+        pref_key_bit(PrefKey::BEDTIME_ACTIVE) |
+        pref_key_bit(PrefKey::DO_NOT_DISTURB);
     const PrefMask seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
     return encode_prefs_mask(seed_mask, p);
   }
@@ -4502,9 +4646,11 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::CAMERA_DOORBELL_POPUP, PrefKey::CAMERA_DOORBELL_POPUP);
   apply_f(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK, PrefKey::SCREENSAVER_PHOTO_CLOCK);
   apply_f(DevicePrefsField::WEATHER_APP_BACKGROUND, PrefKey::WEATHER_APP_BACKGROUND);
+  apply_f(DevicePrefsField::DO_NOT_DISTURB, PrefKey::DO_NOT_DISTURB);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
   st.weather_app_background = p.weather_app_background;
+  st.do_not_disturb = p.do_not_disturb;
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {
@@ -4515,12 +4661,13 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
     }
   }
 
+  bool theme_rgb_changed = false;
   const std::string_view hex_sv = f[static_cast<size_t>(DevicePrefsField::THEME_COLOR_HEX)];
   if (hex_sv.size() == 7 && hex_sv[0] == '#') {
     uint32_t new_rgb = parse_hex_rgb_u24(hex_sv, p.custom_theme_rgb);
     if (new_rgb != p.custom_theme_rgb) {
       p.custom_theme_rgb = new_rgb;
-      changed_mask |= 1ULL;  // Trigger NVS persist
+      theme_rgb_changed = true;
       if (p.color_profile == 4) {
         out_effects |= (kPrefEffectThemePreset | kPrefEffectRedraw);
       }
@@ -4528,11 +4675,16 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   }
 
   const uint32_t in_seq = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)], 0);
-  const bool meta_changed = (in_seq > 0 && p.prefs_seq != in_seq) || p.dirty_mask.any();
-  if (in_seq > 0) p.prefs_seq = in_seq;
-  p.dirty_mask.clear();
+  bool meta_changed = false;
+  if (in_seq > p.prefs_seq) {
+    p.prefs_seq = in_seq;
+    if (p.dirty_mask.any()) {
+      p.dirty_mask.clear();
+    }
+    meta_changed = true;
+  }
 
-  if (changed_mask.any() || meta_changed) {
+  if (changed_mask.any() || theme_rgb_changed || meta_changed) {
     schedule_persisted_prefs_save(now_ms);
   }
   return true;
@@ -4729,8 +4881,8 @@ inline int parse_calendar_sources_meta(std::string_view raw,
     const size_t cn = v3_split_fields(recs[i], cols, 5, '|');
     if (cn < 2 || cols[0].empty()) continue;
     CalendarSourceMeta item{};
-    copy_bounded_cstr(item.entity_id, cols[0]);
-    copy_bounded_cstr(item.label, cols[1].empty() ? cols[0] : cols[1]);
+    copy_bounded_cstr(item.entity_id, v3_unescape_subfield(cols[0]));
+    copy_bounded_cstr(item.label, v3_unescape_subfield(cols[1].empty() ? cols[0] : cols[1]));
     item.color_idx = static_cast<uint8_t>(std::clamp(cn >= 3 ? v3_parse_int(cols[2], count) : count, 0, 5));
     item.can_create = (cn >= 4) && v3_parse_bool(cols[3]);
     item.can_delete = (cn >= 5) && v3_parse_bool(cols[4]);
@@ -4756,8 +4908,8 @@ inline int collect_writable_calendar_sources(std::string_view raw,
     if (can_create && wcnt < max_out) {
       if (out != nullptr) {
         CalendarSourceMeta item{};
-        copy_bounded_cstr(item.entity_id, cols[0]);
-        copy_bounded_cstr(item.label, cols[1].empty() ? cols[0] : cols[1]);
+        copy_bounded_cstr(item.entity_id, v3_unescape_subfield(cols[0]));
+        copy_bounded_cstr(item.label, v3_unescape_subfield(cols[1].empty() ? cols[0] : cols[1]));
         item.color_idx = static_cast<uint8_t>(std::clamp(cn >= 3 ? v3_parse_int(cols[2], src_idx) : src_idx, 0, 5));
         item.can_create = true;
         item.can_delete = (cn >= 5) && (cols[4] == "1" || cols[4] == "true");
@@ -4826,6 +4978,7 @@ struct CalendarWindowStore {
   bool loading = false;
   CalendarWindowEvent events[kMaxCalendarWindowEvents]{};
 
+  int last_applied_req_id = 0;
   int staging_req_id = -1;
   int staging_expected_chunks = 0;
   int staging_next_chunk = 0;
@@ -4848,6 +5001,7 @@ struct CalendarWindowStore {
     for (auto &ev : events) {
       ev.reset_in_place();
     }
+    last_applied_req_id = 0;
     staging_req_id = -1;
     staging_expected_chunks = 0;
     staging_next_chunk = 0;
@@ -4945,8 +5099,8 @@ inline int populate_calendar_summary_preview(
     dst.start_ymd = today_ymd;
     dst.end_ymd = today_ymd;
     dst.all_day = (f[3] == "1") ? 1U : 0U;
-    copy_bounded_cstr(dst.title, f[1].empty() ? std::string_view("Event") : f[1]);
-    copy_bounded_cstr(dst.location, f[2]);
+    copy_bounded_cstr(dst.title, f[1].empty() ? std::string("Event") : v3_unescape_subfield(f[1]));
+    copy_bounded_cstr(dst.location, v3_unescape_subfield(f[2]));
     ++count;
   }
   return count;
@@ -4982,14 +5136,14 @@ inline bool apply_calendar_view_action(int req_id,
                                        int chunk_count,
                                        std::string_view window_start,
                                        std::string_view window_end,
-                                       std::string_view map_url,
                                        std::string_view events,
                                        CalendarWindowStore &store = calendar_window_store(),
                                        DeviceRuntimeState &rs = runtime_state()) {
-  if (!map_url.empty() && chunk_count <= 0) {
-    rs.cal.detail_map_url = std::string(map_url);
-    store.rev++;
-    return true;
+  if (!latter_rpc::accept_req_id(latter_rpc::SlotChannel::CALENDAR, req_id)) {
+    return false;
+  }
+  if (req_id > 0 && store.last_applied_req_id > 0 && req_id < store.last_applied_req_id) {
+    return false;
   }
   if (chunk_index < 0 || chunk_count <= 0 || chunk_index >= chunk_count || chunk_count > 16) {
     return false;
@@ -5029,6 +5183,9 @@ inline bool apply_calendar_view_action(int req_id,
     return false;
   }
 
+  if (req_id > store.last_applied_req_id) {
+    store.last_applied_req_id = req_id;
+  }
   store.count = store.staging_count;
   for (int i = 0; i < store.count; ++i) {
     store.events[i] = store.staging_events[i];
@@ -5038,12 +5195,9 @@ inline bool apply_calendar_view_action(int req_id,
   store.loading = false;
   store.staging_expected_chunks = 0;
   store.staging_next_chunk = 0;
-  if (!map_url.empty()) {
-    rs.cal.detail_map_url = std::string(map_url);
-  }
   if (rs.cal.selected_event_idx >= store.count) {
     rs.cal.selected_event_idx = -1;
-    if (rs.cal.drilldown == CalDrilldown::DETAIL || rs.cal.drilldown == CalDrilldown::MAP) {
+    if (rs.cal.drilldown == CalDrilldown::DETAIL) {
       rs.cal.drilldown = CalDrilldown::NONE;
       rs.cal.delete_confirm_open = false;
     }
@@ -5159,7 +5313,7 @@ inline bool finish_calendar_dictation(std::string_view stt_text,
     rs.cal.feedback_ms = now_ms;
     return false;
   }
-  std::string cleaned(sv.substr(0, (field == 1U) ? 56U : 64U));
+  std::string cleaned(utf8_safe_prefix(sv, (field == 1U) ? 56U : 64U));
   if (!cleaned.empty() && std::islower(static_cast<unsigned char>(cleaned[0]))) {
     cleaned[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cleaned[0])));
   }
@@ -5205,7 +5359,7 @@ inline bool finish_broadcast_dictation(std::string_view stt_text,
     rs.intercom.broadcast_feedback_ms = now_ms;
     return false;
   }
-  std::string cleaned(sv.substr(0, 160U));
+  std::string cleaned(utf8_safe_prefix(sv, 160U));
   if (!cleaned.empty() && std::islower(static_cast<unsigned char>(cleaned[0]))) {
     cleaned[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(cleaned[0])));
   }
@@ -5261,100 +5415,25 @@ inline void append_music_lyrics_records_blob(std::string_view blob,
   if (trimmed.empty() || dst.size() >= max_total) return;
 
   // Canonical Protocol v3 record format: 0x1E-joined "<t_ms>\x1f<text>" lines.
-  if (trimmed.front() != '[') {
-    size_t pos = 0;
-    while (pos <= blob.size() && dst.size() < max_total) {
-      const size_t sep = blob.find(kProtocolRecordSep, pos);
-      const std::string_view rec =
-          (sep == std::string_view::npos) ? blob.substr(pos) : blob.substr(pos, sep - pos);
-      if (!rec.empty()) {
-        const size_t fsep = rec.find(kProtocolFieldSep);
-        MusicLyricLine line{};
-        if (fsep != std::string_view::npos) {
-          line.t_ms = static_cast<int32_t>(v3_parse_int(rec.substr(0, fsep), -1));
-          line.text = std::string(rec.substr(fsep + 1U));
-        } else {
-          line.t_ms = -1;
-          line.text = std::string(rec);
-        }
-        dst.push_back(std::move(line));
+  size_t pos = 0;
+  while (pos <= blob.size() && dst.size() < max_total) {
+    const size_t sep = blob.find(kProtocolRecordSep, pos);
+    const std::string_view rec =
+        (sep == std::string_view::npos) ? blob.substr(pos) : blob.substr(pos, sep - pos);
+    if (!rec.empty()) {
+      const size_t fsep = rec.find(kProtocolFieldSep);
+      MusicLyricLine line{};
+      if (fsep != std::string_view::npos) {
+        line.t_ms = static_cast<int32_t>(v3_parse_int(rec.substr(0, fsep), -1));
+        line.text = std::string(rec.substr(fsep + 1U));
+      } else {
+        line.t_ms = -1;
+        line.text = std::string(rec);
       }
-      if (sep == std::string_view::npos) break;
-      pos = sep + 1U;
-    }
-    return;
-  }
-
-  // Fallback compact JSON array parser: [{"t_ms":1200,"text":"..."}, ...]
-  auto extract_json_str = [](std::string_view obj, std::string_view key, std::string &out) -> bool {
-    const size_t kpos = obj.find(key);
-    if (kpos == std::string_view::npos) return false;
-    const size_t colon = obj.find(':', kpos + key.size());
-    if (colon == std::string_view::npos) return false;
-    const size_t q0 = obj.find('"', colon + 1U);
-    if (q0 == std::string_view::npos) return false;
-    out.clear();
-    bool esc = false;
-    for (size_t i = q0 + 1U; i < obj.size(); ++i) {
-      const char ch = obj[i];
-      if (esc) {
-        if (ch == 'n') out.push_back('\n');
-        else if (ch == 'r') out.push_back(' ');
-        else if (ch == 't') out.push_back(' ');
-        else out.push_back(ch);
-        esc = false;
-        continue;
-      }
-      if (ch == '\\') {
-        esc = true;
-        continue;
-      }
-      if (ch == '"') return true;
-      out.push_back(ch);
-    }
-    return false;
-  };
-
-  size_t cur = 0;
-  while (cur < trimmed.size() && dst.size() < max_total) {
-    const size_t lbrace = trimmed.find('{', cur);
-    if (lbrace == std::string_view::npos) break;
-    bool in_str = false;
-    bool esc = false;
-    size_t rbrace = std::string_view::npos;
-    for (size_t i = lbrace + 1U; i < trimmed.size(); ++i) {
-      const char ch = trimmed[i];
-      if (in_str) {
-        if (esc) esc = false;
-        else if (ch == '\\') esc = true;
-        else if (ch == '"') in_str = false;
-        continue;
-      }
-      if (ch == '"') in_str = true;
-      else if (ch == '}') {
-        rbrace = i;
-        break;
-      }
-    }
-    if (rbrace == std::string_view::npos) break;
-    const std::string_view obj = trimmed.substr(lbrace, rbrace - lbrace + 1U);
-    MusicLyricLine line{};
-    const size_t tpos = obj.find("\"t_ms\"");
-    if (tpos != std::string_view::npos) {
-      const size_t colon = obj.find(':', tpos + 6U);
-      if (colon != std::string_view::npos) {
-        size_t ns = colon + 1U;
-        while (ns < obj.size() && (obj[ns] == ' ' || obj[ns] == '\t')) ++ns;
-        size_t ne = ns;
-        if (ne < obj.size() && (obj[ne] == '-' || obj[ne] == '+')) ++ne;
-        while (ne < obj.size() && obj[ne] >= '0' && obj[ne] <= '9') ++ne;
-        line.t_ms = static_cast<int32_t>(v3_parse_int(obj.substr(ns, ne - ns), -1));
-      }
-    }
-    if (extract_json_str(obj, "\"text\"", line.text)) {
       dst.push_back(std::move(line));
     }
-    cur = rbrace + 1U;
+    if (sep == std::string_view::npos) break;
+    pos = sep + 1U;
   }
 }
 
@@ -6153,8 +6232,8 @@ inline void parse_latter_remote_slots_summary(const std::string &summary) {
       const int idx = slot_num - 1;
       const std::string_view st = f[5];
       st_on[idx] = (st == "on" || st == "playing" || st == "paused" || st == "buffering" || st == "idle");
-      t_ents[idx] = std::string(f[2]);
-      t_names[idx] = f[1].empty() ? format_remote_entity_fallback(t_ents[idx]) : std::string(f[1]);
+      t_ents[idx] = v3_unescape_subfield(f[2]);
+      t_names[idx] = f[1].empty() ? format_remote_entity_fallback(t_ents[idx]) : v3_unescape_subfield(f[1]);
     }
   }
   remote_control_page() = 0;
@@ -6248,9 +6327,9 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
     std::string_view f[5];
     const size_t fc = v3_split_fields(recs[r], f, 5, '|');
     if (fc < 2 || f[0].empty()) continue;
-    out[idx].entity_id = std::string(f[0]);
-    out[idx].name = f[1].empty() ? std::string(f[0]) : std::string(f[1]);
-    out[idx].area_id = (fc >= 3) ? std::string(f[2]) : "";
+    out[idx].entity_id = v3_unescape_subfield(f[0]);
+    out[idx].name = f[1].empty() ? out[idx].entity_id : v3_unescape_subfield(f[1]);
+    out[idx].area_id = (fc >= 3) ? v3_unescape_subfield(f[2]) : "";
     uint8_t parsed_caps = 0;
     if (fc >= 4 && !f[3].empty()) {
       const std::string_view cv = f[3];
@@ -6295,7 +6374,7 @@ inline int count_configured_cameras(const AreaContextState &ac = area_ctx_state(
   return (!ac.camera_stream_url.empty() || !ac.camera_snapshot_url.empty()) ? 1 : 0;
 }
 
-inline constexpr int kMaxEffectiveDockItems = 16;
+inline constexpr int kMaxEffectiveDockItems = 25;
 
 inline ShortcutItem *dock_items_scratch() {
   static std::vector<ShortcutItem> s_buf(static_cast<size_t>(kMaxEffectiveDockItems));
@@ -6597,7 +6676,7 @@ inline int parse_broadcast_phrases(const std::string &raw, std::vector<std::stri
                                    : std::string_view(raw).substr(start, sep - start);
     const std::string_view trimmed = trim_ascii_ws(rec);
     if (!trimmed.empty()) {
-      out.emplace_back(trimmed.substr(0, 64U));
+      out.emplace_back(utf8_safe_prefix(trimmed, 64U));
     }
     if (sep == std::string::npos) break;
     start = sep + 1;

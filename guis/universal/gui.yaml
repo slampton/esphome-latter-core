@@ -69,11 +69,11 @@ color:
   - id: col_cyan
     hex: "456E8A"  # Distinctly muted vintage steel/slate blue
   - id: col_green
-    hex: "427453"  # Distinctly muted heritage sage/moss green
+    hex: "529668"  # Calibrated heritage sage green (>= 4.5:1 WCAG AA contrast on dark/glass)
   - id: col_orange
     hex: "B85C24"  # Muted earthy terracotta orange
   - id: col_red
-    hex: "A84338"  # Vibrant antique vermilion crimson
+    hex: "E06A5E"  # Calibrated vermilion coral (>= 4.5:1 WCAG AA contrast on dark/glass)
   - id: col_purple
     hex: "6D4B7D"  # Muted vintage plum amethyst
   - id: col_magenta
@@ -207,6 +207,7 @@ display:
       ctx.va_wake_screen = prefs.wake_screen_on_assist;
       ctx.screensaver_photo_clock = prefs.screensaver_photo_clock;
       ctx.bedtime_active = prefs.bedtime_active;
+      ctx.do_not_disturb = prefs.do_not_disturb;
 
       const auto &ac_wall = latter_ui::area_ctx_state();
       const bool has_day_night_sky = latter_ui::is_day_night_sky_wallpaper_url(ac_wall.wallpaper_url);
@@ -221,7 +222,6 @@ display:
       const bool tools_full_bleed =
           (rs.nav.gui_page == latter_ui::PageId::TOOLS &&
            rs.nav.tools_subpage == latter_ui::ToolsSubpage::FLASHLIGHT) ||
-          (latter_ui::is_calendar_map_view_active(rs) && ctx.camera_snapshot_art.width > 16) ||
           cam_live_canvas;
       const bool weather_sim_active = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
       const latter_ui::BackdropMode bd_mode = latter_ui::resolve_backdrop_mode(

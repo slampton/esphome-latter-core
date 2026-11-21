@@ -10,8 +10,11 @@
 //    FrameHitTable-driven render_active_focus_overlay().
 // ==============================================================================
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -655,6 +658,153 @@ inline bool is_photo_frame_initial_load_pending(
   return static_cast<uint32_t>(now_ms - standby_entered_ms) < kPhotoFrameLoadGraceMs;
 }
 
+inline float weather_temp_to_fahrenheit(
+    float temp, std::string_view temp_unit) noexcept {
+  if (std::isnan(temp)) return temp;
+  if (!temp_unit.empty() &&
+      (temp_unit.front() == 'C' || temp_unit.front() == 'c' ||
+       temp_unit.back() == 'C' || temp_unit.back() == 'c')) {
+    return temp * 1.8f + 32.0f;
+  }
+  return temp;
+}
+
+struct ParsedIsoTimestamp {
+  int year{0};
+  int month{0};
+  int day{0};
+  int hour{0};
+  int minute{0};
+  int second{0};
+  bool has_tz{false};
+  int tz_offset_sec{0};
+  int64_t utc_epoch_sec{0};
+};
+
+inline bool parse_iso_timestamp_components(
+    std::string_view raw, ParsedIsoTimestamp &out) noexcept {
+  while (!raw.empty() && (raw.front() == ' ' || raw.front() == '\t')) raw.remove_prefix(1);
+  while (!raw.empty() && (raw.back() == ' ' || raw.back() == '\t')) raw.remove_suffix(1);
+  if (raw.size() < 16U || raw == "unknown" || raw == "unavailable") return false;
+
+  auto parse_digits = [&](size_t pos, size_t n, int &val) noexcept -> bool {
+    if (pos + n > raw.size()) return false;
+    int acc = 0;
+    for (size_t i = 0; i < n; ++i) {
+      const char ch = raw[pos + i];
+      if (ch < '0' || ch > '9') return false;
+      acc = acc * 10 + (ch - '0');
+    }
+    val = acc;
+    return true;
+  };
+
+  int yr = 0, mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
+  if (!parse_digits(0, 4, yr) || raw[4] != '-' ||
+      !parse_digits(5, 2, mo) || raw[7] != '-' ||
+      !parse_digits(8, 2, dy)) {
+    return false;
+  }
+  const char sep = raw[10];
+  if (sep != 'T' && sep != 't' && sep != ' ') return false;
+  if (!parse_digits(11, 2, hr) || raw[13] != ':' || !parse_digits(14, 2, mn)) {
+    return false;
+  }
+  size_t idx = 16U;
+  if (idx < raw.size() && raw[idx] == ':') {
+    if (!parse_digits(idx + 1U, 2U, sc)) return false;
+    idx += 3U;
+  }
+  if (idx < raw.size() && (raw[idx] == '.' || raw[idx] == ',')) {
+    ++idx;
+    if (idx >= raw.size() || raw[idx] < '0' || raw[idx] > '9') return false;
+    while (idx < raw.size() && raw[idx] >= '0' && raw[idx] <= '9') ++idx;
+  }
+
+  bool has_tz = false;
+  int tz_off_sec = 0;
+  if (idx < raw.size()) {
+    const char zc = raw[idx];
+    if (zc == 'Z' || zc == 'z') {
+      if (idx + 1U != raw.size()) return false;
+      has_tz = true;
+    } else if (zc == '+' || zc == '-') {
+      const int sign = (zc == '-') ? -1 : 1;
+      ++idx;
+      int oh = 0, om = 0;
+      if (!parse_digits(idx, 2U, oh)) return false;
+      idx += 2U;
+      if (idx < raw.size() && raw[idx] == ':') ++idx;
+      if (idx < raw.size()) {
+        if (!parse_digits(idx, 2U, om)) return false;
+        idx += 2U;
+      }
+      if (idx != raw.size() || oh > 23 || om > 59) return false;
+      has_tz = true;
+      tz_off_sec = sign * (oh * 3600 + om * 60);
+    } else {
+      return false;
+    }
+  }
+
+  if (mo < 1 || mo > 12 || dy < 1 || dy > 31 || hr < 0 || hr > 23 ||
+      mn < 0 || mn > 59 || sc < 0 || sc > 60) {
+    return false;
+  }
+
+  const int y = yr - (mo <= 2 ? 1 : 0);
+  const int era = (y >= 0 ? y : y - 399) / 400;
+  const int yoe = y - era * 400;
+  const int doy = (153 * (mo > 2 ? mo - 3 : mo + 9) + 2) / 5 + dy - 1;
+  const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  const int64_t days = static_cast<int64_t>(era) * 146097LL + static_cast<int64_t>(doe) - 719468LL;
+  const int64_t wall_sec = days * 86400LL + static_cast<int64_t>(hr) * 3600LL +
+                           static_cast<int64_t>(mn) * 60LL + static_cast<int64_t>(sc);
+
+  out.year = yr;
+  out.month = mo;
+  out.day = dy;
+  out.hour = hr;
+  out.minute = mn;
+  out.second = sc;
+  out.has_tz = has_tz;
+  out.tz_offset_sec = tz_off_sec;
+  out.utc_epoch_sec = wall_sec - static_cast<int64_t>(tz_off_sec);
+  return true;
+}
+
+inline void format_hhmm_clock_to(int hr, int mn, bool is_24h, char *out, size_t out_sz) noexcept {
+  if (out == nullptr || out_sz == 0U) return;
+  const int h = ((hr % 24) + 24) % 24;
+  const int m = std::clamp(mn, 0, 59);
+  if (is_24h) {
+    std::snprintf(out, out_sz, "%02d:%02d", h, m);
+  } else {
+    int h12 = h % 12;
+    if (h12 == 0) h12 = 12;
+    std::snprintf(out, out_sz, "%d:%02d %s", h12, m, (h >= 12) ? "PM" : "AM");
+  }
+}
+
+inline bool format_iso_time_with_offset(
+    std::string_view iso_str, bool is_24h, int local_utc_offset_min,
+    char *out, size_t out_sz) noexcept {
+  if (out == nullptr || out_sz == 0U) return false;
+  ParsedIsoTimestamp ts{};
+  if (!parse_iso_timestamp_components(iso_str, ts)) {
+    std::snprintf(out, out_sz, "%s", kUnknownGlyph);
+    return false;
+  }
+  if (!ts.has_tz) {
+    format_hhmm_clock_to(ts.hour, ts.minute, is_24h, out, out_sz);
+    return true;
+  }
+  const int64_t local_sec = ts.utc_epoch_sec + static_cast<int64_t>(local_utc_offset_min) * 60LL;
+  const int rem = static_cast<int>(((local_sec % 86400LL) + 86400LL) % 86400LL);
+  format_hhmm_clock_to(rem / 3600, (rem % 3600) / 60, is_24h, out, out_sz);
+  return true;
+}
+
 #if __has_include("esphome/core/defines.h")
 
 // ------------------------------------------------------------------------------
@@ -980,6 +1130,7 @@ struct UiFrameContext {
   bool va_wake_screen{true};
   bool screensaver_photo_clock{false};
   bool bedtime_active{false};
+  bool do_not_disturb{false};
 };
 
 inline ArtImageView resolve_photo_frame_art(

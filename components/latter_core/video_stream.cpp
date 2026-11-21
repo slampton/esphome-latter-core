@@ -209,13 +209,9 @@ struct LatterVideoClient::Impl {
 
   SemaphoreHandle_t ctrl_mtx{nullptr};
   SemaphoreHandle_t stats_mtx{nullptr};
-#if !LATTER_VIDEO_HW_JPEG
-  SemaphoreHandle_t frame_mtx{nullptr};
-#else
   portMUX_TYPE idx_mux = portMUX_INITIALIZER_UNLOCKED;
   int front_idx{-1};
   int reader_idx{-1};
-#endif
 
 #if LATTER_VIDEO_HAS_STATIC_TASK
   esphome::StaticTask static_task{};
@@ -262,12 +258,33 @@ struct LatterVideoClient::Impl {
   bool init_sync_primitives() noexcept {
     if (ctrl_mtx == nullptr) ctrl_mtx = xSemaphoreCreateMutex();
     if (stats_mtx == nullptr) stats_mtx = xSemaphoreCreateMutex();
-#if !LATTER_VIDEO_HW_JPEG
-    if (frame_mtx == nullptr) frame_mtx = xSemaphoreCreateMutex();
-    return ctrl_mtx != nullptr && stats_mtx != nullptr && frame_mtx != nullptr;
-#else
     return ctrl_mtx != nullptr && stats_mtx != nullptr;
-#endif
+  }
+
+  int acquire_back_buffer() noexcept {
+    const TickType_t sleep_ticks = (pdMS_TO_TICKS(2) > 0) ? pdMS_TO_TICKS(2) : 1;
+    int back_idx = 0;
+    bool conflict = true;
+    for (int wait_it = 0; wait_it < 8; ++wait_it) {
+      portENTER_CRITICAL(&idx_mux);
+      const int f = front_idx;
+      const int r = reader_idx;
+      back_idx = (f == 0) ? 1 : 0;
+      conflict = (r == back_idx);
+      portEXIT_CRITICAL(&idx_mux);
+      if (!conflict) break;
+      vTaskDelay(sleep_ticks);
+    }
+    if (conflict || buf[back_idx] == nullptr) return -1;
+    return back_idx;
+  }
+
+  void commit_back_buffer(int back_idx, int decoded_w, int decoded_h) noexcept {
+    portENTER_CRITICAL(&idx_mux);
+    buf_w[back_idx] = decoded_w;
+    buf_h[back_idx] = decoded_h;
+    front_idx = back_idx;
+    portEXIT_CRITICAL(&idx_mux);
   }
 
   void ensure_worker_started() noexcept {
@@ -322,7 +339,6 @@ struct LatterVideoClient::Impl {
     owner->has_frame_.store(false, std::memory_order_release);
     owner->frame_dirty_.store(false, std::memory_order_release);
 
-#if LATTER_VIDEO_HW_JPEG
     portENTER_CRITICAL(&idx_mux);
     front_idx = -1;
     portEXIT_CRITICAL(&idx_mux);
@@ -337,10 +353,12 @@ struct LatterVideoClient::Impl {
       vTaskDelay(1);
     }
 
+#if LATTER_VIDEO_HW_JPEG
     if (hw_dec != nullptr) {
       jpeg_del_decoder_engine(hw_dec);
       hw_dec = nullptr;
     }
+#endif
     for (int i = 0; i < 2; ++i) {
       if (buf[i] != nullptr) {
         heap_caps_free(buf[i]);
@@ -353,20 +371,7 @@ struct LatterVideoClient::Impl {
       heap_caps_free(jpeg_buf);
       jpeg_buf = nullptr;
     }
-#else
-    if (frame_mtx != nullptr) {
-      xSemaphoreTake(frame_mtx, portMAX_DELAY);
-    }
-    if (buf[0] != nullptr) {
-      heap_caps_free(buf[0]);
-      buf[0] = nullptr;
-    }
-    buf_w[0] = 0;
-    buf_h[0] = 0;
-    if (jpeg_buf != nullptr) {
-      heap_caps_free(jpeg_buf);
-      jpeg_buf = nullptr;
-    }
+#if !LATTER_VIDEO_HW_JPEG
 #if LATTER_VIDEO_HAS_JPEGDEC
     if (jpegdec != nullptr) {
       jpegdec->~JPEGDEC();
@@ -380,9 +385,6 @@ struct LatterVideoClient::Impl {
       tjpgd_work = nullptr;
     }
 #endif
-    if (frame_mtx != nullptr) {
-      xSemaphoreGive(frame_mtx);
-    }
 #endif
 
     if (http_rx_buf != nullptr) {
@@ -407,9 +409,14 @@ struct LatterVideoClient::Impl {
 #endif
     const size_t want_frame_bytes = static_cast<size_t>(want_w) * static_cast<size_t>(want_h) * sizeof(uint16_t);
 
-    if (alloc_w == want_w && alloc_h == want_h && jpeg_buf != nullptr && buf[0] != nullptr && http_rx_buf != nullptr
+    if (alloc_w == want_w && alloc_h == want_h && jpeg_buf != nullptr &&
+        buf[0] != nullptr && buf[1] != nullptr && http_rx_buf != nullptr
 #if LATTER_VIDEO_HW_JPEG
-        && buf[1] != nullptr && hw_dec != nullptr
+        && hw_dec != nullptr
+#elif LATTER_VIDEO_HAS_JPEGDEC
+        && jpegdec != nullptr
+#elif LATTER_VIDEO_HAS_ROM_TJPGD
+        && tjpgd_work != nullptr
 #endif
     ) {
       return true;
@@ -462,8 +469,9 @@ struct LatterVideoClient::Impl {
 #else
     jpeg_buf = static_cast<uint8_t *>(heap_caps_malloc(kMaxJpegBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
     buf[0] = static_cast<uint16_t *>(heap_caps_malloc(want_frame_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (jpeg_buf == nullptr || buf[0] == nullptr) {
-      ESP_LOGE(kVideoTag, "PSRAM alloc failed for S3 video buffers (jpeg=%uB fb=%uB)",
+    buf[1] = static_cast<uint16_t *>(heap_caps_malloc(want_frame_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (jpeg_buf == nullptr || buf[0] == nullptr || buf[1] == nullptr) {
+      ESP_LOGE(kVideoTag, "PSRAM alloc failed for S3 double-buffered video (jpeg=%uB fb=2x%uB)",
                static_cast<unsigned>(kMaxJpegBytes), static_cast<unsigned>(want_frame_bytes));
       free_stream_buffers();
       return false;
@@ -581,19 +589,8 @@ struct LatterVideoClient::Impl {
       return false;
     }
 
-    int back_idx = 0;
-    bool conflict = true;
-    for (int wait_it = 0; wait_it < 40; ++wait_it) {
-      portENTER_CRITICAL(&idx_mux);
-      const int f = front_idx;
-      const int r = reader_idx;
-      back_idx = (f == 0) ? 1 : 0;
-      conflict = (r == back_idx);
-      portEXIT_CRITICAL(&idx_mux);
-      if (!conflict) break;
-      vTaskDelay(1);
-    }
-    if (conflict || buf[back_idx] == nullptr) {
+    const int back_idx = acquire_back_buffer();
+    if (back_idx < 0) {
       record_dropped_frame();
       return false;
     }
@@ -623,16 +620,12 @@ struct LatterVideoClient::Impl {
       }
       if (!owner->stop_requested_.load(std::memory_order_acquire) &&
           owner->generation_.load(std::memory_order_acquire) == local_gen) {
-        portENTER_CRITICAL(&idx_mux);
-        buf_w[back_idx] = decoded_w;
-        buf_h[back_idx] = decoded_h;
-        front_idx = back_idx;
-        portEXIT_CRITICAL(&idx_mux);
+        commit_back_buffer(back_idx, decoded_w, decoded_h);
         ok = true;
       }
     }
 #elif LATTER_VIDEO_HAS_JPEGDEC
-    if (jpegdec == nullptr || buf[0] == nullptr) {
+    if (jpegdec == nullptr || buf[0] == nullptr || buf[1] == nullptr) {
       record_dropped_frame();
       return false;
     }
@@ -663,31 +656,40 @@ struct LatterVideoClient::Impl {
       }
     }
 
-    jpegdec->setPixelType(RGB565_LITTLE_ENDIAN);
-    if (xSemaphoreTake(frame_mtx, portMAX_DELAY) == pdTRUE) {
-      if (!owner->stop_requested_.load(std::memory_order_acquire) &&
-          owner->generation_.load(std::memory_order_acquire) == local_gen && buf[0] != nullptr) {
-        JpegDecDrawCtx ctx{buf[0], eff_w, eff_h, static_cast<int>(alloc_w), static_cast<int>(alloc_h)};
-        g_active_jpegdec_ctx = &ctx;
-        const int dec_rc = jpegdec->decode(0, 0, scale_opt);
-        g_active_jpegdec_ctx = nullptr;
-        if (dec_rc == 1) {
-          buf_w[0] = eff_w;
-          buf_h[0] = eff_h;
-          decoded_w = eff_w;
-          decoded_h = eff_h;
-          ok = true;
-        }
-      }
-      xSemaphoreGive(frame_mtx);
-    }
-    jpegdec->close();
-#elif LATTER_VIDEO_HAS_ROM_TJPGD
-    if (tjpgd_work == nullptr || buf[0] == nullptr) {
+    const int back_idx = acquire_back_buffer();
+    if (back_idx < 0) {
+      jpegdec->close();
       record_dropped_frame();
       return false;
     }
-    RomTjpgdCtx ctx{jpeg_data, jpeg_len, 0U, buf[0], 0, 0};
+
+    jpegdec->setPixelType(RGB565_LITTLE_ENDIAN);
+    if (!owner->stop_requested_.load(std::memory_order_acquire) &&
+        owner->generation_.load(std::memory_order_acquire) == local_gen && buf[back_idx] != nullptr) {
+      JpegDecDrawCtx ctx{buf[back_idx], eff_w, eff_h, static_cast<int>(alloc_w), static_cast<int>(alloc_h)};
+      g_active_jpegdec_ctx = &ctx;
+      const int dec_rc = jpegdec->decode(0, 0, scale_opt);
+      g_active_jpegdec_ctx = nullptr;
+      if (dec_rc == 1 && !owner->stop_requested_.load(std::memory_order_acquire) &&
+          owner->generation_.load(std::memory_order_acquire) == local_gen) {
+        decoded_w = eff_w;
+        decoded_h = eff_h;
+        commit_back_buffer(back_idx, eff_w, eff_h);
+        ok = true;
+      }
+    }
+    jpegdec->close();
+#elif LATTER_VIDEO_HAS_ROM_TJPGD
+    if (tjpgd_work == nullptr || buf[0] == nullptr || buf[1] == nullptr) {
+      record_dropped_frame();
+      return false;
+    }
+    const int back_idx = acquire_back_buffer();
+    if (back_idx < 0) {
+      record_dropped_frame();
+      return false;
+    }
+    RomTjpgdCtx ctx{jpeg_data, jpeg_len, 0U, buf[back_idx], 0, 0};
     JDEC jdec{};
     if (jd_prepare(&jdec, &video_tjpgd_in_cb, tjpgd_work, static_cast<UINT>(kTjpgdWorkBytes), &ctx) != JDR_OK) {
       record_dropped_frame();
@@ -715,18 +717,16 @@ struct LatterVideoClient::Impl {
     }
     ctx.img_w = eff_w;
     ctx.img_h = eff_h;
-    if (xSemaphoreTake(frame_mtx, portMAX_DELAY) == pdTRUE) {
-      if (!owner->stop_requested_.load(std::memory_order_acquire) &&
-          owner->generation_.load(std::memory_order_acquire) == local_gen && buf[0] != nullptr) {
-        if (jd_decomp(&jdec, &video_tjpgd_out_cb, scale) == JDR_OK) {
-          buf_w[0] = eff_w;
-          buf_h[0] = eff_h;
-          decoded_w = eff_w;
-          decoded_h = eff_h;
-          ok = true;
-        }
+    if (!owner->stop_requested_.load(std::memory_order_acquire) &&
+        owner->generation_.load(std::memory_order_acquire) == local_gen && buf[back_idx] != nullptr) {
+      if (jd_decomp(&jdec, &video_tjpgd_out_cb, scale) == JDR_OK &&
+          !owner->stop_requested_.load(std::memory_order_acquire) &&
+          owner->generation_.load(std::memory_order_acquire) == local_gen) {
+        decoded_w = eff_w;
+        decoded_h = eff_h;
+        commit_back_buffer(back_idx, eff_w, eff_h);
+        ok = true;
       }
-      xSemaphoreGive(frame_mtx);
     }
 #else
     (void)t0_us;
@@ -1069,7 +1069,6 @@ bool LatterVideoClient::acquire_frame(const uint16_t *&out_data, int &out_w, int
   out_h = 0;
   if (impl_ == nullptr || !has_frame_.load(std::memory_order_acquire)) return false;
 
-#if LATTER_VIDEO_HW_JPEG
   portENTER_CRITICAL(&impl_->idx_mux);
   const int idx = impl_->front_idx;
   if (idx >= 0 && idx < 2 && impl_->buf[idx] != nullptr && impl_->buf_w[idx] > 0 && impl_->buf_h[idx] > 0 &&
@@ -1083,32 +1082,13 @@ bool LatterVideoClient::acquire_frame(const uint16_t *&out_data, int &out_w, int
   }
   portEXIT_CRITICAL(&impl_->idx_mux);
   return false;
-#else
-  if (impl_->frame_mtx == nullptr) return false;
-  if (xSemaphoreTake(impl_->frame_mtx, pdMS_TO_TICKS(50)) != pdTRUE) return false;
-  if (!has_frame_.load(std::memory_order_acquire) || impl_->buf[0] == nullptr ||
-      impl_->buf_w[0] <= 0 || impl_->buf_h[0] <= 0) {
-    xSemaphoreGive(impl_->frame_mtx);
-    return false;
-  }
-  out_data = impl_->buf[0];
-  out_w = impl_->buf_w[0];
-  out_h = impl_->buf_h[0];
-  return true;
-#endif
 }
 
 void LatterVideoClient::release_frame() noexcept {
   if (impl_ == nullptr) return;
-#if LATTER_VIDEO_HW_JPEG
   portENTER_CRITICAL(&impl_->idx_mux);
   impl_->reader_idx = -1;
   portEXIT_CRITICAL(&impl_->idx_mux);
-#else
-  if (impl_->frame_mtx != nullptr) {
-    xSemaphoreGive(impl_->frame_mtx);
-  }
-#endif
 }
 
 bool LatterVideoClient::consume_frame_dirty() noexcept {

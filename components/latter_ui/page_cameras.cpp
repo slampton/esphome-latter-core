@@ -253,13 +253,13 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
     render_camera_video_placeholder(it, ctx, vp, cam_title, sub, ctx.col_slate);
   }
 
-  // Register full-video tap BEFORE HUD buttons so tapping empty video wakes/toggles HUD
-  frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::CAM_VIDEO_TAP, kHitTap);
   draw_live_dot(it, ctx, is_live_stream, false);
 
   // Live Doorbell PTT Banner (D-066): NEVER hide live video during talk!
   if (rs.voice.intercom_turn) {
     const int banner_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 60);
+    const int tap_h = std::max(1, banner_y - ly.min_hit_px() / 2 - scale_y(8));
+    frame_hits().add_rect(0, 0, SCREEN_W, tap_h, WidgetId::CAM_VIDEO_TAP, kHitTap);
     render_doorbell_ptt_banner(it, ctx, banner_y);
     return;
   }
@@ -267,6 +267,7 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
   // 6 s auto-hiding HUD (keep HUD visible while talking/listening)
   const bool show_hud = rs.cameras.hud_active || cam_call_active() || cam_listen_active();
   if (!show_hud) {
+    frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::CAM_VIDEO_TAP, kHitTap);
     return;
   }
 
@@ -276,10 +277,13 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
                        cam_count > 1, WidgetId::CAM_PREV_BTN, WidgetId::CAM_NEXT_BTN);
 
   // Portrait-only 90° rotate pill (Framing Fit/Fill lives exclusively in Settings so Single & Carousel match)
+  int top_hud_bot = (cam_count > 1) ? (ly.hdr_y + ly.min_hit_px() / 2 + 1) : 0;
   if (SCREEN_H > SCREEN_W) {
     const int sub_y = ly.sub_hdr_y + scale_y(10);
     const int rot_h = std::max(34, scale_y(36));
     const int rot_w = std::max(68, scale_x(76));
+    const int rot_pad = std::max(0, (ly.min_hit_px() - rot_h + 1) / 2);
+    top_hud_bot = std::max(top_hud_bot, sub_y + rot_h / 2 + rot_pad + 1);
     ui::action_pill_centered(it, ctx.cx, rot_w, sub_y, rot_h,
                              rs.cameras.landscape_mode ? ctx.theme_primary : ui::chrome_card_brd_on(),
                              rs.cameras.landscape_mode ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
@@ -325,6 +329,14 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
   const int act_h = std::max(38, scale_y(40));
   const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s(3);
   const int act_y = mode_bar_top - scale_y(14) - act_h / 2;
+  const int act_pad = std::max(0, (ly.min_hit_px() - act_h + 1) / 2);
+  const int bot_hud_top = (btn_cnt > 0)
+      ? (act_y - act_h / 2 - act_pad - 1)
+      : (ly.app_dock_y - ly.dock_hit_r() - 1);
+  if (bot_hud_top > top_hud_bot) {
+    frame_hits().add_rect(0, top_hud_bot, SCREEN_W, bot_hud_top - top_hud_bot,
+                          WidgetId::CAM_VIDEO_TAP, kHitTap);
+  }
   if (btn_cnt > 0) {
     ui::action_pill_row(it, act_y, act_h, std::min(kMaxContentColW, scale_x(376)),
                         scale_x(104), scale_x(8), btns, btn_cnt, ctx.font_small, 12);
@@ -386,7 +398,6 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
                                     "Connecting to live feed...", ctx.col_slate);
   }
 
-  frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::CAM_VIDEO_TAP, kHitTap);
   draw_live_dot(it, ctx, is_live, rs.cameras.carousel_paused);
 
   // Bare shadowed camera name + thin dwell progress bar (always visible in Carousel)
@@ -423,6 +434,7 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
   }
 
   if (!rs.cameras.hud_active) {
+    frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::CAM_VIDEO_TAP, kHitTap);
     return;
   }
 
@@ -430,6 +442,9 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
   const int ctrl_h = std::max(38, scale_y(40));
   const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s(3);
   const int ctrl_y = mode_bar_top - scale_y(14) - ctrl_h / 2;
+  const int ctrl_pad = std::max(0, (ly.min_hit_px() - ctrl_h + 1) / 2);
+  const int bot_hud_top = std::max(1, ctrl_y - ctrl_h / 2 - ctrl_pad - 1);
+  frame_hits().add_rect(0, 0, SCREEN_W, bot_hud_top, WidgetId::CAM_VIDEO_TAP, kHitTap);
   const int pause_w = std::max(96, scale_x(118));
   ui::action_pill_centered(it, ctx.cx, pause_w, ctrl_y, ctrl_h,
                            rs.cameras.carousel_paused ? ctx.col_gold : ui::chrome_card_brd_on(),

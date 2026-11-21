@@ -319,6 +319,10 @@ int &home_activity_overlay_page() {
   return pg;
 }
 
+int &snoozed_alarm_slot() noexcept {
+  return runtime_state().alarms.snoozed_alarm_slot;
+}
+
 uint32_t &wake_greeting_start_ms() {
   static uint32_t ts = 0;
   return ts;
@@ -426,7 +430,8 @@ int collect_home_activities(
     HomeActivityItem out_items[kMaxHomeActivity],
     int cur_hour, int cur_min,
     const std::string &calendar_agenda_raw,
-    int cur_day_of_week) {
+    int cur_day_of_week,
+    int snoozed_slot) {
   int count = 0;
 
   // 0. Active Live Intercom / Doorbell Call (highest urgent pin priority)
@@ -479,7 +484,8 @@ int collect_home_activities(
     }
   }
 
-  // Pre-evaluate armed alarms (recurrence-aware, sorted soonest-firing first)
+  // Pre-evaluate armed alarms (recurrence-aware, sorted soonest-firing first).
+  // Snoozing one alarm slot (e.g. Alarm 1) skips ONLY that slot so armed Alarms 2/3 stay visible.
   struct PendingAlarmEntry {
     int slot_1based = 0;
     int mins_until = -1;
@@ -487,12 +493,16 @@ int collect_home_activities(
   };
   PendingAlarmEntry pend_alarms[3]{};
   int n_pend_alarms = 0;
-  if (alarm_snooze_until == 0) {
+  const int eff_snoozed = (alarm_snooze_until > 0)
+      ? ((snoozed_slot >= 0) ? snoozed_slot : snoozed_alarm_slot())
+      : -1;
+  if (alarm_snooze_until == 0 || eff_snoozed >= 1) {
     const auto &prefs = persisted_prefs();
     const int a_hrs[3] = {alarm1_h, alarm2_h, alarm3_h};
     const int a_mns[3] = {alarm1_m, alarm2_m, alarm3_m};
     const bool a_ens[3] = {alarm1_en, alarm2_en, alarm3_en};
     for (int i = 0; i < 3; ++i) {
+      if (alarm_snooze_until > 0 && (i + 1) == eff_snoozed) continue;
       if (!a_ens[i] || a_hrs[i] < 0 || a_hrs[i] > 23 || a_mns[i] < 0 || a_mns[i] > 59) continue;
       char t_buf[16], ap_buf[8] = "";
       format_time_hhmm(a_hrs[i], a_mns[i], is_24h_format, t_buf, sizeof(t_buf), ap_buf);
@@ -901,6 +911,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     std::string m_title{};
     std::string m_artist{};
     uint32_t snooze{0xFFFFFFFFU};
+    int snooze_slot{-99};
     uint8_t a_h[3]{0, 0, 0};
     uint8_t a_m[3]{0, 0, 0};
     uint8_t a_rec[3]{0xFFU, 0xFFU, 0xFFU};
@@ -939,6 +950,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       audio_session().is_music_visible_on_home_activity(
           music_playing, eff_paused_memo, !music_title.empty() || !ms.title.empty(), now_ms);
   const bool cur_intercom = is_doorbell_or_intercom_active();
+  const int cur_snooze_slot = (rs.alarms.snooze_until > 0) ? snoozed_alarm_slot() : -1;
   if (act_memo.count < 0 ||
       act_memo.sw_tick != cur_sw_tick ||
       act_memo.t_flags != cur_t_flags ||
@@ -955,6 +967,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
       act_memo.m_title != music_title ||
       act_memo.m_artist != music_artist ||
       act_memo.snooze != rs.alarms.snooze_until ||
+      act_memo.snooze_slot != cur_snooze_slot ||
       act_memo.a_en != cur_a_en ||
       act_memo.a_h[0] != prefs.alarms[0].hour || act_memo.a_m[0] != prefs.alarms[0].minute ||
       act_memo.a_h[1] != prefs.alarms[1].hour || act_memo.a_m[1] != prefs.alarms[1].minute ||
@@ -975,7 +988,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
         prefs.alarms[0].hour, prefs.alarms[0].minute, prefs.alarms[0].enabled,
         prefs.alarms[1].hour, prefs.alarms[1].minute, prefs.alarms[1].enabled,
         prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
-        act_memo.items, cur_h, cur_m, cs.summary, cur_dow);
+        act_memo.items, cur_h, cur_m, cs.summary, cur_dow, cur_snooze_slot);
     act_memo.sw_tick = cur_sw_tick;
     act_memo.t_flags = cur_t_flags;
     for (int ti = 0; ti < 3; ti++) {
@@ -992,6 +1005,7 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
     act_memo.m_title = music_title;
     act_memo.m_artist = music_artist;
     act_memo.snooze = rs.alarms.snooze_until;
+    act_memo.snooze_slot = cur_snooze_slot;
     act_memo.a_en = cur_a_en;
     act_memo.cur_h = cur_h;
     act_memo.cur_m = cur_m;
@@ -1626,8 +1640,9 @@ void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx) 
   }
 
   if (greeting_active) {
+    const float greet_temp_f = weather_temp_to_fahrenheit(ws.temperature, ws.temp_unit);
     const char *raw_greet = resolve_wake_greeting(
-        ctx.now.hour, ctx.now.minute, ctx.now.day_of_year, cond, ws.temperature);
+        ctx.now.hour, ctx.now.minute, ctx.now.day_of_year, cond, greet_temp_f);
     const std::string fit_greet = fit_text_to_width_font(
         std::string(raw_greet), std::min(scale_x(340), safe_span(act_card_cy)), ctx.font_date);
     const int greet_y = act_card_cy - 2;
