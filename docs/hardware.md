@@ -16,7 +16,7 @@ Latter firmware supports five Waveshare boards. Purchase links are in the [devic
 
 | | Pocket Assistant | Mobile Assistant | Wrist Assist | Remote Assistant | Desk Assistant |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Board** | ESP32-S3-Touch-AMOLED-1.75C | ESP32-S3-Touch-AMOLED-2.16 | ESP32-S3-Touch-AMOLED-2.06 | ESP32-P4-WIFI6-Touch-LCD-3.5 | ESP32-P4-86-Panel-ETH-2RO |
+| **Board** | ESP32-S3-Touch-AMOLED-1.75C | ESP32-S3-Touch-AMOLED-2.16 | ESP32-S3-Touch-AMOLED-2.06 | ESP32-P4-WIFI6-Touch-LCD-3.5 | ESP32-P4-86-Panel-ETH-2RO / WIFI6-Touch-LCD-4B |
 | **Chip** | ESP32-S3 | ESP32-S3 | ESP32-S3 | ESP32-P4 + C6 (Wi-Fi/BLE) | ESP32-P4 + C6 (Wi-Fi/BLE) |
 | **Flash / PSRAM** | 32 MB / 8 MB | 16 MB / 8 MB | 32 MB / 8 MB | 16 MB / 32 MB | 32 MB / 32 MB |
 | **Display** | 1.75" round AMOLED, 466×466 (CO5300, QSPI) | 2.16" square AMOLED, 480×480 (CO5300, QSPI) | 2.06" AMOLED, 410×502 (QSPI) | 3.5" IPS, 320×480 (SPI) | 4" IPS, 720×720 (MIPI-DSI) |
@@ -43,7 +43,7 @@ PSRAM sizes for the S3 boards are the minimum the firmware expects. Check the li
 ## Board-specific notes
 
 - **ESP32-P4 chip revision (Desk Assistant):** Waveshare has shipped both early revision `1.x` (`360 MHz`) and newer revision `3.x` (`400 MHz`) ESP32-P4 silicon on the `ESP32-P4-86-Panel-ETH-2RO` / `4B` mainboard, and a build for one won't boot on the other (Remote Assistant `SKU 33360` ships exclusively with `3.x` silicon and needs no selection). Desk Assistant pre-selects revision `1.x` by default; if a newer batch logs a chip revision mismatch at boot (`chip revision: v3.x`), expand **"Won't boot after flashing?"** in the web installer to switch to `3.x`, or override `p4_silicon`, `p4_engineering_sample`, and `p4_cpu_frequency` in your Device Builder `substitutions:` (see [`waveshare_p4_86_panel.yaml`](../boards/waveshare_p4_86_panel.yaml)).
-- **Desk Assistant (P4 86-Panel):** Waveshare sells the `ESP32-P4-86-Panel-ETH-2RO` as an option on its `ESP32-P4-WIFI6-Touch-LCD-4B` product page (they share the same mainboard; the standalone `4B` variant hasn't been validated yet, so pick the `86-Panel` option). The bottom board's Ethernet, RS485, and relay pins are reserved and not used by the firmware. The C6 module has a U.FL connector, so attach an external antenna.
+- **Desk Assistant (P4 86-Panel / 4B):** Both the `ESP32-P4-86-Panel-ETH-2RO` (`SKU 31570`) and standalone `ESP32-P4-WIFI6-Touch-LCD-4B` (`SKU 31416`) share the same mainboard and are validated with 1:1 hardware parity across display, backlight, touch, full-duplex audio, C6 Wi-Fi/BLE, BOOT button, and OTA. The 86-Panel bottom board's Ethernet, RS485, and relay pins (and the 4B's CSI camera connector) are reserved and not used by the firmware. The C6 module has a U.FL connector, so attach an external antenna.
 - **Remote Assistant (P4 3.5):** the board has a camera connector, but the firmware doesn't use the camera. Because `K1` (`GPIO49`) wakes the AXP2101 PMU (`PWRON`) rather than ESP32-P4 LP deep sleep, battery hibernate powers the PMU cleanly off (press `K1` once to boot), and scheduled alarms run whenever the device is docked on USB power.
 - **Both P4 boards:** Wi-Fi and Bluetooth run on the onboard ESP32-C6 co-processor. The firmware exposes the C6's own firmware as a separate **System: C6 Co-Processor Firmware** update entity.
 - **Wrist and Mobile Assistant:** the onboard PCF85063 RTC (`0x51`) restores UTC time immediately on cold boot or hibernate wake before Wi-Fi connects, and syncs automatically whenever Home Assistant or SNTP updates the clock.
@@ -86,7 +86,7 @@ Confidence: **H** validated on hardware, **M** schematic or vendor code, **L** u
 | 53 | speaker_pa | active_high | H |
 | 54 | c6_chip_pu | active_high; 10k pull-up + 1 uF; held low in alarm-sleep (rev >= 3.0) | H |
 
-#### Desk Assistant: Waveshare ESP32-P4-86-Panel-ETH-2RO (`waveshare_p4_86_panel`)
+#### Desk Assistant: Waveshare ESP32-P4-86-Panel-ETH-2RO / ESP32-P4-WIFI6-Touch-LCD-4B (`waveshare_p4_86_panel`)
 
 | GPIO | Role | Notes | Conf. |
 |---:|---|---|:---:|

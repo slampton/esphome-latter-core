@@ -1,6 +1,6 @@
 # ==============================================================================
-# Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-86-Panel-ETH-2RO ("Desk Assistant")
-# SKU:     31570 (mainboard shared with ESP32-P4-WIFI6-Touch-LCD-4B, SKU 31416 - 4B not yet validated)
+# Hardware Abstraction Layer (HAL): Waveshare ESP32-P4-86-Panel-ETH-2RO / ESP32-P4-WIFI6-Touch-LCD-4B ("Desk Assistant")
+# SKU:     31570 (86-Panel-ETH-2RO) & 31416 (WIFI6-Touch-LCD-4B) — shared mainboard, both validated with 1:1 parity
 # SoC:     ESP32-P4NRW32 (32MB PSRAM, 32MB GD25Q256 Flash) + ESP32-C6-MINI-1U (U.FL antenna) over SDIO
 # Silicon: rev1.3 AND rev3.x units ship. Binaries are NOT cross-compatible; select with p4_silicon below.
 # Display: 4.0" 720x720 IPS (ST7703, 2-Lane MIPI-DSI @ 480Mbps/lane, 38MHz DPI, RST: GPIO27)

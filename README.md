@@ -25,9 +25,9 @@ Turnkey firmware and a compiled C++20 UI/OS for five off-the-shelf Waveshare ESP
 | **Mobile Assistant** | [ESP32-S3-Touch-AMOLED-2.16][ws-216] | 2.16" square AMOLED, 480×480 | Handheld with extra room for album art, sliders, and browsing |
 | **Wrist Assist** | [ESP32-S3-Touch-AMOLED-2.06][ws-206] | 2.06" watch AMOLED, 410×502 | Wearable timers, alarms, Assist, and per-person BLE presence |
 | **Remote Assistant** | [ESP32-P4-WIFI6-Touch-LCD-3.5][ws-p4-35] | 3.5" IPS, 320×480 | Fast P4 couch remote for TVs, AV receivers, and whole-home control |
-| **Desk Assistant** | [ESP32-P4-86-Panel-ETH-2RO][ws-p4-desk] | 4.0" IPS, 720×720 | Always-on desk or wall panel with sharp HD typography and wake word |
+| **Desk Assistant** | [ESP32-P4-86-Panel-ETH-2RO / WIFI6-Touch-LCD-4B][ws-p4-desk] | 4.0" IPS, 720×720 | Always-on desk or wall panel with sharp HD typography and wake word |
 
-<sub>Hardware links above are Waveshare affiliate links—buying through them supports Latter at no extra cost to you. (On the Desk Assistant page, select the validated `ESP32-P4-86-Panel-ETH-2RO` option.)</sub>
+<sub>Hardware links above are Waveshare affiliate links—buying through them supports Latter at no extra cost to you. (On the Desk Assistant page, both `ESP32-P4-86-Panel-ETH-2RO` and `ESP32-P4-WIFI6-Touch-LCD-4B` share the same mainboard and are validated.)</sub>
 
 All five boards run the **exact same firmware and universal GUI**. Each board file (~80–160 lines of YAML) declares only pins, buses, and `LATTER_*` capability traits; layout, slot counts, touch hit targets, and power policy adapt at compile time. → [Hardware specs & pin maps](docs/hardware.md)
 

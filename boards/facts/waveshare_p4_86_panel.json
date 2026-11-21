@@ -1,7 +1,7 @@
 {
   "board_id": "waveshare_p4_86_panel",
-  "product": "Waveshare ESP32-P4-86-Panel-ETH-2RO",
-  "sku": "31570",
+  "product": "Waveshare ESP32-P4-86-Panel-ETH-2RO / ESP32-P4-WIFI6-Touch-LCD-4B",
+  "sku": "31570 / 31416",
   "latter_device": "Desk Assistant",
   "ble_minor": 5,
   "sources": [
@@ -80,7 +80,7 @@
     {"gpio": 54, "role": "c6_chip_pu", "polarity": "active_high", "confidence": "H"}
   ],
   "known_doc_errata": [
-    "The 86-Panel is sold separately from the 4B, but its main board is the 4B board; 4B-specific camera (CSI) features are absent.",
+    "ESP32-P4-86-Panel-ETH-2RO (SKU 31570) and ESP32-P4-WIFI6-Touch-LCD-4B (SKU 31416) share the same mainboard and are both hardware-validated with 1:1 parity across all Latter nets (MIPI-DSI, AP3032 backlight, GT911 touch, ES8311/ES7210/PA audio, C6 SDIO, BOOT, and OTA); 4B CSI camera and 86-Panel Ethernet/RS485/relays are unused.",
     "The CHIP_PU RC network and the GPIO45 pull-down are inferred from the P4-3.5 schematic and the Waveshare BSP family, not read from the 4B schematic."
   ]
 }
