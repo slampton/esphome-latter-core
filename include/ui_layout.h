@@ -294,6 +294,7 @@ struct UiLayout {
   constexpr int canvas_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
   constexpr int fast_pan() const { return mm_to_px(10.5f); }
   constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }                      // 16 px band below in-app content
+  constexpr int top_edge_zone_y() const { return is_round ? scale_min(54) : mm_to_px(5.2f); }      // 54 px: pull-down Quick Actions starts here
   constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
   constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
   constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }
@@ -419,7 +420,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
   if (gui_page == PageId::HOME || gui_page == PageId::CLOCK || alert_ringing) return false;
-  if (runtime_state().nav.shortcut_confirm.open) return false;
+  if (runtime_state().nav.shortcut_confirm.open || runtime_state().nav.quick_actions_open) return false;
   if (gui_page == PageId::TIME && (timer_view_slot() > 0 || alarm_edit_idx > 0)) {
     return false;
   }
@@ -464,7 +465,7 @@ inline bool can_go_home(const DeviceRuntimeState &rt = runtime_state()) {
       rt.alarms.ringing || rt.timers.ringing || rt.alarms.find_my_active) {
     return false;
   }
-  if (rt.nav.shortcut_confirm.open) return false;
+  if (rt.nav.shortcut_confirm.open || rt.nav.quick_actions_open) return false;
   if (rt.nav.gui_page == PageId::TIME && (rt.timers.view_slot > 0 || rt.alarms.edit_idx > 0)) {
     return false;
   }

@@ -842,9 +842,9 @@ struct MockRpcOutbox {
 
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 16U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 65U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 71U);
+  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 17U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 64U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 70U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 42U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -1086,7 +1086,7 @@ struct MockAnimPoller {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112004L);
+  LATTER_CHECK(LATTER_SDK_REV == 2026112005L);
   LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
 
   // 1. HibernateSnapshot v3 round-trip & cold hydration without clobbering Protocol v3 revision guards
@@ -3420,7 +3420,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112004L, "LATTER_SDK_REV must match 2026112004L");
+  static_assert(LATTER_SDK_REV == 2026112005L, "LATTER_SDK_REV must match 2026112005L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::LOCKS_SUMMARY) == 16U);
   static_assert(static_cast<size_t>(AreaCtxField::GARAGES_SUMMARY) == 17U);
@@ -4305,46 +4305,46 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
   reset_runtime_state();
 
-  // 1. Protocol v3 & PersistedDevicePrefs v16 schema invariants
-  static_assert(kPersistedPrefsVersion == 16U, "PersistedDevicePrefs must be bumped to v16");
-  static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 53U);
-  static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 54U);
-  static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 55U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS) == 56U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_WEEK_START) == 57U);
-  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_ACTIVE) == 58U);
-  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_DISPLAY) == 59U);
-  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_SCHEDULE) == 60U);
-  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_START_HOUR) == 61U);
-  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_END_HOUR) == 62U);
-  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_BRIGHTNESS) == 63U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DEFAULT_VIEW) == 64U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_CAROUSEL_INTERVAL) == 65U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_FRAMING) == 66U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_STREAM_MODE) == 67U);
-  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DOORBELL_POPUP) == 68U);
-  static_assert(static_cast<size_t>(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK) == 69U);
-  static_assert(static_cast<size_t>(DevicePrefsField::WEATHER_APP_BACKGROUND) == 70U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 71U);
-  static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 47U);
-  static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 48U);
-  static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 49U);
-  static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_LOOKAHEAD_DAYS) == 50U);
-  static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_WEEK_START) == 51U);
-  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_ACTIVE) == 52U);
-  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_DISPLAY) == 53U);
-  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_SCHEDULE) == 54U);
-  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_START_HOUR) == 55U);
-  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_END_HOUR) == 56U);
-  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_BRIGHTNESS) == 57U);
-  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DEFAULT_VIEW) == 58U);
-  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_CAROUSEL_INTERVAL) == 59U);
-  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_FRAMING) == 60U);
-  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_STREAM_MODE) == 61U);
-  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DOORBELL_POPUP) == 62U);
-  static_assert(static_cast<uint8_t>(PrefKey::SCREENSAVER_PHOTO_CLOCK) == 63U);
-  static_assert(static_cast<uint8_t>(PrefKey::WEATHER_APP_BACKGROUND) == 64U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 65U);
+  // 1. Protocol v3 & PersistedDevicePrefs v17 schema invariants
+  static_assert(kPersistedPrefsVersion == 17U, "PersistedDevicePrefs must be bumped to v17");
+  static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 52U);
+  static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 53U);
+  static_assert(static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION) == 54U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS) == 55U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CALENDAR_WEEK_START) == 56U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_ACTIVE) == 57U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_DISPLAY) == 58U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_SCHEDULE) == 59U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_START_HOUR) == 60U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_END_HOUR) == 61U);
+  static_assert(static_cast<size_t>(DevicePrefsField::BEDTIME_BRIGHTNESS) == 62U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DEFAULT_VIEW) == 63U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_CAROUSEL_INTERVAL) == 64U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_FRAMING) == 65U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_STREAM_MODE) == 66U);
+  static_assert(static_cast<size_t>(DevicePrefsField::CAMERA_DOORBELL_POPUP) == 67U);
+  static_assert(static_cast<size_t>(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK) == 68U);
+  static_assert(static_cast<size_t>(DevicePrefsField::WEATHER_APP_BACKGROUND) == 69U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 70U);
+  static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 46U);
+  static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 47U);
+  static_assert(static_cast<uint8_t>(PrefKey::HOME_DATE_TAP_ACTION) == 48U);
+  static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_LOOKAHEAD_DAYS) == 49U);
+  static_assert(static_cast<uint8_t>(PrefKey::CALENDAR_WEEK_START) == 50U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_ACTIVE) == 51U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_DISPLAY) == 52U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_SCHEDULE) == 53U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_START_HOUR) == 54U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_END_HOUR) == 55U);
+  static_assert(static_cast<uint8_t>(PrefKey::BEDTIME_BRIGHTNESS) == 56U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DEFAULT_VIEW) == 57U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_CAROUSEL_INTERVAL) == 58U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_FRAMING) == 59U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_STREAM_MODE) == 60U);
+  static_assert(static_cast<uint8_t>(PrefKey::CAMERA_DOORBELL_POPUP) == 61U);
+  static_assert(static_cast<uint8_t>(PrefKey::SCREENSAVER_PHOTO_CLOCK) == 62U);
+  static_assert(static_cast<uint8_t>(PrefKey::WEATHER_APP_BACKGROUND) == 63U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 64U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -6086,7 +6086,7 @@ void test_photo_frame_screensaver_day_night_sky_d067() {
   static_assert(resolve_day_night_sky_is_night("", true, 20));
   static_assert(!resolve_day_night_sky_is_night("unknown", false, 23));
 
-  // 7. 128-bit PrefMask high-bit prefs (63 & 64) + Protocol v3 device_prefs & area_context round-trip
+  // 7. 128-bit PrefMask high-bit prefs (62 & 63 + hi-word bit 64) + Protocol v3 device_prefs & area_context round-trip
   {
     reset_all_v3_rev_guards();
     device_prefs_state() = DevicePrefsState{};
@@ -6095,7 +6095,8 @@ void test_photo_frame_screensaver_day_night_sky_d067() {
 
     const PrefMask hi_mask =
         pref_key_bit(PrefKey::SCREENSAVER_PHOTO_CLOCK) | pref_key_bit(PrefKey::WEATHER_APP_BACKGROUND);
-    LATTER_CHECK(hi_mask.lo == (1ULL << 63) && hi_mask.hi == 1ULL);
+    LATTER_CHECK(hi_mask.lo == ((1ULL << 62) | (1ULL << 63)) && hi_mask.hi == 0ULL);
+    LATTER_CHECK(pref_key_bit(PrefKey::COUNT).lo == 0ULL && pref_key_bit(PrefKey::COUNT).hi == 1ULL);
     const std::string enc = encode_prefs_mask(hi_mask, persisted_prefs());
     LATTER_CHECK(enc.find("screensaver_photo_clock=0") != std::string::npos);
     LATTER_CHECK(enc.find("weather_app_background=1") != std::string::npos);
@@ -6351,6 +6352,233 @@ void test_gui_standardization_d070() {
   LATTER_CHECK(widgets_cpp.find("resolve_area_dock_icon(") != std::string::npos);
 }
 
+void test_quick_actions_d074() {
+  using namespace latter_ui;
+
+  // 1. Lockstep & WidgetId invariants + retired hold_crown_power_off / instant_crown_hibernate guards
+  LATTER_CHECK(LATTER_SDK_REV == 2026112005L);
+  LATTER_CHECK(kPersistedPrefsVersion == 17U);
+  LATTER_CHECK(static_cast<size_t>(PrefKey::COUNT) == 64U);
+  LATTER_CHECK(static_cast<size_t>(DevicePrefsField::COUNT) == 70U);
+  LATTER_CHECK(WidgetId::QUICK_VOL_SLIDER == 70);
+  LATTER_CHECK(WidgetId::QUICK_BRI_SLIDER == 71);
+  LATTER_CHECK(WidgetId::QUICK_BEDTIME_TOGGLE == 72);
+  LATTER_CHECK(WidgetId::QUICK_HIBERNATE_BTN == 73);
+  LATTER_CHECK(WidgetId::QUICK_SCREEN_OFF_BTN == 74);
+  LATTER_CHECK(WidgetId::QUICK_SCREENSAVER_BTN == 75);
+
+  // 2. Context-aware resolve_active_brightness_target() across all modes & edge cases
+  PersistedDevicePrefs p{};
+  p.manual_brightness = 62U;
+  p.day_brightness = 84U;
+  p.night_brightness = 28U;
+  p.bedtime_brightness = 11U;
+  p.day_start_hour = 7U;
+  p.night_start_hour = 20U;
+
+  // 2a. BEDTIME overrides Disabled, Sun Synchronized, and Time Schedule unconditionally
+  p.bedtime_active = true;
+  for (const char *mode : {"Disabled", "Sun Synchronized", "Time Schedule"}) {
+    p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, mode));
+    for (std::string_view sun : {"above_horizon", "below_horizon", ""}) {
+      for (int hr : {0, 12, 23}) {
+        const auto bt = resolve_active_brightness_target(p, sun, true, hr);
+        LATTER_CHECK(bt.kind == ActiveBrightnessTargetKind::BEDTIME);
+        LATTER_CHECK(bt.pref_key == PrefKey::BEDTIME_BRIGHTNESS);
+        LATTER_CHECK(bt.pct == 11U);
+        LATTER_CHECK(std::string_view(bt.context_label) == "Bedtime");
+      }
+    }
+  }
+
+  // 2b. MANUAL when Auto Brightness is Disabled
+  p.bedtime_active = false;
+  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Disabled"));
+  {
+    const auto man_day = resolve_active_brightness_target(p, "above_horizon", true, 12);
+    const auto man_night = resolve_active_brightness_target(p, "below_horizon", true, 23);
+    LATTER_CHECK(man_day.kind == ActiveBrightnessTargetKind::MANUAL &&
+                 man_day.pref_key == PrefKey::MANUAL_BRIGHTNESS &&
+                 man_day.pct == 62U &&
+                 std::string_view(man_day.context_label) == "Manual");
+    LATTER_CHECK(man_night.kind == ActiveBrightnessTargetKind::MANUAL &&
+                 man_night.pref_key == PrefKey::MANUAL_BRIGHTNESS &&
+                 man_night.pct == 62U);
+  }
+
+  // 2c. Sun Synchronized (above_horizon -> DAY, below_horizon -> NIGHT, unknown -> DAY)
+  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Sun Synchronized"));
+  {
+    const auto sun_day = resolve_active_brightness_target(p, "above_horizon", true, 22);
+    LATTER_CHECK(sun_day.kind == ActiveBrightnessTargetKind::DAY &&
+                 sun_day.pref_key == PrefKey::DAY_BRIGHTNESS &&
+                 sun_day.pct == 84U &&
+                 std::string_view(sun_day.context_label) == "Auto \xC2\xB7 Day");
+
+    const auto sun_night = resolve_active_brightness_target(p, "below_horizon", true, 13);
+    LATTER_CHECK(sun_night.kind == ActiveBrightnessTargetKind::NIGHT &&
+                 sun_night.pref_key == PrefKey::NIGHT_BRIGHTNESS &&
+                 sun_night.pct == 28U &&
+                 std::string_view(sun_night.context_label) == "Auto \xC2\xB7 Night");
+
+    const auto sun_unknown = resolve_active_brightness_target(p, "", false, 23);
+    LATTER_CHECK(sun_unknown.kind == ActiveBrightnessTargetKind::DAY && sun_unknown.pct == 84U);
+  }
+
+  // 2d. Time Schedule: normal window (7..20), midnight-wrap window (20..7), and invalid time fallback
+  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Time Schedule"));
+  p.day_start_hour = 7U;
+  p.night_start_hour = 20U;
+  LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 6).kind == ActiveBrightnessTargetKind::NIGHT);
+  LATTER_CHECK(resolve_active_brightness_target(p, "below_horizon", true, 7).kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(resolve_active_brightness_target(p, "below_horizon", true, 19).kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 20).kind == ActiveBrightnessTargetKind::NIGHT);
+  LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 0).kind == ActiveBrightnessTargetKind::NIGHT);
+
+  // Midnight-wrap window: day_start_hour = 20, night_start_hour = 7 -> day is [20..23] U [0..6], night is [7..19]
+  p.day_start_hour = 20U;
+  p.night_start_hour = 7U;
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 20).kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 23).kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 0).kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 6).kind == ActiveBrightnessTargetKind::DAY);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 7).kind == ActiveBrightnessTargetKind::NIGHT);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 12).kind == ActiveBrightnessTargetKind::NIGHT);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 19).kind == ActiveBrightnessTargetKind::NIGHT);
+
+  // Invalid time fallback -> DAY
+  {
+    const auto inv = resolve_active_brightness_target(p, "below_horizon", false, 12);
+    LATTER_CHECK(inv.kind == ActiveBrightnessTargetKind::DAY &&
+                 inv.pref_key == PrefKey::DAY_BRIGHTNESS &&
+                 inv.pct == 84U);
+  }
+
+  // 3. compute_takeover_signature bit (1U << 11), idle-return exemption, and compute_touch_context
+  const uint32_t sig_none = compute_takeover_signature(false, false, true, 0, false, false, false, false, false, false);
+  const uint32_t sig_qa = compute_takeover_signature(false, false, true, 0, false, false, false, false, false, true);
+  LATTER_CHECK(sig_none == 0U);
+  LATTER_CHECK(sig_qa == (1U << 11));
+  LATTER_CHECK((sig_qa & ((1U << 11) - 1U)) == 0U);
+
+  const uint32_t sig_all_low = compute_takeover_signature(true, true, false, 7, true, true, true, true, true, false);
+  const uint32_t sig_all_hi = compute_takeover_signature(true, true, false, 7, true, true, true, true, true, true);
+  LATTER_CHECK((sig_all_low & (1U << 11)) == 0U);
+  LATTER_CHECK(sig_all_hi == (sig_all_low | (1U << 11)));
+
+  DeviceRuntimeState rs{};
+  rs.nav.gui_page = PageId::AREA;
+  p = PersistedDevicePrefs{};
+  p.home_screen_enabled = true;
+  p.return_to_home_timeout = 3U;  // "2 min"
+  LATTER_CHECK(should_return_to_home_on_idle(rs, p, false));
+  const int ctx_closed = compute_touch_context(rs);
+  rs.nav.quick_actions_open = true;
+  LATTER_CHECK(!should_return_to_home_on_idle(rs, p, false));
+  const int ctx_open = compute_touch_context(rs);
+  LATTER_CHECK(ctx_open != ctx_closed);
+  LATTER_CHECK((ctx_open & (1 << 24)) != 0);
+  LATTER_CHECK((ctx_closed & (1 << 24)) == 0);
+
+  // 4. Multi-geometry top_edge_zone_y() mirror & 4-row Quick Actions layout across all 5 flagship panels
+  struct FlagshipGeom {
+    const char *name;
+    int w;
+    int h;
+    bool round;
+    bool wearable;
+    int ppi;
+    bool has_battery;
+  };
+  constexpr FlagshipGeom kFiveGeoms[5] = {
+      {"pocket_466_round", 466, 466, true,  false, 266, true},
+      {"mobile_480_sq",    480, 480, false, false, 313, true},
+      {"wrist_410x502",    410, 502, false, true,  315, true},
+      {"remote_320x480",   320, 480, false, false, 165, true},
+      {"desk_720_sq",      720, 720, false, false, 254, false},
+  };
+  for (const auto &g : kFiveGeoms) {
+    const auto ly = compute_panel_layout(g.w, g.h, g.round, g.wearable, g.ppi);
+    const int min_dim = (g.w < g.h) ? g.w : g.h;
+    const int top_edge_y = g.round ? scale_min_for(54, min_dim) : mm_to_px_for(5.2f, g.ppi);
+    const int home_zone_y = g.round ? scale_min_for(412, min_dim) : (g.h - mm_to_px_for(5.2f, g.ppi));
+
+    // top_edge_zone_y() is positive, mirrors bottom home_zone_y(), and clears Row 0 & middle canvas
+    LATTER_CHECK(top_edge_y > 0);
+    LATTER_CHECK(top_edge_y == (g.h - home_zone_y));
+    LATTER_CHECK(top_edge_y < (ly.slot5_y(0) - ly.slot5_h / 2));
+    LATTER_CHECK(top_edge_y < (g.h / 4));
+
+    // Quick Actions 4 rows on slot5_y(0..3) + list_card_w x slot5_h + < Back at back_y
+    if (g.w > 520) {
+      LATTER_CHECK(ly.list_card_w <= kMaxContentColW);
+    }
+    for (int r = 0; r < 4; ++r) {
+      const int cy_r = ly.slot5_y(r);
+      const int span_r = band_safe_span_for(cy_r, ly.slot5_h, g.w, g.h, g.round, g.wearable, 12);
+      LATTER_CHECK(span_r >= ly.list_card_w);
+      if (r > 0) {
+        const int prev_bot = ly.slot5_y(r - 1) + ly.slot5_h / 2;
+        const int cur_top = cy_r - ly.slot5_h / 2;
+        LATTER_CHECK(cur_top > prev_bot);  // Strictly non-overlapping rows
+      }
+    }
+    LATTER_CHECK((ly.slot5_y(3) + ly.slot5_h / 2) < (ly.back_y - 12));
+
+    // Mains 2-pill row ("Screensaver" + "Screen Off") via compute_action_pill_row on Row 3
+    if (!g.has_battery) {
+      HomeHubPillGeom pwr_geoms[2]{};
+      const int gn = compute_action_pill_row(
+          2, ly.slot5_y(3), ly.slot5_h, ly.list_card_w, ly.list_card_w / 2,
+          scale_x_for(10, g.w), g.w, g.h, g.round, g.wearable, g.ppi, pwr_geoms, 14);
+      LATTER_CHECK(gn == 2);
+      LATTER_CHECK(pwr_geoms[0].w >= 80 && pwr_geoms[1].w >= 80);
+      LATTER_CHECK(pwr_geoms[0].hit_h >= mm_to_px_for(7.0f, g.ppi));
+      LATTER_CHECK(pwr_geoms[1].hit_h >= mm_to_px_for(7.0f, g.ppi));
+      const int p0_right = pwr_geoms[0].cx + pwr_geoms[0].w / 2;
+      const int p1_left = pwr_geoms[1].cx - pwr_geoms[1].w / 2;
+      LATTER_CHECK(p1_left > p0_right);
+      if (g.w > 520) {
+        const int total_w = (pwr_geoms[1].cx + pwr_geoms[1].w / 2) -
+                            (pwr_geoms[0].cx - pwr_geoms[0].w / 2);
+        LATTER_CHECK(total_w <= kMaxContentColW);
+      }
+    }
+  }
+
+  // 5. Source-level invariants for D-074 Quick Actions & hold_crown_power_off retirement
+  const std::string layout_h = read_repo_file("../../include/ui_layout.h");
+  const std::string state_h = read_repo_file("../../include/latter_state.h");
+  const std::string touch_h = read_repo_file("../../include/ui_touch_engine.h");
+  const std::string comp_h = read_repo_file("../../include/ui_compositor.h");
+  const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+  const std::string amb_cpp = read_repo_file("../../components/latter_ui/page_ambient_va.cpp");
+  const std::string sys_cpp = read_repo_file("../../components/latter_ui/page_system.cpp");
+  const std::string touch_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
+  const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string pmu_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+  const std::string core_yaml = read_repo_file("../../modules/system_core.yaml");
+  const std::string ui_doc = read_repo_file("../../docs/device-ui-design.md");
+
+  // Both can_go_home overloads gate on !quick_actions_open, and top_edge_zone_y mirrors home_zone_y
+  LATTER_CHECK(layout_h.find("top_edge_zone_y()") != std::string::npos);
+  LATTER_CHECK(layout_h.find("runtime_state().nav.quick_actions_open") != std::string::npos);
+  LATTER_CHECK(layout_h.find("rt.nav.quick_actions_open") != std::string::npos);
+  LATTER_CHECK(comp_cpp.find("render_quick_actions_overlay(") != std::string::npos);
+  LATTER_CHECK(amb_cpp.find("void render_quick_actions_overlay(") != std::string::npos);
+  LATTER_CHECK(gui_yaml.find("quick_actions_only = (takeover_sig == (1U << 11))") != std::string::npos);
+  LATTER_CHECK(core_yaml.find("START_INSTANT_HIBERNATION") != std::string::npos);
+  LATTER_CHECK(core_yaml.find("resolve_active_brightness_target(") != std::string::npos);
+  LATTER_CHECK(ui_doc.find("### D-074:") != std::string::npos);
+
+  for (const std::string *src : {&state_h, &touch_h, &comp_h, &sys_cpp, &touch_cpp, &gui_yaml, &pmu_yaml}) {
+    LATTER_CHECK(src->find("hold_crown_power_off") == std::string::npos);
+    LATTER_CHECK(src->find("HOLD_CROWN_POWER_OFF") == std::string::npos);
+    LATTER_CHECK(src->find("instant_crown_hibernate") == std::string::npos);
+    LATTER_CHECK(src->find("INSTANT_CROWN_HIBERNATE") == std::string::npos);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -6385,6 +6613,7 @@ int main() {
   test_cameras_app_and_live_video_d066();
   test_photo_frame_screensaver_day_night_sky_d067();
   test_gui_standardization_d070();
+  test_quick_actions_d074();
   std::printf(
       "[HOST TEST PASS] Protocol v3 (<charconv>) + V3DomainReducer + TimerAlarmController + "
       "DisplayLifecycleController + AudioPathArbitrator + FrameCadenceController + "

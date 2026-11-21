@@ -69,7 +69,7 @@ binary_sensor:
     entity_category: diagnostic
 
   # PWR key press timing: wakes standby/screensaver immediately on press IRQ, short press on active screen
-  # fires on release (< 1.5 s), and long press fires while held (>= 1.5 s).
+  # fires on release (< 1.0 s), and long press opens Quick Actions while held (>= 1.0 s).
   # The AXP2101 keeps its own hardware power-on and hard power-off (PWRON long hold) behavior.
   - id: !extend pwr_key
     on_press:
@@ -359,7 +359,7 @@ script:
   - id: pwr_key_long_press_watch
     mode: restart
     then:
-      - delay: 1500ms
+      - delay: 1000ms
       - script.execute:
           id: handle_crown_button_press
           is_long: true
@@ -400,12 +400,22 @@ script:
 
           if (is_long) {
             latter_ui::pwr_key_wake_consumed() = false;
-            latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::KEY;
-            if (latter_ui::persisted_prefs().hold_crown_power_off) {
-              id(start_instant_hibernation).execute();
-            } else {
-              id(start_hibernation_countdown).execute();
+            if (rs.nav.ota_in_progress || rs.nav.is_hibernating || rs.alarms.ringing ||
+                rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active ||
+                latter_ui::ui::pin_pad_state().open || latter_ui::shortcut_confirm_state().open) {
+              return;
             }
+            if (rs.voice.active || !rs.voice.status_text.empty()) {
+              id(cancel_voice_assistant).execute();
+            }
+            if (!id(display_brightness).current_values.is_on() || rs.nav.display_power_state != 0) {
+              latter_ui::note_wake_reason(latter_ui::WakeReason::CROWN);
+              id(wake_to_active_state).execute();
+            }
+            rs.nav.quick_actions_open = true;
+            latter_ui::display_lifecycle().note_activity(now_c);
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
 
@@ -439,6 +449,14 @@ script:
 
           if (rs.voice.active || !rs.voice.status_text.empty()) {
             id(cancel_voice_assistant).execute();
+            return;
+          }
+
+          if (rs.nav.quick_actions_open) {
+            rs.nav.quick_actions_open = false;
+            latter_ui::display_lifecycle().note_activity(now_c);
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
             return;
           }
 

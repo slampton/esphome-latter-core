@@ -67,6 +67,16 @@ inline int step_brightness_tap_10pct(int cur_pct) noexcept {
   return std::min(100, ((cur_pct / 10) + 1) * 10);
 }
 
+inline UiNumberId brightness_number_id_for_kind(ActiveBrightnessTargetKind kind) noexcept {
+  switch (kind) {
+    case ActiveBrightnessTargetKind::DAY:     return UiNumberId::DAY_BRIGHTNESS;
+    case ActiveBrightnessTargetKind::NIGHT:   return UiNumberId::NIGHT_BRIGHTNESS;
+    case ActiveBrightnessTargetKind::BEDTIME: return UiNumberId::BEDTIME_BRIGHTNESS;
+    case ActiveBrightnessTargetKind::MANUAL:
+    default:                                  return UiNumberId::MANUAL_BRIGHTNESS;
+  }
+}
+
 inline void do_fetch_area_browse() {
   const auto &rs = runtime_state();
   const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
@@ -570,6 +580,7 @@ inline void enter_home_hub_tab(int target_tab, bool /*expand_cam*/, DeviceRuntim
 inline void launch_dock_app(int chosen_app, DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms) {
   rs.nav.shortcut_origin = ShortcutOrigin::NONE;
   shortcut_confirm_state().clear();
+  rs.nav.quick_actions_open = false;
   home_dock_page() = 0;
 
   if (chosen_app == PageId::HOME_HUB) {
@@ -798,6 +809,7 @@ inline void launch_shortcut_route(RouteId route_id, ShortcutOrigin origin,
   if (!is_route_supported_on_board(route_id)) return;
   const int saved_pinned_pg = rs.nav.pinned_menu_page;
   shortcut_confirm_state().clear();
+  rs.nav.quick_actions_open = false;
 
   switch (route_id) {
     case RouteId::APP_PINNED:
@@ -1479,6 +1491,7 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   ui::pin_pad_scrub();
   shortcut_confirm_state().clear();
+  rs.nav.quick_actions_open = false;
   rs.nav.shortcut_origin = ShortcutOrigin::NONE;
   timer_view_slot() = 0;
   rs.alarms.edit_idx = 0;
@@ -1558,6 +1571,7 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   ui::pin_pad_scrub();
   shortcut_confirm_state().clear();
+  rs.nav.quick_actions_open = false;
   rs.nav.shortcut_origin = ShortcutOrigin::NONE;
   timer_view_slot() = 0;
   rs.alarms.edit_idx = 0;
@@ -1988,6 +2002,23 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     return;
   }
 
+  // Priority 6 (Compositor Priority 9): Quick Actions Overlay (D-074)
+  if (rs.nav.quick_actions_open) {
+    gest.begin(touch.x, touch.y, now_touch, rs.nav.gui_page, compute_touch_context(rs));
+    const HitRegion *qa_hit = frame_hits().hit_test(touch.x, touch.y, kHitTap);
+    const uint16_t qwid = (qa_hit != nullptr) ? qa_hit->widget_id : WidgetId::NONE;
+    if (qwid == WidgetId::BACK_BUTTON) {
+      gest.active = false;
+      const uint32_t qtkey = make_tap_target_key(rs.nav.gui_page, qwid, 0);
+      if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, qtkey)) {
+        rs.nav.quick_actions_open = false;
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+    }
+    return;
+  }
+
   // ----------------------------------------------------------------------------
   // 2. Active Page Touch-Down Initialization & Immediate Hit-Table Controls
   // ----------------------------------------------------------------------------
@@ -2042,6 +2073,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   // Page 0: Standalone Clock Face
   if (rs.nav.gui_page == PageId::CLOCK) {
+    if (touch.y <= ly.top_edge_zone_y()) {
+      return;  // Defer top-edge touch so pull-down opens Quick Actions; release tap returns Home
+    }
     if (prefs.home_screen_enabled && touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
       rs.nav.gui_page = PageId::HOME;
       rs.nav.home_subpage = 0;
@@ -2294,12 +2328,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         return;
       }
       if (wid == WidgetId::SYS_VOL_SLIDER) {
-        if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID)) {
-          const float new_vol = step_wrap_range(rt_.local_mp_volume, 0.10f, 0.10f, 1.00f);
-          rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, std::round(new_vol * 100.0f));
-          rt_.schedule_disp();
-        }
-        return;
+        return;  // Horizontal drag resolves in on_touch_move; tap-to-step resolves in on_touch_up
       }
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
         const int slot = hit->param;
@@ -2766,6 +2795,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
 
     if (sub == ToolsSubpage::FLASHLIGHT) {
+      if (touch.y <= ly.top_edge_zone_y()) {
+        return;  // Defer top-edge touch so pull-down opens Quick Actions; release tap exits Flashlight
+      }
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON)) {
         rs.nav.tools_subpage = 0;
         rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
@@ -3169,10 +3201,39 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     gest.last_swipe_ms = now_ms;
   };
 
+  // 0. Quick Actions Overlay Takeover: bottom-edge swipe-up dismisses; block all underlying swipes
+  if (rs.nav.quick_actions_open) {
+    if (gest.start_y >= ly.home_zone_y() && v_dir > 0) {
+      commit_swipe();
+      rs.nav.quick_actions_open = false;
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return true;
+    }
+    return false;
+  }
+
   // 1. Universal Bottom-Edge Steep Upward Swipe -> Home ([HOME PREDICATE])
   if (can_go_home(rs) && gest.start_y >= ly.home_zone_y() && v_dir > 0) {
     commit_swipe();
     navigate_home(now_ms);
+    return true;
+  }
+
+  // 1b. Universal Top-Edge Swipe-Down -> Quick Actions Overlay (D-074, all touch devices)
+  if (!rs.nav.ota_in_progress && !rs.nav.is_hibernating &&
+      rs.nav.display_power_state == 0 && rt_.panel_is_on &&
+      !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active &&
+      !rs.alert.active && !ui::pin_pad_state().open && !shortcut_confirm_state().open &&
+      !should_va_takeover_preempt(rs.voice.active, !rs.voice.status_text.empty(),
+                                  rs.voice.intercom_turn, rs.nav.gui_page,
+                                  rs.cameras.doorbell_live_popup_active) &&
+      rs.nav.active_game == 0 &&
+      gest.start_y <= ly.top_edge_zone_y() && v_dir < 0) {
+    commit_swipe();
+    rs.nav.quick_actions_open = true;
+    mark_dirty_full();
+    rt_.schedule_disp();
     return true;
   }
 
@@ -3826,6 +3887,42 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   const int dx = tx - gest.start_x;
   const int dy = ty - gest.start_y;
 
+  // Priority 9 Quick Actions Overlay: isolate sliders & bottom-edge swipe-up dismiss
+  if (rs.nav.quick_actions_open) {
+    const HitRegion *qa_sl = frame_hits().hit_test(gest.start_x, gest.start_y, kHitHorizSlider);
+    if (qa_sl != nullptr &&
+        (gest.axis_lock == GestureAxisLock::Slider ||
+         (std::abs(dx) >= ly.drag_start() && std::abs(dx) >= std::abs(dy)))) {
+      gest.axis_lock = GestureAxisLock::Slider;
+      gest.tap_cancelled = true;
+      if (qa_sl->widget_id == WidgetId::QUICK_VOL_SLIDER) {
+        const int next_pct = std::clamp(10 + static_cast<int>(std::lround(qa_sl->norm_x(tx) * 90.0f)), 10, 100);
+        const int cur_pct = static_cast<int>(std::lround(rt_.num_val(UiNumberId::SPEAKER_VOLUME)));
+        if (next_pct != cur_pct && (now_u - last_disp_update_ms() >= 42U)) {
+          rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
+          rt_.schedule_disp();
+        }
+        return;
+      }
+      if (qa_sl->widget_id == WidgetId::QUICK_BRI_SLIDER) {
+        const auto bri = resolve_active_brightness_target(
+            prefs, weather_state().sun_state, rt_.time_valid,
+            rt_.time_valid ? rt_.time_hour : 12);
+        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+        const int next_pct = std::clamp(1 + static_cast<int>(std::lround(qa_sl->norm_x(tx) * 99.0f)), 1, 100);
+        const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
+        if (next_pct != cur_pct && (now_u - last_disp_update_ms() >= 42U)) {
+          rt_.set_num_val(nid, static_cast<float>(next_pct));
+          rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+          rt_.schedule_disp();
+        }
+        return;
+      }
+    }
+    (void)try_commit_kinematic_swipe_(false, now_u);
+    return;
+  }
+
   // Dedicated Vertical Slider (Music Volume Peer Tab)
   const HitRegion *vsl_hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitVertSlider);
   if (vsl_hit != nullptr && vsl_hit->widget_id == WidgetId::MUSIC_VOL_SLIDER &&
@@ -3867,6 +3964,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       rs.music.takeover == MusicTakeover::NONE &&
       (rs.music.view == MusicView::LYRICS || rs.music.view == MusicView::INFO) &&
       (!rs.music.hud_active || gest.start_y < ly.mode_bar_zone_top()) &&
+      !(gest.axis_lock != GestureAxisLock::Slider && gest.start_y <= ly.top_edge_zone_y() && dy > 0) &&
       (gest.axis_lock == GestureAxisLock::Slider ||
        (std::abs(dy) >= ly.drag_start() && std::abs(dy) > std::abs(dx)))) {
     gest.axis_lock = GestureAxisLock::Slider;
@@ -3948,6 +4046,16 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
           rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
           rt_.schedule_disp();
         }
+      }
+      return;
+    }
+    if (sl_hit->widget_id == WidgetId::SYS_VOL_SLIDER &&
+        rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 7) {
+      const int next_pct = std::clamp(10 + static_cast<int>(std::lround(sl_hit->norm_x(tx) * 90.0f)), 10, 100);
+      const int cur_pct = static_cast<int>(std::lround(rt_.num_val(UiNumberId::SPEAKER_VOLUME)));
+      if (next_pct != cur_pct && (now_u - last_disp_update_ms() >= 42U)) {
+        rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
+        rt_.schedule_disp();
       }
       return;
     }
@@ -4074,7 +4182,85 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
 
   const int cur_ctx = compute_touch_context(rs);
 
-  if (cur_ctx == gest.start_context) {
+  if (cur_ctx == gest.start_context && rs.nav.quick_actions_open) {
+    // Priority 9 Quick Actions Takeover: isolate sliders, bottom-edge dismiss swipe, and release taps
+    if (!gest.swipe_committed && start_slider != nullptr &&
+        gest.axis_lock == GestureAxisLock::Slider) {
+      if (start_slider->widget_id == WidgetId::QUICK_VOL_SLIDER) {
+        const int next_pct = std::clamp(
+            10 + static_cast<int>(std::lround(start_slider->norm_x(tp.x) * 90.0f)), 10, 100);
+        rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
+        rt_.schedule_disp();
+        gest.tap_cancelled = true;
+      } else if (start_slider->widget_id == WidgetId::QUICK_BRI_SLIDER) {
+        const auto bri = resolve_active_brightness_target(
+            prefs, weather_state().sun_state, rt_.time_valid,
+            rt_.time_valid ? rt_.time_hour : 12);
+        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+        const int next_pct = std::clamp(
+            1 + static_cast<int>(std::lround(start_slider->norm_x(tp.x) * 99.0f)), 1, 100);
+        rt_.set_num_val(nid, static_cast<float>(next_pct));
+        rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+        rt_.schedule_disp();
+        gest.tap_cancelled = true;
+      }
+    } else {
+      (void)try_commit_kinematic_swipe_(true, now_rel);
+    }
+
+    const bool tap_valid =
+        rs.nav.quick_actions_open && !gest.swipe_committed && !gest.tap_cancelled &&
+        (gest.max_travel <= ly.tap_max());
+    if (tap_valid) {
+      const HitRegion *hit = frame_hits().hit_test(tp.x, tp.y, kHitTap);
+      if (hit == nullptr) {
+        hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitTap);
+      }
+      const uint16_t wid = (hit != nullptr) ? hit->widget_id : WidgetId::NONE;
+      const uint32_t tkey =
+          make_tap_target_key(rs.nav.gui_page, wid, (hit != nullptr) ? hit->param : 0);
+      if (wid == WidgetId::QUICK_VOL_SLIDER &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        const float new_vol = step_wrap_range(rt_.local_mp_volume, 0.10f, 0.10f, 1.00f);
+        rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, std::round(new_vol * 100.0f));
+        rt_.schedule_disp();
+      } else if (wid == WidgetId::QUICK_BRI_SLIDER &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        const auto bri = resolve_active_brightness_target(
+            prefs, weather_state().sun_state, rt_.time_valid,
+            rt_.time_valid ? rt_.time_hour : 12);
+        const UiNumberId nid = brightness_number_id_for_kind(bri.kind);
+        const int cur_pct = static_cast<int>(std::lround(rt_.num_val(nid)));
+        const int next_pct = step_brightness_tap_10pct(cur_pct);
+        rt_.set_num_val(nid, static_cast<float>(next_pct));
+        rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+        rt_.schedule_disp();
+      } else if (wid == WidgetId::QUICK_BEDTIME_TOGGLE &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rt_.sw_toggle(UiSwitchId::BEDTIME_MODE);
+        rt_.schedule_disp();
+      } else if (wid == WidgetId::QUICK_HIBERNATE_BTN &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+#if LATTER_HAS_BATTERY
+        rs.nav.quick_actions_open = false;
+        rt_.cmd(UiHostCmd::START_INSTANT_HIBERNATION);
+#endif
+      } else if (wid == WidgetId::QUICK_SCREEN_OFF_BTN &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.nav.quick_actions_open = false;
+        rt_.cmd(UiHostCmd::TURN_SCREEN_OFF);
+      } else if (wid == WidgetId::QUICK_SCREENSAVER_BTN &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.nav.quick_actions_open = false;
+        rt_.cmd(UiHostCmd::TRIGGER_SCREENSAVER_NOW);
+      } else if (wid == WidgetId::BACK_BUTTON &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.nav.quick_actions_open = false;
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+    }
+  } else if (cur_ctx == gest.start_context) {
     // 1. Commit Dedicated Vertical/Horizontal Sliders & Color Wheel Releases First
     if (!gest.swipe_committed && start_vslider != nullptr &&
         start_vslider->widget_id == WidgetId::MUSIC_VOL_SLIDER &&
@@ -4159,6 +4345,16 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         } else {
           (void)try_commit_kinematic_swipe_(true, now_rel);
         }
+      } else if (start_slider->widget_id == WidgetId::SYS_VOL_SLIDER &&
+                 rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 7) {
+        if (gest.axis_lock == GestureAxisLock::Slider) {
+          const int next_pct = std::clamp(10 + static_cast<int>(std::lround(start_slider->norm_x(tp.x) * 90.0f)), 10, 100);
+          rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
+          rt_.schedule_disp();
+          gest.tap_cancelled = true;
+        } else {
+          (void)try_commit_kinematic_swipe_(true, now_rel);
+        }
       }
     } else if (!gest.swipe_committed && rs.nav.gui_page == PageId::AREA &&
                rs.nav.area_subpage == AreaSubpage::LIGHT_DETAIL &&
@@ -4206,6 +4402,13 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
           latter_actions::emit_shortcut_action(ent_id, act);
           apply_optimistic_shortcut_feedback(ent_id, act, lbl, rs, now_rel);
         }
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
+    } else if (tap_valid && rs.nav.gui_page == PageId::CLOCK) {
+      if (prefs.home_screen_enabled && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.nav.gui_page = PageId::HOME;
+        rs.nav.home_subpage = 0;
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -4987,12 +5190,8 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
                                           {"5 min", "10 min", "15 min", "30 min", "Disabled"}));
 #endif
         } else if (idx == 7) {
-#if LATTER_HAS_BATTERY
-          rt_.sw_toggle(UiSwitchId::INSTANT_CROWN_HIBERNATE);
-#endif
-        } else if (idx == 8) {
           rt_.sw_toggle(UiSwitchId::BEDTIME_MODE);
-        } else if (idx == 9) {
+        } else if (idx == 8) {
           rt_.set_select_opt(UiSelectId::BEDTIME_DISPLAY,
                              cycle_option(rt_.select_opt(UiSelectId::BEDTIME_DISPLAY),
                                           {"Screen Off", "Ambient Clock"}));
@@ -5087,6 +5286,15 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       } else if (wid == WidgetId::CONFIRM_ACCEPT && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rt_.cmd((rs.nav.system_menu_mode == 4) ? UiHostCmd::RESTART_DEVICE
                                                : UiHostCmd::TRIGGER_FIRMWARE_UPDATE);
+      }
+
+    // 7c. Page 4 System Sound Slider Tap-to-Step (Mode 7 — drag resolves in on_touch_move)
+    } else if (tap_valid && rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 7) {
+      if (wid == WidgetId::SYS_VOL_SLIDER &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        const float new_vol = step_wrap_range(rt_.local_mp_volume, 0.10f, 0.10f, 1.00f);
+        rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, std::round(new_vol * 100.0f));
+        rt_.schedule_disp();
       }
 
     // 8. Page 5 Weather Mode Bar Taps
@@ -5364,6 +5572,14 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
             mark_dirty_full();
             rt_.schedule_disp();
           }
+        }
+      } else if (rs.nav.tools_subpage == ToolsSubpage::FLASHLIGHT &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        rs.nav.tools_subpage = 0;
+        rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+        if (!return_from_shortcut_origin(rs, rt_, now_rel)) {
+          mark_dirty_full();
+          rt_.schedule_disp();
         }
       }
 
@@ -6230,7 +6446,26 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
     else if (act == "prev" || act == "left" || act == "up" || act == "ccw") step = -1;
   }
 
+  if (act == "quick_actions") {
+    if (!rs.nav.is_hibernating && !rs.alarms.ringing && !rs.timers.ringing &&
+        !rs.alarms.find_my_active && !rs.alert.active &&
+        !ui::pin_pad_state().open && !shortcut_confirm_state().open) {
+      rs.nav.quick_actions_open = true;
+      ui_focus_index() = 0;
+      mark_dirty_full();
+      rt_.schedule_disp();
+    }
+    return;
+  }
+
   if (act == "home") {
+    if (rs.nav.quick_actions_open) {
+      rs.nav.quick_actions_open = false;
+      ui_focus_index() = 0;
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return;
+    }
     if (can_go_home(rs)) {
       ui_focus_index() = 0;
       navigate_home(now_in);
@@ -6248,6 +6483,13 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
     }
     if (shortcut_confirm_state().open) {
       shortcut_confirm_state().clear();
+      ui_focus_index() = 0;
+      mark_dirty_full();
+      rt_.schedule_disp();
+      return;
+    }
+    if (rs.nav.quick_actions_open) {
+      rs.nav.quick_actions_open = false;
       ui_focus_index() = 0;
       mark_dirty_full();
       rt_.schedule_disp();
@@ -6276,7 +6518,9 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
   const int focus_cnt = frame_hits().focus_count();
 
   if (step != 0) {
-    if (!ui::pin_pad_state().open && !rs.alarms.ringing && !rs.timers.ringing &&
+    if (!ui::pin_pad_state().open && !shortcut_confirm_state().open &&
+        !rs.nav.quick_actions_open &&
+        !rs.alarms.ringing && !rs.timers.ringing &&
         !rs.alarms.find_my_active && !rs.alert.active) {
       if (rs.nav.gui_page == PageId::WEATHER) {
         rs.nav.sky_weather_subpage = step_wrap(rs.nav.sky_weather_subpage, step, 4);
@@ -6342,7 +6586,8 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
       }
       return;
     }
-    if (rs.nav.gui_page == PageId::TIME &&
+    if (!rs.nav.quick_actions_open &&
+        rs.nav.gui_page == PageId::TIME &&
         rs.nav.time_subpage == TimeSubpage::ALARMS &&
         rs.alarms.edit_idx >= 1 && rs.alarms.edit_idx <= 3) {
       rs.nav.alarm_edit_field = (rs.nav.alarm_edit_field == 0) ? 1 : 0;
@@ -6482,7 +6727,6 @@ bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
     case W::GAME_SOUND: return p.game_sound_effects;
     case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
     case W::SCREENSAVER_PHOTO_CLOCK: return p.screensaver_photo_clock;
-    case W::INSTANT_CROWN_HIBERNATE: return p.hold_crown_power_off;
     case W::BEDTIME_MODE: return p.bedtime_active;
   }
   return false;
@@ -6502,7 +6746,6 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
     case W::GAME_SOUND: pk = K::GAME_SOUND_EFFECTS; next_val = !p.game_sound_effects; break;
     case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;
     case W::SCREENSAVER_PHOTO_CLOCK: pk = K::SCREENSAVER_PHOTO_CLOCK; next_val = !p.screensaver_photo_clock; break;
-    case W::INSTANT_CROWN_HIBERNATE: pk = K::HOLD_CROWN_POWER_OFF; next_val = !p.hold_crown_power_off; break;
     case W::BEDTIME_MODE: pk = K::BEDTIME_ACTIVE; next_val = !p.bedtime_active; break;
   }
   if (pk == K::COUNT) return;
@@ -6527,6 +6770,7 @@ float UiTouchRuntime::num_val(UiNumberId nid) const noexcept {
     case N::MANUAL_BRIGHTNESS: return static_cast<float>(p.manual_brightness_pct());
     case N::DAY_BRIGHTNESS: return static_cast<float>(p.day_brightness_pct());
     case N::NIGHT_BRIGHTNESS: return static_cast<float>(p.night_brightness_pct());
+    case N::BEDTIME_BRIGHTNESS: return static_cast<float>(p.bedtime_brightness_pct());
     case N::DAY_START_HOUR: return static_cast<float>(p.day_start_hour);
     case N::NIGHT_START_HOUR: return static_cast<float>(p.night_start_hour);
   }
@@ -6557,6 +6801,7 @@ void UiTouchRuntime::set_num_val(UiNumberId nid, float val) const {
     case N::MANUAL_BRIGHTNESS: pk = K::MANUAL_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
     case N::DAY_BRIGHTNESS: pk = K::DAY_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
     case N::NIGHT_BRIGHTNESS: pk = K::NIGHT_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
+    case N::BEDTIME_BRIGHTNESS: pk = K::BEDTIME_BRIGHTNESS; cl_val = std::clamp(cl_val, 1, 100); break;
     case N::DAY_START_HOUR: pk = K::DAY_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
     case N::NIGHT_START_HOUR: pk = K::NIGHT_START_HOUR; cl_val = std::clamp(cl_val, 0, 23); break;
   }

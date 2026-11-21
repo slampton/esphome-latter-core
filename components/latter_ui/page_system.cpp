@@ -166,7 +166,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 1) {
     const int current_offset = compute_scroll_offset(sleep_menu_page, 315);
-    char sleep_labels[10][36];
+    char sleep_labels[9][36];
 #if LATTER_HAS_IMU
     std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", ctx.pickup_wake_opt.c_str());
 #else
@@ -189,31 +189,21 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     std::snprintf(sleep_labels[5], sizeof(sleep_labels[5]), "Docked Timeout: %s", ctx.screensaver_docked_timeout_opt.c_str());
 #if LATTER_HAS_BATTERY
     std::snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Hibernate: %s", ctx.hibernate_timeout_opt.c_str());
-    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hold Crown: %s",
-                  ctx.instant_crown_hibernate ? "Instant" : "5s Delay");
 #else
     std::snprintf(sleep_labels[6], sizeof(sleep_labels[6]), "Hibernate: N/A");
-    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Hold Crown: N/A");
 #endif
-    std::snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Bedtime Mode: %s",
+    std::snprintf(sleep_labels[7], sizeof(sleep_labels[7]), "Bedtime Mode: %s",
                   ctx.bedtime_active ? "On" : "Off");
     const char *short_bt = (ctx.bedtime_display_opt == "Ambient Clock") ? "Clock" : "Off";
-    std::snprintf(sleep_labels[9], sizeof(sleep_labels[9]), "Bedtime Screen: %s", short_bt);
+    std::snprintf(sleep_labels[8], sizeof(sleep_labels[8]), "Bedtime Screen: %s", short_bt);
 
     const bool saver_enabled = (ctx.screensaver_mode_opt != "Never");
     const int page_base = (sleep_menu_page == 2) ? 5 : 0;
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 9; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
         if (i == 7) {
-#if LATTER_HAS_BATTERY
-          draw_toggle_card_y(y, ctx.instant_crown_hibernate ? "Hold Crown: Instant" : "Hold Crown: 5s Delay",
-                             ctx.instant_crown_hibernate, row_slot, row_slot);
-#else
-          draw_cycle_card_y(y, sleep_labels[i], false);
-#endif
-        } else if (i == 8) {
           draw_toggle_card_y(y, "Bedtime Mode", ctx.bedtime_active, row_slot, row_slot);
         } else {
           const bool en = (i == 0) ? (LATTER_HAS_IMU != 0)
@@ -409,9 +399,11 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
 
   } else if (system_menu_mode == 7) {
     render_page_header(it, cx, "SOUND", font_small, col_white);
-    std::snprintf(buf, sizeof(buf), "Speaker Vol: %d%%", ctx.spk_vol_pct);
-    draw_cycle_card_y(layout().slot5_y(0), buf, true,
-                      WidgetId::SYS_VOL_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot, 0);
+    const int spk_vol = std::clamp(ctx.spk_vol_pct, 10, 100);
+    std::snprintf(buf, sizeof(buf), "Speaker Vol: %d%%", spk_vol);
+    ui::slider_card_row(it, cx, layout().slot5_y(0), row_w, row_h, buf, spk_vol, 10, 100, true,
+                        theme_primary, card_brd_on, font_small, col_white,
+                        WidgetId::SYS_VOL_SLIDER, 0);
     std::snprintf(buf, sizeof(buf), "Alert Vol: %d%%", ctx.alert_vol_pct);
     draw_cycle_card_y(layout().slot5_y(1), buf, true,
                       static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), kHitTap | kHitFocusSlot, 1);

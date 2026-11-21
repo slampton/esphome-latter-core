@@ -560,6 +560,7 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          rs.nav.quick_actions_open = false;
           const uint32_t now_ss_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
           const std::string_view s_style = prefs.bedtime_active
@@ -602,6 +603,7 @@ script:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
           const uint32_t now_off_ms = millis();
+          rs.nav.quick_actions_open = false;
           rs.nav.active_game = 0;
           // Cut panel/backlight synchronously before audio/IMU I2C and pm_apply() so LightState::loop()
           // is never delayed by the quiet-loop interval (250/1000 ms), and skip a wasted full-frame blit
@@ -642,6 +644,7 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          rs.nav.quick_actions_open = false;
           const uint32_t now_sb_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
           latter_ui::video_client().stop();
@@ -775,6 +778,7 @@ script:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          rs.nav.quick_actions_open = false;
           latter_ui::display_lifecycle().on_prepare_hibernate(
               rs.nav.display_power_state, rs.nav.sleep_start_time);
           latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);

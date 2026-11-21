@@ -655,7 +655,7 @@ struct ShortcutConfirmState {
 // Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
-static constexpr uint16_t kPersistedPrefsVersion = 16U;
+static constexpr uint16_t kPersistedPrefsVersion = 17U;
 static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
 
 enum class PrefKey : uint8_t {
@@ -667,64 +667,63 @@ enum class PrefKey : uint8_t {
   BATTERY_HIBERNATE_TIMEOUT = 5,
   SCREENSAVER_MODE = 6,
   SCREENSAVER_STYLE = 7,
-  HOLD_CROWN_POWER_OFF = 8,
-  AUTO_BRIGHTNESS_MODE = 9,
-  MANUAL_BRIGHTNESS = 10,
-  DAY_BRIGHTNESS = 11,
-  NIGHT_BRIGHTNESS = 12,
-  DAY_START_HOUR = 13,
-  NIGHT_START_HOUR = 14,
-  COLOR_PROFILE = 15,
-  VA_VISUAL_PROFILE = 16,
-  START_SCREEN = 17,
-  CLOCK_FACE = 18,
-  TIME_FORMAT = 19,
-  WEATHER_BACKGROUND = 20,
-  HOME_SUN = 21,
-  HOME_MOON = 22,
-  WAKE_GREETING = 23,
-  ALBUM_ART_STYLE = 24,
-  MUSIC_OVERLAY_STYLE = 25,
-  ALBUM_SORT_ORDER = 26,
-  ARTIST_ALBUM_SORT_ORDER = 27,
-  PODCAST_SORT_ORDER = 28,
-  WW_SENS_OKAY_NABU = 29,
-  WW_SENS_HEY_LUNA = 30,
-  WW_SENS_HEY_JARVIS = 31,
-  WW_SENS_HEY_MYCROFT = 32,
-  WW_SENS_ALEXA = 33,
-  WAKE_SCREEN_ON_ASSIST = 34,
-  ALERT_VOLUME = 35,
-  VOLUME_STEP_SIZE = 36,
-  GAME_SOUND_EFFECTS = 37,
-  BLE_BEACON_ENABLED = 38,
-  BLE_BEACON_MODE = 39,
-  HOME_SCREEN_ENABLED = 40,
-  RETURN_TO_HOME_TIMEOUT = 41,
-  HOME_CLOCK_TAP_ACTION = 42,
-  SHOW_UTC_CLOCK = 43,
-  WORLD_CLOCKS = 44,
-  ALARMS_SUMMARY = 45,
-  LOCAL_CLOCK_LABEL = 46,
-  TOOLS_ITEMS = 47,
-  GAMES_ITEMS = 48,
-  HOME_DATE_TAP_ACTION = 49,
-  CALENDAR_LOOKAHEAD_DAYS = 50,
-  CALENDAR_WEEK_START = 51,
-  BEDTIME_ACTIVE = 52,
-  BEDTIME_DISPLAY = 53,
-  BEDTIME_SCHEDULE = 54,
-  BEDTIME_START_HOUR = 55,
-  BEDTIME_END_HOUR = 56,
-  BEDTIME_BRIGHTNESS = 57,
-  CAMERA_DEFAULT_VIEW = 58,
-  CAMERA_CAROUSEL_INTERVAL = 59,
-  CAMERA_FRAMING = 60,
-  CAMERA_STREAM_MODE = 61,
-  CAMERA_DOORBELL_POPUP = 62,
-  SCREENSAVER_PHOTO_CLOCK = 63,
-  WEATHER_APP_BACKGROUND = 64,
-  COUNT = 65,
+  AUTO_BRIGHTNESS_MODE = 8,
+  MANUAL_BRIGHTNESS = 9,
+  DAY_BRIGHTNESS = 10,
+  NIGHT_BRIGHTNESS = 11,
+  DAY_START_HOUR = 12,
+  NIGHT_START_HOUR = 13,
+  COLOR_PROFILE = 14,
+  VA_VISUAL_PROFILE = 15,
+  START_SCREEN = 16,
+  CLOCK_FACE = 17,
+  TIME_FORMAT = 18,
+  WEATHER_BACKGROUND = 19,
+  HOME_SUN = 20,
+  HOME_MOON = 21,
+  WAKE_GREETING = 22,
+  ALBUM_ART_STYLE = 23,
+  MUSIC_OVERLAY_STYLE = 24,
+  ALBUM_SORT_ORDER = 25,
+  ARTIST_ALBUM_SORT_ORDER = 26,
+  PODCAST_SORT_ORDER = 27,
+  WW_SENS_OKAY_NABU = 28,
+  WW_SENS_HEY_LUNA = 29,
+  WW_SENS_HEY_JARVIS = 30,
+  WW_SENS_HEY_MYCROFT = 31,
+  WW_SENS_ALEXA = 32,
+  WAKE_SCREEN_ON_ASSIST = 33,
+  ALERT_VOLUME = 34,
+  VOLUME_STEP_SIZE = 35,
+  GAME_SOUND_EFFECTS = 36,
+  BLE_BEACON_ENABLED = 37,
+  BLE_BEACON_MODE = 38,
+  HOME_SCREEN_ENABLED = 39,
+  RETURN_TO_HOME_TIMEOUT = 40,
+  HOME_CLOCK_TAP_ACTION = 41,
+  SHOW_UTC_CLOCK = 42,
+  WORLD_CLOCKS = 43,
+  ALARMS_SUMMARY = 44,
+  LOCAL_CLOCK_LABEL = 45,
+  TOOLS_ITEMS = 46,
+  GAMES_ITEMS = 47,
+  HOME_DATE_TAP_ACTION = 48,
+  CALENDAR_LOOKAHEAD_DAYS = 49,
+  CALENDAR_WEEK_START = 50,
+  BEDTIME_ACTIVE = 51,
+  BEDTIME_DISPLAY = 52,
+  BEDTIME_SCHEDULE = 53,
+  BEDTIME_START_HOUR = 54,
+  BEDTIME_END_HOUR = 55,
+  BEDTIME_BRIGHTNESS = 56,
+  CAMERA_DEFAULT_VIEW = 57,
+  CAMERA_CAROUSEL_INTERVAL = 58,
+  CAMERA_FRAMING = 59,
+  CAMERA_STREAM_MODE = 60,
+  CAMERA_DOORBELL_POPUP = 61,
+  SCREENSAVER_PHOTO_CLOCK = 62,
+  WEATHER_APP_BACKGROUND = 63,
+  COUNT = 64,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 128U,
               "PrefKey::COUNT must remain < 128 to fit in 128-bit PrefMask.");
@@ -816,7 +815,6 @@ struct PersistedDevicePrefs {
   uint8_t screensaver_mode = 0;            // 0..2 ("Docked Only", "Always", "Never")
   uint8_t screensaver_style = 0;           // 0..5 ("Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks")
   bool screensaver_photo_clock = false;    // Optional subtle clock on Photo Frame screensaver
-  bool hold_crown_power_off = false;
   uint8_t auto_brightness_mode = 1;        // 0..2 ("Disabled", "Sun Synchronized", "Time Schedule")
   uint8_t manual_brightness = 80;          // 1..100 (%)
   uint8_t day_brightness = 90;             // 1..100 (%)
@@ -1158,6 +1156,61 @@ inline constexpr float resolve_bedtime_ambient_brightness(float bedtime_bri) noe
 }
 
 inline const char *pref_auto_brightness_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAutoBrightnessModeOpts, p.auto_brightness_mode, 1); }
+
+enum class ActiveBrightnessTargetKind : uint8_t {
+  MANUAL = 0,
+  DAY = 1,
+  NIGHT = 2,
+  BEDTIME = 3,
+};
+
+struct ActiveBrightnessTarget {
+  ActiveBrightnessTargetKind kind{ActiveBrightnessTargetKind::MANUAL};
+  PrefKey pref_key{PrefKey::MANUAL_BRIGHTNESS};
+  uint8_t pct{80};
+  const char *context_label{"Manual"};  // "Bedtime", "Manual", "Auto · Day", "Auto · Night"
+};
+
+inline ActiveBrightnessTarget resolve_active_brightness_target(
+    const PersistedDevicePrefs &prefs,
+    std::string_view sun_state,
+    bool time_valid,
+    int hour) noexcept {
+  if (prefs.bedtime_active) {
+    return {ActiveBrightnessTargetKind::BEDTIME, PrefKey::BEDTIME_BRIGHTNESS,
+            prefs.bedtime_brightness_pct(), "Bedtime"};
+  }
+  const std::string_view mode = pref_auto_brightness_mode_cstr(prefs);
+  if (mode == "Sun Synchronized") {
+    const bool is_night = (sun_state == "below_horizon");
+    if (is_night) {
+      return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
+              prefs.night_brightness_pct(), "Auto · Night"};
+    }
+    return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
+            prefs.day_brightness_pct(), "Auto · Day"};
+  }
+  if (mode == "Time Schedule") {
+    const int day_h = static_cast<int>(prefs.day_start_hour);
+    const int night_h = static_cast<int>(prefs.night_start_hour);
+    bool is_day = true;
+    if (time_valid) {
+      if (day_h < night_h) {
+        is_day = (hour >= day_h && hour < night_h);
+      } else {
+        is_day = (hour >= day_h || hour < night_h);
+      }
+    }
+    if (is_day) {
+      return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
+              prefs.day_brightness_pct(), "Auto · Day"};
+    }
+    return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
+            prefs.night_brightness_pct(), "Auto · Night"};
+  }
+  return {ActiveBrightnessTargetKind::MANUAL, PrefKey::MANUAL_BRIGHTNESS,
+          prefs.manual_brightness_pct(), "Manual"};
+}
 inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kColorProfileOpts, p.color_profile); }
 inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kVaVisualProfileOpts, p.va_visual_profile); }
 inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
@@ -1795,6 +1848,7 @@ struct NavRuntimeState {
   std::string pinned_feedback = "";
   uint32_t pinned_feedback_ms = 0;
   ShortcutConfirmState shortcut_confirm{};
+  bool quick_actions_open = false;
   std::string pending_shortcut_entity_id = "";
   std::string pending_shortcut_action = "";
   std::string pending_shortcut_label = "";
@@ -3888,7 +3942,6 @@ inline const char *pref_key_name(PrefKey key) {
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return "battery_hibernate_timeout";
     case PrefKey::SCREENSAVER_MODE: return "screensaver_mode";
     case PrefKey::SCREENSAVER_STYLE: return "screensaver_style";
-    case PrefKey::HOLD_CROWN_POWER_OFF: return "hold_crown_power_off";
     case PrefKey::AUTO_BRIGHTNESS_MODE: return "auto_brightness_mode";
     case PrefKey::MANUAL_BRIGHTNESS: return "manual_brightness";
     case PrefKey::DAY_BRIGHTNESS: return "day_brightness";
@@ -3960,7 +4013,6 @@ inline std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return pref_battery_hibernate_timeout_cstr(p);
     case PrefKey::SCREENSAVER_MODE: return pref_screensaver_mode_cstr(p);
     case PrefKey::SCREENSAVER_STYLE: return pref_screensaver_style_cstr(p);
-    case PrefKey::HOLD_CROWN_POWER_OFF: return p.hold_crown_power_off ? "1" : "0";
     case PrefKey::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
     case PrefKey::MANUAL_BRIGHTNESS: return std::to_string(p.manual_brightness_pct());
     case PrefKey::DAY_BRIGHTNESS: return std::to_string(p.day_brightness_pct());
@@ -4085,8 +4137,6 @@ inline bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::strin
                         kPrefEffectSleepTimer | kPrefEffectScreensaverChange);
     case PrefKey::SCREENSAVER_STYLE:
       return apply_enum(p.screensaver_style, kScreensaverStyleOpts, kPrefEffectScreensaverChange);
-    case PrefKey::HOLD_CROWN_POWER_OFF:
-      return apply_bool(p.hold_crown_power_off, 0);
     case PrefKey::AUTO_BRIGHTNESS_MODE:
       return apply_enum(p.auto_brightness_mode, kAutoBrightnessModeOpts, kPrefEffectBrightness);
     case PrefKey::MANUAL_BRIGHTNESS:
@@ -4340,7 +4390,6 @@ inline bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT, PrefKey::BATTERY_HIBERNATE_TIMEOUT);
   apply_f(DevicePrefsField::SCREENSAVER_MODE, PrefKey::SCREENSAVER_MODE);
   apply_f(DevicePrefsField::SCREENSAVER_STYLE, PrefKey::SCREENSAVER_STYLE);
-  apply_f(DevicePrefsField::HOLD_CROWN_POWER_OFF, PrefKey::HOLD_CROWN_POWER_OFF);
   apply_f(DevicePrefsField::AUTO_BRIGHTNESS_MODE, PrefKey::AUTO_BRIGHTNESS_MODE);
   apply_f(DevicePrefsField::MANUAL_BRIGHTNESS, PrefKey::MANUAL_BRIGHTNESS);
   apply_f(DevicePrefsField::DAY_BRIGHTNESS, PrefKey::DAY_BRIGHTNESS);
@@ -5614,7 +5663,7 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
     return false;
   }
   if (rt.voice.active || rt.voice.tts_received || !rt.voice.status_text.empty() ||
-      cam_session_active || rt.nav.shortcut_confirm.open) {
+      cam_session_active || rt.nav.shortcut_confirm.open || rt.nav.quick_actions_open) {
     return false;
   }
   if (rt.nav.gui_page == 3 && rt.nav.active_game > 0) return false;
@@ -6838,7 +6887,11 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
   if (rs.nav.shortcut_confirm.open) {
     drill = (drill & 0x7F) | 0x80;
   }
-  return ((gp & 0xFF) << 16) | ((sub & 0xFF) << 8) | (drill & 0xFF);
+  int ctx = ((gp & 0xFF) << 16) | ((sub & 0xFF) << 8) | (drill & 0xFF);
+  if (rs.nav.quick_actions_open) {
+    ctx |= (1 << 24);
+  }
+  return ctx;
 }
 
 }  // namespace latter_ui

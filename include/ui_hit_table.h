@@ -53,6 +53,14 @@ namespace WidgetId {
   static constexpr uint16_t NOTIF_EXPAND_BTN   = 61;
   static constexpr uint16_t CAM_PTT_BANNER_STOP = 62;
 
+  // Quick Actions Overlay (Priority 9 Takeover — D-074)
+  static constexpr uint16_t QUICK_VOL_SLIDER      = 70;
+  static constexpr uint16_t QUICK_BRI_SLIDER      = 71;
+  static constexpr uint16_t QUICK_BEDTIME_TOGGLE  = 72;
+  static constexpr uint16_t QUICK_HIBERNATE_BTN   = 73;
+  static constexpr uint16_t QUICK_SCREEN_OFF_BTN  = 74;
+  static constexpr uint16_t QUICK_SCREENSAVER_BTN = 75;
+
   static constexpr uint16_t CONFIRM_CANCEL     = 100;
   static constexpr uint16_t CONFIRM_ACCEPT     = 101;
 

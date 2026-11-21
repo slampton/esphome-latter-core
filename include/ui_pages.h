@@ -64,6 +64,8 @@ void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrame
                                     const SystemTakeoverState &st);
 void render_notification_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
                                  const SystemTakeoverState &st);
+void render_quick_actions_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
+                                  const SystemTakeoverState &st);
 void render_docked_screensaver(esphome::display::Display &it, const UiFrameContext &ctx,
                                const SystemTakeoverState &st);
 

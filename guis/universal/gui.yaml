@@ -206,7 +206,6 @@ display:
       ctx.game_sound_enabled = prefs.game_sound_effects;
       ctx.va_wake_screen = prefs.wake_screen_on_assist;
       ctx.screensaver_photo_clock = prefs.screensaver_photo_clock;
-      ctx.instant_crown_hibernate = prefs.hold_crown_power_off;
       ctx.bedtime_active = prefs.bedtime_active;
 
       const auto &ac_wall = latter_ui::area_ctx_state();
@@ -269,22 +268,24 @@ display:
           (takeover_sig == (1U << 3)) &&
           (takeover_st.screensaver_style_opt == "Ambient Clock" ||
            takeover_st.screensaver_style_opt == "Photo Frame");
+      const bool quick_actions_only = (takeover_sig == (1U << 11));
       const bool anim_or_scroll =
-          ((takeover_sig != 0U) && !static_screensaver_only) ||
-          weather_sky_stepping_hint ||
-          clock_sweep_hint ||
-          time_sw_hint ||
-          lyrics_anim_now ||
-          latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
-          vert_bounce_now ||
-          rs.nav.menu_scroll_active ||
-          (rs.nav.gui_page == 3 && rs.nav.active_game > 0);
+          ((takeover_sig != 0U) && !static_screensaver_only && !quick_actions_only) ||
+          (!quick_actions_only &&
+           (weather_sky_stepping_hint ||
+            clock_sweep_hint ||
+            time_sw_hint ||
+            lyrics_anim_now ||
+            latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
+            vert_bounce_now ||
+            rs.nav.menu_scroll_active ||
+            (rs.nav.gui_page == 3 && rs.nav.active_game > 0)));
       const bool photo_frame_no_clock =
           static_screensaver_only &&
           (takeover_st.screensaver_style_opt == "Photo Frame") &&
           !takeover_st.screensaver_photo_clock &&
           photo_frame_art_ready;
-      const int hhmm_key = photo_frame_no_clock ? -1 : latter_ui::compute_hhmm_key(ctx.now);
+      const int hhmm_key = (photo_frame_no_clock || quick_actions_only) ? -1 : latter_ui::compute_hhmm_key(ctx.now);
       const uint32_t idle_state_sig = latter_ui::compute_idle_state_signature(ctx);
       const bool live_sec_active = latter_ui::compute_live_sec_active(ctx);
       const int home_clock_band_y1 =

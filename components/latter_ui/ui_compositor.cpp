@@ -181,7 +181,8 @@ void mark_music_progress_dirty_band(int y0, int y1) {
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active,
-                                    bool shortcut_confirm_open) {
+                                    bool shortcut_confirm_open,
+                                    bool quick_actions_open) {
   uint32_t sig = 0U;
   if (ota_in_progress) sig |= (1U << 0);
   if (is_hibernating) sig |= (1U << 1);
@@ -192,6 +193,7 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
   if (pin_pad_open) sig |= (1U << 8);
   if (notif_active) sig |= (1U << 9);
   if (shortcut_confirm_open) sig |= (1U << 10);
+  if (quick_actions_open) sig |= (1U << 11);
   return sig;
 }
 
@@ -859,6 +861,29 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   const uint32_t batt_u8 = std::isnan(rs.hw_batt_level)
       ? 255U
       : static_cast<uint32_t>(std::clamp<int>(static_cast<int>(std::round(rs.hw_batt_level)), 0, 100));
+  if (rs.nav.quick_actions_open) {
+    const auto bri = resolve_active_brightness_target(
+        prefs, weather_state().sun_state, ctx.now.is_valid(),
+        ctx.now.is_valid() ? ctx.now.hour : 12);
+    uint32_t qa_sig = 2166136261U;
+    qa_sig = (qa_sig ^ batt_u8) * 16777619U;
+    qa_sig = (qa_sig ^ (rs.hw_batt_charging ? 1U : 0U) ^ (rs.hw_usb_connected ? 2U : 0U)) * 16777619U;
+    qa_sig = (qa_sig ^ static_cast<uint32_t>(std::clamp(ctx.spk_vol_pct, 0, 100))) * 16777619U;
+    qa_sig = (qa_sig ^ static_cast<uint32_t>(bri.pct)) * 16777619U;
+    qa_sig = (qa_sig ^ static_cast<uint32_t>(bri.kind)) * 16777619U;
+    qa_sig = (qa_sig ^ (prefs.bedtime_active ? 1U : 0U)) * 16777619U;
+    qa_sig = (qa_sig ^ static_cast<uint32_t>(prefs.screensaver_mode)) * 16777619U;
+    if (ui_focus_active(ctx.now_ms)) {
+      qa_sig = (qa_sig ^ (0x80U | static_cast<uint32_t>(ui_focus_index() & 0x3F))) * 16777619U;
+    }
+    if (is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url) &&
+        resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+      qa_sig = (qa_sig ^ 0x5AU) * 16777619U;
+    } else if (ctx.home_wallpaper_art.valid()) {
+      qa_sig = (qa_sig ^ 0xA5U) * 16777619U;
+    }
+    return qa_sig;
+  }
   uint32_t sig = batt_u8;
   if (is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url) &&
       resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour)) {
@@ -1137,6 +1162,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
 
 bool compute_live_sec_active(const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
+  if (rs.nav.quick_actions_open) return false;
   static uint32_t s_last_music_np_pos_sec = 0xFFFFFFFFU;
   static int s_last_music_np_dur_sec = -1;
   if (rs.nav.gui_page != PageId::MUSIC ||
@@ -1383,7 +1409,14 @@ bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext
     return true;
   }
 
-  // 9. DOCKED SCREENSAVER (Mode 1)
+  // 9. QUICK ACTIONS OVERLAY (D-074)
+  if (st.quick_actions_open) {
+    render_quick_actions_overlay(it, ctx, st);
+    render_active_focus_overlay(it, st.now_ms, st.theme_primary, st.col_white);
+    return true;
+  }
+
+  // 10. DOCKED SCREENSAVER (Mode 1)
   if (st.display_power_state == 1) {
     frame_base(it, st.col_bg);
     render_docked_screensaver(it, ctx, st);

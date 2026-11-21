@@ -156,7 +156,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `sensor.<device>_device_prefs` (`DevicePrefsField`, `71` total fields)
+### `sensor.<device>_device_prefs` (`DevicePrefsField`, `70` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -171,65 +171,64 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `9` | `battery_hibernate_timeout` | `DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT` | `string` | Battery deep sleep / hibernate timeout (5 min|10 min|15 min|30 min|Disabled) |
 | `10` | `screensaver_mode` | `DevicePrefsField::SCREENSAVER_MODE` | `string` | Screensaver activation policy when idle (Docked Only|Always|Never) |
 | `11` | `screensaver_style` | `DevicePrefsField::SCREENSAVER_STYLE` | `string` | Ambient screensaver style (Ambient Clock|Photo Frame|Aurora|Starfield|Digital Rain|Fireworks) |
-| `12` | `hold_crown_power_off` | `DevicePrefsField::HOLD_CROWN_POWER_OFF` | `bool` | 1 = long-holding rotary crown enters deep sleep / power off, else 0 |
-| `13` | `auto_brightness_mode` | `DevicePrefsField::AUTO_BRIGHTNESS_MODE` | `string` | Automatic brightness mode (Disabled|Sun Synchronized|Time Schedule) |
-| `14` | `manual_brightness` | `DevicePrefsField::MANUAL_BRIGHTNESS` | `u16` | Manual brightness target when auto brightness is Disabled (1..100%) |
-| `15` | `day_brightness` | `DevicePrefsField::DAY_BRIGHTNESS` | `u16` | Daytime brightness target (1..100%) |
-| `16` | `night_brightness` | `DevicePrefsField::NIGHT_BRIGHTNESS` | `u16` | Nighttime brightness target (1..100%) |
-| `17` | `day_start_hour` | `DevicePrefsField::DAY_START_HOUR` | `u16` | Time schedule daytime start hour (0..23) |
-| `18` | `night_start_hour` | `DevicePrefsField::NIGHT_START_HOUR` | `u16` | Time schedule nighttime start hour (0..23) |
-| `19` | `color_profile` | `DevicePrefsField::COLOR_PROFILE` | `string` | Theme accent preset (Steel Blue|Pink|Blue|Green|Custom) |
-| `20` | `va_visual_profile` | `DevicePrefsField::VA_VISUAL_PROFILE` | `string` | Voice assistant visual overlay style (Nebula|Solaris|Rings|Light Bar|Dot Wave) |
-| `21` | `home_screen_enabled` | `DevicePrefsField::HOME_SCREEN_ENABLED` | `bool` | 1 = enable the Home Screen and App Dock, 0 = single-app mode locked to start_screen |
-| `22` | `start_screen` | `DevicePrefsField::START_SCREEN` | `string` | Boot / single-app start screen (Home|Pinned|Time App|Calendar|Clock Face|Media|Home Hub|Area Controls|Remote|Weather|Cameras|Games|Tools) |
-| `23` | `return_to_home_timeout` | `DevicePrefsField::RETURN_TO_HOME_TIMEOUT` | `string` | Idle timeout before resetting navigation back to the Home Screen (15s|30s|1 min|2 min|5 min|10 min|Never) |
-| `24` | `clock_face` | `DevicePrefsField::CLOCK_FACE` | `string` | Clock face style (Minimal Digital|Modern Analog|Hybrid Digital) |
-| `25` | `time_format` | `DevicePrefsField::TIME_FORMAT` | `string` | Clock time format (12-Hour (AM/PM)|24-Hour) |
-| `26` | `weather_background` | `DevicePrefsField::WEATHER_BACKGROUND` | `bool` | 1 = animate ambient weather particles on Home screen, else 0 |
-| `27` | `home_sun` | `DevicePrefsField::HOME_SUN` | `bool` | 1 = show daytime solar disc on Home screen, else 0 |
-| `28` | `home_moon` | `DevicePrefsField::HOME_MOON` | `bool` | 1 = show nighttime lunar phase disc on Home screen, else 0 |
-| `29` | `wake_greeting` | `DevicePrefsField::WAKE_GREETING` | `bool` | 1 = show time-of-day wake greeting toast, else 0 |
-| `30` | `album_art_style` | `DevicePrefsField::ALBUM_ART_STYLE` | `string` | Now Playing album art layout (Full Screen|Letterbox|Standard|None) |
-| `31` | `music_overlay_style` | `DevicePrefsField::MUSIC_OVERLAY_STYLE` | `string` | Now Playing controls overlay visibility (Art Only|Art + Metadata|Always Visible) |
-| `32` | `album_sort_order` | `DevicePrefsField::ALBUM_SORT_ORDER` | `string` | Album browser sort order (Alphabetical|Newest on Top|Oldest on Top) |
-| `33` | `artist_album_sort_order` | `DevicePrefsField::ARTIST_ALBUM_SORT_ORDER` | `string` | Artist discography sort order (Oldest on Top|Newest on Top|Alphabetical) |
-| `34` | `podcast_sort_order` | `DevicePrefsField::PODCAST_SORT_ORDER` | `string` | Podcast episode sort order (Newest on Top|Oldest on Top) |
-| `35` | `ww_sens_okay_nabu` | `DevicePrefsField::WW_SENS_OKAY_NABU` | `string` | Okay Nabu wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `36` | `ww_sens_hey_luna` | `DevicePrefsField::WW_SENS_HEY_LUNA` | `string` | Hey Luna wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `37` | `ww_sens_hey_jarvis` | `DevicePrefsField::WW_SENS_HEY_JARVIS` | `string` | Hey Jarvis wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `38` | `ww_sens_hey_mycroft` | `DevicePrefsField::WW_SENS_HEY_MYCROFT` | `string` | Hey Mycroft wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `39` | `ww_sens_alexa` | `DevicePrefsField::WW_SENS_ALEXA` | `string` | Alexa wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
-| `40` | `wake_screen_on_assist` | `DevicePrefsField::WAKE_SCREEN_ON_ASSIST` | `bool` | 1 = wake display automatically when voice assistant triggers, else 0 |
-| `41` | `alert_volume` | `DevicePrefsField::ALERT_VOLUME` | `u16` | Timer, alarm, and notification chime volume percentage (20..100) |
-| `42` | `volume_step_size` | `DevicePrefsField::VOLUME_STEP_SIZE` | `u16` | Rotary/button volume increment step percentage (1..10) |
-| `43` | `game_sound_effects` | `DevicePrefsField::GAME_SOUND_EFFECTS` | `bool` | 1 = play arcade game sound effects, else 0 |
-| `44` | `ble_beacon_enabled` | `DevicePrefsField::BLE_BEACON_ENABLED` | `bool` | 1 = enable BLE iBeacon presence advertising (derived from native_ble_tracking), else 0 |
-| `45` | `ble_beacon_mode` | `DevicePrefsField::BLE_BEACON_MODE` | `string` | BLE beacon advertising duty policy (Handheld Only|Handheld + Screen Off|Always) |
-| `46` | `weather_sim_condition` | `DevicePrefsField::WEATHER_SIM_CONDITION` | `string` | Developer weather animation override (Live (Home Assistant) or simulated condition label) |
-| `47` | `theme_color_hex` | `DevicePrefsField::THEME_COLOR_HEX` | `string` | Custom theme accent color (#RRGGBB) synchronized with device_custom_color |
-| `48` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face) |
-| `49` | `show_utc_clock` | `DevicePrefsField::SHOW_UTC_CLOCK` | `bool` | 1 = show a dedicated UTC World Clock card on the Time App Clock tab, else 0 |
-| `50` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `string` | Semicolon-delimited custom-labeled World Clock entries (up to 4, '<label>|<iana>;...') shown on the Time App Clock tab |
-| `51` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
-| `52` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
-| `53` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip) |
-| `54` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (marbles,archery,bricks,chomp,2048,memory) |
-| `55` | `home_date_tap_action` | `DevicePrefsField::HOME_DATE_TAP_ACTION` | `string` | Action when tapping the date readout on the Home Screen (Day View|Overview) |
-| `56` | `calendar_lookahead_days` | `DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS` | `u16` | Calendar Overview upcoming lookahead horizon in days (7|14|30|60) |
-| `57` | `calendar_week_start` | `DevicePrefsField::CALENDAR_WEEK_START` | `string` | First day of week in Calendar Week and Month views (Sunday|Monday) |
-| `58` | `bedtime_active` | `DevicePrefsField::BEDTIME_ACTIVE` | `bool` | 1 = Bedtime Mode currently active (ultra-dim wake brightness, 15s idle -> bedtime_display, suppressed wake greeting, and silenced non-critical notification chimes/screen wakes), else 0 |
-| `59` | `bedtime_display` | `DevicePrefsField::BEDTIME_DISPLAY` | `string` | Idle display behavior while Bedtime Mode is active (Screen Off|Ambient Clock) |
-| `60` | `bedtime_schedule` | `DevicePrefsField::BEDTIME_SCHEDULE` | `bool` | 1 = automatically toggle Bedtime Mode on at bedtime_start_hour and off at bedtime_end_hour (manual/HA switch overrides hold until next boundary), else 0 |
-| `61` | `bedtime_start_hour` | `DevicePrefsField::BEDTIME_START_HOUR` | `u16` | Bedtime Mode schedule start hour in local 24h time (0..23) |
-| `62` | `bedtime_end_hour` | `DevicePrefsField::BEDTIME_END_HOUR` | `u16` | Bedtime Mode schedule end hour in local 24h time (0..23) |
-| `63` | `bedtime_brightness` | `DevicePrefsField::BEDTIME_BRIGHTNESS` | `u16` | Bedtime Mode active wake brightness percentage (1..100%) |
-| `64` | `camera_default_view` | `DevicePrefsField::CAMERA_DEFAULT_VIEW` | `string` | Default view when opening the Cameras app (Grid|Single|Carousel) |
-| `65` | `camera_carousel_interval` | `DevicePrefsField::CAMERA_CAROUSEL_INTERVAL` | `string` | Auto-cycle interval in Cameras Carousel view (10s|15s|30s|60s) |
-| `66` | `camera_framing` | `DevicePrefsField::CAMERA_FRAMING` | `string` | Camera video framing mode (Uncropped|Fill) |
-| `67` | `camera_stream_mode` | `DevicePrefsField::CAMERA_STREAM_MODE` | `string` | Camera live streaming quality and bandwidth mode (Auto|Low Bandwidth|Snapshots) |
-| `68` | `camera_doorbell_popup` | `DevicePrefsField::CAMERA_DOORBELL_POPUP` | `string` | Doorbell ring popup media mode on hardware-JPEG devices (Snapshot|Live Video) |
-| `69` | `screensaver_photo_clock` | `DevicePrefsField::SCREENSAVER_PHOTO_CLOCK` | `bool` | 1 = show subtle clock overlay on Photo Frame screensaver, else 0 |
-| `70` | `weather_app_background` | `DevicePrefsField::WEATHER_APP_BACKGROUND` | `bool` | 1 = show live animated weather sky background in the Sky & Weather app, else 0 |
+| `12` | `auto_brightness_mode` | `DevicePrefsField::AUTO_BRIGHTNESS_MODE` | `string` | Automatic brightness mode (Disabled|Sun Synchronized|Time Schedule) |
+| `13` | `manual_brightness` | `DevicePrefsField::MANUAL_BRIGHTNESS` | `u16` | Manual brightness target when auto brightness is Disabled (1..100%) |
+| `14` | `day_brightness` | `DevicePrefsField::DAY_BRIGHTNESS` | `u16` | Daytime brightness target (1..100%) |
+| `15` | `night_brightness` | `DevicePrefsField::NIGHT_BRIGHTNESS` | `u16` | Nighttime brightness target (1..100%) |
+| `16` | `day_start_hour` | `DevicePrefsField::DAY_START_HOUR` | `u16` | Time schedule daytime start hour (0..23) |
+| `17` | `night_start_hour` | `DevicePrefsField::NIGHT_START_HOUR` | `u16` | Time schedule nighttime start hour (0..23) |
+| `18` | `color_profile` | `DevicePrefsField::COLOR_PROFILE` | `string` | Theme accent preset (Steel Blue|Pink|Blue|Green|Custom) |
+| `19` | `va_visual_profile` | `DevicePrefsField::VA_VISUAL_PROFILE` | `string` | Voice assistant visual overlay style (Nebula|Solaris|Rings|Light Bar|Dot Wave) |
+| `20` | `home_screen_enabled` | `DevicePrefsField::HOME_SCREEN_ENABLED` | `bool` | 1 = enable the Home Screen and App Dock, 0 = single-app mode locked to start_screen |
+| `21` | `start_screen` | `DevicePrefsField::START_SCREEN` | `string` | Boot / single-app start screen (Home|Pinned|Time App|Calendar|Clock Face|Media|Home Hub|Area Controls|Remote|Weather|Cameras|Games|Tools) |
+| `22` | `return_to_home_timeout` | `DevicePrefsField::RETURN_TO_HOME_TIMEOUT` | `string` | Idle timeout before resetting navigation back to the Home Screen (15s|30s|1 min|2 min|5 min|10 min|Never) |
+| `23` | `clock_face` | `DevicePrefsField::CLOCK_FACE` | `string` | Clock face style (Minimal Digital|Modern Analog|Hybrid Digital) |
+| `24` | `time_format` | `DevicePrefsField::TIME_FORMAT` | `string` | Clock time format (12-Hour (AM/PM)|24-Hour) |
+| `25` | `weather_background` | `DevicePrefsField::WEATHER_BACKGROUND` | `bool` | 1 = animate ambient weather particles on Home screen, else 0 |
+| `26` | `home_sun` | `DevicePrefsField::HOME_SUN` | `bool` | 1 = show daytime solar disc on Home screen, else 0 |
+| `27` | `home_moon` | `DevicePrefsField::HOME_MOON` | `bool` | 1 = show nighttime lunar phase disc on Home screen, else 0 |
+| `28` | `wake_greeting` | `DevicePrefsField::WAKE_GREETING` | `bool` | 1 = show time-of-day wake greeting toast, else 0 |
+| `29` | `album_art_style` | `DevicePrefsField::ALBUM_ART_STYLE` | `string` | Now Playing album art layout (Full Screen|Letterbox|Standard|None) |
+| `30` | `music_overlay_style` | `DevicePrefsField::MUSIC_OVERLAY_STYLE` | `string` | Now Playing controls overlay visibility (Art Only|Art + Metadata|Always Visible) |
+| `31` | `album_sort_order` | `DevicePrefsField::ALBUM_SORT_ORDER` | `string` | Album browser sort order (Alphabetical|Newest on Top|Oldest on Top) |
+| `32` | `artist_album_sort_order` | `DevicePrefsField::ARTIST_ALBUM_SORT_ORDER` | `string` | Artist discography sort order (Oldest on Top|Newest on Top|Alphabetical) |
+| `33` | `podcast_sort_order` | `DevicePrefsField::PODCAST_SORT_ORDER` | `string` | Podcast episode sort order (Newest on Top|Oldest on Top) |
+| `34` | `ww_sens_okay_nabu` | `DevicePrefsField::WW_SENS_OKAY_NABU` | `string` | Okay Nabu wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `35` | `ww_sens_hey_luna` | `DevicePrefsField::WW_SENS_HEY_LUNA` | `string` | Hey Luna wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `36` | `ww_sens_hey_jarvis` | `DevicePrefsField::WW_SENS_HEY_JARVIS` | `string` | Hey Jarvis wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `37` | `ww_sens_hey_mycroft` | `DevicePrefsField::WW_SENS_HEY_MYCROFT` | `string` | Hey Mycroft wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `38` | `ww_sens_alexa` | `DevicePrefsField::WW_SENS_ALEXA` | `string` | Alexa wake word sensitivity (Slightly sensitive|Moderately sensitive|Very sensitive) |
+| `39` | `wake_screen_on_assist` | `DevicePrefsField::WAKE_SCREEN_ON_ASSIST` | `bool` | 1 = wake display automatically when voice assistant triggers, else 0 |
+| `40` | `alert_volume` | `DevicePrefsField::ALERT_VOLUME` | `u16` | Timer, alarm, and notification chime volume percentage (20..100) |
+| `41` | `volume_step_size` | `DevicePrefsField::VOLUME_STEP_SIZE` | `u16` | Rotary/button volume increment step percentage (1..10) |
+| `42` | `game_sound_effects` | `DevicePrefsField::GAME_SOUND_EFFECTS` | `bool` | 1 = play arcade game sound effects, else 0 |
+| `43` | `ble_beacon_enabled` | `DevicePrefsField::BLE_BEACON_ENABLED` | `bool` | 1 = enable BLE iBeacon presence advertising (derived from native_ble_tracking), else 0 |
+| `44` | `ble_beacon_mode` | `DevicePrefsField::BLE_BEACON_MODE` | `string` | BLE beacon advertising duty policy (Handheld Only|Handheld + Screen Off|Always) |
+| `45` | `weather_sim_condition` | `DevicePrefsField::WEATHER_SIM_CONDITION` | `string` | Developer weather animation override (Live (Home Assistant) or simulated condition label) |
+| `46` | `theme_color_hex` | `DevicePrefsField::THEME_COLOR_HEX` | `string` | Custom theme accent color (#RRGGBB) synchronized with device_custom_color |
+| `47` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face) |
+| `48` | `show_utc_clock` | `DevicePrefsField::SHOW_UTC_CLOCK` | `bool` | 1 = show a dedicated UTC World Clock card on the Time App Clock tab, else 0 |
+| `49` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `string` | Semicolon-delimited custom-labeled World Clock entries (up to 4, '<label>|<iana>;...') shown on the Time App Clock tab |
+| `50` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
+| `51` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
+| `52` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip) |
+| `53` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (marbles,archery,bricks,chomp,2048,memory) |
+| `54` | `home_date_tap_action` | `DevicePrefsField::HOME_DATE_TAP_ACTION` | `string` | Action when tapping the date readout on the Home Screen (Day View|Overview) |
+| `55` | `calendar_lookahead_days` | `DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS` | `u16` | Calendar Overview upcoming lookahead horizon in days (7|14|30|60) |
+| `56` | `calendar_week_start` | `DevicePrefsField::CALENDAR_WEEK_START` | `string` | First day of week in Calendar Week and Month views (Sunday|Monday) |
+| `57` | `bedtime_active` | `DevicePrefsField::BEDTIME_ACTIVE` | `bool` | 1 = Bedtime Mode currently active (ultra-dim wake brightness, 15s idle -> bedtime_display, suppressed wake greeting, and silenced non-critical notification chimes/screen wakes), else 0 |
+| `58` | `bedtime_display` | `DevicePrefsField::BEDTIME_DISPLAY` | `string` | Idle display behavior while Bedtime Mode is active (Screen Off|Ambient Clock) |
+| `59` | `bedtime_schedule` | `DevicePrefsField::BEDTIME_SCHEDULE` | `bool` | 1 = automatically toggle Bedtime Mode on at bedtime_start_hour and off at bedtime_end_hour (manual/HA switch overrides hold until next boundary), else 0 |
+| `60` | `bedtime_start_hour` | `DevicePrefsField::BEDTIME_START_HOUR` | `u16` | Bedtime Mode schedule start hour in local 24h time (0..23) |
+| `61` | `bedtime_end_hour` | `DevicePrefsField::BEDTIME_END_HOUR` | `u16` | Bedtime Mode schedule end hour in local 24h time (0..23) |
+| `62` | `bedtime_brightness` | `DevicePrefsField::BEDTIME_BRIGHTNESS` | `u16` | Bedtime Mode active wake brightness percentage (1..100%) |
+| `63` | `camera_default_view` | `DevicePrefsField::CAMERA_DEFAULT_VIEW` | `string` | Default view when opening the Cameras app (Grid|Single|Carousel) |
+| `64` | `camera_carousel_interval` | `DevicePrefsField::CAMERA_CAROUSEL_INTERVAL` | `string` | Auto-cycle interval in Cameras Carousel view (10s|15s|30s|60s) |
+| `65` | `camera_framing` | `DevicePrefsField::CAMERA_FRAMING` | `string` | Camera video framing mode (Uncropped|Fill) |
+| `66` | `camera_stream_mode` | `DevicePrefsField::CAMERA_STREAM_MODE` | `string` | Camera live streaming quality and bandwidth mode (Auto|Low Bandwidth|Snapshots) |
+| `67` | `camera_doorbell_popup` | `DevicePrefsField::CAMERA_DOORBELL_POPUP` | `string` | Doorbell ring popup media mode on hardware-JPEG devices (Snapshot|Live Video) |
+| `68` | `screensaver_photo_clock` | `DevicePrefsField::SCREENSAVER_PHOTO_CLOCK` | `bool` | 1 = show subtle clock overlay on Photo Frame screensaver, else 0 |
+| `69` | `weather_app_background` | `DevicePrefsField::WEATHER_APP_BACKGROUND` | `bool` | 1 = show live animated weather sky background in the Sky & Weather app, else 0 |
 
 ### `sensor.<device>_shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -308,9 +307,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `41`
+- **Studio Wire Revision (`studio_rev`)**: `42`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
 - **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `capture_ble_area_signature`, `clear_ble_area_signature`, `system_entity_action`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `63` typed preference descriptors
+- **Declarative `device_prefs` Specs**: `62` typed preference descriptors

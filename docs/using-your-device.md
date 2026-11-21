@@ -7,10 +7,11 @@
   - Tapping the **Area icon badge** (shown on BLE-roaming devices) opens **Area Control** directly.
 - **App Dock & Single-App Mode:** tap an app in the dock, or swipe the dock sideways when more than four apps are enabled. Dock apps and their order (`Music`, `Home Hub`, `Area`, `Remote`, `Weather`, `Time`, `Cameras`, `Games`, `Tools`, with `Settings` always last) are configured in **Studio → Devices → Interface** (**Settings → Home** on the device also provides quick toggles for `Time`, `Music`, `Area`, `Remote`, `Games`, and `Tools`). Turning **Enable Home Screen** off in Studio locks the device into single-app kiosk mode on your chosen **Start Screen**.
 - **Adaptive Activity Card:** above the dock, Home surfaces active items—live doorbell/intercom calls, running timers, snoozed or upcoming (`<= 6 h`) alarms, running stopwatch, active/recently paused music, and the next calendar event. It collapses to **0 rows** when idle, expands to **1 row** for a single item (and on round screens), and shows **2 rows** on rectangular screens when two or more items are active, rotating secondary items every 8 s while pinning urgent items (calls, timers, snoozed alarms, stopwatch, alarms within 2 h) on top.
+- **Quick Actions:** swipe down from the top edge on any non-game screen (or press and hold the physical **Crown** / **K1** button for **1 second** on battery boards) to open the **Quick Actions** overlay—with live **Speaker Volume** and context-aware **Brightness** sliders (automatically adjusting Manual, Auto Day/Night, or Bedtime brightness), a **Bedtime Mode** toggle, and one-tap **Hibernate** (battery boards) or **Screensaver** / **Screen Off** (mains panels). Dismiss by tapping **< Back**, swiping up from the bottom edge, or short-pressing the Crown.
 - **Mode Bars:** **Time**, **Area Control**, **Home Hub**, and **Sky & Weather** show a mode bar along the bottom—tap a tab or swipe sideways below the content cards.
 - **Physical Button (`Crown` / `K1`):**
-  - Short press wakes the screen, puts an idle screen to sleep, snoozes a ringing alarm, or dismisses an alert banner.
-  - Long press starts a 5-second hibernate countdown (or powers off immediately when **Hold Crown to Power Off** is enabled).
+  - Short press wakes the screen, dismisses **Quick Actions**, puts an idle screen to sleep, snoozes a ringing alarm, or dismisses an alert banner.
+  - Press and hold (**1 s**) opens **Quick Actions** (with one-tap **Hibernate**). Holding the power key for ~6 s triggers the hardware AXP2101 power-off fallback, and idle battery devices continue to auto-hibernate on their configured **Hibernate After** countdown.
 
 ---
 

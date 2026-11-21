@@ -291,7 +291,8 @@ inline constexpr bool should_va_takeover_preempt(bool va_active, bool has_status
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
                                     bool pin_pad_open, bool notif_active,
-                                    bool shortcut_confirm_open = false);
+                                    bool shortcut_confirm_open = false,
+                                    bool quick_actions_open = false);
 
 // ==============================================================================
 // Pure C++20 FrameCadenceController (20 ms Active, 250 ms Wake, 20 ms Screensaver)
@@ -978,7 +979,6 @@ struct UiFrameContext {
   bool game_sound_enabled{true};
   bool va_wake_screen{true};
   bool screensaver_photo_clock{false};
-  bool instant_crown_hibernate{false};
   bool bedtime_active{false};
 };
 
@@ -1031,6 +1031,7 @@ struct SystemTakeoverState {
   UiStrView current_loaded_camera_url{};
   UiStrView screensaver_style_opt{};
   bool screensaver_photo_clock{false};
+  bool quick_actions_open{false};
   esphome::Color theme_primary{};
   esphome::Color theme_secondary{};
   esphome::Color col_bg{};
@@ -1081,6 +1082,7 @@ struct SystemTakeoverState {
     st.screensaver_style_opt =
         prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt;
     st.screensaver_photo_clock = !prefs.bedtime_active && prefs.screensaver_photo_clock;
+    st.quick_actions_open = rs.nav.quick_actions_open;
     st.theme_primary = ctx.theme_primary;
     st.theme_secondary = ctx.theme_secondary;
     st.col_bg = ctx.col_bg;
@@ -1111,7 +1113,8 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
       st.alarm_ringing || st.timer_ringing || st.find_my_active,
       va_preempt,
       ui::pin_pad_state().open, st.notif_active,
-      shortcut_confirm_state().open);
+      shortcut_confirm_state().open,
+      st.quick_actions_open);
 }
 
 inline int compute_active_subpage_id() {
@@ -1180,7 +1183,7 @@ inline void render_active_focus_overlay(esphome::display::Display &it, int /*pag
 
 // Renders all system-owned global takeovers in strict priority order:
 //   OTA -> Hibernation -> Panel Off -> Alarm/Timer/Find-My -> Voice Assistant ->
-//   PIN Pad Modal -> Push Notification -> Docked Screensaver.
+//   PIN Pad Modal -> Push Notification -> Shortcut Confirm -> Quick Actions -> Docked Screensaver.
 // Returns true when a takeover owned the frame.
 bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext &ctx,
                              const SystemTakeoverState &st);
