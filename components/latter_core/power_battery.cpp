@@ -17,7 +17,9 @@
 #ifdef USE_ESP32
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
+#include <esp_attr.h>
 #include <esp_sleep.h>
+#include <esp_system.h>
 #ifdef USE_WIFI
 #include <esp_wifi.h>
 #endif
@@ -37,9 +39,42 @@
 namespace latter_ui {
 
 #ifdef USE_ESP32
+namespace {
+struct RtcBattSnapshot {
+  uint32_t magic;
+  uint16_t vraw_mv;
+  uint8_t soc;
+  uint8_t on_batt;
+  uint32_t checksum;
+};
+constexpr uint32_t kRtcBattSnapMagic = 0x4C424154U;  // "LBAT"
+static RTC_NOINIT_ATTR RtcBattSnapshot s_rtc_batt_snap;
+
+inline uint32_t rtc_batt_checksum(uint16_t vraw_mv, uint8_t soc, uint8_t on_batt) {
+  return kRtcBattSnapMagic ^ (static_cast<uint32_t>(vraw_mv) << 16) ^ (static_cast<uint32_t>(soc) << 8) ^
+         static_cast<uint32_t>(on_batt);
+}
+}  // namespace
+
 BatteryModel &battery_model() {
   static BatteryModel m;
   return m;
+}
+
+void hal_battery_save_rtc_snapshot(const BatteryModel &bm) {
+  if (!bm.has_sample || std::isnan(bm.soc_display) || bm.vraw_mv < BatteryModel::kVbatMinValidMv ||
+      bm.vraw_mv > BatteryModel::kVbatMaxValidMv) {
+    return;
+  }
+  const long rounded = std::lround(bm.soc_display);
+  const uint8_t soc = static_cast<uint8_t>(rounded < 0 ? 0 : (rounded > 100 ? 100 : rounded));
+  const uint16_t mv = static_cast<uint16_t>(bm.vraw_mv);
+  const uint8_t on_batt = bm.on_battery ? 1U : 0U;
+  s_rtc_batt_snap.magic = kRtcBattSnapMagic;
+  s_rtc_batt_snap.vraw_mv = mv;
+  s_rtc_batt_snap.soc = soc;
+  s_rtc_batt_snap.on_batt = on_batt;
+  s_rtc_batt_snap.checksum = rtc_batt_checksum(mv, soc, on_batt);
 }
 
 void battery_report_fragment(char *buf, size_t len, uint32_t now_ms) {
@@ -66,10 +101,10 @@ void battery_log_profile(uint32_t now_ms) {
   const int32_t settle_left = static_cast<int32_t>(b.settle_until_ms - now_ms);
   LATTER_PROF_LOGI(
       "[PROF:BATT] vraw=%dmV vrest=%dmV ema=%.0fmV soc=%.1f%% disp=%.0f%% state=%c load=%s R=%dmOhm "
-      "low=%d cut=%u/%lus settle=%lds dr=%.1f%%/h (~%.0fmA) cap=%dmAh",
+      "low=%d fault=%d cut=%u/%lus settle=%lds dr=%.1f%%/h (~%.0fmA) cap=%dmAh",
       b.vraw_mv, b.vrest_mv, std::isnan(b.ema_mv) ? 0.0f : b.ema_mv,
       std::isnan(b.soc_model) ? -1.0f : b.soc_model, std::isnan(b.soc_display) ? -1.0f : b.soc_display,
-      b.state_char(), batt_load_name(b.load), kBattPathMilliohm, (int)b.low,
+      b.state_char(), batt_load_name(b.load), kBattPathMilliohm, (int)b.low, (int)b.fault,
       (unsigned)b.cutoff_below_count, (unsigned long)below_s,
       (long)(settle_left > 0 ? settle_left / 1000 : 0), std::isnan(rate) ? 0.0f : rate,
       std::isnan(rate) ? 0.0f : rate * static_cast<float>(kBattCapacityMah) / 100.0f, kBattCapacityMah);
@@ -372,8 +407,20 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
         }
         const uint32_t boot_ms = esphome::millis();
         BatteryModel &bm = battery_model();
+        if (bm.prev_hib.valid && bm.prev_hib.soc <= 100U && bm.prev_hib.mv >= BatteryModel::kVbatMinValidMv) {
+          bm.seed_from_saved_soc(bm.prev_hib.soc, bm.prev_hib.mv);
+        } else {
+          const esp_reset_reason_t rr = esp_reset_reason();
+          if (rr != ESP_RST_POWERON && rr != ESP_RST_BROWNOUT && s_rtc_batt_snap.magic == kRtcBattSnapMagic &&
+              s_rtc_batt_snap.checksum ==
+                  rtc_batt_checksum(s_rtc_batt_snap.vraw_mv, s_rtc_batt_snap.soc, s_rtc_batt_snap.on_batt) &&
+              s_rtc_batt_snap.on_batt != 0U) {
+            bm.seed_from_saved_soc(s_rtc_batt_snap.soc, s_rtc_batt_snap.vraw_mv);
+          }
+        }
         bm.update(vbat_mv, !vbus, static_cast<ChargePhase>(chg_state), BattLoad::SCREEN,
                   boot_ms == 0U ? 1U : boot_ms, hw_gauge);
+        hal_battery_save_rtc_snapshot(bm);
         if (!std::isnan(bm.soc_display)) {
           rs.hw_batt_level = std::round(bm.soc_display);
         }

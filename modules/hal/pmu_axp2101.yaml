@@ -257,31 +257,44 @@ script:
             chg_state = stat1 & 0x07;
             is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
             if ((stat1 & 0x67) != last_stat1) {  // direction + phase (other bits may toggle)
-              uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
-              uint8_t rr = 0x00;
-              id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);
-              rr = 0x50;
-              id(bus_internal).write_readv(0x34, &rr, 1, &r50, 1);
-              rr = 0x48;
-              id(bus_internal).write_readv(0x34, &rr, 1, &r48, 1);
-              rr = 0x36;
-              id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
-              rr = 0x37;
-              id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
-              LATTER_PROF_LOGI("[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
-                       r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
-                       (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
               last_stat1 = stat1 & 0x67;
+              if (!bm.fault) {
+                uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
+                uint8_t rr = 0x00;
+                id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);
+                rr = 0x50;
+                id(bus_internal).write_readv(0x34, &rr, 1, &r50, 1);
+                rr = 0x48;
+                id(bus_internal).write_readv(0x34, &rr, 1, &r48, 1);
+                rr = 0x36;
+                id(bus_internal).write_readv(0x34, &rr, 1, &r36, 1);
+                rr = 0x37;
+                id(bus_internal).write_readv(0x34, &rr, 1, &r37, 1);
+                LATTER_PROF_LOGI("[PROF:POWER] trig=CHG_STATE stat0=0x%02X stat1=0x%02X phase=%u dir=%u ts_cfg=0x%02X ts_raw=%u temp_irq=0x%X",
+                         r0, stat1, (unsigned)chg_state, (unsigned)((stat1 >> 5) & 0x03), r50,
+                         (unsigned)(((r36 & 0x3F) << 8) | r37), (unsigned)(r48 & 0x0F));
+              }
             }
           } else {
             last_stat1 = 0xFF;
           }
-          latter_ui::hal_axp2101_thermal_charge_foldback(id(bus_internal), is_charging);
-          rs.hw_batt_charging = is_charging;
-          if (!id(batt_charging).has_state() || id(batt_charging).state != is_charging) {
-            id(batt_charging).publish_state(is_charging);
+          if (bat_present) {
+            bm.note_charger_phase(vbus, static_cast<latter_ui::ChargePhase>(chg_state), now_b);
           }
-          const char *chg_text = bat_present ? latter_ui::battery_charge_state_text(!vbus, chg_state) : "No Battery";
+          static bool fault_logged = false;
+          if (bm.fault && !fault_logged) {
+            ESP_LOGW("PROF", "[PROF:POWER] trig=BATT_FAULT vraw=%dmV cycles=%u", bm.vraw_mv,
+                     (unsigned)bm.rapid_done_cycles);
+          }
+          fault_logged = bm.fault;
+          latter_ui::hal_axp2101_thermal_charge_foldback(id(bus_internal), is_charging);
+          const bool pub_charging = is_charging && !bm.fault;
+          rs.hw_batt_charging = pub_charging;
+          if (!id(batt_charging).has_state() || id(batt_charging).state != pub_charging) {
+            id(batt_charging).publish_state(pub_charging);
+          }
+          const char *chg_text =
+              bat_present ? latter_ui::battery_charge_state_text(!vbus, chg_state, bm.fault) : "No Battery";
           static const char *last_chg_text = nullptr;  // string literals: compare by pointer
           if (chg_text != last_chg_text) {
             last_chg_text = chg_text;
@@ -305,6 +318,7 @@ script:
                 load = latter_ui::BattLoad::SCREEN;
               }
               const bool cutoff = bm.update(vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state), load, now_b, hw_gauge);
+              latter_ui::hal_battery_save_rtc_snapshot(bm);
               if (!std::isnan(bm.soc_display)) {
                 const float lvl = std::round(bm.soc_display);
                 rs.hw_batt_level = lvl;

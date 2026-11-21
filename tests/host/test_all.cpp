@@ -537,17 +537,88 @@ std::string read_repo_file(const std::filesystem::path &rel_from_test_dir) {
 }
 
 void test_battery_model_and_power_policy() {
-  // 1. Production 0.5C charge floor & 500 mA cap across fitted capacities + 0 mAh guard (hal_battery.h)
-  LATTER_CHECK(latter_ui::path_mohm_for_capacity(0) == 80);       // 0 mAh guard: no div-by-zero
+  // 1. Production 0.5C charge floor, bench-calibrated IR & 500 mA cap across fitted capacities + 0 mAh guard (hal_battery.h)
+  LATTER_CHECK(latter_ui::path_mohm_for_capacity(0) == 30);       // 0 mAh guard: fixed path only, no div-by-zero
+  LATTER_CHECK(latter_ui::path_mohm_for_capacity(400) == 180);    // 400 mAh cell -> 30 + 150 mOhm
+  LATTER_CHECK(latter_ui::path_mohm_for_capacity(500) == 150);    // 500 mAh cell -> 30 + 120 mOhm
+  LATTER_CHECK(latter_ui::path_mohm_for_capacity(1000) == 90);    // 1000 mAh cell -> 30 + 60 mOhm
   LATTER_CHECK(latter_ui::precharge_ma_for_capacity(0) == 50);    // 0 mAh guard -> 500 mAh fallback
   LATTER_CHECK(latter_ui::charge_ma_for_capacity(0) == 25);       // 0.8C of 0 floored safely to 25 mA
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(400) == 200);    // Wrist 400 mAh -> 200 mA (0.5C)
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(500) == 200);    // Pocket 500 mAh -> 250 mA floored to 200 mA
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(1000) == 500);   // Mobile 1000 mAh -> 500 mA (0.5C)
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(400) == 200);    // 400 mAh -> 200 mA (0.5C)
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(500) == 200);    // 500 mAh -> 250 mA floored to 200 mA
+  LATTER_CHECK(latter_ui::charge_ma_for_capacity(1000) == 500);   // 1000 mAh -> 500 mA (0.5C)
   LATTER_CHECK(latter_ui::charge_ma_for_capacity(2000) == 500);   // Capped at 500 mA
   LATTER_CHECK(latter_ui::axp2101_icc_code(100) == 4);
   LATTER_CHECK(latter_ui::axp2101_icc_code(200) == 8);
   LATTER_CHECK(latter_ui::axp2101_icc_code(500) == 11);
+
+  // 1b. Screen-ON -> Quiet stability & zero OTP gauge discontinuity on 500 mAh cell
+  {
+    latter_ui::BatteryModel stab;
+    stab.update(3880, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, 99, 500);
+    const float boot_soc = stab.soc_display;
+    // Screen turns off after 30 s and voltage recovers by the bench-measured ~11 mV host quiet delta
+    stab.update(3891, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 90000, 10, 500);
+    LATTER_CHECK(std::fabs(stab.soc_display - boot_soc) < 0.5f);
+    // Transient upward voltage bounce during settle on battery must never bounce soc_display upward
+    stab.update(3915, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 120000, 95, 500);
+    LATTER_CHECK(stab.soc_display <= boot_soc + 0.01f);
+  }
+
+  // 1c. Reboot / hibernate SoC continuity (never jump upward on same discharge cycle; fresh OCV after recharge)
+  {
+    latter_ui::BatteryModel reboot_bm;
+    reboot_bm.seed_from_saved_soc(41, 3830);
+    reboot_bm.update(3850, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, -1, 500);
+    LATTER_CHECK(std::fabs(reboot_bm.soc_display - 41.0f) < 0.01f);
+
+    latter_ui::BatteryModel drained_bm;
+    drained_bm.seed_from_saved_soc(41, 3830);
+    drained_bm.update(3600, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, -1, 500);
+    LATTER_CHECK(drained_bm.soc_display < 20.0f);
+
+    latter_ui::BatteryModel recharged_bm;
+    recharged_bm.seed_from_saved_soc(41, 3830);
+    recharged_bm.update(4120, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, -1, 500);
+    LATTER_CHECK(recharged_bm.soc_display > 90.0f);
+  }
+
+  // 1d. Open/dead-cell rapid Charging->DONE fault detection & minimum valid Full voltage guard
+  {
+    latter_ui::BatteryModel fault_bm;
+    // Low-voltage DONE (4064 mV < 4110 mV) must never latch 100% Full
+    fault_bm.update(4064, false, latter_ui::ChargePhase::DONE, latter_ui::BattLoad::SCREEN, 1000, -1, 400);
+    LATTER_CHECK(!fault_bm.full_latched);
+    LATTER_CHECK(fault_bm.soc_display < 95.0f);
+
+    // Three rapid 1-second Charging -> DONE cycles trip Battery Fault
+    uint32_t t_ms = 2000;
+    for (int i = 0; i < 3; ++i) {
+      fault_bm.note_charger_phase(true, latter_ui::ChargePhase::CC, t_ms);
+      t_ms += 1000;
+      fault_bm.note_charger_phase(true, latter_ui::ChargePhase::DONE, t_ms);
+      t_ms += 3000;
+    }
+    LATTER_CHECK(fault_bm.fault);
+    LATTER_CHECK(!fault_bm.full_latched);
+    LATTER_CHECK(fault_bm.state_char() == '!');
+    LATTER_CHECK(std::string(latter_ui::battery_charge_state_text(false, 4, fault_bm.fault)) == "Battery Fault");
+
+    // While faulted, even a 4200 mV DONE spike cannot latch Full / 100%
+    fault_bm.update(4200, false, latter_ui::ChargePhase::DONE, latter_ui::BattLoad::SCREEN, t_ms, -1, 400);
+    LATTER_CHECK(!fault_bm.full_latched);
+
+    // Sustained >= 30 s genuine charging clears fault and allows valid 4180 mV Full latch
+    fault_bm.note_charger_phase(true, latter_ui::ChargePhase::CC, t_ms + 1000);
+    fault_bm.note_charger_phase(true, latter_ui::ChargePhase::CC, t_ms + 32000);
+    LATTER_CHECK(!fault_bm.fault);
+    fault_bm.note_charger_phase(true, latter_ui::ChargePhase::DONE, t_ms + 33000);
+    fault_bm.update(4180, false, latter_ui::ChargePhase::DONE, latter_ui::BattLoad::SCREEN, t_ms + 34000, -1, 400);
+    LATTER_CHECK(fault_bm.full_latched);
+    LATTER_CHECK(std::fabs(fault_bm.soc_display - 100.0f) < 0.01f);
+    LATTER_CHECK(fault_bm.state_char() == 'f');
+    LATTER_CHECK(std::string(latter_ui::battery_charge_state_text(false, 4, fault_bm.fault)) == "Full");
+  }
 
   // 2. Production 65C thermal foldback to 100 mA & 58C hysteresis restore (hal_battery.h)
   bool foldback_active = false;

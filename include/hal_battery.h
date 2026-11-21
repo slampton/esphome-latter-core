@@ -87,8 +87,10 @@ constexpr uint8_t kBattCvCode = 0x03;  // REG64 bits 2:0: 3 = 4.20 V
 // ---------------------------------------------------------------------------------------------------
 // Rest-voltage model & per-capacity OCV curves
 // ---------------------------------------------------------------------------------------------------
-constexpr int kPathFixedMilliohm = 80;
-constexpr int kCellIrMilliohmAh = 120;
+// Bench-calibrated path + cell internal resistance and load draw (measured across 500 mAh and
+// 1000 mAh handheld cells: 16-21 mV screen-on sag on 500 mAh, 10-15 mV on 1000 mAh).
+constexpr int kPathFixedMilliohm = 30;
+constexpr int kCellIrMilliohmAh = 60;
 constexpr int path_mohm_for_capacity(int capacity_mah) {
   return kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
 }
@@ -102,8 +104,8 @@ constexpr int kLoadQuietMa = 8;   // Automatic light-sleep standby (~5-8 mA)
 #else
 constexpr int kLoadQuietMa = 55;  // Awake modem-sleep standby (~50-55 mA)
 #endif
-constexpr int kLoadScreenMa = 200;
-constexpr int kLoadAudioMa = 300;
+constexpr int kLoadScreenMa = 130;
+constexpr int kLoadAudioMa = 190;
 
 inline int batt_load_ma(BattLoad load) {
   switch (load) {
@@ -128,8 +130,9 @@ inline bool charge_phase_is_charging(ChargePhase p) {
          p == ChargePhase::CV;
 }
 
-inline const char *battery_charge_state_text(bool on_battery, uint8_t reg01_chg_state) {
+inline const char *battery_charge_state_text(bool on_battery, uint8_t reg01_chg_state, bool fault = false) {
   if (on_battery) return "Discharging";
+  if (fault) return "Battery Fault";
   const ChargePhase p = static_cast<ChargePhase>(reg01_chg_state & 0x07);
   if (p == ChargePhase::DONE) return "Full";
   if (charge_phase_is_charging(p)) return "Charging";
@@ -216,6 +219,12 @@ struct BatteryModel {
   static constexpr uint32_t kDrainMinMs = 30U * 60U * 1000U;
   static constexpr int kVbatMinValidMv = 2500;
   static constexpr int kVbatMaxValidMv = 4600;
+  static constexpr int kFullMinValidMv = 4110;
+  static constexpr int kSeedRechargedDeltaMv = 60;
+  static constexpr uint32_t kFaultCycleWindowMs = 120000U;
+  static constexpr uint32_t kFaultShortChargeMs = 15000U;
+  static constexpr uint32_t kFaultClearChargeMs = 30000U;
+  static constexpr uint8_t kFaultCycleThreshold = 3U;
 
   bool has_sample = false;
   uint32_t last_sample_ms = 0;
@@ -228,6 +237,14 @@ struct BatteryModel {
   ChargePhase phase = ChargePhase::IDLE;
   BattLoad load = BattLoad::SCREEN;
   bool full_latched = false;
+  bool fault = false;
+  uint8_t rapid_done_cycles = 0;
+  uint32_t fault_window_start_ms = 0;
+  uint32_t chg_entered_ms = 0;
+  bool was_charging_phase = false;
+  bool seed_valid = false;
+  uint8_t seed_soc = 0xFF;
+  uint16_t seed_vraw_mv = 0;
   uint32_t settle_until_ms = 0;
   uint32_t cv_start_ms = 0;
   float cv_start_soc = NAN;
@@ -241,6 +258,59 @@ struct BatteryModel {
   HibernateReason hib_reason = HibernateReason::OTHER;
   HibernateRecord prev_hib;
 
+  void seed_from_saved_soc(uint8_t saved_soc, uint16_t saved_vraw_mv) {
+    if (saved_soc <= 100U && saved_vraw_mv >= kVbatMinValidMv && saved_vraw_mv <= kVbatMaxValidMv) {
+      seed_valid = true;
+      seed_soc = saved_soc;
+      seed_vraw_mv = saved_vraw_mv;
+    }
+  }
+
+  // Called on every 1 s PMU poll to catch 1-second Charging -> Full rapid cycling into an open/dead cell.
+  void note_charger_phase(bool vbus_present, ChargePhase ph, uint32_t now_ms) {
+    if (now_ms == 0U) now_ms = 1U;
+    if (!vbus_present) {
+      was_charging_phase = false;
+      chg_entered_ms = 0U;
+      rapid_done_cycles = 0U;
+      fault_window_start_ms = 0U;
+      fault = false;
+      return;
+    }
+    const bool charging = charge_phase_is_charging(ph);
+    if (charging) {
+      if (!was_charging_phase) {
+        was_charging_phase = true;
+        chg_entered_ms = now_ms;
+      } else if (fault && (now_ms - chg_entered_ms) >= kFaultClearChargeMs) {
+        fault = false;
+        rapid_done_cycles = 0U;
+        fault_window_start_ms = 0U;
+      }
+      return;
+    }
+    if (was_charging_phase && ph == ChargePhase::DONE) {
+      const uint32_t chg_dur_ms = now_ms - chg_entered_ms;
+      if (chg_dur_ms < kFaultShortChargeMs) {
+        if (fault_window_start_ms == 0U || (now_ms - fault_window_start_ms) > kFaultCycleWindowMs) {
+          fault_window_start_ms = now_ms;
+          rapid_done_cycles = 1U;
+        } else if (rapid_done_cycles < 255U) {
+          rapid_done_cycles++;
+        }
+        if (rapid_done_cycles >= kFaultCycleThreshold) {
+          fault = true;
+          full_latched = false;
+        }
+      } else {
+        rapid_done_cycles = 0U;
+        fault_window_start_ms = 0U;
+        fault = false;
+      }
+    }
+    was_charging_phase = false;
+  }
+
   uint32_t sample_interval_ms(bool quiet) const {
     const bool near_cutoff = cutoff_below_count > 0 || (has_sample && vrest_mv <= kFastSampleMv);
     return (quiet && !near_cutoff) ? kSampleQuietMs : kSampleMs;
@@ -253,6 +323,7 @@ struct BatteryModel {
 
   bool update(int vbat_mv, bool batt, ChargePhase ph, BattLoad ld, uint32_t now_ms,
               int hw_gauge_pct = -1, int capacity_mah = kBattCapacityMah) {
+    (void)hw_gauge_pct;  // AXP2101 uncalibrated OTP gauge is diagnostic telemetry only (no step cliff)
     if (now_ms == 0) now_ms = 1;
     const uint32_t dt_ms = has_sample ? now_ms - last_sample_ms : 0U;
     last_sample_ms = now_ms;
@@ -288,22 +359,28 @@ struct BatteryModel {
       ema_mv += alpha * (static_cast<float>(vrest_mv) - ema_mv);
     }
     soc_model = ocv_to_soc_for_capacity(ema_mv, capacity_mah);
-    // Gentle fuel-gauge blend only when the hardware gauge agrees within +-15 % (rejects uncalibrated OTP 99 %).
-    if (hw_gauge_pct >= 0 && hw_gauge_pct <= 100 && !std::isnan(soc_model) &&
-        std::fabs(static_cast<float>(hw_gauge_pct) - soc_model) <= 15.0f) {
-      soc_model = 0.85f * soc_model + 0.15f * static_cast<float>(hw_gauge_pct);
-    }
     const bool settle = settling(now_ms);
 
     if (batt) {
       cv_start_ms = 0;
       full_latched = false;
+      fault = false;
       if (plug_change && was_full) {
         soc_display = 100.0f;
         settle_until_ms = now_ms;
-      } else if (first || settle || std::isnan(soc_display)) {
-        soc_display = soc_model;
+      } else if (first || std::isnan(soc_display)) {
+        // Carry over pre-reboot / pre-hibernate SoC when still on the same battery discharge cycle
+        // (cell voltage did not jump upward from an off-state charge).
+        if (seed_valid && vbat_mv <= static_cast<int>(seed_vraw_mv) + kSeedRechargedDeltaMv) {
+          const float saved = static_cast<float>(seed_soc);
+          // Never jump upward on reboot/wake from the same battery discharge cycle.
+          soc_display = (soc_model < saved) ? soc_model : saved;
+        } else {
+          soc_display = soc_model;
+        }
+        seed_valid = false;
       } else if (soc_model < soc_display) {
+        // Strictly monotonic downward on battery (never bounces upward during settle or load changes).
         soc_display = soc_model;
       }
       if (first || plug_change) drain_t0_ms = 0;
@@ -313,10 +390,15 @@ struct BatteryModel {
       }
     } else {
       drain_t0_ms = 0;
-      if (ph == ChargePhase::DONE) full_latched = true;
+      seed_valid = false;
+      if (ph == ChargePhase::DONE && !fault && vbat_mv >= kFullMinValidMv) {
+        full_latched = true;
+      } else if (fault || vbat_mv < kFullMinValidMv) {
+        full_latched = false;
+      }
       if (full_latched) {
         soc_display = 100.0f;
-      } else if (ph == ChargePhase::CV) {
+      } else if (ph == ChargePhase::CV && !fault) {
         if (cv_start_ms == 0) {
           cv_start_ms = now_ms;
           const float base = std::isnan(soc_display) ? soc_model : soc_display;
@@ -326,7 +408,7 @@ struct BatteryModel {
         if (frac > 1.0f) frac = 1.0f;
         const float ramp = cv_start_soc + (kCvRampCeilPct - cv_start_soc) * frac;
         if (std::isnan(soc_display) || ramp > soc_display) soc_display = ramp;
-      } else if (charge_phase_is_charging(ph)) {
+      } else if (charge_phase_is_charging(ph) && !fault) {
         cv_start_ms = 0;
         const float s = soc_model > kCvRampCeilPct ? kCvRampCeilPct : soc_model;
         if (first || settle || std::isnan(soc_display) || s > soc_display) soc_display = s;
@@ -377,7 +459,8 @@ struct BatteryModel {
 
   char state_char() const {
     if (on_battery) return 'd';
-    if (full_latched || phase == ChargePhase::DONE) return 'f';
+    if (fault) return '!';
+    if (full_latched) return 'f';
     if (phase == ChargePhase::CV) return 'v';
     if (charge_phase_is_charging(phase)) return 'c';
     return 'n';
@@ -433,6 +516,7 @@ inline constexpr int32_t resolve_alarm_sleep_seconds(int pwr_key_deep_sleep_wake
 BatteryModel &battery_model();
 void battery_report_fragment(char *buf, size_t len, uint32_t now_ms);
 void battery_log_profile(uint32_t now_ms);
+void hal_battery_save_rtc_snapshot(const BatteryModel &bm);
 void hal_release_pwr_key_wake_pad();
 #else
 inline BatteryModel &battery_model() {
@@ -455,6 +539,7 @@ inline void battery_report_fragment(char *buf, size_t len, uint32_t now_ms) {
                 std::isnan(b.soc_display) ? -1.0f : b.soc_display, b.state_char(), dr);
 }
 inline void battery_log_profile(uint32_t /*now_ms*/) {}
+inline void hal_battery_save_rtc_snapshot(const BatteryModel &) {}
 inline void hal_release_pwr_key_wake_pad() {}
 #endif
 
