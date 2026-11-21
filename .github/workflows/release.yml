@@ -47,12 +47,12 @@ jobs:
             subs: ""
           - slug: desk-assistant-rev1
             file: desk-assistant
-            name: "Latter — Desk Assistant (P4 86-Panel, chip rev 1.x)"
+            name: "Latter — Desk Assistant (P4 86-Panel / 4B, chip rev 1.x)"
             chip: "ESP32-P4"
             subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
           - slug: desk-assistant-rev3
             file: desk-assistant
-            name: "Latter — Desk Assistant (P4 86-Panel, chip rev 3.x)"
+            name: "Latter — Desk Assistant (P4 86-Panel / 4B, chip rev 3.x)"
             chip: "ESP32-P4"
             subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:

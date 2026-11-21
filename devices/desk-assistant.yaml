@@ -1,6 +1,6 @@
 # ==============================================================================
 # Desk Assistant (v3.0 Modular Architecture)
-# Target: Waveshare ESP32-P4-86-Panel-ETH-2RO (720x720 Square Display, SKU 31570)
+# Target: Waveshare ESP32-P4-86-Panel-ETH-2RO / ESP32-P4-WIFI6-Touch-LCD-4B (720x720, SKU 31570 / 31416)
 #         P4 silicon is selected by the p4_silicon profile in boards/waveshare_p4_86_panel.yaml
 #         (default rev1 = v1.x engineering silicon; CI also publishes a rev3 build).
 # Framework: ESPHome 2026.11.0+ (ESP-IDF 5.5+)
