@@ -1,22 +1,24 @@
-"""Latter presence beacon: an iBeacon advertised with raw HCI commands and no Bluetooth host stack.
+"""Latter presence beacon: iBeacon advertised via raw HCI with no BT host stack.
 
-The Area presence beacon only advertises. ESPHome's esp32_ble brings the Bluedroid host for that, and on
-the ESP32-S3 Bluedroid holds tens of kilobytes of internal RAM for as long as Bluetooth is on (measured:
-~45 KB with the beacon on, which left a Wrist at 7 KB during a voice turn). This component starts only
-the controller and sends the four HCI commands that advertising needs (reset, parameters, data, enable).
-No host stack is linked.
+The Area presence beacon only advertises. ESPHome's esp32_ble brings the Bluedroid
+host for that, and on the ESP32-S3 Bluedroid holds tens of kilobytes of internal
+RAM while Bluetooth is on. This component starts only the controller and sends the
+four HCI commands that advertising needs (reset, parameters, data, enable).
 
 One component for every Latter device, with the transport chosen at build time:
-  - chips with an on-chip Bluetooth controller (ESP32-S3, ...): ESP-IDF VHCI, controller-only build;
-  - ESP32-P4 with an esp_hosted co-processor (C6): esp_hosted's custom-stack HCI byte pipe
-    (CONFIG_ESP_HOSTED_HOST_FEAT_BT without Bluedroid/NimBLE), controller lifecycle over esp_hosted RPC.
-The state machine, commands, payload, logs and control surface (enable(), disable(), is_active(),
-is_failed()) are shared, so the power policy and troubleshooting are the same on every device.
+  - on-chip Bluetooth controller (ESP32-S3, ...): ESP-IDF VHCI, controller-only;
+  - esp_hosted co-processor (ESP32-P4 + C6, etc.): esp_hosted custom-stack HCI
+    byte pipe (CONFIG_ESP_HOSTED_HOST_FEAT_BT without Bluedroid/NimBLE).
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 import esphome.codegen as cg
+import esphome.config_validation as cv
+import esphome.final_validate as fv
 from esphome.components.esp32 import (
     add_idf_sdkconfig_option,
     get_esp32_variant,
@@ -25,8 +27,6 @@ from esphome.components.esp32 import (
     request_software_coexistence,
 )
 from esphome.components.esp32.const import VARIANT_ESP32P4, VARIANT_ESP32S2
-import esphome.config_validation as cv
-import esphome.final_validate as fv
 from esphome.const import CONF_ID, CONF_TX_POWER, CONF_UUID
 from esphome.core import CORE, TimePeriod
 from esphome.types import ConfigType
@@ -47,7 +47,6 @@ DEFAULT_TX_POWER_DBM = 3
 latter_beacon_ns = cg.esphome_ns.namespace("latter_beacon")
 LatterBeacon = latter_beacon_ns.class_("LatterBeacon", cg.Component)
 
-# esp_power_level_t names (their numeric values differ between chips, so the C++ gets the name).
 TX_POWER_LEVELS = {
     -12: "ESP_PWR_LVL_N12",
     -9: "ESP_PWR_LVL_N9",
@@ -61,7 +60,6 @@ TX_POWER_LEVELS = {
 
 _INTERVAL = cv.All(
     cv.positive_time_period_milliseconds,
-    # Legacy non-connectable advertising: 100 ms to 10.24 s.
     cv.Range(min=TimePeriod(milliseconds=100), max=TimePeriod(milliseconds=10240)),
 )
 
@@ -79,31 +77,39 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_UUID): cv.uuid,
             cv.Optional(CONF_MAJOR, default=1): cv.uint16_t,
             cv.Required(CONF_MINOR): cv.uint16_t,
-            cv.Optional(CONF_MEASURED_POWER, default=-59): cv.int_range(min=-128, max=0),
+            cv.Optional(CONF_MEASURED_POWER, default=-59): cv.int_range(
+                min=-128, max=0
+            ),
             cv.Optional(CONF_MIN_INTERVAL, default="500ms"): _INTERVAL,
             cv.Optional(CONF_MAX_INTERVAL, default="1000ms"): _INTERVAL,
-            # On-chip controllers only (default +3 dBm); esp_hosted offers no TX power control.
-            cv.Optional(CONF_TX_POWER): cv.All(cv.decibel, cv.one_of(*TX_POWER_LEVELS, int=True)),
+            cv.Optional(CONF_TX_POWER): cv.All(
+                cv.decibel, cv.one_of(*TX_POWER_LEVELS, int=True)
+            ),
         }
     ).extend(cv.COMPONENT_SCHEMA),
     _validate_intervals,
 )
 
 
-def _is_hosted() -> bool:
-    return get_esp32_variant() == VARIANT_ESP32P4
+def _is_hosted(cfg: Mapping[str, Any] | None = None) -> bool:
+    active_cfg = cfg if cfg is not None else CORE.config
+    return isinstance(active_cfg, Mapping) and ESP32_HOSTED_DOMAIN in active_cfg
 
 
 def _final_validate(config: ConfigType) -> ConfigType:
+    full_cfg = fv.full_config.get()
     variant = get_esp32_variant()
-    if variant == VARIANT_ESP32S2:
+    if variant == VARIANT_ESP32S2 and not _is_hosted(full_cfg):
         raise cv.Invalid("latter_beacon needs Bluetooth; the ESP32-S2 has none")
-    if _is_hosted():
-        # CORE.config is not populated during final validation; the full config comes from final_validate.
-        if ESP32_HOSTED_DOMAIN not in fv.full_config.get():
-            raise cv.Invalid("On the ESP32-P4, latter_beacon needs esp32_hosted (Bluetooth is on the co-processor)")
-        if CONF_TX_POWER in config:
-            raise cv.Invalid("tx_power is not available over esp_hosted", path=[CONF_TX_POWER])
+    if variant == VARIANT_ESP32P4 and not _is_hosted(full_cfg):
+        raise cv.Invalid(
+            "On the ESP32-P4, latter_beacon needs esp32_hosted "
+            "(Bluetooth is on the co-processor)"
+        )
+    if _is_hosted(full_cfg) and CONF_TX_POWER in config:
+        raise cv.Invalid(
+            "tx_power is not available over esp_hosted", path=[CONF_TX_POWER]
+        )
     return config
 
 
@@ -119,7 +125,7 @@ def _sdkconfig_flag_enabled(options: dict[str, object], key: str) -> bool:
 
 
 def _code_runs_from_psram() -> bool:
-    """Code and rodata execute from PSRAM (XIP): flash erases keep the cache and interrupts running."""
+    """Code and rodata execute from PSRAM (XIP)."""
     framework = CORE.config.get("esp32", {}).get("framework", {})
     if framework.get("advanced", {}).get("execute_from_psram", False):
         return True
@@ -133,17 +139,27 @@ def _code_runs_from_psram() -> bool:
 
 
 def _light_sleep_enabled() -> bool:
-    """Automatic light sleep is configured (power_management.enable_light_sleep or tickless idle)."""
+    """Automatic light sleep is configured (enable_light_sleep or tickless idle)."""
     pm_cfg = CORE.config.get("power_management")
-    entries = pm_cfg if isinstance(pm_cfg, list) else ([pm_cfg] if isinstance(pm_cfg, dict) else [])
+    entries = (
+        pm_cfg
+        if isinstance(pm_cfg, list)
+        else ([pm_cfg] if isinstance(pm_cfg, dict) else [])
+    )
     if any(isinstance(e, dict) and e.get("enable_light_sleep") for e in entries):
         return True
-    options = CORE.config.get("esp32", {}).get("framework", {}).get("sdkconfig_options", {})
+    options = (
+        CORE.config.get("esp32", {})
+        .get("framework", {})
+        .get("sdkconfig_options", {})
+    )
     return _sdkconfig_flag_enabled(options, "CONFIG_FREERTOS_USE_TICKLESS_IDLE")
 
 
 async def to_code(config: ConfigType) -> None:
-    cg.add_global(cg.RawStatement('#include "esphome/components/latter_beacon/latter_beacon.h"'))
+    cg.add_global(
+        cg.RawStatement('#include "esphome/components/latter_beacon/latter_beacon.h"')
+    )
     uuid = config[CONF_UUID].hex
     uuid_bytes = ", ".join(f"0x{uuid[i : i + 2]}" for i in range(0, len(uuid), 2))
     var = cg.new_Pvariable(
@@ -157,9 +173,7 @@ async def to_code(config: ConfigType) -> None:
     cg.add(var.set_max_interval(config[CONF_MAX_INTERVAL].total_milliseconds))
     cg.add_define("USE_LATTER_BEACON")
 
-    if _is_hosted():
-        # esp_hosted's stack-agnostic Bluetooth feature: controller lifecycle over RPC + HCI byte pipe.
-        # With neither Bluedroid nor NimBLE enabled, its adapter resolves to the custom-stack path.
+    if _is_hosted(CORE.config):
         add_idf_sdkconfig_option("CONFIG_ESP_HOSTED_HOST_FEAT_BT", True)
         cg.add_define("USE_LATTER_BEACON_HOSTED")
         return
@@ -167,29 +181,17 @@ async def to_code(config: ConfigType) -> None:
     tx_power = config.get(CONF_TX_POWER, DEFAULT_TX_POWER_DBM)
     cg.add(var.set_tx_power(cg.RawExpression(TX_POWER_LEVELS[tx_power])))
     request_bluetooth()
-    if "wifi" in CORE.config:
+    if "wifi" in CORE.config or ESP32_HOSTED_DOMAIN in CORE.config:
         request_software_coexistence()
-    # Controller only: no Bluedroid or NimBLE host is built or linked.
     add_idf_sdkconfig_option("CONFIG_BT_CONTROLLER_ONLY", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLUEDROID_ENABLED", False)
     add_idf_sdkconfig_option("CONFIG_BT_NIMBLE_ENABLED", False)
-    # Advertise-only controller (CONFIG_BT_CTRL_* is the ESP32-C3/S3 controller's Kconfig).
-    # One legacy advertising set: the activity pool needs one slot (default 6, 828 bytes each).
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_MAX_ACT", 1)
-    # Nothing scans: no scan duplicate-filter cache.
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_BLE_SCAN_DUPL", False)
-    # Enable BLE controller modem sleep on the main 40 MHz XTAL so an enabled on-chip BLE controller
-    # releases its ESP_PM_NO_LIGHT_SLEEP lock between advertising events (and while paused) on boards
-    # without an external 32.768 kHz crystal. Without MAIN_XTAL_PU_DURING_LIGHT_SLEEP, the controller
-    # blocks automatic light sleep completely (ls=0 / 0% sleep) throughout screen-off battery standby.
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_MODEM_SLEEP", True)
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_MODEM_SLEEP_MODE_1", True)
     add_idf_sdkconfig_option("CONFIG_BT_CTRL_LPCLK_SEL_MAIN_XTAL", True)
     if _light_sleep_enabled():
         add_idf_sdkconfig_option("CONFIG_BT_CTRL_MAIN_XTAL_PU_DURING_LIGHT_SLEEP", True)
-    # Controller code from flash instead of ROM + IRAM (frees over 20 KB of internal RAM). Its interrupt
-    # is then not IRAM-safe, and ESP-IDF warns it may stall while flash is erased. With code and rodata
-    # executing from PSRAM (every Latter S3 board) a flash erase keeps the cache and interrupts running,
-    # so at worst an advertising event slips; boards that execute from flash keep the ROM/IRAM controller.
     if _code_runs_from_psram():
         add_idf_sdkconfig_option("CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY", True)

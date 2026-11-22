@@ -1,13 +1,17 @@
 #if __has_include("audio_router.h")
 #include "audio_router.h"
-#include "hal_power_pm.h"
-#include "latter_state.h"
+#include "hal_display_lifecycle.h"
+#include "hal_radio_policy.h"
+#include "hal_sleep_pm.h"
+#include "state/state_nvs_snapshot.h"
 #include "latter_rpc.h"
 #include "latter_actions.h"
 #else
 #include "../../include/audio_router.h"
-#include "../../include/hal_power_pm.h"
-#include "../../include/latter_state.h"
+#include "../../include/hal_display_lifecycle.h"
+#include "../../include/hal_radio_policy.h"
+#include "../../include/hal_sleep_pm.h"
+#include "../../include/state/state_nvs_snapshot.h"
 #include "../../include/latter_rpc.h"
 #include "../../include/latter_actions.h"
 #endif

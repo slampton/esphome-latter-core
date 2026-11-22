@@ -142,6 +142,7 @@ display:
 
       const auto &prefs = latter_ui::persisted_prefs();
       ctx.panel_is_on = id(display_brightness).current_values.is_on();
+      latter_ui::sync_ctx_link_health(ctx);
       ctx.local_media_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
       ctx.spk_vol_pct = static_cast<int>(std::round(id(latter_media_player).volume * 100.0f));
       ctx.alert_vol_pct = (prefs.alert_volume < 20) ? 70 : static_cast<int>(prefs.alert_volume);

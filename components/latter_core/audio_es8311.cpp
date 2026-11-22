@@ -1,4 +1,5 @@
 #include "audio_router.h"
+#include "hal_imu_qmi8658.h"
 
 #include "esphome/core/defines.h"
 
@@ -143,8 +144,7 @@ void hal_set_es8311_es7210_standby(esphome::i2c::I2CBus *bus, bool standby, bool
 void hal_power_down_audio_and_imu_for_hibernate(esphome::i2c::I2CBus *bus, bool has_imu, bool has_es7210) {
   if (bus == nullptr) return;
   if (has_imu) {
-    const uint8_t qmi_pwr_down[2] = {0x08, 0x00};
-    bus->write(0x6B, qmi_pwr_down, 2);
+    hal_imu_qmi8658_hibernate(bus);
   }
   const uint8_t dac_sleep1[2] = {0x0D, 0xFF};
   const uint8_t dac_sleep2[2] = {0x00, 0x80};

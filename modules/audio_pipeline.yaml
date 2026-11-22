@@ -1,0 +1,539 @@
+# ==============================================================================
+# Latter Core Module: Audio Pipeline, Mixing Speaker, Sendspin & Media Players
+# (modules/audio_pipeline.yaml)
+# Hardware I2S & Codecs defined in boards/*.yaml + modules/hal/audio_*.yaml.
+# Zero YAML globals: reads/writes latter_ui::runtime_state() and calls typed RPC
+# helpers in latter_actions.h.
+# ==============================================================================
+
+substitutions:
+  announcement_buffer_s: "1"
+
+esphome:
+  on_boot:
+    - priority: 600
+      then:
+        - lambda: |-
+            latter_ui::audio_arbitrator().bind_host_driver(+[](uint32_t now_ms) {
+              latter_ui::AudioArbitratorInputs in{};
+              in.ann_has_buffered = id(announcement_mixing_input).has_buffered_data();
+              in.snd_has_buffered = id(sound_mixing_input).has_buffered_data();
+              in.phys_spk_has_buffered = id(physical_speaker).has_buffered_data();
+              in.media_mixer_running = id(media_mixing_input).is_running();
+              in.mp_announcing =
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+              const auto out = latter_ui::audio_arbitrator().step(now_ms, in);
+              if (out.mute_speaker_path) {
+                id(mute_speaker_path).execute();
+              }
+              if (out.unmute_mic) {
+                id(latter_mic).set_mute_state(false);
+              }
+              if (out.run_media_idle_finish) {
+                id(media_idle_finish).execute();
+              }
+              if (out.log_announce_stall) {
+                auto st = [](speaker::Speaker *s) -> const char * {
+                  return s->is_running() ? "run" : (s->is_stopped() ? "stop" : "trans");
+                };
+                ESP_LOGW("PROF", "[PROF:AUDIO_STALL] announcing 6s, no buffered audio: ann=%s snd=%s media=%s "
+                         "spk=%s spk_buf=%d vol=%.2f va=%d mic_mute=%d",
+                         st(id(announcement_mixing_input)), st(id(sound_mixing_input)), st(id(media_mixing_input)),
+                         st(id(physical_speaker)), static_cast<int>(id(physical_speaker).has_buffered_data()),
+                         id(physical_speaker).get_volume(), static_cast<int>(id(va).is_running()),
+                         static_cast<int>(id(latter_mic).get_mute_state()));
+              }
+            });
+            latter_ui::intercom_session().bind_host_stop_hw(+[](uint32_t /*now_ms*/) {
+              id(start_doorbell_ptt).stop();
+              latter_ui::runtime_state().voice.intercom_turn = false;
+              id(latter_mic).set_mute_state(false);
+              esphome::voice_assistant::abort_voice_assistant(id(va));
+              id(stop_doorbell_audio).execute();
+              id(sync_camera_stream).execute();
+              latter_ui::schedule_disp_update(&id(disp1));
+            });
+
+# FLAC decoder (microFLAC) buffers in PSRAM
+audio:
+  codecs:
+    flac:
+      buffer_memory: psram
+
+speaker:
+  - id: mixing_speaker
+    platform: mixer
+    output_speaker: physical_speaker
+    num_channels: ${audio_out_channels}
+    task_stack_in_psram: true
+    source_speakers:
+      - id: announcement_mixing_input
+        buffer_duration: ${announcement_buffer_s}s
+        timeout: 500ms
+      - id: media_mixing_input
+        timeout: 1500ms
+      # Chimes, alarms and game sounds (latter_sound_player): their own input, so they duck and drain
+      # independently of TTS and music.
+      - id: sound_mixing_input
+        buffer_duration: 500ms
+        timeout: 500ms
+
+# No sample-rate conversion on the device: every source arrives at ${audio_out_rate} (Sendspin's
+# sample_rate, the speaker_source pipelines' preferred format for Home Assistant, the sounds rendered
+# per rate by tools/gen_sounds.py), and the mixer folds stereo to the panel's ${audio_out_channels}
+# channel(s). The full-duplex speaker accepts no other format.
+#
+# Sounds are embedded WAV files (no decode cost) for this board's ${audio_out_rate}. ESPHome's rtttl
+# synthesizes at a fixed 16 kHz, so it cannot feed a 48 kHz mixer.
+audio_file:
+  - id: sound_alarm
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/alarm.wav
+  - id: sound_find_my
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/find_my.wav
+  - id: sound_sfx_1
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_1.wav
+  - id: sound_sfx_2
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_2.wav
+  - id: sound_sfx_3
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_3.wav
+  - id: sound_sfx_4
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_4.wav
+  - id: sound_sfx_5
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_5.wav
+  - id: sound_sfx_6
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_6.wav
+  - id: sound_sfx_7
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_7.wav
+  - id: sound_sfx_8
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_8.wav
+  - id: sound_sfx_9
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_9.wav
+  - id: sound_sfx_10
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_10.wav
+  - id: sound_sfx_11
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_11.wav
+  - id: sound_sfx_12
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_12.wav
+  - id: sound_sfx_13
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_13.wav
+  - id: sound_sfx_14
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_14.wav
+
+# Internal RAM is the scarce resource on the S3 boards (measured with System: Log Memory Report), so the
+# Sendspin hub's protocol, artwork and HTTP-server stacks live in PSRAM: they stay allocated whenever
+# Music Assistant is connected, even when nothing plays. The wake-word and I2S speaker tasks keep their
+# internal stacks for timing.
+sendspin:
+  id: sendspin_hub
+  task_stack_in_psram: true
+
+media_source:
+  - platform: audio_http
+    id: http_announcement_source
+    buffer_size: ${announcement_buffer_size}
+    task_stack_in_psram: true  # reader (6 KB with TLS 1.3) + decoder stacks persist after the first TTS
+
+  - platform: sendspin
+    id: sendspin_source
+    task_stack_in_psram: true
+    decode_memory: psram
+    buffer_size: ${sendspin_buffer_size}
+    sample_rate: ${audio_out_rate}  # Music Assistant converts server-side; the device never resamples
+    bits_per_sample: ${audio_out_bits}  # Explicit 16-bit wire contract matching full-duplex I2S bus
+
+  - platform: audio_file
+    id: sound_file_source
+    task_stack_in_psram: true
+
+media_player:
+  # Internal player for the embedded sounds. Declared before latter_media_player: every speaker_source
+  # player applies its volume to physical_speaker at setup, and the music volume must be the one left.
+  # Each sound path sets the DAC level itself before playing.
+  - platform: speaker_source
+    id: latter_sound_player
+    internal: true
+    volume_initial: 100%
+    media_pipeline:
+      format: WAV
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
+      speaker: sound_mixing_input
+      sources:
+        - sound_file_source
+
+  - platform: sendspin
+    id: sendspin_group_media_player
+    on_state:
+      then:
+        - lambda: |-
+            static int last_ss_state = -1;
+            int cur_ss = static_cast<int>(id(sendspin_group_media_player).state);
+            if (cur_ss == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+              if (id(mww).is_running()) {
+                id(mww).stop();
+              }
+            } else if (last_ss_state == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+              latter_ui::audio_arbitrator().arm_media_idle_debounce(millis());
+            }
+            last_ss_state = cur_ss;
+
+  - platform: speaker_source
+    id: latter_media_player
+    name: "Music"
+    announcement_pipeline:
+      format: FLAC
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
+      speaker: announcement_mixing_input
+      sources:
+        - http_announcement_source
+    media_pipeline:
+      format: FLAC
+      num_channels: ${audio_out_channels}
+      sample_rate: ${audio_out_rate}
+      speaker: media_mixing_input
+      sources:
+        - sendspin_source
+    volume_initial: 60%
+    volume_increment: 5%
+    volume_min: 10%
+    volume_max: 100%
+    on_state:
+      then:
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            static int last_mp_state = -1;
+            static float last_mp_vol = -1.0f;
+            int cur_st = static_cast<int>(id(latter_media_player).state);
+            float v = id(latter_media_player).volume;
+            bool vol_valid = !std::isnan(v) && v > 0.0f;
+            bool state_changed = (cur_st != last_mp_state);
+            bool vol_changed = vol_valid && (last_mp_vol < 0.0f || std::fabs(v - last_mp_vol) >= 0.005f);
+            if (!rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active &&
+                !rs.voice.active && !rs.voice.tts_received &&
+                id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) {
+              if (vol_valid && (vol_changed || state_changed)) {
+                id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+              }
+            }
+            if (vol_changed && latter_ui::speaker_volume_boot_synced()) {
+              float pct = std::clamp(std::round(v * 100.0f), 10.0f, 100.0f);
+              const uint8_t pct_u8 = static_cast<uint8_t>(std::lround(pct));
+              if (latter_ui::persisted_prefs().speaker_volume_pct != pct_u8) {
+                latter_ui::persisted_prefs().speaker_volume_pct = pct_u8;
+                latter_ui::schedule_persisted_prefs_save(millis());
+              }
+              const uint32_t now_v_ms = millis();
+              if (last_mp_vol >= 0.0f && latter_ui::media_state().is_local &&
+                  (now_v_ms - rs.music.feedback_timer > 150U)) {
+                rs.music.action_feedback = "Volume: " + std::to_string(static_cast<int>(std::lround(pct))) + "%";
+                rs.music.feedback_timer = now_v_ms;
+              }
+            }
+            if (state_changed) {
+              latter_ui::sync_audio_session_media_observation(
+                  cur_st == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PLAYING),
+                  cur_st == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PAUSED),
+                  millis());
+            }
+            if (state_changed || vol_changed) {
+              last_mp_state = cur_st;
+              if (vol_valid) last_mp_vol = v;
+              if ((rs.nav.gui_page == 2 || (state_changed && rs.nav.gui_page == 1)) &&
+                  rs.nav.display_power_state == 0 && !rs.voice.active) {
+                id(throttled_disp_update).execute();
+              }
+            }
+    on_announcement:
+      then:
+        - if:
+            condition:
+              lambda: 'return latter_ui::cam_intercom_ptt_active() || latter_ui::cal_dictation_active() || latter_ui::broadcast_dictation_active();'
+            then:
+              - media_player.stop:
+                  id: latter_media_player
+                  announcement: true
+            else:
+              - script.stop: sync_wake_word_state
+              - script.stop: mute_speaker_path
+              - lambda: |-
+                  latter_ui::audio_arbitrator().cancel_media_idle_debounce();
+                  latter_ui::audio_arbitrator().cancel_echo_gate();
+                  latter_ui::display_lifecycle().disarm_idle();
+              - mixer_speaker.apply_ducking:
+                  id: media_mixing_input
+                  decibel_reduction: 50
+                  duration: 0.1s
+              - mixer_speaker.apply_ducking:
+                  id: announcement_mixing_input
+                  decibel_reduction: 0
+                  duration: 0.05s
+              - script.execute: enable_speaker_path
+              - script.wait: enable_speaker_path
+              - lambda: |-
+                  auto &rs = latter_ui::runtime_state();
+                  if (!latter_ui::cam_call_active() && !latter_ui::cam_listen_active()) {
+                    rs.voice.tts_received = true;
+                  }
+                  if (rs.voice.active) {
+                    id(latter_mic).set_mute_state(true);
+                    rs.voice.vad_active = false;
+                    rs.voice.status_text = "Responding...";
+                  }
+              - if:
+                  condition:
+                    lambda: 'return id(media_mixing_input).is_running();'
+                  then:
+                    - delay: 500ms
+              - lambda: |-
+                  id(physical_speaker).set_volume(latter_ui::voice_output_volume(id(latter_media_player).volume));
+                  id(hal_set_dac_mute).execute(false);
+                  latter_ui::audio_arbitrator().arm_announce_stall_check(millis());
+              - script.execute: throttled_disp_update
+              - if:
+                  condition:
+                    lambda: |-
+                      return !latter_ui::runtime_state().voice.active &&
+                             !latter_ui::cam_call_active() &&
+                             !latter_ui::cam_listen_active();
+                  then:
+                    - script.execute: finish_announcement
+    on_play:
+      then:
+        - if:
+            condition:
+              lambda: |-
+                const auto &v = latter_ui::runtime_state().voice;
+                return !v.active && !v.tts_received;
+            then:
+              - lambda: |-
+                  auto &rs = latter_ui::runtime_state();
+                  const uint32_t now_play_ms = millis();
+                  rs.music.pos_sync_time = now_play_ms;
+                  if (latter_ui::media_state().is_local) {
+                    latter_ui::media_state().state = "playing";
+                  }
+                  latter_ui::sync_audio_session_media_observation(true, false, now_play_ms);
+                  const bool alert_ring = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active;
+                  const bool ota_or_hib = rs.nav.ota_in_progress || rs.nav.is_hibernating;
+                  const int start_page = latter_ui::resolve_start_screen_page();
+                  if (latter_ui::audio_session().should_auto_open_music_page(
+                          rs.nav.gui_page, latter_ui::persisted_prefs().home_screen_enabled,
+                          start_page, alert_ring, now_play_ms, ota_or_hib)) {
+                    rs.nav.gui_page = 2; // Auto-switch to Music Player screen on explicit/new music playback start
+                  }
+                  rs.nav.sleep_start_time = 0;
+                  if (rs.nav.gui_page == 2) {
+                    rs.nav.active_game = 0;
+                  }
+                  latter_ui::audio_arbitrator().cancel_media_idle_debounce();
+                  latter_ui::audio_arbitrator().cancel_echo_gate();
+              - script.stop: sync_wake_word_state
+              - script.stop: mute_speaker_path
+              - if:
+                  condition:
+                    lambda: |-
+                      const auto &rs = latter_ui::runtime_state();
+                      return !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active;
+                  then:
+                    - mixer_speaker.apply_ducking:
+                        id: media_mixing_input
+                        decibel_reduction: 0
+                        duration: 0.2s
+                    - mixer_speaker.apply_ducking:
+                        id: announcement_mixing_input
+                        decibel_reduction: 50
+                        duration: 0.1s
+                    - lambda: |-
+                        float v = id(latter_media_player).volume;
+                        if (std::isnan(v) || v <= 0.0f) v = 0.60f;
+                        id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+              - if:
+                  condition:
+                    lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
+                  then:
+                    - script.execute: enable_speaker_path
+                    - script.wait: enable_speaker_path
+              - lambda: 'id(hal_set_dac_mute).execute(false);'
+              - if:
+                  condition:
+                    lambda: |-
+                      return latter_ui::runtime_state().nav.display_power_state != 0 ||
+                             !id(display_brightness).remote_values.is_on();
+                  then:
+                    - lambda: |-
+                        latter_ui::screen_is_off_standby() = false;
+                        latter_ui::runtime_state().nav.display_power_state = 0;
+                        id(apply_power_policy).execute();
+                    - light.turn_on: display_brightness
+              - lambda: |-
+                  const auto &rs = latter_ui::runtime_state();
+                  const std::string &art_u = latter_ui::media_state().art_url;
+                  if (rs.nav.gui_page == 2 &&
+                      (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
+                      !art_u.empty() &&
+                      art_u != rs.music.loaded_art_url) {
+                    id(fetch_remote_art_debounced).execute();
+                  }
+                  latter_ui::display_lifecycle().note_activity(millis());
+              - script.execute: throttled_disp_update
+              - script.execute: sync_wake_word_state
+    on_pause:
+      then:
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            const uint32_t now_pause_ms = millis();
+            latter_ui::audio_session().note_local_playback_stopped();
+            if (latter_ui::media_state().is_local &&
+                (latter_ui::media_state().state == "playing" || latter_ui::media_state().state == "buffering")) {
+              latter_ui::media_state().state = "paused";
+            }
+            latter_ui::sync_audio_session_media_observation(false, true, now_pause_ms);
+            if (rs.music.pos_sync_time > 0) {
+              rs.music.pos_base += (now_pause_ms - rs.music.pos_sync_time) / 1000.0f;
+              rs.music.pos_sync_time = 0;
+            }
+            if (rs.nav.display_power_state == 0) {
+              latter_ui::display_lifecycle().note_activity(now_pause_ms);
+            }
+            latter_ui::audio_arbitrator().arm_media_pause_settle(now_pause_ms);
+        - speaker.stop: media_mixing_input
+    on_idle:
+      then:
+        - if:
+            condition:
+              lambda: |-
+                const auto &v = latter_ui::runtime_state().voice;
+                return v.active || v.tts_received || !v.status_text.empty();
+            then:
+              - script.execute: va_tts_drain_and_finish
+        - lambda: |-
+            const uint32_t now_idle_ms = millis();
+            const auto &ms = latter_ui::media_state();
+            if (!ms.is_local ||
+                (ms.state != "playing" && ms.state != "buffering" &&
+                 id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+              latter_ui::audio_session().note_local_playback_stopped();
+            }
+            latter_ui::sync_audio_session_media_observation(false, false, now_idle_ms);
+            if (latter_ui::runtime_state().nav.display_power_state == 0) {
+              latter_ui::display_lifecycle().note_activity(now_idle_ms);
+            }
+            latter_ui::audio_arbitrator().arm_media_idle_debounce(now_idle_ms);
+
+text_sensor:
+  - platform: sendspin
+    type: artist
+    name: "Now Playing Artist"
+    id: track_artist
+    entity_category: diagnostic
+    on_value:
+      then:
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            if (x != rs.music.last_sendspin_artist) {
+              rs.music.last_sendspin_artist = x;
+              const auto &ms = latter_ui::media_state();
+              if (ms.is_local) {
+                if (!x.empty() &&
+                    rs.nav.display_power_state == 0 &&
+                    rs.nav.gui_page == 2 &&
+                    id(album_art).get_width() == 0 &&
+                    !ms.art_url.empty() &&
+                    ms.art_url != rs.music.loaded_art_url) {
+                  id(fetch_remote_art_debounced).execute();
+                }
+                if (rs.nav.gui_page == 2) {
+                  id(throttled_disp_update).execute();
+                } else if (rs.nav.display_power_state == 0 && !rs.voice.active &&
+                           rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
+                  int act_n = 0, act_y0 = 0, act_y1 = 0;
+                  const auto *act_items = latter_ui::home_activity_rendered_items(act_n);
+                  bool music_in_card = false;
+                  for (int i = 0; i < act_n; ++i) {
+                    if (act_items[i].kind == 3 && act_items[i].in_deck) {
+                      music_in_card = true;
+                      break;
+                    }
+                  }
+                  if (music_in_card && latter_ui::home_activity_band(act_y0, act_y1)) {
+                    latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);
+                  } else {
+                    id(throttled_disp_update).execute();
+                  }
+                }
+              }
+            }
+
+  - platform: sendspin
+    type: title
+    name: "Now Playing Title"
+    id: track_title
+    entity_category: diagnostic
+    on_value:
+      then:
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            if (x != rs.music.last_sendspin_title) {
+              rs.music.last_sendspin_title = x;
+              if (!x.empty()) {
+                latter_ui::music_queue_cleared() = false;
+              }
+              const auto &ms = latter_ui::media_state();
+              if (ms.is_local) {
+                if (!x.empty() &&
+                    rs.nav.display_power_state == 0 &&
+                    rs.nav.gui_page == 2 &&
+                    id(album_art).get_width() == 0 &&
+                    !ms.art_url.empty() &&
+                    ms.art_url != rs.music.loaded_art_url) {
+                  id(fetch_remote_art_debounced).execute();
+                }
+                if (rs.nav.gui_page == 2) {
+                  id(throttled_disp_update).execute();
+                } else if (rs.nav.display_power_state == 0 && !rs.voice.active &&
+                           rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
+                  int act_n = 0, act_y0 = 0, act_y1 = 0;
+                  const auto *act_items = latter_ui::home_activity_rendered_items(act_n);
+                  bool music_in_card = false;
+                  for (int i = 0; i < act_n; ++i) {
+                    if (act_items[i].kind == 3 && act_items[i].in_deck) {
+                      music_in_card = true;
+                      break;
+                    }
+                  }
+                  if (music_in_card && !x.empty() && latter_ui::home_activity_band(act_y0, act_y1)) {
+                    latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);
+                  } else {
+                    id(throttled_disp_update).execute();
+                  }
+                }
+              }
+            }
+
+  - platform: sendspin
+    type: album
+    name: "Now Playing Album"
+    id: track_album
+    entity_category: diagnostic
+    on_value:
+      then:
+        - lambda: |-
+            auto &rs = latter_ui::runtime_state();
+            if (x != rs.music.last_sendspin_album) {
+              rs.music.last_sendspin_album = x;
+              const auto &ms = latter_ui::media_state();
+              if (ms.is_local) {
+                if (!x.empty() &&
+                    rs.nav.display_power_state == 0 &&
+                    rs.nav.gui_page == 2 &&
+                    id(album_art).get_width() == 0 &&
+                    !ms.art_url.empty() &&
+                    ms.art_url != rs.music.loaded_art_url) {
+                  id(fetch_remote_art_debounced).execute();
+                }
+                if (rs.nav.gui_page == 2) {
+                  id(throttled_disp_update).execute();
+                }
+              }
+            }

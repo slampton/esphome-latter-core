@@ -2,12 +2,14 @@
 
 // ==============================================================================
 // Latter Core UI Layout, Geometry, Navigation Predicates & Dock Engine (ui_layout.h)
-// Provides resolution- & shape-adaptive layout metrics and mm-calibrated touch
-// thresholds across circular (466x466), watch (410x502), and rectangular/square
-// (320x480, 480x480, 720x720) displays.
+// Pure C++20 L2 header — zero ESPHome or HAL includes.
 // ==============================================================================
 
-#include "esphome/core/defines.h"
+#include "state/device_runtime_state.h"
+#include "ui_gfx.h"
+#include "ui_hit_table.h"
+#include "ui_touch_recognizer.h"
+#include "ui_types.h"
 
 #include <algorithm>
 #include <cctype>
@@ -16,16 +18,13 @@
 #include <string>
 #include <string_view>
 
-#include "hal_link_report.h"
-#include "hal_manifest.h"
-#include "hal_panel_power.h"
-#include "hal_power_pm.h"
-#include "latter_state.h"
-#include "ui_gfx.h"
-#include "ui_hit_table.h"
-#include "ui_types.h"
-
 namespace latter_ui {
+
+inline int menu_scroll_shift(int span_px, uint32_t now_ms) {
+  const uint32_t start = menu_scroll_start_ms();
+  const uint32_t elapsed = (now_ms >= start) ? (now_ms - start) : 0U;
+  return menu_scroll_shift_elapsed(span_px, elapsed);
+}
 
 // ==============================================================================
 // 1. Unified Adaptive Panel Geometry (delegates to pure-C++20 compute_panel_layout)
@@ -56,7 +55,6 @@ struct UiLayout {
   int cy = base.cy;
   bool is_round = base.is_round;
 
-  // Header & Footer Y coordinates
   int hdr_y = base.hdr_y;
   int sub_hdr_y = base.sub_hdr_y;
   int back_y = base.back_y;
@@ -67,17 +65,14 @@ struct UiLayout {
   int app_dock_pips_y = base.app_dock_pips_y;
   int dock_r = base.dock_r;
 
-  // Upper-Left Celestial Sun/Moon & Battery Indicator Coordinates
   int celestial_x = base.celestial_x;
   int celestial_y = base.celestial_y;
   int battery_cx = base.battery_cx;
   int battery_y = base.battery_y;
 
-  // Standard Menu Card Width & Left Text Margin
   int list_card_w = base.list_card_w;
   int list_card_left = base.list_card_left;
 
-  // 1. Adaptive 5-Slot Vertical List Geometry
   int slot5_stride = base.slot5_stride;
   int slot5_h = base.slot5_h;
   int slot5_cy = base.slot5_cy;
@@ -101,7 +96,6 @@ struct UiLayout {
     return -1;
   }
 
-  // 2. Adaptive 3-Card Area Control & Home Hub Geometry
   int area_card3_stride = base.area_card3_stride;
   int area_card3_h = base.area_card3_h;
   int area_card3_w = base.area_card3_w;
@@ -134,7 +128,6 @@ struct UiLayout {
     return (stepped < 5) ? 5 : ((stepped > 100) ? 100 : stepped);
   }
 
-  // 3. Adaptive 3-Card Timers & Alarms Landing Geometry
   int tool_card3_stride = base.tool_card3_stride;
   int tool_card3_h = base.tool_card3_h;
   int tool_card3_w = base.tool_card3_w;
@@ -152,7 +145,6 @@ struct UiLayout {
     return -1;
   }
 
-  // 4. Adaptive 2x3 Tools & Games Launcher Grid Geometry
   int tools_col_off = base.tools_col_off;
   int tools_row_stride = base.tools_row_stride;
   int tools_grid_cy = base.tools_grid_cy;
@@ -172,7 +164,6 @@ struct UiLayout {
     return -1;
   }
 
-  // 5. Adaptive Home Screen Vertical Zones
   int home_date_y = base.home_date_y;
   int home_clock_y = base.home_clock_y;
   int home_weather_y = base.home_weather_y;
@@ -186,7 +177,6 @@ struct UiLayout {
     const int hh = (h > 520) ? 36 : 28;
     return (tx >= cx - hw && tx <= cx + hw && ty >= home_weather_y - hh && ty <= home_weather_y + hh);
   }
-  // Home activity card (docs/device-ui-design.md D-028 / D-045).
   constexpr bool home_activity_two_line() const { return !is_round; }
   constexpr int home_activity_max_rows() const { return is_round ? 1 : 2; }
   constexpr int home_activity_w() const {
@@ -230,13 +220,11 @@ struct UiLayout {
     return (tx >= cx - hw && tx <= cx + hw && ty >= acy - hh && ty <= acy + hh);
   }
 
-  // 4-Column Calculator Keypad X centers
   constexpr int calc_col_x(int col_0_to_3) const {
     const int stride = (w < 380) ? 72 : ((w > 520) ? ((w * 82) / 466) : 82);
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
 
-  // 6. Single-Source Music Now Playing & Scrubber Geometry
   int music_art_cy = scale_y(233);
   constexpr int music_prev_x() const { return cx - (is_round ? scale_w(109) : ((w < 380) ? 96 : scale_x(104))); }
   constexpr int music_next_x() const { return cx + (is_round ? scale_w(109) : ((w < 380) ? 96 : scale_x(104))); }
@@ -253,20 +241,16 @@ struct UiLayout {
     return (f < 0.0f) ? 0.0f : ((f > 1.0f) ? 1.0f : f);
   }
 
-  // 7. Single-Source Light Kelvin / Brightness Inspector Slider Geometry
   constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : std::min(kMaxContentColW, scale_x(316)); }
   constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_x(32); }
   constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
   constexpr int light_bri_bar_w() const { return light_slider_card_w() - scale_x(16); }
   constexpr int light_bri_bar_x0() const { return cx - (light_bri_bar_w() / 2); }
 
-  // 8. Single-Source System Color Swatch & Info Margin Geometry
   constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - scale_x(34); }
   constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - scale_x(22)); }
   constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : scale_x(42)); }
 
-  // 9. Physical kinematic touch thresholds in millimetres (docs/device-ui-design.md D-049),
-  //    converted with LATTER_PANEL_PPI so tap_max() (1.65 mm) < swipe_min() (2.35 mm) across all panels.
   constexpr int drag_start() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).slider_start_px; }
   constexpr int swipe_flick() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
   constexpr int flick_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
@@ -280,12 +264,12 @@ struct UiLayout {
   constexpr int wide_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
   constexpr int canvas_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
   constexpr int fast_pan() const { return mm_to_px(10.5f); }
-  constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }                      // 16 px band below in-app content
+  constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }
   constexpr int top_edge_zone_y() const {
     return compute_top_edge_zone_y(w, h, is_round, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
   }
-  constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }   // 54 px: swipe-up home starts here
-  constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }  // 28 px: the home pill's chin
+  constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }
+  constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }
   constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }
   constexpr int dock_hit_r() const { return std::max(dock_r + 16, mm_to_px(3.6f)); }
 };
@@ -294,7 +278,6 @@ inline constexpr UiLayout layout() {
   return UiLayout{};
 }
 
-// Canonical 4-column stepper stride shared by ui::stepper_row and hit_4col_stepper.
 inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
   const int stride = (SCREEN_W < 380) ? 66 : scale_x(80);
   if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
@@ -328,13 +311,6 @@ inline int &home_weather_text_h() {
   return h;
 }
 
-// ==============================================================================
-// 2. Domain UI Runtime Helpers (defined in include/latter_state.h)
-// ==============================================================================
-
-// ==============================================================================
-// 3.Launcher Counts, Navigation Predicates ([HOME PREDICATE]) & Mode-Bar Motion
-// ==============================================================================
 inline constexpr int tools_launcher_item_count() noexcept {
   return tools_launcher_item_count_for(LATTER_ROUND_DISPLAY != 0, LATTER_HAS_IMU != 0);
 }
@@ -682,7 +658,7 @@ inline int get_dock_slot_stride(const int *win_xs, int vis_count) {
 }
 
 // ==============================================================================
-// 4. Rotary / Touchless Focus State & Ring Primitives
+// Rotary / Touchless Focus State & Ring Primitives
 // ==============================================================================
 inline int &ui_focus_index() {
   static int s_idx = 0;
@@ -716,14 +692,14 @@ inline void clear_ui_focus() {
 
 template <typename DisplayT>
 inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r,
-                                     esphome::Color accent, esphome::Color inner_hi) {
+                                     UiColor accent, UiColor inner_hi) {
   fast_circle_aa(it, cx, cy, static_cast<float>(r) + 2.5f, accent, 2.0f);
   fast_circle_aa(it, cx, cy, static_cast<float>(r) + 1.0f, inner_hi, 1.0f);
 }
 
 template <typename DisplayT>
 inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h,
-                                   esphome::Color accent, esphome::Color inner_hi) {
+                                   UiColor accent, UiColor inner_hi) {
   const int x0 = cx - w / 2;
   const int y0 = cy - h / 2;
   fast_rect_outline(it, x0 - 2, y0 - 2, w + 4, h + 4, accent);

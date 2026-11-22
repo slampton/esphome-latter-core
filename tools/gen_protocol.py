@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 from typing import Any
 
 _CPP_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")

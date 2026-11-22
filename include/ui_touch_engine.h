@@ -3,9 +3,16 @@
 // ==============================================================================
 // Latter Compiled On-Device Touch, Rotary & Hit-Table Input Engine
 // (include/ui_touch_engine.h)
-// Unifies TouchRouter (TOUCH_DEBOUNCE_*, allow_tap) + TouchGestureEngine
-// (FrameHitTable tap/slider/focus dispatch + mm swipe gestures).
+// Pure C++20 L3 header — zero ESPHome or HAL includes; compiles standalone on
+// both ESP32 and 5-geometry host tests. Absorbs compute_touch_context().
 // ==============================================================================
+
+#include "state/device_runtime_state.h"
+#include "ui_compositor.h"
+#include "ui_hit_table.h"
+#include "ui_layout.h"
+#include "ui_types.h"
+#include "ui_widgets.h"
 
 #include <algorithm>
 #include <cmath>
@@ -13,25 +20,96 @@
 #include <string>
 #include <string_view>
 
-#include "latter_state.h"
-#include "ui_hit_table.h"
-
-#if __has_include("esphome/core/defines.h")
-#include "audio_router.h"
-#include "hal_power_pm.h"
-#include "latter_actions.h"
-#include "ui_compositor.h"
-#include "ui_layout.h"
-#include "ui_types.h"
-#include "ui_widgets.h"
-#endif
-
 namespace latter_ui {
 
 // ==============================================================================
-// Pure-C++20 Clean-Sheet Music App v3 Multi-Geometry Layout, Modal Hit Isolation
-// & Synced LRC Smooth-Scroll Engine (shared by page_music.cpp, touch_engine.cpp
-// & standalone host unit tests across 466x466, 480x480, 410x502, 320x480, 720x720)
+// 1. Canonical Touch Context Fingerprint (moved out of L0 state headers)
+// ==============================================================================
+inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+  const int gp = rs.nav.gui_page;
+  int sub = 0;
+  int drill = 0;
+  switch (gp) {
+    case 1:
+      sub = rs.nav.home_subpage;
+      break;
+    case 2:
+      sub = ((static_cast<int>(rs.music.view) & 0x0F) << 4) |
+            ((static_cast<int>(rs.music.drilldown) & 0x03) << 2) |
+            (static_cast<int>(rs.music.takeover) & 0x03);
+      if ((rs.music.view == MusicView::LIBRARY && rs.music.drilldown == MusicDrilldown::LIB_LIST) ||
+          rs.music.view == MusicView::ALBUM_TRACKS) {
+        for (char ch : rs.music.selected_category_mode) {
+          drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0x7F;
+        }
+      } else if (rs.music.view == MusicView::SETTINGS) {
+        drill = ((rs.music.mode_bar_win_start & 0x07) << 3) | (rs.music.settings_page & 0x07);
+      } else {
+        drill = rs.music.mode_bar_win_start & 0x7F;
+      }
+      break;
+    case 3:
+      sub = rs.nav.active_game;
+      break;
+    case 4:
+      sub = rs.nav.system_menu_mode;
+      break;
+    case 5:
+      sub = rs.nav.sky_weather_subpage;
+      break;
+    case 6:
+      sub = rs.nav.area_subpage;
+      drill = (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") ? 1 : 0;
+      break;
+    case 7:
+      sub = rs.nav.remote_subpage;
+      break;
+    case 8:
+      sub = rs.nav.tools_subpage;
+      break;
+    case 9:
+      sub = home_hub_tab();
+      drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
+              (((sub == HomeHubTab::INTERCOM ? home_hub_state().broadcast_page
+                                             : home_hub_state().entry_page) & 0x0F) << 3);
+      break;
+    case 10:
+      sub = rs.nav.time_subpage;
+      if (sub == 1 && rs.timers.view_slot > 0) {
+        drill = rs.timers.view_slot;
+      } else if (sub == 2 && rs.alarms.edit_idx > 0) {
+        drill = rs.alarms.edit_idx;
+      }
+      break;
+    case 11:
+      sub = rs.nav.pinned_menu_page;
+      break;
+    case 12:
+      sub = rs.cal.subpage;
+      drill = (rs.cal.drilldown & 0x1F) | (rs.cal.delete_confirm_open ? 0x40 : 0);
+      break;
+    case 13:
+      sub = rs.cameras.tab;
+      drill = (rs.cameras.hud_active ? 1 : 0) |
+              (rs.cameras.quick_reply_open ? 2 : 0) |
+              (((sub == CamerasTab::SETTINGS ? rs.cameras.settings_page
+                                             : rs.cameras.grid_page) & 0x07) << 2);
+      break;
+    default:
+      break;
+  }
+  if (rs.nav.shortcut_confirm.open) {
+    drill = (drill & 0x7F) | 0x80;
+  }
+  int ctx = ((gp & 0xFF) << 16) | ((sub & 0xFF) << 8) | (drill & 0xFF);
+  if (rs.nav.quick_actions_open) {
+    ctx |= (1 << 24);
+  }
+  return ctx;
+}
+
+// ==============================================================================
+// 2. Music App v3 Multi-Geometry Layout & Synced LRC Smooth-Scroll Engine
 // ==============================================================================
 struct MusicNowPlayingGeom {
   int w{466};
@@ -39,7 +117,6 @@ struct MusicNowPlayingGeom {
   int cx{233};
   int min_hit{73};
 
-  // Top Metadata + Progress Bar Zone (within [0, music_metadata_band_y1])
   int title_y{38};
   int sub_y{66};
   int prog_x0{93};
@@ -52,7 +129,6 @@ struct MusicNowPlayingGeom {
   int scrub_open_w{374};
   int scrub_open_h{92};
 
-  // Center Transport Zone (GlassVariant::Clear)
   int transport_cy{228};
   int prev_cx{135};
   int play_cx{233};
@@ -62,7 +138,6 @@ struct MusicNowPlayingGeom {
   int play_hit_r{38};
   int side_hit_r{37};
 
-  // Bottom Active Speaker Caption + 8-Slot 2-Page Stadium Mode Bar
   int spk_caption_y{352};
   int mode_bar_cy{398};
   int mode_bar_r{28};
@@ -216,7 +291,6 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
   const int rows = std::clamp(visible_rows, 1, 5);
   const int idx = std::clamp(row_idx, 0, rows - 1);
 
-  // D-072: Universal slot5_* standard (identical width, height, and vertical rhythm to System Settings).
   g.card_w = ly.list_card_w;
   g.card_h = ly.slot5_h;
   g.card_x0 = ly.cx - (g.card_w / 2);
@@ -226,8 +300,6 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
   if (content_top <= std_top + 2 && std_bot <= content_bot + 2) {
     g.cy_row = ly.slot5_y(idx);
   } else {
-    // Only when a header action strip (e.g. Queue Shuffle|Rep|Clear on <=520 panels) occupies the top band:
-    // keep exact list_card_w x slot5_h button sizing and distribute cleanly between content_top and content_bot.
     const int avail_h = std::max(rows * g.card_h, content_bot - content_top);
     const int std_gap = std::max(4, ly.slot5_stride - g.card_h);
     const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, std_gap) : 0;
@@ -280,8 +352,6 @@ inline constexpr MusicInfoGeom compute_music_info_geom(
   return g;
 }
 
-// Advances synced LRC scroll_px toward the active lyric line anchored at ~38% of screen height
-// via a smooth 240 ms ease_out_cubic curve (honoring the 6 s manual scroll override window).
 inline void step_music_lyrics_auto_scroll(
     MusicLyricsState &lyr, uint32_t pos_ms, uint32_t now_ms,
     int anchor_y_in_viewport, const int *line_doc_cys, int line_count, int max_scroll_px) noexcept {
@@ -307,7 +377,6 @@ inline void step_music_lyrics_auto_scroll(
                           ? std::clamp(line_doc_cys[act] - anchor_y_in_viewport, 0, clamped_max)
                           : 0;
   if (lyr.active_line_idx < 0 && act >= 0) {
-    // Initial entry into synced lyrics: snap cleanly to the live verse.
     lyr.active_line_idx = act;
     lyr.scroll_px = desired;
     lyr.from_scroll_px = desired;
@@ -342,17 +411,9 @@ inline void step_music_lyrics_auto_scroll(
   }
 }
 
-#if __has_include("esphome/core/defines.h")
-
-// ------------------------------------------------------------------------------
-// 1. Touch Timing Constants, TouchGestureState & TouchRouter
-//    Defined in include/ui_hit_table.h (TOUCH_DEBOUNCE_*, touch_router(),
-//    touch_gesture(), TouchPt) so host unit tests exercise them directly.
-// ------------------------------------------------------------------------------
-
-// ------------------------------------------------------------------------------
-// 2. Host Hardware / Entity Bridge Enums (implemented in modules/system_core.yaml)
-// ------------------------------------------------------------------------------
+// ==============================================================================
+// 3. Host Hardware / Entity Bridge Enums & TouchGestureEngine
+// ==============================================================================
 enum class UiHostCmd : uint8_t {
   SCHEDULE_DISP_UPDATE = 0,
   SCHEDULE_BAND_DISP_UPDATE,
@@ -464,7 +525,6 @@ struct UiTouchRuntime {
 
   ExecCmdFn exec_cmd{nullptr};
 
-  // Per-event live hardware/ESPHome snapshot
   const char *friendly_name{""};
   const char *fw_version{""};
   std::string fw_latest_version{};
@@ -485,8 +545,8 @@ struct UiTouchRuntime {
   int time_day_of_week{-1};
   uint32_t time_epoch{0};
 
-  esphome::Color *theme_primary{nullptr};
-  esphome::Color *theme_secondary{nullptr};
+  UiThemeSlot theme_primary{};
+  UiThemeSlot theme_secondary{};
 
   void cmd(UiHostCmd c, int a = 0, int b = 0) const {
     if (exec_cmd != nullptr) exec_cmd(c, a, b);
@@ -519,7 +579,27 @@ class TouchGestureEngine {
   void navigate_home(uint32_t now_ms);
   void navigate_to_start_screen(uint32_t now_ms);
 
+  // Internal cross-TU helpers (implemented in touch_*.cpp)
+  bool try_commit_long_press_(uint32_t now_ms);
+  bool try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms);
+  bool handle_pin_pad_tap(int tx, int ty, uint32_t now_ms);
+  bool gate_or_dispatch_area_action(const std::string &domain_or_entity,
+                                    const std::string &action, int level,
+                                    const char *pin_prompt, uint32_t now_ms,
+                                    std::string_view success_feedback = "");
+  bool gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms,
+                                     std::string_view success_feedback = "");
+  bool gate_or_dispatch_doorbell_unlock(uint32_t now_ms);
+
+  bool handle_tap_nav_and_takeovers_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
+  bool handle_tap_music_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
+  bool handle_tap_home_area_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
+  bool handle_tap_time_cal_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
+  bool handle_tap_system_tools_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
+  bool handle_tap_cameras_games_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
+
  private:
+  friend struct TouchEngineAccess;
   UiTouchRuntime rt_{};
   uint32_t last_touch_activity_ms_{0};
   uint32_t last_drag_sleep_rst_ms_{0};
@@ -534,22 +614,11 @@ class TouchGestureEngine {
   bool pending_doorbell_unlock_{false};
   int music_scroll_last_y_{0};
   std::string pending_pin_feedback_{};
-
-  bool try_commit_long_press_(uint32_t now_ms);
-  bool try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms);
-  bool handle_pin_pad_tap(int tx, int ty, uint32_t now_ms);
-  bool gate_or_dispatch_area_action(const std::string &domain_or_entity,
-                                    const std::string &action, int level,
-                                    const char *pin_prompt, uint32_t now_ms,
-                                    std::string_view success_feedback = "");
-  bool gate_or_dispatch_alarm_action(const std::string &action, uint32_t now_ms,
-                                     std::string_view success_feedback = "");
-  bool gate_or_dispatch_doorbell_unlock(uint32_t now_ms);
 };
 
 TouchGestureEngine &touch_engine();
 void activate_music_peer_tab(MusicView target, uint32_t now_ms);
-
-#endif  // __has_include("esphome/core/defines.h")
+void request_music_lyrics_refresh(const std::string &track_key, const std::string &speaker_entity,
+                                  uint32_t now_ms);
 
 }  // namespace latter_ui

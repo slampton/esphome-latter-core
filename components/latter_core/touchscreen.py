@@ -1,11 +1,13 @@
-"""First-party Latter Touch HAL platform (`platform: latter_core`) for ESPHome `touchscreen:`."""
+"""First-party Latter Touch HAL platform (`platform: latter_core`) for ESPHome."""
 
 from __future__ import annotations
 
-from esphome import pins
+from typing import Any
+
 import esphome.codegen as cg
-from esphome.components import i2c, touchscreen
 import esphome.config_validation as cv
+from esphome import pins
+from esphome.components import i2c, touchscreen
 from esphome.const import CONF_ID, CONF_INTERRUPT_PIN, CONF_RESET_PIN
 
 from . import latter_core_ns
@@ -53,8 +55,8 @@ CONFIG_SCHEMA = (
 )
 
 
-async def to_code(config: dict) -> None:
-    """Instantiate LatterTouchscreen and bind protocol, I2C bus, and optional IRQ/reset pins."""
+async def to_code(config: dict[str, Any]) -> None:
+    """Instantiate LatterTouchscreen and bind protocol, I2C bus, and IRQ/reset pins."""
     var = cg.new_Pvariable(config[CONF_ID])
     await touchscreen.register_touchscreen(var, config)
     await i2c.register_i2c_device(var, config)

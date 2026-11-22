@@ -1,16 +1,17 @@
 #pragma once
 
 // ==============================================================================
-// Latter UI Core Types, Panel Traits, Chrome Tokens & Fast Math (include/ui_types.h)
-// Portable across circular (466x466), watch (410x502), and rectangular/square
-// (320x480, 480x480, 720x720) displays. Zero-exception (-fno-exceptions).
+// Latter UI Core Subpage Constants, Fast Trig, 3D Projection & Cadence Math
+// (include/ui_types.h)
+// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
 // ==============================================================================
 
-#include "esphome/core/defines.h"
-#include "esphome/core/color.h"
-#include "esphome/core/hal.h"
-#include "latter_state.h"
+#include "ui_color.h"
 #include "ui_hit_table.h"
+#include "ui_page_geoms.h"
+#include "ui_panel_metrics.h"
+#include "ui_panel_traits.h"
+#include "ui_surface.h"
 
 #include <algorithm>
 #include <cmath>
@@ -23,86 +24,7 @@
 #include <string_view>
 #include <type_traits>
 
-#ifndef LATTER_PSRAM_BSS
-#define LATTER_PSRAM_BSS
-#endif
-
-// Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
-#ifndef LATTER_SCREEN_W
-#define LATTER_SCREEN_W 466
-#endif
-#ifndef LATTER_SCREEN_H
-#define LATTER_SCREEN_H 466
-#endif
-#ifndef LATTER_ROUND_DISPLAY
-#define LATTER_ROUND_DISPLAY 1
-#endif
-#ifndef LATTER_HAS_IMU
-#define LATTER_HAS_IMU 1
-#endif
-#ifndef LATTER_HAS_BATTERY
-#define LATTER_HAS_BATTERY 1
-#endif
-#ifndef LATTER_IS_STATIONARY
-#define LATTER_IS_STATIONARY 0
-#endif
-#ifndef LATTER_IS_WEARABLE
-#define LATTER_IS_WEARABLE 0
-#endif
-#ifndef LATTER_HAS_TOUCH
-#define LATTER_HAS_TOUCH 1
-#endif
-#ifndef LATTER_HAS_DISPLAY
-#define LATTER_HAS_DISPLAY 1
-#endif
-#ifndef LATTER_HAS_AUDIO
-#define LATTER_HAS_AUDIO 1
-#endif
-#ifndef LATTER_HAS_MIC
-#define LATTER_HAS_MIC LATTER_HAS_AUDIO
-#endif
-#ifndef LATTER_HAS_SPEAKER
-#define LATTER_HAS_SPEAKER LATTER_HAS_AUDIO
-#endif
-#ifndef LATTER_CHIP_P4
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-#define LATTER_CHIP_P4 1
-#else
-#define LATTER_CHIP_P4 0
-#endif
-#endif
-#ifndef LATTER_PSRAM_MB
-#define LATTER_PSRAM_MB (LATTER_CHIP_P4 ? 32 : 8)
-#endif
-#ifndef LATTER_PANEL_IPS
-#if defined(LATTER_BACKLIGHT_PIN)
-#define LATTER_PANEL_IPS 1
-#else
-#define LATTER_PANEL_IPS 0
-#endif
-#endif
-#ifndef LATTER_PANEL_PPI
-#define LATTER_PANEL_PPI 266
-#endif
-#ifndef LATTER_CORNER_R
-#if LATTER_ROUND_DISPLAY
-#define LATTER_CORNER_R (LATTER_SCREEN_W / 2)
-#elif LATTER_IS_WEARABLE
-#define LATTER_CORNER_R 98
-#else
-#define LATTER_CORNER_R 20
-#endif
-#endif
-
 namespace latter_ui {
-
-static constexpr int SCREEN_W = LATTER_SCREEN_W;
-static constexpr int SCREEN_H = LATTER_SCREEN_H;
-static constexpr int SCREEN_CX = SCREEN_W / 2;
-static constexpr int SCREEN_CY = SCREEN_H / 2;
-static constexpr int SCREEN_R = SCREEN_W / 2;
-static constexpr int SCREEN_MIN_DIM = (SCREEN_W < SCREEN_H) ? SCREEN_W : SCREEN_H;
-static constexpr int SCREEN_MIN_R = SCREEN_MIN_DIM / 2;
 
 inline constexpr int mm_to_px(float mm) { return mm_to_px_for(mm, LATTER_PANEL_PPI); }
 inline constexpr int scale_x(int v466) { return scale_x_for(v466, SCREEN_W); }
@@ -121,65 +43,6 @@ static constexpr int STD_ART_SIZE = scale_min(264);
 static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? scale_min(426) : (SCREEN_H - scale_y(28));
 static constexpr int kHomeBarY = LATTER_ROUND_DISPLAY ? scale_min(434) : (SCREEN_H - scale_y(11));
 
-// Shared chrome color tokens (docs/device-ui-design.md).
-inline const esphome::Color kChromeShadow(0, 0, 0);
-inline const esphome::Color kChromeHomePill(175, 190, 210);
-inline const esphome::Color kChromeTrack(30, 38, 50);
-inline const esphome::Color kChromeTrackBorder(50, 62, 78);
-inline const esphome::Color kChromeTrackDim(16, 20, 26);
-inline const esphome::Color kChromeTrackBorderDim(24, 30, 38);
-inline const esphome::Color kChromeBarTrack(16, 20, 27);
-inline const esphome::Color kChromeCardBorder(38, 46, 58);
-inline const esphome::Color kChromePipInactive(95, 112, 134);
-inline const esphome::Color kChromeBackLabel(158, 158, 158);
-inline const esphome::Color kChromeGlassTint(22, 27, 36);
-inline const esphome::Color kChromeGlassSheen(255, 255, 255);
-inline const esphome::Color kChromeCardBgOn(24, 30, 38);
-inline const esphome::Color kChromeCardBgOff(15, 18, 24);
-inline const esphome::Color kChromeCardBrdOn(52, 62, 78);
-inline const esphome::Color kChromeCardBrdOff(34, 40, 50);
-inline const esphome::Color kChromeDangerBg(34, 18, 22);
-inline const esphome::Color kChromeDangerBrd(148, 52, 52);
-inline const esphome::Color kChromeModalBg(16, 20, 28);
-inline const esphome::Color kChromeKeyBg(20, 25, 33);
-inline const esphome::Color kChromeKeyBrd(44, 54, 68);
-inline const esphome::Color kChromeWheelInnerRing(70, 82, 96);
-inline const esphome::Color kChromeWheelOuterRing(42, 50, 62);
-inline const esphome::Color kChromeMuted(140, 152, 168);
-inline const esphome::Color kChromeSubtle(128, 140, 156);
-inline const esphome::Color kChromeCustomSecondary(192, 192, 192);
-
-// Canonical Light Inspector color-temperature slider bounds (Kelvin).
-inline constexpr int kLightKelvinMin = 2700;
-inline constexpr int kLightKelvinMax = 6500;
-inline const esphome::Color kChromeLightFill(92, 68, 22);
-inline const esphome::Color kChromeCoverFill(34, 68, 96);
-inline const esphome::Color kChromeFanFill(24, 76, 64);
-inline const esphome::Color kChromeFanAccent(48, 196, 156);
-inline const esphome::Color kChromeTeleIce(185, 225, 255);
-inline const esphome::Color kChromeWarmKelvin(255, 168, 72);
-inline const esphome::Color kChromeCoolKelvin(185, 222, 255);
-inline const esphome::Color kChromeDegSilver(204, 214, 228);
-inline const esphome::Color kChromeDayGold(255, 225, 110);
-inline const esphome::Color kChromeRgbRed(255, 95, 95);
-inline const esphome::Color kChromeRgbGreen(90, 225, 135);
-inline const esphome::Color kChromeRgbBlue(95, 165, 255);
-inline const esphome::Color kChromeGridDivider(44, 52, 68);
-inline const esphome::Color kChromeGridBg(14, 18, 24);
-inline const esphome::Color kChromeGridLine(28, 34, 46);
-inline const esphome::Color kChromeCaptionBg(10, 14, 20);
-inline const esphome::Color kChromeDwellTrack(48, 56, 72);
-inline const esphome::Color kChromePlayGlyph(245, 248, 252);
-inline const esphome::Color kChromePauseGlyph(12, 16, 22);
-
-// Universal 2-Tier Neutral Smoked Glass Material System (D-037, D-041):
-//   Clear        -> kChromeGlassTint(22, 27, 36), fixed backdrop-invariant 37.5-45.3% frosted template (96..116/256)
-//   ReadableDark -> kChromeModalBg(16, 20, 28), ~81-95% floor (208..244/256) reserved for high-opacity opt-in
-enum class GlassVariant : uint8_t {
-  Clear = 0,
-  ReadableDark = 1,
-};
-
 namespace HomeSubpage {
   static constexpr int MAIN             = 0;
   static constexpr int SETTINGS         = 1;
@@ -187,20 +50,20 @@ namespace HomeSubpage {
 }  // namespace HomeSubpage
 
 namespace SystemMenuMode {
-  static constexpr int DASHBOARD      = 0;
-  static constexpr int SLEEP_WAKE     = 1;
-  static constexpr int DISPLAY        = 2;
-  static constexpr int ACTIONS        = 3;
+  static constexpr int DASHBOARD       = 0;
+  static constexpr int SLEEP_WAKE      = 1;
+  static constexpr int DISPLAY         = 2;
+  static constexpr int ACTIONS         = 3;
   static constexpr int CONFIRM_RESTART = 4;
-  static constexpr int UPDATE         = 5;
-  static constexpr int CONFIRM_UPDATE = 6;
-  static constexpr int SOUND          = 7;
-  static constexpr int SYSTEM_INFO    = 8;
-  static constexpr int MUSIC          = 9;
-  static constexpr int HOME_SETTINGS  = 10;
-  static constexpr int VOICE          = 11;
-  static constexpr int WW_SENSITIVITY = 12;
-  static constexpr int COLOR_WHEEL    = 13;
+  static constexpr int UPDATE          = 5;
+  static constexpr int CONFIRM_UPDATE  = 6;
+  static constexpr int SOUND           = 7;
+  static constexpr int SYSTEM_INFO     = 8;
+  static constexpr int MUSIC           = 9;
+  static constexpr int HOME_SETTINGS   = 10;
+  static constexpr int VOICE           = 11;
+  static constexpr int WW_SENSITIVITY  = 12;
+  static constexpr int COLOR_WHEEL     = 13;
 }  // namespace SystemMenuMode
 
 namespace TimeSubpage {
@@ -214,22 +77,7 @@ namespace AreaSubpage {
   static constexpr int OVERVIEW     = 0;
   static constexpr int PICKER       = 1;
   static constexpr int LIGHT_DETAIL = 2;
-  static constexpr int COLOR_WHEEL  = 3;
-  static constexpr int CLIMATE      = 4;
-  static constexpr int COVERS       = 5;
-  static constexpr int SCENES       = 6;
-  static constexpr int SECURITY     = 7;
 }  // namespace AreaSubpage
-
-namespace MusicOverlayMode {
-  static constexpr int NOW_PLAYING     = 0;
-  static constexpr int SPEAKERS        = 1;
-  static constexpr int LIBRARY_CATS    = 2;
-  static constexpr int ITEM_BROWSER    = 3;
-  static constexpr int SPEAKER_ACTIONS = 4;
-  static constexpr int MUSIC_HUB       = 5;
-  static constexpr int TRACK_INSPECTOR = 6;
-}  // namespace MusicOverlayMode
 
 // Trigonometric & Circular Clipping Lookup Tables (.rodata Flash)
 static constexpr float PI_F = 3.14159265358979323846f;
@@ -433,80 +281,6 @@ inline float hash2d_01(int x, int y) {
   return static_cast<float>((n ^ (n >> 16)) & 0xFFFFU) * (1.0f / 65535.0f);
 }
 
-inline esphome::Color hsv_to_rgb(float h, float s, float v) {
-  h = h - static_cast<float>(static_cast<int>(h));
-  if (h < 0.0f) h += 1.0f;
-  float r = v, g = v, b = v;
-  if (s > 0.0f) {
-    const float h6 = h * 6.0f;
-    const int sector = static_cast<int>(h6);
-    const float f = h6 - static_cast<float>(sector);
-    const float p = v * (1.0f - s);
-    const float q = v * (1.0f - s * f);
-    const float t = v * (1.0f - s * (1.0f - f));
-    switch (sector % 6) {
-      case 0: r = v; g = t; b = p; break;
-      case 1: r = q; g = v; b = p; break;
-      case 2: r = p; g = v; b = t; break;
-      case 3: r = p; g = q; b = v; break;
-      case 4: r = t; g = p; b = v; break;
-      default: r = v; g = p; b = q; break;
-    }
-  }
-  return {static_cast<uint8_t>(r * 255.0f),
-          static_cast<uint8_t>(g * 255.0f),
-          static_cast<uint8_t>(b * 255.0f)};
-}
-
-inline esphome::Color lerp_color(esphome::Color a, esphome::Color b, float k) {
-  if (k <= 0.0f) return a;
-  if (k >= 1.0f) return b;
-  return {static_cast<uint8_t>(a.r + (b.r - a.r) * k),
-          static_cast<uint8_t>(a.g + (b.g - a.g) * k),
-          static_cast<uint8_t>(a.b + (b.b - a.b) * k)};
-}
-
-inline esphome::Color scale_color(esphome::Color c, float scale) {
-  if (scale <= 0.0f) return kChromeShadow;
-  if (scale >= 1.0f) return c;
-  return {static_cast<uint8_t>(c.r * scale),
-          static_cast<uint8_t>(c.g * scale),
-          static_cast<uint8_t>(c.b * scale)};
-}
-
-inline void apply_custom_rgb_harmony(uint32_t rgb, esphome::Color &out_primary, esphome::Color &out_secondary) {
-  out_primary = {static_cast<uint8_t>((rgb >> 16) & 0xFFU),
-                 static_cast<uint8_t>((rgb >> 8) & 0xFFU),
-                 static_cast<uint8_t>(rgb & 0xFFU)};
-  out_secondary = kChromeCustomSecondary;
-}
-
-inline uint32_t parse_hex_rgb(const std::string &hex_str, uint32_t fallback = 0x3898FFU) {
-  std::string s = hex_str;
-  if (!s.empty() && s[0] == '#') s = s.substr(1);
-  if (s.size() != 6) return fallback;
-  char *endptr = nullptr;
-  const unsigned long val = std::strtoul(s.c_str(), &endptr, 16);
-  if (endptr == s.c_str()) return fallback;
-  return static_cast<uint32_t>(val & 0xFFFFFFUL);
-}
-
-inline std::string format_hex_rgb(uint32_t rgb) {
-  char buf[12];
-  std::snprintf(buf, sizeof(buf), "#%06lX", static_cast<unsigned long>(rgb & 0xFFFFFFUL));
-  return std::string(buf);
-}
-
-inline float &color_wheel_hue_deg() {
-  static float h = 210.0f;
-  return h;
-}
-
-inline float &color_wheel_sat() {
-  static float s = 0.78f;
-  return s;
-}
-
 // One motion system (docs/device-ui-design.md): kMotionMs = 210 ms, ease-out cubic.
 static constexpr uint32_t kMotionMs = 210U;
 
@@ -547,8 +321,6 @@ inline bool disp_render_in_flight(uint32_t now_ms) {
          ((now_ms - start_ms) < 250U);
 }
 
-inline bool disp_render_in_flight() { return disp_render_in_flight(esphome::millis()); }
-
 inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
 #if LATTER_CHIP_P4
   (void)mww_running;
@@ -558,15 +330,6 @@ inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
 #endif
 }
 
-// Ambient visual stepper (weather sky, docked screensavers) driven from a 20 ms tick.
-// last_disp_update_end_ms() is stamped after the QSPI/DSI panel transfer finishes, and
-// FrameProfileScope stamps last_ambient_anim_ms() with frame start time so out-of-band redraws
-// coalesce without shifting scheduled frame phase.
-// Cadences:
-//   - ESP32-P4: 60 ms (16.7 FPS, min_period = 54 ms, 16 ms post-idle) idle or SRAM wake-word;
-//               80 ms (12.5 FPS, min_period = 74 ms, 26 ms post-idle) during speaker audio.
-//   - ESP32-S3: 60 ms (16.7 FPS, min_period = 54 ms, 18 ms post-idle) idle without PSRAM wake-word;
-//               80 ms (12.5 FPS, min_period = 74 ms, 32 ms post-idle) while Octal-PSRAM mww or speaker audio runs.
 inline constexpr uint32_t min_ambient_frame_gap_ms(bool speaker_audio_busy,
                                                    bool va_busy = false, bool alert_busy = false,
                                                    bool mww_passive_busy = false) noexcept {
@@ -596,9 +359,8 @@ inline bool should_step_ambient_anim(uint32_t now_ms, bool speaker_audio_busy,
   return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 
-inline int menu_scroll_shift(int span_px) {
-  const uint32_t elapsed = esphome::millis() - menu_scroll_start_ms();
-  const float e = ease_out_cubic(static_cast<float>(elapsed) / static_cast<float>(kMotionMs));
+inline int menu_scroll_shift_elapsed(int span_px, uint32_t elapsed_ms) {
+  const float e = ease_out_cubic(static_cast<float>(elapsed_ms) / static_cast<float>(kMotionMs));
   return static_cast<int>(std::lround(static_cast<float>(span_px) * e));
 }
 
@@ -650,12 +412,12 @@ inline void format_time_hhmm(int hour, int minute, bool is_24h, char *out_buf,
       std::snprintf(out_buf, out_sz, "%d:%02d", h12, minute);
     }
     if (ap_buf != nullptr) {
-      std::strcpy(ap_buf, (hour >= 12) ? "PM" : "AM");
+      ap_buf[0] = (hour >= 12) ? 'P' : 'A';
+      ap_buf[1] = 'M';
+      ap_buf[2] = '\0';
     }
   }
 }
-
-// (Shared UI navigation sub-view accessors live in include/latter_state.h)
 
 inline bool clock_smooth_sweep_active(bool usb_connected, uint32_t now_ms,
                                       uint32_t latest_input_ms, uint8_t clock_face) noexcept {
@@ -679,7 +441,6 @@ inline float smooth_second_with_frac(int sec, uint32_t now_ms, bool smooth_activ
   return static_cast<float>(clamped_sec) + frac;
 }
 
-// Returns false when neither the clock nor Home Assistant's moon phase is known (outputs untouched then).
 inline bool compute_synodic_moon_phase(bool time_valid, int64_t epoch_sec, const std::string &fallback_phase,
                                        double &out_cycle, int *out_illum = nullptr, std::string *out_label = nullptr) {
   double cycle = 0.5;

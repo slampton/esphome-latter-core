@@ -8,21 +8,25 @@ For the universal GUI's visual, touch, glass, and performance rules, read the **
 
 ```yaml
 packages:
-  hal:              !include boards/<your_board>.yaml             # board HAL & LATTER_* traits
-  latter_core:      !include modules/system_core.yaml             # includes modules/base.yaml
-  latter_power:     !include modules/power_manager.yaml           # DisplayLifecycleController & sleep
-  latter_audio:     !include modules/audio_voice.yaml             # 48 kHz audio, wake word & Assist
-  latter_display:   !include modules/display_pipeline.yaml        # online_image slots & backlight
-  latter_timers:    !include modules/timers_and_fetchers.yaml     # local timers, alarms & RPC ticks
-  my_gui:           !include guis/my_gui/gui.yaml                 # your custom GUI
+  hal:                    !include boards/<your_board>.yaml             # board HAL & LATTER_* traits
+  latter_system:          !include modules/system_core.yaml             # includes modules/base.yaml
+  latter_system_ui_sync:  !include modules/system_ui_sync.yaml          # Protocol v3 UI sync & themes
+  latter_power_policy:    !include modules/power_policy.yaml            # DisplayLifecycleController & radio policy
+  latter_sleep_lifecycle: !include modules/sleep_lifecycle.yaml         # light-sleep & hibernate lifecycle
+  latter_audio_pipeline:  !include modules/audio_pipeline.yaml          # 48 kHz audio mixer, Sendspin & sounds
+  latter_voice_assistant: !include modules/voice_assistant.yaml         # micro_wake_word & Assist satellite
+  latter_audio_scripts:   !include modules/audio_scripts.yaml           # alerts, chimes & audio routing scripts
+  latter_display:         !include modules/display_pipeline.yaml        # online_image slots & backlight
+  latter_timers:          !include modules/timers_and_fetchers.yaml     # local timers, alarms & RPC ticks
+  my_gui:                 !include guis/my_gui/gui.yaml                 # your custom GUI
 ```
 
 > **Headless vs. Custom Display Builds:** `display_pipeline.yaml` expects `id: disp1` and compiles `latter_ui`. For a truly screenless node (no display at all), include **`modules/base.yaml`** with `latter_core: { gui: "none" }` instead—see [`examples/minimal_headless_companion.yaml`](../examples/minimal_headless_companion.yaml).
 
 A custom GUI package provides three things:
 1. **A `display:` render lambda** extending `id: disp1` (`auto_clear_enabled: false`).
-2. **Touch handling** extending `id: touch_screen` (omit on non-touch hardware and drive input via `ui_input_event` / `latter_ui_input`).
-3. **Theme color IDs** (`theme_primary`, `theme_secondary`, `col_bg`, `col_gold`, `col_warm_gold`, `col_orange`, `col_red`, `col_green`), written by `apply_theme_preset` in `modules/system_core.yaml`.
+2. **Touch handling** extending `id: touch_screen` (omit on non-touch hardware and drive input via `ui_input_event`).
+3. **Theme color IDs** (`theme_primary`, `theme_secondary`, `col_bg`, `col_gold`, `col_warm_gold`, `col_orange`, `col_red`, `col_green`), written by `apply_theme_preset` in `modules/system_ui_sync.yaml`.
 
 ---
 
@@ -114,30 +118,30 @@ touchscreen:
 
 ## What the Core Gives You
 
-### 1. Runtime, Persisted & Protocol v3 State ([`latter_state.h`](../include/latter_state.h))
+### 1. Runtime, Persisted & Protocol v3 State ([`include/state/`](../include/state/))
 
 | Kind | Accessors |
 | :--- | :--- |
 | **Navigation & lifecycle** | `latter_ui::runtime_state().nav` (`gui_page`, `home_subpage`, `time_subpage`, `area_subpage`, `remote_subpage`, `tools_subpage`, `sky_weather_subpage`, `system_menu_mode`, `active_game`, `display_power_state` `0` active / `1` screensaver / `2` off, `is_hibernating`, `ota_in_progress`) |
-| **Persisted preferences** | `latter_ui::persisted_prefs()` (`PersistedDevicePrefs` **v6** POD: 50 typed `PrefKey`s, `alarms[3]`, `custom_theme_rgb`, game high scores; synced 2-way via `device_prefs` & `set_device_prefs`) plus `latter_ui::hibernate_snapshot()` (cold-boot NVS hydration) |
-| **Protocol v3 domains (6)** | Reduced by `latter_ui::v3_domain_reducer()` into `area_ctx_state()`, `media_state()`, `remote_state()`, `weather_state()`, `calendar_state()`, and `device_prefs_state()` / `persisted_prefs()` |
+| **Persisted preferences** | `latter_ui::persisted_prefs()` (`PersistedDevicePrefs` **v1** append-only POD: typed `PrefKey`s, `alarms[3]`, `custom_theme_rgb`, game high scores; synced 2-way via `device_prefs` & `set_device_prefs`) plus `latter_ui::hibernate_snapshot()` (cold-boot NVS hydration in `include/state/state_nvs_snapshot.h`) |
+| **Protocol v3 domains (7)** | Reduced by `latter_ui::v3_domain_reducer()` (`state_v3_parsers_*.cpp`) into `area_ctx_state()`, `media_state()`, `remote_state()`, `weather_state()`, `calendar_state()`, `shortcuts_state()`, and `device_prefs_state()` / `persisted_prefs()` |
 | **Paginated slots** | `latter_ui::runtime_state().slots` (`SlotBank`: `BROWSE`, `AREA`, `CALENDAR`, `REMOTE`), populated by `latter_set_slots` |
 | **Voice, alerts & timers** | `latter_ui::runtime_state().voice`, `.alert`, `.alarms`, `.timers`, `.stopwatch` |
-| **PSRAM images** | `album_art` (Sendspin), `remote_album_art`, `home_wallpaper_art`, `camera_snapshot_art`, wrapped into `ArtImageView` via `latter_ui::make_art_view(...)` (`ui_gfx.h`) |
+| **PSRAM images** | `album_art` (Sendspin), `remote_album_art`, `home_wallpaper_art`, `screensaver_photo_art`, `camera_snapshot_art`, wrapped into `ArtImageView` via `latter_ui::make_art_view(...)` (`ui_gfx.h`) |
 
-Page and subpage enums (`PageId`, `HomeSubpage`, `TimeSubpage`, `ToolsSubpage`, `AreaSubpage`, `SystemMenuMode`, `GlassVariant`) live in [`ui_types.h`](../include/ui_types.h).
+Page and subpage enums (`PageId`, `HomeSubpage`, `TimeSubpage`, `ToolsSubpage`, `SystemMenuMode`, `GlassVariant`) live in [`ui_types.h`](../include/ui_types.h) and [`include/state/`](../include/state/).
 
 ### 2. Core Controllers, Scripts & Outbound RPC Helpers
 
 | Entry Point | Purpose |
 | :--- | :--- |
-| `latter_ui::display_lifecycle().note_activity(esphome::millis())` | Record user interaction and reset screen/return-to-home idle timers (`include/hal_power_pm.h`) |
-| `wake_to_active_state` *(script)* | Wake the panel and backlight from screen-off or screensaver (`modules/power_manager.yaml`) |
-| `start_voice_assistant`, `toggle_voice_assistant`, `cancel_voice_assistant` *(scripts)* | Start, toggle, or synchronously abort a Voice Assistant session (`modules/audio_voice.yaml`) |
+| `latter_ui::display_lifecycle().note_activity(esphome::millis())` | Record user interaction and reset screen/return-to-home idle timers (`include/hal_display_lifecycle.h`) |
+| `wake_to_active_state` *(script)* | Wake the panel and backlight from screen-off or screensaver (`modules/sleep_lifecycle.yaml`) |
+| `start_voice_assistant`, `toggle_voice_assistant`, `cancel_voice_assistant` *(scripts)* | Start, toggle, or synchronously abort a Voice Assistant session (`modules/voice_assistant.yaml` / `modules/audio_scripts.yaml`) |
 | `latter_ui::media_play_slot(...)`, `media_transport_cmd(...)`, `media_adjust_volume(...)` | Compiled C++20 media playback and speaker actions (`include/audio_router.h`) |
 | `latter_ui::timer_alarm_controller()` + `stop_alarm_sound` *(script)* | Manage local countdown timers, recurring alarms, snooze, and chime teardown |
-| `latter_actions::emit_*` ([`latter_actions.h`](../include/latter_actions.h)) | Typed C++ wrappers around `latter_rpc::emit` for all 17 outbound RPC methods (`emit_music_browse`, `emit_area_action`, `emit_remote_action`, `emit_set_device_prefs`, etc.) |
-| `ui_input_event(action, delta)` *(script)* | Canonical input router (`up`, `down`, `left`, `right`, `select`, `back`, `home` in `modules/system_core.yaml`) |
+| `latter_actions::emit_*` ([`latter_actions.h`](../include/latter_actions.h)) | Typed C++ wrappers around `latter_rpc::emit` for all 20 outbound RPC methods (`emit_music_browse`, `emit_area_action`, `emit_remote_action`, `emit_set_device_prefs`, etc.) |
+| `ui_input_event(action, delta)` *(script)* | Canonical input router (`up`, `down`, `left`, `right`, `select`, `back`, `home` in `modules/system_ui_sync.yaml`) |
 
 ### 3. Coalesced Redraw Scheduling ([`ui_compositor.h`](../include/ui_compositor.h))
 

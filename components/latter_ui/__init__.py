@@ -1,4 +1,4 @@
-"""Latter UI component: stages the 9 clean Latter UI C++20 headers and compiles page/widget TUs."""
+"""Latter UI component: stages the acyclic L0/L2/L3 Latter UI C++20 headers and compiles TUs."""
 
 from __future__ import annotations
 
@@ -16,22 +16,34 @@ DEPENDENCIES = ["latter_core"]
 CONFIG_SCHEMA = cv.Schema({}).extend(cv.COMPONENT_SCHEMA)
 
 UI_HEADERS: tuple[str, ...] = (
-    "ui_types.h",
-    "ui_mdi.h",
-    "ui_gfx.h",
-    "ui_touch_recognizer.h",
+    # L0 Pure C++20 UI Leaves
+    "ui_panel_traits.h",
+    "ui_color.h",
+    "ui_surface.h",
+    "ui_widget_ids.h",
+    "ui_panel_metrics.h",
     "ui_hit_table.h",
+    "ui_page_geoms.h",
+    "ui_types.h",
+    # L2 Pure C++20 Headless UI Infra
+    "ui_mdi.h",
+    "ui_touch_recognizer.h",
+    "ui_dirty_band.h",
+    "ui_frame_context.h",
+    "ui_cadence.h",
+    "ui_gfx.h",
     "ui_layout.h",
     "ui_widgets.h",
     "ui_compositor.h",
-    "ui_touch_engine.h",
+    # L3 Pages, Touch Engine & ESPHome Display Bridge
     "ui_pages.h",
+    "ui_touch_engine.h",
+    "ui_esphome_display.h",
 )
 
 
-async def to_code(config: dict[str, Any]) -> None:
+def _stage_ui_headers() -> None:
     """Copy Latter UI C++20 headers into the build src/ directory and register global includes."""
-    del config
     comp_dir = Path(__file__).resolve().parent
     repo_root = comp_dir.parent.parent
     inc_dir = repo_root / "include"
@@ -52,3 +64,9 @@ async def to_code(config: dict[str, Any]) -> None:
         dst_file = Path(CORE.relative_src_path(hdr))
         shutil.copyfile(src_file, dst_file)
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
+
+
+async def to_code(config: dict[str, Any]) -> None:
+    """ESPHome component code generation hook."""
+    del config
+    _stage_ui_headers()

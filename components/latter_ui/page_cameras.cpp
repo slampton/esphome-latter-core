@@ -1,4 +1,3 @@
-#include "esphome/core/defines.h"
 #include "ui_pages.h"
 #include "hal_video_stream.h"
 
@@ -12,7 +11,7 @@ namespace latter_ui {
 namespace {
 
 // Draws a solid black backdrop for rows outside `inner` (strictly honoring active clip band).
-void fill_black_around_rect(esphome::display::Display &it, const CameraRect &inner, esphome::Color col_black) {
+void fill_black_around_rect(Rgb565Surface &it, const CameraRect &inner, UiColor col_black) {
   const int cy0 = std::max(0, clip_y0());
   const int cy1 = std::min(SCREEN_H - 1, clip_y1());
   if (cy0 > cy1) return;
@@ -49,7 +48,7 @@ void fill_black_around_rect(esphome::display::Display &it, const CameraRect &inn
   }
 }
 
-void draw_live_dot(esphome::display::Display &it, const UiFrameContext &ctx,
+void draw_live_dot(Rgb565Surface &it, const UiFrameContext &ctx,
                    bool streaming, bool paused) {
   const int r = std::max(4, scale_s(5));
   int dx = SCREEN_W - scale_x(26);
@@ -58,14 +57,14 @@ void draw_live_dot(esphome::display::Display &it, const UiFrameContext &ctx,
   dx = ctx.cx + scale_x(72);
   dy = layout().hdr_y;
 #endif
-  const esphome::Color dot_col = paused ? ctx.col_gold : (streaming ? ctx.col_green : ctx.col_slate);
+  const UiColor dot_col = paused ? ctx.col_gold : (streaming ? ctx.col_green : ctx.col_slate);
   fast_filled_circle(it, dx, dy, r + 2, ctx.col_black);
   fast_filled_circle(it, dx, dy, r, dot_col);
 }
 
-void draw_cameras_mode_icon(esphome::display::Display &it, int global_idx,
+void draw_cameras_mode_icon(Rgb565Surface &it, int global_idx,
                             int bx, int by, int icon_r,
-                            esphome::Color fg_col, bool shadow, void *) {
+                            UiColor fg_col, bool shadow, void *) {
   if (global_idx == CamerasTab::GRID) {
     ui::draw_icon_grid_2x2(it, bx, by, icon_r, fg_col, shadow);
   } else if (global_idx == CamerasTab::SINGLE) {
@@ -77,22 +76,22 @@ void draw_cameras_mode_icon(esphome::display::Display &it, int global_idx,
   }
 }
 
-void draw_cam_chev_left(esphome::display::Display &it, int cx, int cy, int r,
-                        esphome::Color col, bool shadow, void *) {
+void draw_cam_chev_left(Rgb565Surface &it, int cx, int cy, int r,
+                        UiColor col, bool shadow, void *) {
   ui::draw_icon_chevron(it, cx, cy, r, false, col, shadow);
 }
 
-void draw_cam_chev_right(esphome::display::Display &it, int cx, int cy, int r,
-                         esphome::Color col, bool shadow, void *) {
+void draw_cam_chev_right(Rgb565Surface &it, int cx, int cy, int r,
+                         UiColor col, bool shadow, void *) {
   ui::draw_icon_chevron(it, cx, cy, r, true, col, shadow);
 }
 
-void render_cameras_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_tab) {
+void render_cameras_mode_bar(Rgb565Surface &it, const UiFrameContext &ctx, int active_tab) {
   ui::mode_bar(it, ctx.cx, 4, std::clamp(active_tab, 0, 3), 0,
                ctx.theme_primary, ctx.col_white, draw_cameras_mode_icon);
 }
 
-void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_camera_quick_reply_sheet(Rgb565Surface &it, const UiFrameContext &ctx,
                                      const CameraRecord *cam) {
   const auto &ly = layout();
   const auto &rs = runtime_state();
@@ -128,9 +127,8 @@ void render_camera_quick_reply_sheet(esphome::display::Display &it, const UiFram
   render_back_button(it, ctx.cx, ctx.font_small, ly.back_y);
 }
 
-void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_cameras_grid_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                              const CameraRecord *cams, int cam_count) {
-  using esphome::display::TextAlign;
   auto &rs = runtime_state();
   const auto &ly = layout();
   const CameraGridGeom g = compute_camera_grid_geom(
@@ -201,7 +199,7 @@ void render_cameras_grid_tab(esphome::display::Display &it, const UiFrameContext
   render_cameras_mode_bar(it, ctx, CamerasTab::GRID);
 }
 
-void render_cameras_single_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                                const CameraRecord *cams, int cam_count) {
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
@@ -345,14 +343,14 @@ void render_cameras_single_tab(esphome::display::Display &it, const UiFrameConte
   if (!rs.intercom.cam_intercom_status.empty() &&
       (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
     ui::shadow_print(it, ctx.cx, act_y - act_h / 2 - scale_y(14), ctx.font_small,
-                     ctx.theme_secondary, esphome::display::TextAlign::CENTER,
+                     ctx.theme_secondary, TextAlign::CENTER,
                      rs.intercom.cam_intercom_status.c_str());
   }
 
   render_cameras_mode_bar(it, ctx, CamerasTab::SINGLE);
 }
 
-void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                                  const CameraRecord *cams, int cam_count) {
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
@@ -411,7 +409,7 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
   const int cap_w = std::min(kMaxContentColW, ly.safe_span(cap_y, 24));
   const std::string fit_cap = fit_text_to_width_font(cap_txt, cap_w - 18, ctx.font_small);
   ui::shadow_print(it, ctx.cx, cap_y, ctx.font_small, ctx.col_white,
-                   esphome::display::TextAlign::CENTER, fit_cap.c_str());
+                   TextAlign::CENTER, fit_cap.c_str());
 
   if (car_cnt > 1) {
     const uint32_t dwell_ms = prefs.camera_carousel_interval_ms();
@@ -466,7 +464,7 @@ void render_cameras_carousel_tab(esphome::display::Display &it, const UiFrameCon
   render_cameras_mode_bar(it, ctx, CamerasTab::CAROUSEL);
 }
 
-void render_cameras_settings_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
+void render_cameras_settings_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ly = layout();
   const auto &prefs = persisted_prefs();
 
@@ -514,21 +512,21 @@ void render_cameras_settings_tab(esphome::display::Display &it, const UiFrameCon
 
 }  // namespace
 
-void render_camera_video_placeholder(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_camera_video_placeholder(Rgb565Surface &it, const UiFrameContext &ctx,
                                      const CameraRect &vp, const char *title, const char *subtitle,
-                                     esphome::Color icon_col) {
+                                     UiColor icon_col) {
   fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, kChromeGridBg);
   const int cy = vp.cy();
   ui::draw_icon_camera(it, vp.cx(), cy - scale_y(22), scale_s(22), icon_col, true);
   if (title != nullptr && title[0] != '\0') {
     const std::string fit = fit_text_to_width_font(std::string(title), std::max(60, vp.w - scale_x(24)), ctx.font_small);
     ui::shadow_print(it, vp.cx(), cy + scale_y(16), ctx.font_small, ctx.col_white,
-                     esphome::display::TextAlign::CENTER, fit.c_str());
+                     TextAlign::CENTER, fit.c_str());
   }
   if (subtitle != nullptr && subtitle[0] != '\0') {
     const std::string fit = fit_text_to_width_font(std::string(subtitle), std::max(60, vp.w - scale_x(24)), ctx.font_small);
     ui::shadow_print(it, vp.cx(), cy + scale_y(42), ctx.font_small, ctx.col_slate,
-                     esphome::display::TextAlign::CENTER, fit.c_str());
+                     TextAlign::CENTER, fit.c_str());
   }
 }
 
@@ -536,7 +534,7 @@ void render_camera_video_placeholder(esphome::display::Display &it, const UiFram
 // Shared RGB565 Fitted Scanline Blitter & Live Doorbell PTT Overlay Banner
 // ==============================================================================
 
-bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src,
+bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
                               int src_w, int src_h, const CameraRect &dst_rect,
                               bool fill, bool clip_round_bezel) {
   if (src == nullptr || src_w <= 0 || src_h <= 0 || dst_rect.w <= 0 || dst_rect.h <= 0) {
@@ -547,7 +545,7 @@ bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src
   // Paint black letterbox strips inside dst_rect outside fit_r
   if (!fill && (fit_r.x0 > dst_rect.x0 || fit_r.y0 > dst_rect.y0 ||
                 fit_r.w < dst_rect.w || fit_r.h < dst_rect.h)) {
-    const esphome::Color black(0, 0, 0);
+    const UiColor black = kChromeShadow;
     if (fit_r.y0 > dst_rect.y0) {
       fill_rect_row_major(it, dst_rect.x0, dst_rect.y0, dst_rect.w, fit_r.y0 - dst_rect.y0, black);
     }
@@ -637,7 +635,7 @@ bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src
   return true;
 }
 
-void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_doorbell_ptt_banner(Rgb565Surface &it, const UiFrameContext &ctx,
                                 int center_y) {
   const auto &rs = runtime_state();
   const auto &ly = layout();
@@ -645,7 +643,7 @@ void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameCont
   const int bw = ui::compute_uniform_stack_w(center_y, center_y, bh, scale_x(340), 16);
   const int bx0 = ctx.cx - bw / 2;
   const int by0 = center_y - bh / 2;
-  const esphome::Color brd = rs.voice.vad_active ? ctx.col_green : ctx.col_gold;
+  const UiColor brd = rs.voice.vad_active ? ctx.col_green : ctx.col_gold;
 
   render_card_box(it, bx0, by0, bw, bh, ui::chrome_card_bg_on(), brd, bh / 2, GlassVariant::Clear);
 
@@ -659,7 +657,7 @@ void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameCont
                                      : "Listening... (Tap to send)";
   const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - scale_x(46)), ctx.font_small);
   ui::shadow_print(it, bx0 + scale_x(34), center_y, ctx.font_small, ctx.col_white,
-                   esphome::display::TextAlign::CENTER_LEFT, fit_msg.c_str());
+                   TextAlign::CENTER_LEFT, fit_msg.c_str());
 
   frame_hits().add_rect(bx0, by0, bw, bh, WidgetId::CAM_PTT_BANNER_STOP, kHitTap | kHitFocusSlot);
 }
@@ -668,7 +666,7 @@ void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameCont
 // Page 13: Dedicated 4-Tab Cameras App (Grid / Single / Carousel / Settings)
 // ==============================================================================
 
-void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+void render_cameras_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
 

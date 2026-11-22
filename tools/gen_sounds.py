@@ -17,10 +17,10 @@ from __future__ import annotations
 import argparse
 import io
 import math
-from pathlib import Path
 import struct
 import sys
 import wave
+from pathlib import Path
 
 RATES = (48000,)
 
@@ -123,7 +123,7 @@ def render(rtttl: str, rate: int) -> list[int]:
             edge = min(n - gap, count - 1 - n)
             if edge < fade:
                 value *= edge / fade
-            samples.append(int(round(value)))
+            samples.append(round(value))
     return samples
 
 

@@ -1,18 +1,52 @@
-#if __has_include("esphome/core/defines.h")
-#include "esphome/core/defines.h"
-#endif
-
-#include "esphome_bridge.h"
 #include "ui_pages.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
+#include <string_view>
 
 namespace latter_ui {
 
-void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+namespace {
+
+bool is_newer_semver_local(std::string_view lat_sv, const char *cur_cstr) {
+  if (lat_sv.empty() || lat_sv == "unavailable" || lat_sv == "unknown") return false;
+  const std::string lat_str(lat_sv);
+  const std::string cur_str(cur_cstr != nullptr ? cur_cstr : "");
+  auto parse_ver = [](const std::string &raw, int &maj, int &min_v, int &pat) -> bool {
+    const char *p = raw.c_str();
+    if (*p == 'v' || *p == 'V') ++p;
+    char *endp = nullptr;
+    maj = static_cast<int>(std::strtol(p, &endp, 10));
+    if (endp == p || *endp != '.') return false;
+    p = endp + 1;
+    min_v = static_cast<int>(std::strtol(p, &endp, 10));
+    if (endp == p) return false;
+    pat = 0;
+    if (*endp == '.') {
+      p = endp + 1;
+      pat = static_cast<int>(std::strtol(p, &endp, 10));
+    }
+    return true;
+  };
+  const char *lp = lat_str.c_str();
+  if (*lp == 'v' || *lp == 'V') ++lp;
+  if (std::strncmp(lp, "202", 3) == 0) return false;
+  int l_maj = 0, l_min = 0, l_pat = 0;
+  int c_maj = 0, c_min = 0, c_pat = 0;
+  if (!parse_ver(lat_str, l_maj, l_min, l_pat)) return false;
+  if (!parse_ver(cur_str, c_maj, c_min, c_pat)) return false;
+  if (l_maj != c_maj) return l_maj > c_maj;
+  if (l_min != c_min) return l_min > c_min;
+  return l_pat > c_pat;
+}
+
+}  // namespace
+
+void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   const auto &ac = area_ctx_state();
@@ -41,19 +75,19 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   const int menu_scroll_dir = rs.nav.menu_scroll_dir;
   const int menu_scroll_target_page = rs.nav.menu_scroll_target_page;
 
-  auto *font_small = ctx.font_small;
-  const esphome::Color theme_primary = ctx.theme_primary;
-  const esphome::Color theme_secondary = ctx.theme_secondary;
-  const esphome::Color col_bg = ctx.col_bg;
-  const esphome::Color col_white = ctx.col_white;
-  const esphome::Color col_slate = ctx.col_slate;
-  const esphome::Color col_gold = ctx.col_gold;
-  const esphome::Color col_red = ctx.col_red;
+  const UiFontView font_small = ctx.font_small;
+  const UiColor theme_primary = ctx.theme_primary;
+  const UiColor theme_secondary = ctx.theme_secondary;
+  const UiColor col_bg = ctx.col_bg;
+  const UiColor col_white = ctx.col_white;
+  const UiColor col_slate = ctx.col_slate;
+  const UiColor col_gold = ctx.col_gold;
+  const UiColor col_red = ctx.col_red;
 
-  const esphome::Color card_bg_on = kChromeGlassTint;
-  const esphome::Color card_bg_off = kChromeGlassTint;
-  const esphome::Color card_brd_on = kChromeCardBrdOn;
-  const esphome::Color card_brd_off = kChromeCardBrdOff;
+  const UiColor card_bg_on = kChromeGlassTint;
+  const UiColor card_bg_off = kChromeGlassTint;
+  const UiColor card_brd_on = kChromeCardBrdOn;
+  const UiColor card_brd_off = kChromeCardBrdOff;
 
   const int row_w = layout().list_card_w;
   const int row_h = layout().slot5_h;
@@ -95,13 +129,13 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                         theme_primary, col_white, col_slate, wid, p);
   };
 
-  auto draw_action_card_y = [&](int y_mid, const char *label, esphome::Color brd_c,
-                                esphome::Color txt_c, esphome::Color bg_c,
+  auto draw_action_card_y = [&](int y_mid, const char *label, UiColor brd_c,
+                                UiColor txt_c, UiColor bg_c,
                                 uint16_t wid = WidgetId::NONE,
                                 int16_t param = 0) {
     const std::string fit_lbl = fit_text_to_width_font(label != nullptr ? label : "", row_w - scale_x(20), font_small);
     render_card_box(it, cx - row_w / 2, y_mid - row_h / 2, row_w, row_h, bg_c, brd_c, kRadiusCardPx());
-    ui::shadow_print(it, cx, y_mid, font_small, txt_c, esphome::display::TextAlign::CENTER, fit_lbl.c_str());
+    ui::shadow_print(it, cx, y_mid, font_small, txt_c, TextAlign::CENTER, fit_lbl.c_str());
     add_row_hit(y_mid, wid, kHitTap | kHitFocusSlot, param);
   };
 
@@ -119,7 +153,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   auto compute_scroll_offset = [&](int cur_page, int max_shift_466) -> int {
     const int max_shift = scale_y(max_shift_466);
     if (menu_scroll_active) {
-      const int shift = menu_scroll_shift(max_shift);
+      const int shift = menu_scroll_shift(max_shift, now_ms);
       return (menu_scroll_dir == 1) ? shift : (max_shift - shift);
     }
     const int bounce_y = edge_bounce().offset_px(
@@ -146,7 +180,7 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
                         row_en ? card_bg_on : card_bg_off,
                         row_en ? card_brd_on : card_brd_off, kRadiusCardPx());
         ui::shadow_print(it, cx, y, font_small, row_en ? col_white : col_slate,
-                         esphome::display::TextAlign::CENTER, kSysLabels[i]);
+                         TextAlign::CENTER, kSysLabels[i]);
         if (!menu_scroll_active && vis_row < 5) {
           add_row_hit(y, static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + vis_row),
                       kHitTap | kHitFocusSlot, static_cast<int16_t>(vis_row));
@@ -343,9 +377,9 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
   } else if (system_menu_mode == 5) {
     render_page_header(it, cx, "UPDATE", font_small, col_white);
     std::snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
-    ui::shadow_print(it, cx, scale_y(95), font_small, col_slate, esphome::display::TextAlign::CENTER, buf);
+    ui::shadow_print(it, cx, scale_y(95), font_small, col_slate, TextAlign::CENTER, buf);
 
-    const bool has_update = is_newer_semver(ctx.fw_latest_ver.str(), version_str);
+    const bool has_update = is_newer_semver_local(ctx.fw_latest_ver.sv(), version_str);
     if (rs.nav.update_check_state == 1) {
       if (now_ms - rs.nav.update_check_timer > 1500U) {
         rs.nav.update_check_state = has_update ? 0 : 2;
@@ -365,33 +399,33 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
       } else {
         std::snprintf(buf, sizeof(buf), "Available: v%s", ctx.fw_latest_ver.c_str());
       }
-      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, TextAlign::CENTER, buf);
       std::string summ = ctx.fw_release_summary.str();
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
         summ = "Firmware update ready.";
       }
       summ = fit_text_to_width_font(summ, std::min(kMaxContentColW, safe_span(scale_y(160), 20)), font_small);
-      ui::shadow_print(it, cx, scale_y(160), font_small, col_white, esphome::display::TextAlign::CENTER, summ.c_str());
+      ui::shadow_print(it, cx, scale_y(160), font_small, col_white, TextAlign::CENTER, summ.c_str());
       ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
                                theme_primary, card_bg_on, "Update Now", theme_secondary,
                                font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
     } else {
       std::snprintf(buf, sizeof(buf), "Latest: v%s", version_str);
-      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, esphome::display::TextAlign::CENTER, buf);
+      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, TextAlign::CENTER, buf);
       if (rs.nav.update_check_state == 1) {
-        ui::shadow_print(it, cx, scale_y(160), font_small, theme_secondary, esphome::display::TextAlign::CENTER,
+        ui::shadow_print(it, cx, scale_y(160), font_small, theme_secondary, TextAlign::CENTER,
                          "Checking Home Assistant...");
         ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
                                  theme_primary, card_bg_on, "Checking...", theme_secondary,
                                  font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       } else if (rs.nav.update_check_state == 2) {
-        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER,
+        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, TextAlign::CENTER,
                          "No updates available");
         ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
                                  card_brd_on, card_bg_on, "Up to date", col_white,
                                  font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       } else {
-        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, esphome::display::TextAlign::CENTER,
+        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, TextAlign::CENTER,
                          "Firmware is up to date");
         ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
                                  theme_primary, card_bg_on, "Check for Updates", col_white,
@@ -426,18 +460,18 @@ void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx
     render_page_header(it, cx, "SYSTEM INFO", font_small, col_white);
     const int info_x = layout().sys_info_x();
     const int info_right = SCREEN_W - info_x;
-    auto print_info_row = [&](int y, const char *lbl, const char *val, esphome::Color val_col) {
+    auto print_info_row = [&](int y, const char *lbl, const char *val, UiColor val_col) {
       const int ey = scale_y(y);
       int w_lbl = 0, x_off = 0, base = 0, th = 0;
       font_small->measure(lbl, &w_lbl, &x_off, &base, &th);
       const int val_x = info_x + w_lbl + 8;
       const int max_val_w = std::max(60, info_right - val_x);
       const std::string fit_val = fit_text_to_width_font(val != nullptr ? val : "", max_val_w, font_small);
-      ui::shadow_print(it, info_x, ey, font_small, col_white, esphome::display::TextAlign::TOP_LEFT, lbl);
-      ui::shadow_print(it, val_x, ey, font_small, val_col, esphome::display::TextAlign::TOP_LEFT, fit_val.c_str());
+      ui::shadow_print(it, info_x, ey, font_small, col_white, TextAlign::TOP_LEFT, lbl);
+      ui::shadow_print(it, val_x, ey, font_small, val_col, TextAlign::TOP_LEFT, fit_val.c_str());
     };
 
-    const bool has_update = is_newer_semver(ctx.fw_latest_ver.str(), version_str);
+    const bool has_update = is_newer_semver_local(ctx.fw_latest_ver.sv(), version_str);
     if (has_update) {
       std::snprintf(buf, sizeof(buf), "v%s (Update: v%s)", version_str, ctx.fw_latest_ver.c_str());
       print_info_row(84, "Version:", buf, col_gold);

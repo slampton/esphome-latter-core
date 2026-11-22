@@ -1,4 +1,3 @@
-#include "esphome/core/defines.h"
 #include "ui_pages.h"
 
 #include <algorithm>
@@ -24,9 +23,9 @@ struct AreaModeIconCtx {
   int count{0};
 };
 
-void draw_area_mode_icon(esphome::display::Display &it, int g_idx,
+void draw_area_mode_icon(Rgb565Surface &it, int g_idx,
                          int bx, int by, int ir,
-                         esphome::Color fg_c, bool sh, void *user_ctx) {
+                         UiColor fg_c, bool sh, void *user_ctx) {
   const auto *mc = static_cast<const AreaModeIconCtx *>(user_ctx);
   if (mc == nullptr || mc->cats == nullptr || g_idx < 0 || g_idx >= mc->count) return;
   const std::string &cat = mc->cats[g_idx];
@@ -61,10 +60,7 @@ std::string strip_trailing_paren_state(const std::string &s) {
   return s;
 }
 
-void render_area_control_page(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
+void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
 
@@ -79,7 +75,7 @@ void render_area_control_page(esphome::display::Display &it, const UiFrameContex
   const std::string &area_action_feedback = rs.area.action_feedback;
   const uint32_t area_feedback_timer = rs.area.feedback_timer;
 
-  auto *font_small = ctx.font_small;
+  const UiFontView font_small = ctx.font_small;
   const Color &theme_primary = ctx.theme_primary;
   const Color &theme_secondary = ctx.theme_secondary;
   const Color &col_bg = ctx.col_bg;

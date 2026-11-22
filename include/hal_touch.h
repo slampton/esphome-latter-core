@@ -200,6 +200,32 @@ inline void hal_touch_pump() noexcept {
   if (b.fn != nullptr) b.fn(b.ctx);
 }
 
+using TouchIsStandbyFn = bool (*)();
+using TouchWakeGraceFn = void (*)(uint32_t now_ms);
+
+struct TouchWakeBridge {
+  TouchIsStandbyFn is_standby_fn{nullptr};
+  TouchWakeGraceFn wake_grace_fn{nullptr};
+
+  void bind(TouchIsStandbyFn is_standby, TouchWakeGraceFn wake_grace) noexcept {
+    is_standby_fn = is_standby;
+    wake_grace_fn = wake_grace;
+  }
+
+  bool is_standby() const noexcept {
+    return is_standby_fn != nullptr && is_standby_fn();
+  }
+
+  void arm_wake_grace(uint32_t now_ms) const noexcept {
+    if (wake_grace_fn != nullptr) wake_grace_fn(now_ms);
+  }
+};
+
+inline TouchWakeBridge &touch_wake_bridge() noexcept {
+  static TouchWakeBridge s_bridge{};
+  return s_bridge;
+}
+
 }  // namespace latter_ui
 
 #if defined(USE_TOUCHSCREEN) && defined(USE_I2C) && \

@@ -30402,7 +30402,7 @@ bool lzss_decode_bucket(std::size_t bucket_idx, uint8_t *dst, std::size_t dst_ca
 }
 
 void append_qpt(DecodedMdiEntry &dst, uint8_t qx, uint8_t qy) noexcept {
-  if (dst.len + 3 >= kMaxCachedBytes) return;
+  if (static_cast<std::size_t>(dst.len) + 3U >= kMaxCachedBytes) return;
   if (dst.len >= 2 && dst.stream[dst.len - 1] != kContourEnd &&
       dst.stream[dst.len - 2] == qx && dst.stream[dst.len - 1] == qy) {
     return;
@@ -30482,7 +30482,7 @@ const DecodedMdiEntry *get_or_decode_mdi(uint32_t hash) noexcept {
   bool in_contour = false;
 
   auto close_cur = [&]() noexcept {
-    if (in_contour && dst.len < kMaxCachedBytes) {
+    if (in_contour && static_cast<std::size_t>(dst.len) < kMaxCachedBytes) {
       dst.stream[dst.len++] = kContourEnd;
       in_contour = false;
     }
@@ -30687,7 +30687,7 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
       }
       emit_fn(user, x0_box + px, x0_box + run_end, y0_box + py, alpha);
       if (dst != nullptr && !cache_overflow) {
-        if (dst->span_count < kMaxCachedSpans) {
+        if (static_cast<std::size_t>(dst->span_count) < kMaxCachedSpans) {
           dst->spans[dst->span_count++] = MdiSpan{
               static_cast<uint8_t>(py),
               static_cast<uint8_t>(px),

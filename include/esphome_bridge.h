@@ -33,9 +33,11 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include <esp_sleep.h>
 #endif
 
+#include "hal_display_lifecycle.h"
 #include "hal_panel_power.h"
-#include "hal_power_pm.h"
-#include "latter_state.h"
+#include "hal_radio_policy.h"
+#include "hal_sleep_pm.h"
+#include "state/device_runtime_state.h"
 
 #ifndef LATTER_SDK_REV
 #define LATTER_SDK_REV 2026112007L

@@ -1,4 +1,3 @@
-#include "esphome/core/defines.h"
 #include "ui_pages.h"
 #include "ui_touch_recognizer.h"
 
@@ -40,9 +39,9 @@ void format_stopwatch_tenths(uint32_t ms, char *out_buf, size_t out_sz) {
   }
 }
 
-void draw_time_mode_icon(esphome::display::Display &it, int i,
+void draw_time_mode_icon(Rgb565Surface &it, int i,
                          int bx, int by, int ir,
-                         esphome::Color fg_c, bool shadow, void *) {
+                         UiColor fg_c, bool shadow, void *) {
   if (i == TimeSubpage::CLOCK) {
     ui::draw_icon_clock_solid(it, bx, by, ir, fg_c, shadow);
   } else if (i == TimeSubpage::TIMERS) {
@@ -54,15 +53,12 @@ void draw_time_mode_icon(esphome::display::Display &it, int i,
   }
 }
 
-void render_time_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx, int active_sub) {
+void render_time_mode_bar(Rgb565Surface &it, const UiFrameContext &ctx, int active_sub) {
   ui::mode_bar(it, ctx.cx, 4, active_sub, 0, ctx.theme_primary, ctx.col_white,
                draw_time_mode_icon, nullptr);
 }
 
-void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
+void render_time_clock_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   const auto &ac = area_ctx_state();
@@ -83,7 +79,7 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
 
   if (has_label) {
     const int label_y = local_only ? (time_y - scale_y(50)) : scale_y(94);
-    auto *lbl_font = (local_only && SCREEN_W >= 320) ? ctx.font_date : ctx.font_small;
+    const UiFontView lbl_font = (local_only && SCREEN_W >= 320) ? ctx.font_date : ctx.font_small;
     const std::string lbl_fit = fit_text_to_width_font(
         prefs.local_clock_label, safe_span(label_y, 18), lbl_font);
     if (has_bd_shadow) {
@@ -101,8 +97,8 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
     char ss_buf[8];
     std::snprintf(ss_buf, sizeof(ss_buf), ":%02d", std::clamp<int>(ctx.now.second, 0, 59));
 
-    auto *main_font = ctx.font_time;
-    auto *sec_font = (SCREEN_W < 320) ? ctx.font_small : ctx.font_date;
+    UiFontView main_font = ctx.font_time;
+    UiFontView sec_font = (SCREEN_W < 320) ? ctx.font_small : ctx.font_date;
     int main_w = 0, sec_w = 0, ap_w = 0;
     int mx_off = 0, sx_off = 0, ax_off = 0, base = 0, th = 0;
     it.get_text_bounds(0, 0, hhmm_buf, main_font, TextAlign::TOP_LEFT, &mx_off, &base, &main_w, &th);
@@ -178,7 +174,7 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   } else {
     tz_line = "Syncing time zone...";
   }
-  auto *tz_font = (SCREEN_W < 300) ? ctx.font_micro : ctx.font_small;
+  const UiFontView tz_font = (SCREEN_W < 300) ? ctx.font_micro : ctx.font_small;
   tz_line = fit_text_to_width_font(tz_line, safe_span(tz_y, 16), tz_font);
   if (has_bd_shadow) {
     fast_print(it, cx + 1, tz_y + 1, tz_font, kChromeShadow, TextAlign::CENTER, tz_line.c_str());
@@ -233,7 +229,7 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
     }
 
     int time_w = 0, x_off = 0, base = 0, th = 0;
-    auto *wc_time_font = (SCREEN_W < 320) ? ctx.font_small : ctx.font_btn_bold;
+    const UiFontView wc_time_font = (SCREEN_W < 320) ? ctx.font_small : ctx.font_btn_bold;
     it.get_text_bounds(0, 0, rem_time_buf, wc_time_font, TextAlign::TOP_LEFT, &x_off, &base, &time_w, &th);
     const int time_span = std::max(time_w, x_off + time_w);
 
@@ -267,10 +263,7 @@ void render_time_clock_tab(esphome::display::Display &it, const UiFrameContext &
   }
 }
 
-void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
+void render_time_timers_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int cx = ctx.cx;
   auto *ts = timer_slots();
   const int v_slot = timer_view_slot();
@@ -302,7 +295,7 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
 
     const int card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : layout().area_card3_w;
     const int card_h = layout().area_card3_h;
-    auto *sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     for (int i = 0; i < 3; ++i) {
       const auto &s = ts[i];
       const int cy_c = layout().area_card3_y(i);
@@ -400,10 +393,7 @@ void render_time_timers_tab(esphome::display::Display &it, const UiFrameContext 
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
 }
 
-void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
+void render_time_alarms_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   const int cx = ctx.cx;
@@ -435,7 +425,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
     const int card_w = (SCREEN_W < 380) ? (SCREEN_W - 24) : layout().area_card3_w;
     const int card_h = is_snoozed ? std::max(scale_y(46), layout().area_card3_h - scale_y(8))
                                   : layout().area_card3_h;
-    auto *sec_font = (SCREEN_H < 400 || is_snoozed) ? ctx.font_micro : ctx.font_small;
+    const UiFontView sec_font = (SCREEN_H < 400 || is_snoozed) ? ctx.font_micro : ctx.font_small;
     for (int i = 0; i < 3; ++i) {
       const auto &ap = prefs.alarms[i];
       const int cy_c = layout().area_card3_y(i) + (is_snoozed ? (y_shift - i * scale_y(4)) : 0);
@@ -480,12 +470,12 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
     int h12 = ap.hour % 12;
     if (h12 == 0) h12 = 12;
     std::snprintf(hh_buf, sizeof(hh_buf), "%d", h12);
-    std::strcpy(ap_buf, (ap.hour >= 12) ? "PM" : "AM");
+    std::snprintf(ap_buf, sizeof(ap_buf), "%s", (ap.hour >= 12) ? "PM" : "AM");
   }
   std::snprintf(mm_buf, sizeof(mm_buf), "%02u", static_cast<unsigned>(ap.minute));
 
   const int time_y = scale_y(150);
-  auto *num_font = (SCREEN_W < 300) ? ctx.font_chrono_time : ctx.font_time;
+  const UiFontView num_font = (SCREEN_W < 300) ? ctx.font_chrono_time : ctx.font_time;
   int hh_w = 0, col_w = 0, mm_w = 0, ap_w = 0;
   int hx_off = 0, cx_off = 0, mx_off = 0, ax_off = 0, base = 0, num_th = 0, ap_th = 0;
   it.get_text_bounds(0, 0, hh_buf, num_font, TextAlign::TOP_LEFT, &hx_off, &base, &hh_w, &num_th);
@@ -507,7 +497,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   const int mm_cx = mm_x + (mm_span / 2);
 
   // Slow 1 Hz blink on the focused field (stays solid white during active tapping/stepping)
-  const uint32_t latest_in = std::max(last_user_touch_ms(), ui_focus_last_ms());
+  const uint32_t latest_in = std::max({touch_last_tap_ms(), touch_gesture().last_touch_ms, ui_focus_last_ms()});
   const bool blink_dim = alarm_editor_blink_dim(ctx.now_ms, latest_in);
   const Color active_col = blink_dim ? mix_color_q8(ctx.col_bg, ctx.col_slate, 84) : ctx.col_white;
   const Color hh_col = hh_focused ? active_col : ctx.col_slate;
@@ -570,10 +560,7 @@ void render_time_alarms_tab(esphome::display::Display &it, const UiFrameContext 
   render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
 }
 
-void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
+void render_time_stopwatch_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const int cx = ctx.cx;
   const bool has_bd_shadow = backdrop_active();
@@ -600,7 +587,7 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
                                 safe_span(lap_y0, 24));
     const int left_x = cx - (span_w / 2);
     const int right_x = cx + (span_w / 2);
-    auto *lap_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView lap_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     for (int k = 0; k < vis_laps; ++k) {
       const int lap_num = total_laps - k;
       const int ring_idx = (total_laps - 1 - k) % static_cast<int>(StopwatchRuntimeState::kMaxLapSplits);
@@ -625,7 +612,7 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
   // 2. Main Digital Stopwatch Readout
   char sw_buf[24];
   format_stopwatch_tenths(cur_sw_ms, sw_buf, sizeof(sw_buf));
-  auto *sw_font = (cur_sw_ms >= 3600000U || SCREEN_W < 320) ? ctx.font_chrono_time : ctx.font_time;
+  UiFontView sw_font = (cur_sw_ms >= 3600000U || SCREEN_W < 320) ? ctx.font_chrono_time : ctx.font_time;
   int bw = 0, x_off = 0, base = 0, th = 0;
   it.get_text_bounds(0, 0, sw_buf, sw_font, TextAlign::TOP_LEFT, &x_off, &base, &bw, &th);
   if (bw > safe_span(sw_y, 16)) {
@@ -639,7 +626,7 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
   // 3. Primary Stopwatch Action Pills (D-048 / D-070: zero disabled/non-interactive glass pills)
   const int btn_h = std::max(44, scale_y(44));
   const int btn_gap = std::max(12, scale_x(16));
-  auto *btn_font = (SCREEN_W < 340) ? ctx.font_small : ctx.font_btn_bold;
+  const UiFontView btn_font = (SCREEN_W < 340) ? ctx.font_small : ctx.font_btn_bold;
 
   if (rs.stopwatch.running) {
     const ui::ActionPillSpec specs[2] = {
@@ -664,7 +651,7 @@ void render_time_stopwatch_tab(esphome::display::Display &it, const UiFrameConte
 
 }  // namespace
 
-void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+void render_time_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
 

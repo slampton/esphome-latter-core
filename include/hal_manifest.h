@@ -83,6 +83,19 @@
 #define LATTER_CHIP_P4 0
 #endif
 #endif
+#ifndef LATTER_SOC_S3
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#define LATTER_SOC_S3 1
+#else
+#define LATTER_SOC_S3 0
+#endif
+#endif
+#ifndef LATTER_HAS_VIDEO_STREAM
+#define LATTER_HAS_VIDEO_STREAM LATTER_HAS_DISPLAY
+#endif
+#ifndef LATTER_HAS_HW_JPEG
+#define LATTER_HAS_HW_JPEG LATTER_CHIP_P4
+#endif
 #ifndef LATTER_PSRAM_MB
 #define LATTER_PSRAM_MB (LATTER_CHIP_P4 ? 32 : 8)
 #endif
@@ -171,11 +184,13 @@ inline std::string build_hardware_manifest_json() {
   const int disp_h = LATTER_HAS_DISPLAY ? LATTER_SCREEN_H : 0;
   const char *shape = !LATTER_HAS_DISPLAY ? "none" : (LATTER_ROUND_DISPLAY ? "circle" : "square");
   const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
-  const int video_hw_jpeg = LATTER_CHIP_P4 ? 1 : 0;
-  const int video_max_w = LATTER_HAS_DISPLAY ? (LATTER_SCREEN_W & ~15) : 0;
-  const int video_max_h = LATTER_HAS_DISPLAY ? (LATTER_SCREEN_H & ~15) : 0;
-  const int video_max_fps = LATTER_CHIP_P4 ? (LATTER_HAS_BATTERY ? 10 : 15) : 5;
-  const int video_grid_fps = LATTER_CHIP_P4 ? (LATTER_HAS_BATTERY ? 5 : 8) : 2;
+  const int video_hw_jpeg = (LATTER_HAS_VIDEO_STREAM && LATTER_HAS_HW_JPEG) ? 1 : 0;
+  const int video_max_w = LATTER_HAS_VIDEO_STREAM ? (LATTER_SCREEN_W & ~15) : 0;
+  const int video_max_h = LATTER_HAS_VIDEO_STREAM ? (LATTER_SCREEN_H & ~15) : 0;
+  const int video_max_fps =
+      !LATTER_HAS_VIDEO_STREAM ? 0 : (LATTER_HAS_HW_JPEG ? (LATTER_HAS_BATTERY ? 10 : 15) : 5);
+  const int video_grid_fps =
+      !LATTER_HAS_VIDEO_STREAM ? 0 : (LATTER_HAS_HW_JPEG ? (LATTER_HAS_BATTERY ? 5 : 8) : 2);
   char audio_buf[96];
   if (LATTER_HAS_AUDIO) {
     std::snprintf(audio_buf, sizeof(audio_buf),

@@ -1,5 +1,5 @@
 #include "hal_battery.h"
-#include "latter_state.h"
+#include "state/device_runtime_state.h"
 
 #include <cmath>
 #include <ctime>

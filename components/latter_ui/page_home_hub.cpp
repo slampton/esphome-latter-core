@@ -1,4 +1,3 @@
-#include "esphome/core/defines.h"
 #include "ui_pages.h"
 
 #include <algorithm>
@@ -37,9 +36,9 @@ struct HomeHubModeIconCtx {
   int count{0};
 };
 
-void draw_home_hub_mode_icon(esphome::display::Display &it, int g_idx,
+void draw_home_hub_mode_icon(Rgb565Surface &it, int g_idx,
                              int bx, int by, int ir,
-                             esphome::Color fg_c, bool sh, void *user_ctx) {
+                             UiColor fg_c, bool sh, void *user_ctx) {
   const auto *mc = static_cast<const HomeHubModeIconCtx *>(user_ctx);
   if (mc == nullptr || mc->tabs == nullptr || g_idx < 0 || g_idx >= mc->count) return;
   switch (mc->tabs[g_idx]) {
@@ -62,17 +61,17 @@ void draw_home_hub_mode_icon(esphome::display::Display &it, int g_idx,
   }
 }
 
-void draw_hub_minus_icon(esphome::display::Display &it, int cx, int cy, int r,
-                         esphome::Color col, bool shadow, void *) {
+void draw_hub_minus_icon(Rgb565Surface &it, int cx, int cy, int r,
+                         UiColor col, bool shadow, void *) {
   ui::draw_icon_minus(it, cx, cy, r, col, shadow);
 }
 
-void draw_hub_plus_icon(esphome::display::Display &it, int cx, int cy, int r,
-                        esphome::Color col, bool shadow, void *) {
+void draw_hub_plus_icon(Rgb565Surface &it, int cx, int cy, int r,
+                        UiColor col, bool shadow, void *) {
   ui::draw_icon_plus(it, cx, cy, r, col, shadow);
 }
 
-void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_home_hub_mode_bar(Rgb565Surface &it, const UiFrameContext &ctx,
                               const int *tabs, int tab_count, int active_slot) {
   home_hub_mode_bar_page() = get_mode_bar_start_index(tab_count, home_hub_mode_bar_page());
   HomeHubModeIconCtx ic{tabs, tab_count};
@@ -80,12 +79,9 @@ void render_home_hub_mode_bar(esphome::display::Display &it, const UiFrameContex
                ctx.theme_primary, ctx.col_white, draw_home_hub_mode_icon, &ic);
 }
 
-void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                       const DeviceRuntimeState &rs, const AreaContextState &ac,
                       int content_top, int content_bot) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
   const int cx = ctx.cx;
   render_page_header(it, cx, "SECURITY ALARM", ctx.font_small, ctx.col_white);
   if (ac.alarm_entity.empty()) {
@@ -147,13 +143,13 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   const int st_y = hero_y0 + (is_fb ? (hero_h * 60) / 100 : (hero_h * 72) / 100);
   ui::draw_icon_shield_home(it, cx, icon_cy, ui::hero_icon_r(hero_h), badge_col, true);
 
-  auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
+  const UiFontView st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
   const std::string fit_badge = fit_text_to_width_font(std::string(badge_txt), st_max_w, st_font);
   ui::shadow_print(it, cx, st_y, st_font, badge_col, TextAlign::CENTER, fit_badge.c_str());
 
   if (is_fb) {
-    auto *fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     const int fb_y = hero_y0 + (hero_h * 88) / 100;
     const int fb_max_w = std::max(80, band_safe_w(fb_y, 24, 16));
     const std::string fit_fb = fit_text_to_width_font(rs.area.action_feedback, fb_max_w, fb_font);
@@ -195,7 +191,7 @@ void render_alarm_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::ALARM_MODE_BASE, codes, geoms, geom_cnt);
 }
 
-void render_hub_selector_pill(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_hub_selector_pill(Rgb565Surface &it, const UiFrameContext &ctx,
                               const char *prefix_lbl, int active_idx, int item_count,
                               const std::string &item_name, const char *fallback_hdr,
                               int hdr_cy, uint16_t prev_wid, uint16_t next_wid) {
@@ -216,11 +212,9 @@ void render_hub_selector_pill(esphome::display::Display &it, const UiFrameContex
                        prev_wid, next_wid, -1, 1);
 }
 
-void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                          const DeviceRuntimeState &rs, const AreaContextState &ac,
                          int content_top, int content_bot) {
-  using esphome::Color;
-
   const int cx = ctx.cx;
   const bool dictating = broadcast_dictation_active(rs);
   const bool show_fb = dictating ||
@@ -315,7 +309,7 @@ void render_intercom_tab(esphome::display::Display &it, const UiFrameContext &ct
   }
 }
 
-void render_thermostat_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_thermostat_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                            const DeviceRuntimeState &rs, const AreaContextState &ac,
                            int content_top, int content_bot) {
   (void)ac;
@@ -345,8 +339,8 @@ struct EntryIconCtx {
   bool active_state{false};
 };
 
-void draw_entry_item_icon(esphome::display::Display &it, int cx, int cy, int r,
-                          esphome::Color col, bool shadow, void *user_ctx) {
+void draw_entry_item_icon(Rgb565Surface &it, int cx, int cy, int r,
+                          UiColor col, bool shadow, void *user_ctx) {
   const auto *ec = static_cast<const EntryIconCtx *>(user_ctx);
   if (ec == nullptr) return;
   if (ec->is_lock) {
@@ -356,11 +350,11 @@ void draw_entry_item_icon(esphome::display::Display &it, int cx, int cy, int r,
   }
 }
 
-void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_entry_card(Rgb565Surface &it, const UiFrameContext &ctx,
                        int cx, int cy, int card_w, int card_h, int hit_h,
                        bool is_lock, const char *title, const char *state_txt,
-                       esphome::Color state_col, const char *cta_txt,
-                       esphome::Color cta_col, uint16_t btn_wid,
+                       UiColor state_col, const char *cta_txt,
+                       UiColor cta_col, uint16_t btn_wid,
                        int16_t hit_param = 0) {
   // D-048 / D-070 / D-073: Strict button-only glass — bare shadowed icon/label/status on the left,
   // frosted-glass action pill on the right as the sole interactive control.
@@ -371,8 +365,8 @@ void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
   const int min_hit = UiLayout::mm_to_px(7.0f);
   const int cta_w = std::clamp(card_w / 3, std::max(84, min_hit), scale_x(122));
   const int cta_h = std::clamp(card_h - scale_y(16), std::max(36, min_hit), scale_y(48));
-  auto *pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
-  auto *sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+  const UiFontView pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
+  const UiFontView sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
 
   ui::labeled_action_row(
       it, cx, cy, card_w, card_h,
@@ -383,12 +377,10 @@ void render_entry_card(esphome::display::Display &it, const UiFrameContext &ctx,
       draw_entry_item_icon, &icon_ctx, state_col);
 }
 
-void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_entry_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                       const DeviceRuntimeState &rs, const AreaContextState &ac,
                       int content_top, int content_bot) {
   (void)ac;
-  using esphome::Color;
-
   const int cx = ctx.cx;
   const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
   if (is_fb) {
@@ -476,13 +468,10 @@ void render_entry_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   }
 }
 
-void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                        const DeviceRuntimeState &rs, const AreaContextState &ac,
                        int content_top, int content_bot) {
   (void)ac;
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
   const int cx = ctx.cx;
   const auto &hub = home_hub_state();
   if (hub.vacuum_count <= 0) {
@@ -533,13 +522,13 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
   const int st_y = hero_y0 + (is_fb ? (hero_h * 60) / 100 : (hero_h * 72) / 100);
   ui::draw_icon_robot_vacuum(it, cx, icon_cy, ui::hero_icon_r(hero_h), st_col, true);
 
-  auto *st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
+  const UiFontView st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
   const std::string fit_st = fit_text_to_width_font(std::string(st_lbl), st_max_w, st_font);
   ui::shadow_print(it, cx, st_y, st_font, st_col, TextAlign::CENTER, fit_st.c_str());
 
   if (is_fb) {
-    auto *fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     const int fb_y = hero_y0 + (hero_h * 88) / 100;
     const int fb_max_w = std::max(80, band_safe_w(fb_y, 24, 16));
     const std::string fit_fb = fit_text_to_width_font(rs.area.action_feedback, fb_max_w, fb_font);
@@ -585,7 +574,7 @@ void render_vacuum_tab(esphome::display::Display &it, const UiFrameContext &ctx,
 
 }  // namespace
 
-void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+void render_home_hub_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
 
@@ -636,15 +625,12 @@ void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &c
   render_home_hub_mode_bar(it, ctx, tabs, tab_count, active_slot);
 }
 
-void render_climate_controls_deck(esphome::display::Display &it,
+void render_climate_controls_deck(Rgb565Surface &it,
                                   const UiFrameContext &ctx,
                                   const DeviceRuntimeState &rs,
                                   const ThermostatZoneItem &clim,
                                   int content_top,
                                   int content_bot) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
   const int cx = ctx.cx;
   const std::string &m = clim.mode;
   const uint16_t eff_caps = (clim.caps != 0U) ? clim.caps : kClimateCapDefault;
@@ -714,7 +700,7 @@ void render_climate_controls_deck(esphome::display::Display &it,
   const int inner_span = show_setpoint_btns
       ? std::max(64, (plus_cx - btn_r) - (minus_cx + btn_r) - 12)
       : std::max(80, hero_w - 16);
-  auto *temp_font = (SCREEN_H < 400 || inner_span < 120) ? ctx.font_date : ctx.font_chrono_time;
+  const UiFontView temp_font = (SCREEN_H < 400 || inner_span < 120) ? ctx.font_date : ctx.font_chrono_time;
   const int temp_y = hero_cy - std::max(8, hero_h / 7);
   ui::shadow_print(it, cx, temp_y, temp_font, ctx.col_white, TextAlign::CENTER, tgt_buf);
 
@@ -737,7 +723,7 @@ void render_climate_controls_deck(esphome::display::Display &it,
   }
 
   if (sub_buf[0] != '\0') {
-    auto *sub_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView sub_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
     const std::string fit_sub = fit_text_to_width_font(std::string(sub_buf), inner_span, sub_font);
     const int sub_y = hero_cy + std::max(14, hero_h / 4);
     ui::shadow_print(it, cx, sub_y, sub_font, is_fb ? ctx.theme_secondary : sub_tint,

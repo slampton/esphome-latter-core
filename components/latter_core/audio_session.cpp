@@ -1,13 +1,15 @@
 #if __has_include("audio_router.h")
 #include "audio_router.h"
-#include "hal_power_pm.h"
-#include "latter_state.h"
+#include "hal_radio_policy.h"
+#include "hal_sleep_pm.h"
+#include "state/device_runtime_state.h"
 #include "latter_rpc.h"
 #include "latter_actions.h"
 #else
 #include "../../include/audio_router.h"
-#include "../../include/hal_power_pm.h"
-#include "../../include/latter_state.h"
+#include "../../include/hal_radio_policy.h"
+#include "../../include/hal_sleep_pm.h"
+#include "../../include/state/device_runtime_state.h"
 #include "../../include/latter_rpc.h"
 #include "../../include/latter_actions.h"
 #endif
@@ -447,6 +449,28 @@ float media_step_volume(int dir,
   latter_actions::emit_media_volume(
       m.active_speaker_entity, (step_dir > 0) ? "up" : "down", remote_vol_pct());
   return -1.0f;
+}
+
+void sync_audio_session_media_observation(bool local_mp_playing,
+                                          bool local_mp_paused,
+                                          uint32_t now_ms,
+                                          const MediaState &ms,
+                                          const AreaContextState &ac) {
+  const bool is_remote = !ms.is_local;
+  const bool eff_playing = is_music_playing_effective(is_remote, local_mp_playing, ms.state, now_ms);
+  const bool remote_paused_override =
+      is_remote && remote_play_override_ms() > 0U &&
+      (now_ms - remote_play_override_ms() < 2500U) && !remote_play_override_state();
+  const bool eff_paused = is_music_paused_effective(
+      eff_playing, ms.is_local, ms.state,
+      local_mp_paused || (remote_paused_override && (ms.state == "playing" || ms.state == "buffering")));
+  if (!eff_playing && ms.state == "paused") {
+    audio_session().note_local_playback_stopped();
+  }
+  const std::string_view spk = !ms.active_speaker.empty()
+                                   ? std::string_view(ms.active_speaker)
+                                   : std::string_view(runtime_state().music.active_speaker_entity);
+  audio_session().note_media_state_observation(eff_playing, eff_paused, spk, ac.area_id, now_ms);
 }
 
 LocalMediaHwAction media_toggle_playback(bool local_mp_playing, uint32_t now_ms) {

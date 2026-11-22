@@ -3,81 +3,16 @@
 // ==============================================================================
 // Latter Unified Physical-Kinematics Gesture Engine & Target-Scoped Debouncer
 // (include/ui_touch_recognizer.h)
-// ==============================================================================
-// Pure C++20 millimetre (mm) & velocity (mm/s) touch recognizer (D-049):
-//   - Strict deadband: kTapSlopMm (1.65 mm) < kSwipeLiveMm (2.35 mm)
-//   - Velocity-assisted fast flick on release: >= 1.55 mm at >= 38 mm/s
-//   - Irreversible tap_cancelled latch once travel exceeds kTapSlopMm (zero
-//     accidental app launches on boundary, diagonal, or incomplete swipes)
-//   - Unified HorizontalPagerSpec & VerticalPagerSpec + 135 ms rubber-band edge bounce
-//   - Target-scoped debounce (65 ms repeaters, 110 ms toggles, 0 ms cross-widget)
+// Pure C++20 L2 header — zero ESPHome or HAL includes (D-049).
 // ==============================================================================
 
-#if __has_include("esphome/core/defines.h")
-#include "esphome/core/defines.h"
-#endif
+#include "ui_panel_metrics.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
 namespace latter_ui {
-
-namespace kinematics {
-inline constexpr float kSliderStartMm = 0.65f;
-inline constexpr float kSwipeFlickMm = 1.55f;
-inline constexpr float kTapSlopMm = 1.65f;
-inline constexpr float kAxisLockMm = 1.80f;
-inline constexpr float kSwipeLiveMm = 2.35f;
-inline constexpr float kFlickMinVelMmPerSec = 38.0f;
-inline constexpr float kEdgeBouncePeakMm = 1.35f;
-inline constexpr uint32_t kEdgeBounceDurationMs = 135U;
-inline constexpr uint32_t kLongPressHoldMs = 480U;
-}  // namespace kinematics
-
-enum class GestureAxisLock : uint8_t {
-  None = 0,
-  Horizontal = 1,
-  Vertical = 2,
-  Slider = 3,
-};
-
-struct KinematicMetrics {
-  int tap_slop_px{17};
-  int axis_lock_px{19};
-  int swipe_live_px{25};
-  int swipe_flick_px{16};
-  int slider_start_px{7};
-  int edge_bounce_px{14};
-  int ppi{266};
-
-  static constexpr int mm_px(float mm, int panel_ppi) noexcept {
-    const int v = static_cast<int>((mm * static_cast<float>(panel_ppi)) / 25.4f + 0.5f);
-    return (v > 1) ? v : 1;
-  }
-
-  static constexpr KinematicMetrics for_ppi(int panel_ppi) noexcept {
-    KinematicMetrics m{};
-    m.ppi = (panel_ppi > 50) ? panel_ppi : 266;
-    m.slider_start_px = mm_px(kinematics::kSliderStartMm, m.ppi);
-    m.swipe_flick_px = mm_px(kinematics::kSwipeFlickMm, m.ppi);
-    m.tap_slop_px = mm_px(kinematics::kTapSlopMm, m.ppi);
-    if (m.tap_slop_px <= m.slider_start_px) m.tap_slop_px = m.slider_start_px + 2;
-    m.axis_lock_px = mm_px(kinematics::kAxisLockMm, m.ppi);
-    m.swipe_live_px = mm_px(kinematics::kSwipeLiveMm, m.ppi);
-    if (m.swipe_live_px <= m.tap_slop_px + 2) m.swipe_live_px = m.tap_slop_px + 3;
-    if (m.swipe_flick_px >= m.swipe_live_px) m.swipe_flick_px = m.swipe_live_px - 2;
-    m.edge_bounce_px = mm_px(kinematics::kEdgeBouncePeakMm, m.ppi);
-    return m;
-  }
-};
-
-// Strict 1.25:1 directional dominance check (4 * |major| >= 5 * |minor|) in pure integer math.
-inline constexpr bool is_axis_dominant(int major_delta, int minor_delta) noexcept {
-  const int maj = (major_delta < 0) ? -major_delta : major_delta;
-  const int min = (minor_delta < 0) ? -minor_delta : minor_delta;
-  return (maj * 4) >= (min * 5);
-}
 
 inline constexpr float compute_velocity_mm_per_s(int delta_px, uint32_t dt_ms, int ppi) noexcept {
   if (ppi <= 0) return 0.0f;
@@ -157,14 +92,12 @@ struct EdgeBounceState {
     return (now_ms >= start_ms) && ((now_ms - start_ms) < kinematics::kEdgeBounceDurationMs);
   }
 
-  // Smooth parabolic out-and-back spring displacement in pixels (4*u*(1-u) peaks at u = 0.5).
   int offset_px(int gui_page, GestureAxisLock want_axis, uint32_t now_ms, int ppi) const noexcept {
     if (!is_active(gui_page, want_axis, now_ms)) return 0;
     const float u = static_cast<float>(now_ms - start_ms) /
                     static_cast<float>(kinematics::kEdgeBounceDurationMs);
     const float env = 4.0f * u * (1.0f - u);
     const int peak = KinematicMetrics::for_ppi(ppi).edge_bounce_px;
-    // Trying to step +1 (finger moved left/up) nudges content -peak px (left/up), then springs back to 0.
     const int signed_peak = (dir > 0) ? -peak : peak;
     return static_cast<int>(std::lround(static_cast<float>(signed_peak) * env));
   }
@@ -175,8 +108,6 @@ inline EdgeBounceState &edge_bounce() noexcept {
   return s_bounce;
 }
 
-// Unified clamped / wrapping page stepper: ALWAYS marks swipe_committed by caller; triggers EdgeBounceState
-// when clamped at min_page or max_page so boundary swipes give tactile feedback and never launch an app.
 inline int step_pager_index(int cur_page, int min_page, int max_page, int step_dir, bool wrap,
                             GestureAxisLock axis, int gui_page, uint32_t now_ms,
                             bool &out_changed) noexcept {

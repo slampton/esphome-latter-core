@@ -3,19 +3,12 @@
 // ==============================================================================
 // Latter UI Graphics Primitives, 2-Tier Frosted Glass (D-041), 1-bpp Span Cache,
 // ArtCanvasCache, Dirty-Band Frame Base & FrameProfileScope (include/ui_gfx.h)
+// Pure C++20 L2 header — zero ESPHome or HAL includes (Reconciliation #1).
 // ==============================================================================
 
-#include "esphome/core/defines.h"
-#include "ui_types.h"
-#include "ui_mdi.h"
-#include "esphome_bridge.h"
 #include "latter_prof.h"
-#include "esphome/core/component.h"
-#include "esphome/components/display/display.h"
-
-#if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
-#include "esphome/components/mipi_dsi/mipi_dsi.h"
-#endif
+#include "ui_mdi.h"
+#include "ui_types.h"
 
 #include <algorithm>
 #include <cmath>
@@ -28,132 +21,20 @@
 namespace latter_ui {
 
 // ------------------------------------------------------------------------------
-// 1. Direct RGB565 Software Framebuffer Binding & Hardware Endianness Encoding
+// 1. Retryable PSRAM / Host Heap Helpers & Framebuffer Clear Hooks
+//    (ESP-IDF guarded inside gfx_fb_clear.cpp only)
 // ------------------------------------------------------------------------------
-template <typename DispT, bool IsFinal = std::is_final_v<DispT>>
-struct DispBufferAccessor {
-  static uint8_t *get(DispT *) { return nullptr; }
-};
+void *ui_psram_malloc(size_t bytes) noexcept;
+void *ui_psram_calloc(size_t count, size_t elem_size) noexcept;
+void ui_psram_free(void *ptr) noexcept;
 
-template <typename DispT>
-struct DispBufferAccessor<DispT, false> : DispT {
-  static uint8_t *get(DispT *d) {
-    if constexpr (requires { &DispBufferAccessor::buffer_; }) {
-      return reinterpret_cast<uint8_t *>(d->*(&DispBufferAccessor::buffer_));
-    } else {
-      return nullptr;
-    }
-  }
-};
-
-#if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
-template <>
-struct DispBufferAccessor<esphome::mipi_dsi::MipiDsi, true> {
-  static uint8_t *get(esphome::mipi_dsi::MipiDsi *d) {
-    return ::latter_hal::get_mipi_dsi_buffer(d);
-  }
-};
-#endif
-
-inline uint16_t *&active_frame_buf16() {
-  static uint16_t *ptr = nullptr;
-  return ptr;
-}
-
-// 0 = fallback, 1 = LE RGB565 (0xF800), 2 = BE RGB565 (0x00F8), 3 = LE BGR565 (0x001F), 4 = BE BGR565 (0x1F00)
-inline int &active_frame_endian_mode() {
-  static int mode = -1;
-  return mode;
-}
-
-void probe_frame_buffer_endian(esphome::display::Display &it, uint16_t *buf16);
-void fb_clear_bind(esphome::Component *owner, uint16_t *fb);
+using PostFrameRequestFn = void (*)(void *owner, void (*fn)());
+void set_fb_post_frame_hook(PostFrameRequestFn hook) noexcept;
+void fb_clear_bind_raw(void *owner, uint16_t *fb) noexcept;
 void fb_clear_after_update();
 void fb_clear_wait();
 bool fb_clear_consume(uint16_t hw);
 void fb_clear_frame_end();
-
-template <typename DispT>
-  requires(!std::is_pointer_v<DispT>)
-inline void bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
-  fb_clear_bind(nullptr, nullptr);
-  if (disp == nullptr || it.get_rotation() != esphome::display::DISPLAY_ROTATION_0_DEGREES) {
-    active_frame_buf16() = nullptr;
-    return;
-  }
-  uint8_t *raw = DispBufferAccessor<DispT>::get(disp);
-  if (raw == nullptr) {
-    active_frame_buf16() = nullptr;
-    return;
-  }
-  uint16_t *buf16 = reinterpret_cast<uint16_t *>(raw);
-  if (active_frame_endian_mode() < 0) {
-    probe_frame_buffer_endian(it, buf16);
-  }
-  active_frame_buf16() = (active_frame_endian_mode() > 0) ? buf16 : nullptr;
-  fb_clear_bind(static_cast<esphome::Component *>(disp), active_frame_buf16());
-}
-
-template <typename DispT>
-inline void bind_frame_buffer(DispT *const *disp_ptr, esphome::display::Display &it) {
-  if (disp_ptr != nullptr) bind_frame_buffer(*disp_ptr, it);
-}
-
-inline constexpr uint16_t bswap16_u16(uint16_t v) noexcept {
-  return static_cast<uint16_t>((v >> 8) | (v << 8));
-}
-
-template <int Mode>
-inline constexpr uint16_t encode_hw_rgb565_mode(uint16_t p) noexcept {
-  if constexpr (Mode == 1) {
-    return p;
-  } else if constexpr (Mode == 2) {
-    return bswap16_u16(p);
-  } else {
-    const uint16_t bgr = static_cast<uint16_t>(((p & 0x001FU) << 11) | (p & 0x07E0U) | ((p >> 11) & 0x001FU));
-    if constexpr (Mode == 4) {
-      return bswap16_u16(bgr);
-    } else {
-      return bgr;
-    }
-  }
-}
-
-template <int Mode>
-inline constexpr uint16_t decode_hw_rgb565_mode(uint16_t hw) noexcept {
-  if constexpr (Mode == 1) {
-    return hw;
-  } else if constexpr (Mode == 2) {
-    return bswap16_u16(hw);
-  } else {
-    const uint16_t bgr = [&]() constexpr noexcept {
-      if constexpr (Mode == 4) return bswap16_u16(hw);
-      else return hw;
-    }();
-    return static_cast<uint16_t>(((bgr & 0x001FU) << 11) | (bgr & 0x07E0U) | ((bgr >> 11) & 0x001FU));
-  }
-}
-
-inline uint16_t encode_hw_rgb565_raw(uint16_t p) {
-  const int mode = active_frame_endian_mode();
-  if (mode == 1) return encode_hw_rgb565_mode<1>(p);
-  if (mode == 2) return encode_hw_rgb565_mode<2>(p);
-  return (mode == 4) ? encode_hw_rgb565_mode<4>(p) : encode_hw_rgb565_mode<3>(p);
-}
-
-inline uint16_t encode_hw_rgb565(esphome::Color c) {
-  const uint16_t p = static_cast<uint16_t>(((static_cast<uint16_t>(c.r) & 0xF8U) << 8) |
-                                           ((static_cast<uint16_t>(c.g) & 0xFCU) << 3) |
-                                           (static_cast<uint16_t>(c.b) >> 3));
-  return encode_hw_rgb565_raw(p);
-}
-
-inline uint16_t decode_hw_rgb565_raw(uint16_t hw) {
-  const int mode = active_frame_endian_mode();
-  if (mode == 1) return decode_hw_rgb565_mode<1>(hw);
-  if (mode == 2) return decode_hw_rgb565_mode<2>(hw);
-  return (mode == 4) ? decode_hw_rgb565_mode<4>(hw) : decode_hw_rgb565_mode<3>(hw);
-}
 
 // ------------------------------------------------------------------------------
 // 2. Row-Major RGB565 Fast Drawing Primitives, Active Y-Band Scissor & Bayer Dither
@@ -195,18 +76,18 @@ static constexpr uint8_t kBayer4[4][4] = {
 };
 
 template <typename DisplayT>
-inline void fast_pixel(DisplayT &it, int x, int y, esphome::Color c) {
+inline void fast_pixel(DisplayT &it, int x, int y, UiColor c) {
   if (x < 0 || x >= SCREEN_W || !row_in_clip_band(y)) return;
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
-    fb[y * SCREEN_W + x] = encode_hw_rgb565(c);
+    fb[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)] = encode_hw_rgb565(c);
     return;
   }
   it.draw_pixel_at(x, y, c);
 }
 
 template <typename DisplayT>
-inline void fast_hline(DisplayT &it, int x, int y, int w, esphome::Color c) {
+inline void fast_hline(DisplayT &it, int x, int y, int w, UiColor c) {
   if (w <= 0 || !row_in_clip_band(y)) return;
   if (x < 0) {
     w += x;
@@ -219,7 +100,7 @@ inline void fast_hline(DisplayT &it, int x, int y, int w, esphome::Color c) {
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
     const uint16_t px = encode_hw_rgb565(c);
-    uint16_t *dst = fb + y * SCREEN_W + x;
+    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
     int i = 0;
     if ((reinterpret_cast<uintptr_t>(dst) & 2U) != 0U) {
       dst[0] = px;
@@ -241,7 +122,7 @@ inline void fast_hline(DisplayT &it, int x, int y, int w, esphome::Color c) {
 }
 
 template <typename DisplayT>
-inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, esphome::Color c) {
+inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, UiColor c) {
   if (w <= 0 || h <= 0) return;
   const int cy0 = std::max(y, clip_y0());
   const int cy1 = std::min(y + h - 1, clip_y1());
@@ -251,7 +132,7 @@ inline void fill_rect_row_major(DisplayT &it, int x, int y, int w, int h, esphom
 }
 
 template <typename DisplayT>
-inline void fast_vline(DisplayT &it, int x, int y, int h, esphome::Color c) {
+inline void fast_vline(DisplayT &it, int x, int y, int h, UiColor c) {
   if (h <= 0 || x < 0 || x >= SCREEN_W) return;
   const int cy0 = std::max(y, clip_y0());
   const int cy1 = std::min(y + h - 1, clip_y1());
@@ -261,7 +142,7 @@ inline void fast_vline(DisplayT &it, int x, int y, int h, esphome::Color c) {
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
     const uint16_t px = encode_hw_rgb565(c);
-    uint16_t *dst = fb + y * SCREEN_W + x;
+    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
     for (int i = 0; i < h; i++, dst += SCREEN_W) {
       *dst = px;
     }
@@ -271,7 +152,8 @@ inline void fast_vline(DisplayT &it, int x, int y, int h, esphome::Color c) {
 }
 
 template <typename DisplayT>
-inline void fast_rect_outline(DisplayT &it, int x, int y, int w, int h, esphome::Color c) {
+inline void fast_rect_outline(DisplayT &it, int x, int y, int w, int h, UiColor c) {
+  if (w <= 0 || h <= 0) return;
   fast_hline(it, x, y, w, c);
   fast_hline(it, x, y + h - 1, w, c);
   fast_vline(it, x, y, h, c);
@@ -279,7 +161,7 @@ inline void fast_rect_outline(DisplayT &it, int x, int y, int w, int h, esphome:
 }
 
 template <typename DisplayT>
-inline void fast_filled_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+inline void fast_filled_circle(DisplayT &it, int cx, int cy, int r, UiColor c) {
   if (r < 0 || cy + r < clip_y0() || cy - r > clip_y1()) return;
   int dx = -r;
   int dy = 0;
@@ -307,7 +189,7 @@ inline void fast_filled_circle(DisplayT &it, int cx, int cy, int r, esphome::Col
 }
 
 template <typename DisplayT>
-inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+inline void fast_circle(DisplayT &it, int cx, int cy, int r, UiColor c) {
   if (r < 0 || cy + r < clip_y0() || cy - r > clip_y1()) return;
   uint16_t *fb = active_frame_buf16();
   const int cy0 = clip_y0();
@@ -315,7 +197,7 @@ inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
   const uint16_t px = (fb != nullptr) ? encode_hw_rgb565(c) : 0;
   auto put = [&](int x, int y) {
     if (static_cast<unsigned>(x) < static_cast<unsigned>(SCREEN_W) && y >= cy0 && y <= cy1) {
-      if (fb != nullptr) fb[y * SCREEN_W + x] = px;
+      if (fb != nullptr) fb[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)] = px;
       else it.draw_pixel_at(x, y, c);
     }
   };
@@ -342,7 +224,7 @@ inline void fast_circle(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
 }
 
 template <typename DisplayT>
-inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Color c) {
+inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, UiColor c) {
   const int cy0 = clip_y0();
   const int cy1 = clip_y1();
   if (std::max(y1, y2) < cy0 || std::min(y1, y2) > cy1) return;
@@ -361,7 +243,7 @@ inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Col
   int32_t err = dx + dy;
   while (true) {
     if (static_cast<unsigned>(x1) < static_cast<unsigned>(SCREEN_W) && y1 >= cy0 && y1 <= cy1) {
-      if (fb != nullptr) fb[y1 * SCREEN_W + x1] = px;
+      if (fb != nullptr) fb[static_cast<size_t>(y1) * SCREEN_W + static_cast<size_t>(x1)] = px;
       else it.draw_pixel_at(x1, y1, c);
     }
     if (x1 == x2 && y1 == y2) break;
@@ -379,7 +261,7 @@ inline void fast_line(DisplayT &it, int x1, int y1, int x2, int y2, esphome::Col
 
 template <typename DisplayT>
 inline void draw_glow_line(DisplayT &it, int x0, int y0, int x1, int y1,
-                           esphome::Color core_col, esphome::Color halo_col) {
+                           UiColor core_col, UiColor halo_col) {
   const int dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
   const int dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
   if (dx >= dy) {
@@ -394,7 +276,7 @@ inline void draw_glow_line(DisplayT &it, int x0, int y0, int x1, int y1,
 
 template <typename DisplayT>
 inline void fast_filled_flat_side_triangle(DisplayT &it, int x1, int y1, int x2, int y2, int x3, int y3,
-                                           esphome::Color c) {
+                                           UiColor c) {
   int s1_x = x1, s1_y = y1;
   bool s1_swap = false;
   int s1_dx = std::abs(x2 - x1), s1_dy = std::abs(y2 - y1);
@@ -446,7 +328,7 @@ inline void fast_filled_flat_side_triangle(DisplayT &it, int x1, int y1, int x2,
 
 template <typename DisplayT>
 inline void fast_filled_triangle(DisplayT &it, int x1, int y1, int x2, int y2, int x3, int y3,
-                                 esphome::Color c) {
+                                 UiColor c) {
   if (y1 > y2) {
     std::swap(x1, x2);
     std::swap(y1, y2);
@@ -500,28 +382,28 @@ inline void fast_hline_dither(DisplayT &it, int x, int y, int w, uint32_t r88, u
   if (w <= 0) return;
   uint16_t *fb = active_frame_buf16();
   if (fb == nullptr) {
-    const esphome::Color c{static_cast<uint8_t>(r88 >> 8),
-                           static_cast<uint8_t>(g88 >> 8),
-                           static_cast<uint8_t>(b88 >> 8)};
+    const UiColor c{static_cast<uint8_t>(r88 >> 8),
+                    static_cast<uint8_t>(g88 >> 8),
+                    static_cast<uint8_t>(b88 >> 8)};
     fast_hline(it, x, y, w, c);
     return;
   }
   const uint8_t *th = kBayer4[y & 3];
   uint16_t pat[4];
   for (int k = 0; k < 4; k++) pat[k] = encode_hw_rgb565_raw(dither_rgb565(r88, g88, b88, th[k]));
-  uint16_t *dst = fb + y * SCREEN_W + x;
+  uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
   for (int i = 0; i < w; i++) dst[i] = pat[(x + i) & 3];
 }
 
 template <typename DisplayT>
-inline void fast_pixel_blend(DisplayT &it, int x, int y, esphome::Color c, int a) {
+inline void fast_pixel_blend(DisplayT &it, int x, int y, UiColor c, int a) {
   if (a <= 0 || x < 0 || x >= SCREEN_W || !row_in_clip_band(y)) return;
   uint16_t *fb = active_frame_buf16();
   if (fb == nullptr) {
     if (a >= 128) fast_pixel(it, x, y, c);
     return;
   }
-  uint16_t &dst = fb[y * SCREEN_W + x];
+  uint16_t &dst = fb[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)];
   if (a >= 255) {
     dst = encode_hw_rgb565(c);
     return;
@@ -532,7 +414,7 @@ inline void fast_pixel_blend(DisplayT &it, int x, int y, esphome::Color c, int a
   const int rr = br + (((static_cast<int>(c.r) - br) * a + 127) / 255);
   const int rg = bgc + (((static_cast<int>(c.g) - bgc) * a + 127) / 255);
   const int rb = bb + (((static_cast<int>(c.b) - bb) * a + 127) / 255);
-  const esphome::Color blended{static_cast<uint8_t>(rr), static_cast<uint8_t>(rg), static_cast<uint8_t>(rb)};
+  const UiColor blended{static_cast<uint8_t>(rr), static_cast<uint8_t>(rg), static_cast<uint8_t>(rb)};
   dst = encode_hw_rgb565(blended);
 }
 
@@ -596,95 +478,35 @@ struct AaRoundRect {
   }
 };
 
+void fill_round_rect_aa_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
+                             UiColor c_top, UiColor c_bot, int hole = 0);
+
 template <typename DisplayT>
 inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad,
-                               esphome::Color c_top, esphome::Color c_bot, int hole = 0) {
-  if (w <= 0 || h <= 0) return;
-  const int ys = std::max(clip_y0(), y0);
-  const int ye = std::min(clip_y1() + 1, y0 + h);
-  if (ye <= ys) return;
-  AaRoundRect o;
-  o.init(x0, y0, w, h, rad);
-  AaRoundRect in;
-  const bool has_hole = (hole > 0 && w > 2 * hole && h > 2 * hole);
-  if (has_hole) in.init(x0 + hole, y0 + hole, w - 2 * hole, h - 2 * hole, rad - static_cast<float>(hole));
-  const bool flat = (c_top.r == c_bot.r && c_top.g == c_bot.g && c_top.b == c_bot.b);
-  for (int py = ys; py < ye; py++) {
-    float dy = 0.0f;
-    int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
-    if (!o.row(py, dy, s0, s1, e0, e1)) continue;
-    uint32_t r88 = static_cast<uint32_t>(c_top.r) << 8;
-    uint32_t g88 = static_cast<uint32_t>(c_top.g) << 8;
-    uint32_t b88 = static_cast<uint32_t>(c_top.b) << 8;
-    esphome::Color rc = c_top;
-    if (!flat && h > 1) {
-      const int num = py - y0;
-      const int den = h - 1;
-      r88 = static_cast<uint32_t>((static_cast<int>(c_top.r) << 8) + ((static_cast<int>(c_bot.r) - static_cast<int>(c_top.r)) * 256 * num) / den);
-      g88 = static_cast<uint32_t>((static_cast<int>(c_top.g) << 8) + ((static_cast<int>(c_bot.g) - static_cast<int>(c_top.g)) * 256 * num) / den);
-      b88 = static_cast<uint32_t>((static_cast<int>(c_top.b) << 8) + ((static_cast<int>(c_bot.b) - static_cast<int>(c_top.b)) * 256 * num) / den);
-      rc = {static_cast<uint8_t>(r88 >> 8), static_cast<uint8_t>(g88 >> 8), static_cast<uint8_t>(b88 >> 8)};
-    }
-    auto span = [&](int a, int b) {
-      if (b < a) return;
-      if (flat) fast_hline(it, a, py, b - a + 1, rc);
-      else fast_hline_dither(it, a, py, b - a + 1, r88, g88, b88);
-    };
-    if (s1 >= s0) {
-      int hs0 = 1, hs1 = 0;
-      float idy = 0.0f;
-      int ie0 = 0, ie1 = -1;
-      const bool in_hit = has_hole && in.row(py, idy, hs0, hs1, ie0, ie1);
-      if (in_hit && hole > 1) {
-        span(s0, std::min(s1, ie0 - 1));
-        span(std::max(s0, ie1 + 1), s1);
-        if (hs1 >= hs0) {
-          for (int px = std::max(s0, ie0); px <= std::min(s1, hs0 - 1); px++) {
-            fast_pixel_blend(it, px, py, rc, 255 - in.coverage(px, idy));
-          }
-          for (int px = std::max(s0, hs1 + 1); px <= std::min(s1, ie1); px++) {
-            fast_pixel_blend(it, px, py, rc, 255 - in.coverage(px, idy));
-          }
-        } else {
-          for (int px = std::max(s0, ie0); px <= std::min(s1, ie1); px++) {
-            fast_pixel_blend(it, px, py, rc, 255 - in.coverage(px, idy));
-          }
-        }
-      } else if (in_hit && hs1 >= hs0) {
-        span(s0, std::min(s1, hs0 - 1));
-        span(std::max(s0, hs1 + 1), s1);
-      } else {
-        span(s0, s1);
-      }
-    }
-    if (s1 < s0) {
-      for (int px = e0; px <= e1; px++) fast_pixel_blend(it, px, py, rc, o.coverage(px, dy));
-    } else {
-      for (int px = e0; px < s0; px++) fast_pixel_blend(it, px, py, rc, o.coverage(px, dy));
-      for (int px = s1 + 1; px <= e1; px++) fast_pixel_blend(it, px, py, rc, o.coverage(px, dy));
-    }
-  }
+                               UiColor c_top, UiColor c_bot, int hole = 0) {
+  Rgb565Surface surf(it);
+  fill_round_rect_aa_impl(surf, x0, y0, w, h, rad, c_top, c_bot, hole);
 }
 
 template <typename DisplayT>
-inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad, esphome::Color c) {
+inline void fill_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad, UiColor c) {
   fill_round_rect_aa(it, x0, y0, w, h, rad, c, c, 0);
 }
 
 template <typename DisplayT>
 inline void stroke_round_rect_aa(DisplayT &it, int x0, int y0, int w, int h, float rad,
-                                 esphome::Color c_top, esphome::Color c_bot, int thick = 1) {
+                                 UiColor c_top, UiColor c_bot, int thick = 1) {
   fill_round_rect_aa(it, x0, y0, w, h, rad, c_top, c_bot, thick);
 }
 
 template <typename DisplayT>
-inline void fast_filled_circle_aa(DisplayT &it, int cx, int cy, int r, esphome::Color c) {
+inline void fast_filled_circle_aa(DisplayT &it, int cx, int cy, int r, UiColor c) {
   if (r < 0) return;
   fill_round_rect_aa(it, cx - r, cy - r, 2 * r + 1, 2 * r + 1, static_cast<float>(r) + 0.5f, c, c);
 }
 
 template <typename DisplayT>
-inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color c, float thick = 1.5f) {
+inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, UiColor c, float thick = 1.5f) {
   if (r <= 1.0f) return;
   const float half = 0.5f * thick;
   const float ro = r + half + 0.5f;
@@ -713,7 +535,7 @@ inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, esphome::Color
 
 template <typename DisplayT>
 inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy, int size_px,
-                            esphome::Color color, bool drop_shadow = true,
+                            UiColor color, bool drop_shadow = true,
                             std::string_view fallback_name = "mdi:map-marker-outline") {
   if (size_px <= 0) return;
   const int half = (size_px + 3) / 2;
@@ -742,12 +564,12 @@ inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy,
                         });
 }
 
-static constexpr int kGlassAlphaMinQ8 = 96;           // ~37.5% fixed Clear bottom alpha
-static constexpr int kGlassClearAlphaQ8 = 104;        // ~40.6% fixed Clear base alpha
-static constexpr int kGlassClearAlphaMaxQ8 = 116;     // ~45.3% fixed Clear top alpha
-static constexpr int kGlassReadableAlphaMinQ8 = 208;  // ~81% ReadableDark base floor (200..216/256)
-static constexpr int kGlassSemanticWashMaxQ8 = 38;    // <= 15% semantic interior wash
-static constexpr int kGlassSemanticRimMaxQ8 = 64;     // <= 25% semantic specular rim tint
+static constexpr int kGlassAlphaMinQ8 = 96;
+static constexpr int kGlassClearAlphaQ8 = 104;
+static constexpr int kGlassClearAlphaMaxQ8 = 116;
+static constexpr int kGlassReadableAlphaMinQ8 = 208;
+static constexpr int kGlassSemanticWashMaxQ8 = 38;
+static constexpr int kGlassSemanticRimMaxQ8 = 64;
 static constexpr float kGlassTextContrast = 5.0f;
 static constexpr float kGlassTextContrastMin = 4.5f;
 static constexpr int kGlassBrightPercent = 3;
@@ -756,166 +578,53 @@ static constexpr int kGlassSheenBotQ8 = 28;
 static constexpr int kGlassAlphaFallQ8 = 4;
 
 struct GlassBackdrop {
-  esphome::Color bright{};
-  esphome::Color mean{};
+  UiColor bright{};
+  UiColor mean{};
   bool valid = false;
 };
 
 const float *srgb_linear_lut();
-float relative_luminance(esphome::Color c);
+float relative_luminance(UiColor c);
 float contrast_ratio(float la, float lb);
-esphome::Color mix_color_q8(esphome::Color c_under, esphome::Color c_over, int a);
+UiColor mix_color_q8(UiColor c_under, UiColor c_over, int a);
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h);
 GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h);
-bool is_semantic_glass_color(esphome::Color c);
-void normalize_glass_chrome(esphome::Color caller_bg, esphome::Color caller_brd,
-                            GlassVariant &inout_variant, esphome::Color &out_base_tint,
-                            esphome::Color &out_rim_tint);
-int glass_alpha_for_text(esphome::Color tint, esphome::Color backdrop, esphome::Color text,
+bool is_semantic_glass_color(UiColor c);
+void normalize_glass_chrome(UiColor caller_bg, UiColor caller_brd,
+                            GlassVariant &inout_variant, UiColor &out_base_tint,
+                            UiColor &out_rim_tint);
+int glass_alpha_for_text(UiColor tint, UiColor backdrop, UiColor text,
                          int min_alpha_q8 = kGlassAlphaMinQ8);
 int glass_alpha_smooth(int &state, int target, uint32_t dt_ms = 16U);
-void resolve_glass_fill(const GlassBackdrop &bd, esphome::Color tint, esphome::Color ref_text,
-                        esphome::Color &out_tint, int &out_a_top, int &out_a_bot,
+void resolve_glass_fill(const GlassBackdrop &bd, UiColor tint, UiColor ref_text,
+                        UiColor &out_tint, int &out_a_top, int &out_a_bot,
                         int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8 = -1,
                         GlassVariant variant = GlassVariant::Clear);
-esphome::Color sample_glass_surface_color(int x0, int y0, int w, int h,
-                                          esphome::Color tint = kChromeGlassTint,
-                                          GlassVariant variant = GlassVariant::Clear);
+UiColor sample_glass_surface_color(int x0, int y0, int w, int h,
+                                   UiColor tint = kChromeGlassTint,
+                                   GlassVariant variant = GlassVariant::Clear);
 
-template <int Mode>
-inline void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, float rad,
-                                       esphome::Color tint, int a_top, int a_bot, int hole) {
-  const int ys = std::max(clip_y0(), y0);
-  const int ye = std::min(clip_y1() + 1, y0 + h);
-  if (ye <= ys) return;
-  AaRoundRect o;
-  o.init(x0, y0, w, h, rad);
-  AaRoundRect in;
-  const bool has_hole = (hole > 0 && w > 2 * hole && h > 2 * hole);
-  if (has_hole) in.init(x0 + hole, y0 + hole, w - 2 * hole, h - 2 * hole, rad - static_cast<float>(hole));
-  const uint32_t tr = (static_cast<uint32_t>(tint.r) * 31U * 256U + 127U) / 255U;
-  const uint32_t tg = (static_cast<uint32_t>(tint.g) * 63U * 256U + 127U) / 255U;
-  const uint32_t tb = (static_cast<uint32_t>(tint.b) * 31U * 256U + 127U) / 255U;
-  auto mix = [&](uint16_t &dst, int a, int t) {
-    const uint16_t bg = decode_hw_rgb565_mode<Mode>(dst);
-    const uint32_t ia = static_cast<uint32_t>(256 - a);
-    const uint32_t ua = static_cast<uint32_t>(a);
-    uint32_t r = ((tr * ua) / 256U + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
-    uint32_t g = ((tg * ua) / 256U + ((bg >> 5) & 0x3FU) * ia + static_cast<uint32_t>(t)) >> 8;
-    uint32_t b = ((tb * ua) / 256U + (bg & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
-    if (r > 31U) r = 31U;
-    if (g > 63U) g = 63U;
-    if (b > 31U) b = 31U;
-    dst = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
-  };
-  for (int py = ys; py < ye; py++) {
-    float dy = 0.0f;
-    int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
-    if (!o.row(py, dy, s0, s1, e0, e1)) continue;
-    const int a = (h > 1) ? (a_top + ((a_bot - a_top) * (py - y0)) / (h - 1)) : a_top;
-    if (a <= 0) continue;
-    const uint8_t *th = kBayer4[py & 3];
-    uint16_t *row = fb + py * SCREEN_W;
-    const uint32_t ua = static_cast<uint32_t>(a);
-    const uint32_t ia = static_cast<uint32_t>(256 - a);
-    const uint32_t tr_a = (tr * ua) >> 8;
-    const uint32_t tg_a = (tg * ua) >> 8;
-    const uint32_t tb_a = (tb * ua) >> 8;
-    uint32_t base_r[4], base_g[4], base_b[4];
-    for (int k = 0; k < 4; k++) {
-      const uint32_t tk = static_cast<uint32_t>(th[k]) * 16U + 8U;
-      base_r[k] = tr_a + tk;
-      base_g[k] = tg_a + tk;
-      base_b[k] = tb_a + tk;
-    }
-    auto span = [&](int xa, int xb) {
-      xa = std::max(xa, 0);
-      xb = std::min(xb, SCREEN_W - 1);
-      for (int x = xa; x <= xb; x++) {
-        const uint16_t bg = decode_hw_rgb565_mode<Mode>(row[x]);
-        const int k = x & 3;
-        uint32_t r = (base_r[k] + ((bg >> 11) & 0x1FU) * ia) >> 8;
-        uint32_t g = (base_g[k] + ((bg >> 5) & 0x3FU) * ia) >> 8;
-        uint32_t b = (base_b[k] + (bg & 0x1FU) * ia) >> 8;
-        if (r > 31U) r = 31U;
-        if (g > 63U) g = 63U;
-        if (b > 31U) b = 31U;
-        row[x] = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
-      }
-    };
-    auto edge = [&](int px) {
-      if (px < 0 || px >= SCREEN_W) return;
-      const int cov = o.coverage(px, dy);
-      if (cov <= 0) return;
-      mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
-    };
-    auto inner_edge = [&](int px, float idy) {
-      if (px < 0 || px >= SCREEN_W) return;
-      const int cov = 255 - in.coverage(px, idy);
-      if (cov <= 0) return;
-      mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
-    };
-    if (s1 >= s0) {
-      int hs0 = 1, hs1 = 0;
-      float idy = 0.0f;
-      int ie0 = 0, ie1 = -1;
-      const bool in_hit = has_hole && in.row(py, idy, hs0, hs1, ie0, ie1);
-      if (in_hit && hole > 1) {
-        span(s0, std::min(s1, ie0 - 1));
-        span(std::max(s0, ie1 + 1), s1);
-        if (hs1 >= hs0) {
-          for (int px = std::max(s0, ie0); px <= std::min(s1, hs0 - 1); px++) inner_edge(px, idy);
-          for (int px = std::max(s0, hs1 + 1); px <= std::min(s1, ie1); px++) inner_edge(px, idy);
-        } else {
-          for (int px = std::max(s0, ie0); px <= std::min(s1, ie1); px++) inner_edge(px, idy);
-        }
-      } else if (in_hit && hs1 >= hs0) {
-        span(s0, std::min(s1, hs0 - 1));
-        span(std::max(s0, hs1 + 1), s1);
-      } else {
-        span(s0, s1);
-      }
-      for (int px = e0; px < s0; px++) edge(px);
-      for (int px = s1 + 1; px <= e1; px++) edge(px);
-    } else {
-      for (int px = e0; px <= e1; px++) edge(px);
-    }
-  }
-}
+void fill_round_rect_glass_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
+                                UiColor tint, int a_top, int a_bot, int hole = 0);
 
 template <typename DisplayT>
 inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, float rad,
-                                  esphome::Color tint, int a_top, int a_bot, int hole = 0) {
-  if (w <= 0 || h <= 0) return;
-  if (y0 + h <= clip_y0() || y0 > clip_y1()) return;
-  uint16_t *fb = active_frame_buf16();
-  if (fb == nullptr) {
-    fill_round_rect_aa(it, x0, y0, w, h, rad, tint, tint, hole);
-    return;
-  }
-  const int mode = active_frame_endian_mode();
-  if (mode == 1) {
-    fill_round_rect_glass_mode<1>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
-  } else if (mode == 2) {
-    fill_round_rect_glass_mode<2>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
-  } else if (mode == 4) {
-    fill_round_rect_glass_mode<4>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
-  } else {
-    fill_round_rect_glass_mode<3>(fb, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
-  }
+                                  UiColor tint, int a_top, int a_bot, int hole = 0) {
+  Rgb565Surface surf(it);
+  fill_round_rect_glass_impl(surf, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
 }
 
 template <typename DisplayT>
 inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
-                              esphome::Color tint, int alpha_q8, const GlassBackdrop &bd,
+                              UiColor tint, int alpha_q8, const GlassBackdrop &bd,
                               GlassVariant variant = GlassVariant::Clear,
-                              esphome::Color ref_text = kChromeGlassSheen) {
+                              UiColor ref_text = kChromeGlassSheen) {
   if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
   r = std::max(2, std::min(r, std::min(w, h) / 2));
   GlassVariant eff_var = variant;
-  esphome::Color norm_tint, rim_col;
+  UiColor norm_tint, rim_col;
   normalize_glass_chrome(tint, kChromeCardBorder, eff_var, norm_tint, rim_col);
-  esphome::Color eff_tint;
+  UiColor eff_tint;
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, alpha_q8, eff_var);
   fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
@@ -923,9 +632,9 @@ inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
 }
 
 template <typename DisplayT>
-inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, esphome::Color tint, int alpha_q8,
+inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, UiColor tint, int alpha_q8,
                               GlassVariant variant = GlassVariant::Clear,
-                              esphome::Color ref_text = kChromeGlassSheen) {
+                              UiColor ref_text = kChromeGlassSheen) {
   if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
   const GlassBackdrop bd =
       (variant == GlassVariant::ReadableDark) ? sample_glass_backdrop(x0, y0, w, h) : GlassBackdrop{};
@@ -956,40 +665,37 @@ struct TextCacheEntry {
 };
 
 std::string sanitize_utf8_for_font(const std::string &str);
-std::string fit_text_to_width_font_base(const std::string &raw_str, int max_w, esphome::display::BaseFont *font);
-int text_ink_right_edge_impl(esphome::display::Display &it, esphome::display::BaseFont *font, const char *text);
-void fast_print_impl(esphome::display::Display &it, int x, int y, esphome::display::BaseFont *font,
-                     esphome::Color color, esphome::display::TextAlign align, const char *text,
-                     esphome::Color background);
-void fast_print_alpha_impl(esphome::display::Display &it, int x, int y, esphome::display::BaseFont *font,
-                           esphome::Color color, esphome::display::TextAlign align, const char *text,
+std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFontView font);
+int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *text);
+void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
+                     UiColor color, UiTextAlign align, const char *text,
+                     UiColor background = kColorOff);
+void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
+                           UiColor color, UiTextAlign align, const char *text,
                            int alpha_q8);
 
-template <typename FontT>
-inline std::string fit_text_to_width_font(const std::string &raw_str, int max_w, FontT *font) {
-  return fit_text_to_width_font_base(raw_str, max_w, static_cast<esphome::display::BaseFont *>(font));
+template <typename DisplayT, typename FontT>
+inline int text_ink_right_edge(DisplayT &it, FontT font, const char *text) {
+  Rgb565Surface surf(it);
+  return text_ink_right_edge_impl(surf, UiFontView(font), text);
 }
 
-template <typename DisplayT, typename FontT>
-inline int text_ink_right_edge(DisplayT &it, FontT *font, const char *text) {
-  return text_ink_right_edge_impl(it, static_cast<esphome::display::BaseFont *>(font), text);
+template <typename DisplayT, typename FontT, typename AlignT>
+inline void fast_print(DisplayT &it, int x, int y, FontT font, UiColor color,
+                       AlignT align, const char *text, UiColor background = kColorOff) {
+  Rgb565Surface surf(it);
+  fast_print_impl(surf, x, y, UiFontView(font), color, to_ui_text_align(align), text, background);
 }
 
-template <typename DisplayT, typename FontT>
-inline void fast_print(DisplayT &it, int x, int y, FontT *font, esphome::Color color,
-                       esphome::display::TextAlign align, const char *text,
-                       esphome::Color background = esphome::display::COLOR_OFF) {
-  fast_print_impl(it, x, y, static_cast<esphome::display::BaseFont *>(font), color, align, text, background);
-}
-
-template <typename DisplayT, typename FontT>
-inline void fast_print_alpha(DisplayT &it, int x, int y, FontT *font, esphome::Color color,
-                             esphome::display::TextAlign align, const char *text, int alpha_q8) {
-  fast_print_alpha_impl(it, x, y, static_cast<esphome::display::BaseFont *>(font), color, align, text, alpha_q8);
+template <typename DisplayT, typename FontT, typename AlignT>
+inline void fast_print_alpha(DisplayT &it, int x, int y, FontT font, UiColor color,
+                             AlignT align, const char *text, int alpha_q8) {
+  Rgb565Surface surf(it);
+  fast_print_alpha_impl(surf, x, y, UiFontView(font), color, to_ui_text_align(align), text, alpha_q8);
 }
 
 // ------------------------------------------------------------------------------
-// 5. RGB565 Scanline Blitter, ArtImageView & PSRAM ArtCanvasCache
+// 5. RGB565 Scanline Blitter & PSRAM ArtCanvasCache / Cache Drop Hooks
 // ------------------------------------------------------------------------------
 template <typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
@@ -1007,10 +713,10 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
 
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
-    uint16_t *dst = fb + y * SCREEN_W + start_x;
+    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(start_x);
     const int mode = active_frame_endian_mode();
     if (!skip_black) {
-      if (mode == 1) {
+      if (mode == 1 || mode < 0) {
         std::memcpy(dst, row_buf, static_cast<size_t>(span_w) * sizeof(uint16_t));
         return;
       }
@@ -1043,9 +749,9 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
     const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1FU);
     const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3FU);
     const uint8_t b5 = static_cast<uint8_t>(p & 0x1FU);
-    const esphome::Color c{static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
-                           static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
-                           static_cast<uint8_t>((b5 << 3) | (b5 >> 2))};
+    const UiColor c{static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+                    static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+                    static_cast<uint8_t>((b5 << 3) | (b5 >> 2))};
     const int x0 = start_x + i;
     if (run == 1) {
       it.draw_pixel_at(x0, y, c);
@@ -1057,31 +763,6 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
     }
     i += run;
   }
-}
-
-struct ArtImageView {
-  const uint16_t *data = nullptr;
-  int width = 0;
-  int height = 0;
-
-  constexpr bool valid() const { return data != nullptr && width > 0 && height > 0; }
-  constexpr int get_width() const { return width; }
-  constexpr int get_height() const { return height; }
-  inline const uint8_t *get_data_start() const { return reinterpret_cast<const uint8_t *>(data); }
-};
-
-inline ArtImageView make_art_view(const ArtImageView &v) { return v; }
-inline ArtImageView make_art_view(const ArtImageView *v) { return (v != nullptr) ? *v : ArtImageView{}; }
-
-template <typename ImageT>
-  requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
-inline ArtImageView make_art_view(ImageT *img) {
-  if (img == nullptr) return {};
-  return {
-      reinterpret_cast<const uint16_t *>(img->get_data_start()),
-      img->get_width(),
-      img->get_height(),
-  };
 }
 
 struct ArtCanvasCache {
@@ -1109,14 +790,16 @@ ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool
 void art_canvas_drop(const void *data);
 void art_canvas_drop_all() noexcept;
 void sky_base_cache_drop() noexcept;
-esphome::Color sample_image_ambient_tint_view(ArtImageView img, esphome::Color base_bg = kChromeGlassTint);
-bool render_album_art_canvas_view(esphome::display::Display &it, ArtImageView target_art, int cx,
+void weather_cloud_cache_drop() noexcept;
+void game_arena_drop() noexcept;
+UiColor sample_image_ambient_tint_view(ArtImageView img, UiColor base_bg = kChromeGlassTint);
+bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,
                                   bool show_metadata, int dim_level = 0);
-bool render_lyrics_art_backdrop_view(esphome::display::Display &it, ArtImageView target_art, int cx,
-                                     esphome::Color theme_primary, esphome::Color col_bg = kChromeShadow);
-bool render_page_wallpaper_base_view(esphome::display::Display &it, ArtImageView wallpaper_img,
-                                     bool has_wallpaper, int cx, esphome::Color col_bg, int dim_level = 0);
+bool render_lyrics_art_backdrop_view(Rgb565Surface &it, ArtImageView target_art, int cx,
+                                     UiColor theme_primary, UiColor col_bg = kChromeShadow);
+bool render_page_wallpaper_base_view(Rgb565Surface &it, ArtImageView wallpaper_img,
+                                     bool has_wallpaper, int cx, UiColor col_bg, int dim_level = 0);
 
 template <typename ImageT>
 inline void release_art(ImageT *img) {
@@ -1125,20 +808,22 @@ inline void release_art(ImageT *img) {
   img->release();
 }
 
-inline esphome::Color sample_image_ambient_tint(ArtImageView img, esphome::Color base_bg = kChromeGlassTint) {
+inline UiColor sample_image_ambient_tint(ArtImageView img, UiColor base_bg = kChromeGlassTint) {
   return sample_image_ambient_tint_view(img, base_bg);
 }
 
 template <typename ImageT>
   requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
-inline esphome::Color sample_image_ambient_tint(ImageT *img, esphome::Color base_bg = kChromeGlassTint) {
+inline UiColor sample_image_ambient_tint(ImageT *img, UiColor base_bg = kChromeGlassTint) {
   return sample_image_ambient_tint_view(make_art_view(img), base_bg);
 }
 
-inline bool render_album_art_canvas(esphome::display::Display &it, ArtImageView target_art, int cx,
+template <typename DisplayT>
+inline bool render_album_art_canvas(DisplayT &it, ArtImageView target_art, int cx,
                                     bool is_standard, bool is_letterbox, bool apply_scrim,
                                     bool show_metadata, int dim_level = 0) {
-  return render_album_art_canvas_view(it, target_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+  Rgb565Surface surf(it);
+  return render_album_art_canvas_view(surf, target_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
 }
 
 template <typename DisplayT, typename ImageT>
@@ -1146,31 +831,38 @@ template <typename DisplayT, typename ImageT>
 inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
                                     bool is_standard, bool is_letterbox, bool apply_scrim,
                                     bool show_metadata, int dim_level = 0) {
-  return render_album_art_canvas_view(it, make_art_view(target_art), cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
+  Rgb565Surface surf(it);
+  return render_album_art_canvas_view(surf, make_art_view(target_art), cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
 }
 
-inline bool render_lyrics_art_backdrop(esphome::display::Display &it, ArtImageView target_art, int cx,
-                                       esphome::Color theme_primary, esphome::Color col_bg = kChromeShadow) {
-  return render_lyrics_art_backdrop_view(it, target_art, cx, theme_primary, col_bg);
+template <typename DisplayT>
+inline bool render_lyrics_art_backdrop(DisplayT &it, ArtImageView target_art, int cx,
+                                       UiColor theme_primary, UiColor col_bg = kChromeShadow) {
+  Rgb565Surface surf(it);
+  return render_lyrics_art_backdrop_view(surf, target_art, cx, theme_primary, col_bg);
 }
 
 template <typename DisplayT, typename ImageT>
   requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
 inline bool render_lyrics_art_backdrop(DisplayT &it, ImageT *target_art, int cx,
-                                       esphome::Color theme_primary, esphome::Color col_bg = kChromeShadow) {
-  return render_lyrics_art_backdrop_view(it, make_art_view(target_art), cx, theme_primary, col_bg);
+                                       UiColor theme_primary, UiColor col_bg = kChromeShadow) {
+  Rgb565Surface surf(it);
+  return render_lyrics_art_backdrop_view(surf, make_art_view(target_art), cx, theme_primary, col_bg);
 }
 
-inline bool render_page_wallpaper_base(esphome::display::Display &it, ArtImageView wallpaper_img,
-                                       bool has_wallpaper, int cx, esphome::Color col_bg, int dim_level = 0) {
-  return render_page_wallpaper_base_view(it, wallpaper_img, has_wallpaper, cx, col_bg, dim_level);
+template <typename DisplayT>
+inline bool render_page_wallpaper_base(DisplayT &it, ArtImageView wallpaper_img,
+                                       bool has_wallpaper, int cx, UiColor col_bg, int dim_level = 0) {
+  Rgb565Surface surf(it);
+  return render_page_wallpaper_base_view(surf, wallpaper_img, has_wallpaper, cx, col_bg, dim_level);
 }
 
 template <typename DisplayT, typename ImageT>
   requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
 inline bool render_page_wallpaper_base(DisplayT &it, ImageT *wallpaper_img, bool has_wallpaper,
-                                       int cx, esphome::Color col_bg, int dim_level = 0) {
-  return render_page_wallpaper_base_view(it, make_art_view(wallpaper_img), has_wallpaper, cx, col_bg, dim_level);
+                                       int cx, UiColor col_bg, int dim_level = 0) {
+  Rgb565Surface surf(it);
+  return render_page_wallpaper_base_view(surf, make_art_view(wallpaper_img), has_wallpaper, cx, col_bg, dim_level);
 }
 
 // ------------------------------------------------------------------------------
@@ -1187,11 +879,12 @@ FrameBaseState &frame_base_state();
 void frame_base_begin();
 void frame_base_skip();
 void frame_base_claim();
-bool frame_base_impl(esphome::display::Display &it, esphome::Color c);
+bool frame_base_impl(Rgb565Surface &it, UiColor c);
 
 template <typename DisplayT>
-inline bool frame_base(DisplayT &it, esphome::Color c) {
-  return frame_base_impl(it, c);
+inline bool frame_base(DisplayT &it, UiColor c) {
+  Rgb565Surface surf(it);
+  return frame_base_impl(surf, c);
 }
 
 struct ProfLap {

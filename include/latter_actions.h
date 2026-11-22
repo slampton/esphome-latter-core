@@ -16,11 +16,7 @@
 
 #include "hal_manifest.h"
 #include "latter_rpc.h"
-#include "latter_state.h"
-
-namespace latter_ui {
-void mark_dirty_full();
-}  // namespace latter_ui
+#include "state/device_runtime_state.h"
 
 namespace latter_actions {
 
@@ -799,6 +795,7 @@ struct DeviceCommandEffects {
   bool stop_sound = false;
   bool sync_brightness = false;
   bool apply_power = false;
+  bool mark_dirty_full = false;
 };
 
 template <typename OutboxT = std::nullptr_t>
@@ -826,9 +823,9 @@ inline DeviceCommandEffects handle_device_cmd_dismiss_ringing(uint32_t now_ms,
     latter_ui::sync_multi_timer_state();
   }
   (void)latter_ui::timer_alarm_controller().dismiss_ringing();
-  latter_ui::mark_dirty_full();
+  rs.nav.ui_dirty_full = true;
   (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
-  return DeviceCommandEffects{was_any, was_any, true};
+  return DeviceCommandEffects{was_any, was_any, true, true};
 }
 
 template <typename OutboxT = std::nullptr_t>
@@ -852,9 +849,9 @@ inline DeviceCommandEffects handle_device_cmd_cancel_timer(uint32_t now_ms,
   if (rs.nav.home_subpage == 2 && !rs.timers.running && !rs.stopwatch.running) {
     rs.nav.home_subpage = 0;
   }
-  latter_ui::mark_dirty_full();
+  rs.nav.ui_dirty_full = true;
   (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
-  return DeviceCommandEffects{was_ringing, was_ringing, true};
+  return DeviceCommandEffects{was_ringing, was_ringing, true, true};
 }
 
 template <typename OutboxT = std::nullptr_t>
@@ -865,9 +862,9 @@ inline DeviceCommandEffects handle_device_cmd_reset_stopwatch(uint32_t now_ms,
   if (rs.nav.home_subpage == 2 && !rs.timers.running && !rs.stopwatch.running) {
     rs.nav.home_subpage = 0;
   }
-  latter_ui::mark_dirty_full();
+  rs.nav.ui_dirty_full = true;
   (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
-  return DeviceCommandEffects{false, false, true};
+  return DeviceCommandEffects{false, false, true, true};
 }
 
 }  // namespace latter_actions

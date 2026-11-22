@@ -1,21 +1,14 @@
 #pragma once
 
 // ==============================================================================
-// Latter Concrete Compiled Page & Overlay Declarations (include/ui_pages.h)
-// Concrete C++20 entry points compiled in dedicated translation units under
-// components/latter_ui/:
-//   page_clock_home.cpp, page_music.cpp, page_weather.cpp, page_area_hub.cpp,
-//   page_home_hub.cpp, page_remote.cpp, page_system.cpp, page_ambient_va.cpp,
-//   page_tools.cpp, page_time.cpp, page_games.cpp, page_calendar.cpp.
+// Latter Concrete Compiled Page & Camera Video Declarations (include/ui_pages.h)
+// Pure C++20 L3 header — zero ESPHome includes; compiles cleanly on host via
+// Rgb565Surface across all 5 canonical panel geometries.
 // ==============================================================================
 
-#include <cstdint>
-#include <string>
-#include <string_view>
-
-#include "latter_protocol.h"
-#include "latter_state.h"
 #include "audio_router.h"
+#include "latter_protocol.h"
+#include "state/device_runtime_state.h"
 #include "ui_compositor.h"
 #include "ui_gfx.h"
 #include "ui_hit_table.h"
@@ -23,77 +16,45 @@
 #include "ui_types.h"
 #include "ui_widgets.h"
 
+#include <cstdint>
+#include <string>
+#include <string_view>
+
 namespace latter_ui {
 
 // ------------------------------------------------------------------------------
 // 1. Top-Level Page Dispatcher & Concrete Page Renderers
 // ------------------------------------------------------------------------------
-void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_active_page(Rgb565Surface &it, const UiFrameContext &ctx);
 
-void render_clock_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_home_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_music_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_weather_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_area_control_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_home_hub_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_system_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_tools_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_time_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_games_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_calendar_page(esphome::display::Display &it, const UiFrameContext &ctx);
-void render_cameras_page(esphome::display::Display &it, const UiFrameContext &ctx);
+void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_music_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_home_hub_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_tv_remote_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_tools_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_time_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_games_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_pinned_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_calendar_page(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_cameras_page(Rgb565Surface &it, const UiFrameContext &ctx);
 
-// Shared live-video blitter & translucent doorbell PTT overlay (used by page_cameras.cpp & page_ambient_va.cpp)
-bool blit_rgb565_fitted_frame(esphome::display::Display &it, const uint16_t *src,
+// Shared live-video blitter & translucent doorbell PTT overlay
+bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
                               int src_w, int src_h, const CameraRect &dst_rect,
                               bool fill, bool clip_round_bezel = false);
-void render_doorbell_ptt_banner(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_doorbell_ptt_banner(Rgb565Surface &it, const UiFrameContext &ctx,
                                 int center_y);
-void render_camera_video_placeholder(esphome::display::Display &it, const UiFrameContext &ctx,
+void render_camera_video_placeholder(Rgb565Surface &it, const UiFrameContext &ctx,
                                      const CameraRect &vp, const char *title, const char *subtitle,
-                                     esphome::Color icon_col);
+                                     UiColor icon_col);
 
 // ------------------------------------------------------------------------------
-// 2. Global System Takeover Overlays (called by render_system_takeovers)
+// 2. Shared Home Activity Collector & Weather / Area / Tools / Games Helpers
 // ------------------------------------------------------------------------------
-void render_alert_ringing_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
-                                  const SystemTakeoverState &st);
-void render_voice_assistant_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
-                                    const SystemTakeoverState &st);
-void render_notification_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
-                                 const SystemTakeoverState &st);
-void render_quick_actions_overlay(esphome::display::Display &it, const UiFrameContext &ctx,
-                                  const SystemTakeoverState &st);
-void render_docked_screensaver(esphome::display::Display &it, const UiFrameContext &ctx,
-                               const SystemTakeoverState &st);
-
-// ------------------------------------------------------------------------------
-// 3. Shared Home / Activity Deck State & Helpers (page_clock_home.cpp + touch_engine.cpp)
-//    (Pure-C++20 HomeActivityItem / HomeActivityView / next_alarm_minutes_until /
-//     resolve_home_activity_view live in include/ui_compositor.h)
-// ------------------------------------------------------------------------------
-static constexpr uint32_t kWakeGreetingHoldMs = 2800U;
-static constexpr uint32_t kWakeGreetingFadeMs = 1200U;
-static constexpr uint32_t kWakeGreetingTotalMs = kWakeGreetingHoldMs + kWakeGreetingFadeMs;
-
-int &home_activity_overlay_page();
-int &snoozed_alarm_slot() noexcept;
-uint32_t &wake_greeting_start_ms();
-bool &wake_greeting_latched();
-bool is_wake_greeting_visible(uint32_t now_ms, bool enabled);
-bool is_wake_greeting_fading(uint32_t now_ms, bool enabled);
-void dismiss_wake_greeting();
-bool is_doorbell_or_intercom_active();
-bool is_home_activity_carousel_animating(uint32_t now_ms);
-bool is_home_activity_fading_out(uint32_t now_ms);
-bool has_pending_home_activity_fade_settle(uint32_t now_ms);
-bool home_activity_slide_active(uint32_t now_ms);
-uint32_t home_activity_next_rotate_due_ms(uint32_t now_ms);
-bool home_activity_band(int &out_y0, int &out_y1);
-const HomeActivityItem *home_activity_rendered_items(int &out_count);
-
 int collect_home_activities(
     uint32_t now_ms, bool is_24h_format,
     bool stopwatch_running, uint32_t stopwatch_start_time, uint32_t stopwatch_elapsed_ms,
@@ -110,40 +71,27 @@ int collect_home_activities(
 
 int get_activity_overlay_card_y(int vis_count, int row_idx);
 
-// ------------------------------------------------------------------------------
-// 4. Shared Weather Cross-Page Helpers (page_weather.cpp)
-//    (Music playback override & volume helpers live in include/latter_state.h)
-// ------------------------------------------------------------------------------
-
-bool &weather_sim_dirty();
 void resolve_weather_sim_view(std::string_view sim_opt, std::string_view &cond, bool &is_night) noexcept;
 void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night);
 std::string format_weather_title(const std::string &c_in);
 bool &night_meteor_epoch_initialized();
 bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms = 0);
 bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0);
-bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond,
-                             std::string_view sun_state, uint32_t now_ms);
 float weather_precip_alpha_scale();
-bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
-                                 bool has_motion_cond);
-void render_weather_motion_wallpaper(esphome::display::Display &it, int cx, int cy, uint32_t now_ms,
+void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                                      const std::string &cond, bool is_night,
                                      double moon_cycle = 0.5,
                                      int cel_cx = 341, int cel_cy = 91,
                                      bool mask_hero_temp = true,
                                      float accel_x = 0.0f, float accel_y = 0.0f,
                                      bool show_celestial = true);
-void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night);
+void render_static_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night);
 void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz);
 std::string format_iso_time(const std::string &iso_str);
 
-// ------------------------------------------------------------------------------
-// 5. Shared Area, Home Hub, Tools, Comms & Games State
-// ------------------------------------------------------------------------------
 std::string strip_trailing_paren_state(const std::string &s);
 
-void render_climate_controls_deck(esphome::display::Display &it,
+void render_climate_controls_deck(Rgb565Surface &it,
                                   const UiFrameContext &ctx,
                                   const DeviceRuntimeState &rs,
                                   const ThermostatZoneItem &clim,
@@ -153,32 +101,9 @@ void render_climate_controls_deck(esphome::display::Display &it,
 void reset_calculator_state();
 void handle_calculator_keypad_tap(int tx, int ty);
 
-struct DiceRollState {
-  int val_1 = 1;
-  int val_2 = 6;
-  bool anim_active = false;
-  uint32_t anim_start_ms = 0;
-};
-
-DiceRollState &dice_state();
-void trigger_dice_roll(uint32_t now_ms, uint32_t rand_a, uint32_t rand_b);
-
-struct CoinFlipState {
-  int side = 0;  // 0 = Heads, 1 = Tails
-  bool anim_active = false;
-  uint32_t anim_start_ms = 0;
-};
-
-CoinFlipState &coin_state();
-void trigger_coin_flip(uint32_t now_ms, uint32_t rand_val);
-
-// (Intercom & camera carousel state + summary parsers live in include/latter_state.h)
-
 void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
                           float euler_roll_deg, float euler_pitch_deg,
                           bool game_just_entered,
                           float &out_roll_delta, float &out_pitch_delta);
-int &pending_game_sfx();
-int &game_2048_pending_dir();
 
 }  // namespace latter_ui

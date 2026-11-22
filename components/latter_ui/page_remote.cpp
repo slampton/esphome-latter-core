@@ -1,4 +1,3 @@
-#include "esphome/core/defines.h"
 #include "ui_pages.h"
 #include "ui_touch_recognizer.h"
 
@@ -11,37 +10,34 @@ namespace latter_ui {
 
 namespace {
 
-void draw_rem_power_icon(esphome::display::Display &it, int cx, int cy, int r,
-                         esphome::Color col, bool shadow, void *) {
+void draw_rem_power_icon(Rgb565Surface &it, int cx, int cy, int r,
+                         UiColor col, bool shadow, void *) {
   ui::draw_icon_power(it, cx, cy, r, col, shadow);
 }
 
-void draw_rem_home_icon(esphome::display::Display &it, int cx, int cy, int r,
-                        esphome::Color col, bool shadow, void *) {
+void draw_rem_home_icon(Rgb565Surface &it, int cx, int cy, int r,
+                        UiColor col, bool shadow, void *) {
   ui::draw_icon_home(it, cx, cy, r, col, shadow);
 }
 
-void draw_rem_plus_icon(esphome::display::Display &it, int cx, int cy, int r,
-                        esphome::Color col, bool shadow, void *) {
+void draw_rem_plus_icon(Rgb565Surface &it, int cx, int cy, int r,
+                        UiColor col, bool shadow, void *) {
   ui::draw_icon_plus(it, cx, cy, r, col, shadow);
 }
 
-void draw_rem_back_icon(esphome::display::Display &it, int cx, int cy, int r,
-                        esphome::Color col, bool shadow, void *) {
+void draw_rem_back_icon(Rgb565Surface &it, int cx, int cy, int r,
+                        UiColor col, bool shadow, void *) {
   ui::draw_icon_chevron(it, cx, cy, r, false, col, shadow);
 }
 
-void draw_rem_minus_icon(esphome::display::Display &it, int cx, int cy, int r,
-                         esphome::Color col, bool shadow, void *) {
+void draw_rem_minus_icon(Rgb565Surface &it, int cx, int cy, int r,
+                         UiColor col, bool shadow, void *) {
   ui::draw_icon_minus(it, cx, cy, r, col, shadow);
 }
 
 }  // namespace
 
-void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &ctx) {
-  using esphome::Color;
-  using esphome::display::TextAlign;
-
+void render_tv_remote_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const int cx = ctx.cx;
   const uint32_t now_ms = ctx.now_ms;
@@ -49,8 +45,8 @@ void render_tv_remote_page(esphome::display::Display &it, const UiFrameContext &
   const std::string &remote_action_feedback = rs.remote.action_feedback;
   const uint32_t remote_feedback_timer = rs.remote.feedback_timer;
 
-  auto *font_btn_bold = ctx.font_btn_bold;
-  auto *font_small = ctx.font_small;
+  const UiFontView font_btn_bold = ctx.font_btn_bold;
+  const UiFontView font_small = ctx.font_small;
   const Color &theme_primary = ctx.theme_primary;
   const Color &theme_secondary = ctx.theme_secondary;
   const Color &col_white = ctx.col_white;

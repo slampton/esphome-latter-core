@@ -149,7 +149,7 @@ inline bool wake_word_should_run(std::string_view ww_mode,
   return mode_allowed && !va_busy && !media_busy && !alert_or_tool_busy && !sys_busy;
 }
 
-// Must match volume_min / volume_max of latter_media_player in modules/audio_voice.yaml.
+// Must match volume_min / volume_max of latter_media_player in modules/audio_pipeline.yaml.
 inline constexpr float kMediaVolumeMin = 0.10f;
 inline constexpr float kMediaVolumeMax = 1.00f;
 

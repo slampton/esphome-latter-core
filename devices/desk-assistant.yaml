@@ -14,14 +14,6 @@ substitutions:
   name: "desk-assistant"
   friendly_name: "Desk Assistant"
   version: "3.0.0"
-  font_time_size: "112"
-  font_chrono_size: "56"
-  font_date_size: "38"
-  font_btn_bold_size: "36"
-  font_small_size: "30"
-  font_micro_size: "20"
-  font_games_size: "56"
-  default_clock_face: "Minimal Digital"
   api_reboot_timeout: "15min"
 
 dashboard_import:

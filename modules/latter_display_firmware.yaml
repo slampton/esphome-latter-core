@@ -2,7 +2,8 @@
 # Latter Core Umbrella Module: Full Display Firmware
 # (modules/latter_display_firmware.yaml)
 # Single entry point included by devices/*.yaml and custom display builds.
-# Pulls in Latter Core OS (system_core, power_manager, audio_voice,
+# Pulls in Latter Core OS (system_core, system_ui_sync, power_policy,
+# sleep_lifecycle, audio_pipeline, voice_assistant, audio_scripts,
 # display_pipeline, timers_and_fetchers) + Universal GUI.
 # ==============================================================================
 
@@ -42,9 +43,13 @@ safe_mode:
   boot_is_good_after: 60s
 
 packages:
-  latter_system:   !include system_core.yaml
-  latter_power:    !include power_manager.yaml
-  latter_audio:    !include audio_voice.yaml
-  latter_pipeline: !include display_pipeline.yaml
-  latter_timers:   !include timers_and_fetchers.yaml
-  latter_gui:      !include ../guis/universal/gui.yaml
+  latter_system:          !include system_core.yaml
+  latter_system_ui_sync:  !include system_ui_sync.yaml
+  latter_power_policy:    !include power_policy.yaml
+  latter_sleep_lifecycle: !include sleep_lifecycle.yaml
+  latter_audio_pipeline:  !include audio_pipeline.yaml
+  latter_voice_assistant: !include voice_assistant.yaml
+  latter_audio_scripts:   !include audio_scripts.yaml
+  latter_pipeline:        !include display_pipeline.yaml
+  latter_timers:          !include timers_and_fetchers.yaml
+  latter_gui:             !include ../guis/universal/gui.yaml

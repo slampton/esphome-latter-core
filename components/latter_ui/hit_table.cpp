@@ -1,8 +1,4 @@
-#if __has_include("ui_hit_table.h")
 #include "ui_hit_table.h"
-#else
-#include "../../include/ui_hit_table.h"
-#endif
 
 namespace latter_ui {
 
@@ -34,7 +30,10 @@ void FrameHitTable::add_rect(int x0, int y0, int w, int h, uint16_t widget_id,
       }
     }
   }
-  if (count >= kMaxRegions) return;
+  if (count >= kMaxRegions) {
+    ++dropped_count;
+    return;
+  }
   HitRegion &reg = regions[count++];
   reg.x0 = static_cast<int16_t>(x0);
   reg.y0 = static_cast<int16_t>(y0);

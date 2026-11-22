@@ -1,4 +1,3 @@
-#include "esphome/core/defines.h"
 #include "ui_pages.h"
 #include "ui_touch_recognizer.h"
 
@@ -10,8 +9,8 @@ namespace latter_ui {
 
 namespace {
 
-void draw_pinned_tile_icon(esphome::display::Display &it, int ix, int iy, int ir,
-                           esphome::Color icon_c, bool shadow, void *user_ctx) {
+void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
+                           UiColor icon_c, bool shadow, void *user_ctx) {
   const auto *item = static_cast<const ShortcutItem *>(user_ctx);
   if (item == nullptr) return;
   const int mdi_px = std::max(18, 2 * ir);
@@ -28,7 +27,7 @@ void draw_pinned_tile_icon(esphome::display::Display &it, int ix, int iy, int ir
 
 }  // namespace
 
-void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx) {
+void render_pinned_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &sc = shortcuts_state();
   const auto &ly = layout();
@@ -77,7 +76,7 @@ void render_pinned_page(esphome::display::Display &it, const UiFrameContext &ctx
   const int cur_pg = std::clamp(rs.nav.pinned_menu_page, 0, total_pages - 1);
   if (rs.nav.menu_scroll_active && total_pages > 1) {
     const int full_span = scale_y(252);
-    const int offset = menu_scroll_shift(full_span);
+    const int offset = menu_scroll_shift(full_span, ctx.now_ms);
     const int out_dy = -rs.nav.menu_scroll_dir * offset;
     const int in_dy  = rs.nav.menu_scroll_dir * (full_span - offset);
     const int tgt_pg = std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1);

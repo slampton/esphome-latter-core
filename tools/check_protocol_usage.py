@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Check that the firmware and protocol/latter_v3.json describe the same device <-> Home Assistant contract.
+"""Check that firmware and protocol/latter_v3.json describe the same contract.
 
-Outbound: every `latter_rpc::emit(..., "<rpc_method>", { ... })` call must name a method in `rpc_methods`, and
-send only that method's `fields`; every protocol RPC method must be called by the firmware; every declared field
-must be emitted by at least one call; and legacy `homeassistant.action` calls are forbidden across firmware YAML.
-Inbound: every `api: actions:` entry must match a `device_actions` entry with `latter_` prefix, with identical variable names
-and types, and every protocol device action must exist in the firmware.
+Outbound: every `latter_rpc::emit(..., "<rpc_method>", { ... })` call must name
+a method in `rpc_methods` and send only that method's `fields`; every protocol
+RPC method must be called by the firmware; every declared field must be emitted
+by at least one call; and legacy `homeassistant.action` calls are forbidden.
+Inbound: every `api: actions:` entry must match a `device_actions` entry with
+`latter_` prefix and identical variable names/types, and every protocol device
+action must exist in the firmware.
 
 Standard library only (zero external dependencies), so it runs anywhere.
 Usage: python tools/check_protocol_usage.py
@@ -14,18 +16,24 @@ Usage: python tools/check_protocol_usage.py
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 YAML_SCAN_DIRS = ("modules", "guis", "devices", "boards", "examples")
 CPP_SCAN_DIRS = ("include", "components")
 KEY_RE = re.compile(r"^(\s*)(?:-\s+)?([A-Za-z_][A-Za-z0-9_]*):(?:\s+(.*))?$")
-EMIT_HEAD_RE = re.compile(r'(?:::)?latter_rpc::emit\s*\([^,\r\n]+,\s*"([a-z_][a-z0-9_]*)"')
+EMIT_HEAD_RE = re.compile(
+    r'(?:::)?latter_rpc::emit\s*\([^,\r\n]+,\s*"([a-z_][a-z0-9_]*)"'
+)
 PAIR_KEY_RE = re.compile(r'\{\s*"([a-z_][a-z0-9_]*)"\s*,')
 CPP_COMMENT_OR_STR_RE = re.compile(
-    r'R"([A-Za-z0-9_]*)\([\s\S]*?\)\1"|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|/\*[\s\S]*?\*/|//[^\n]*'
+    r'R"([A-Za-z0-9_]*)\([\s\S]*?\)\1"'
+    r'|"(?:\\.|[^"\\\n])*"'
+    r"|\'(?:\\.|[^\'\\\n])*\'"
+    r"|/\*[\s\S]*?\*/"
+    r"|//[^\n]*"
 )
 
 
@@ -34,7 +42,7 @@ def _indent(line: str) -> int:
 
 
 def _blank_cpp_comments(text: str) -> str:
-    """Blank C++ comments while preserving string/char literals (e.g. 'https://...') and exact offsets."""
+    """Blank C++ comments while preserving string/char literals and offsets."""
 
     def _repl(m: re.Match[str]) -> str:
         tok = m.group(0)
@@ -47,8 +55,10 @@ def _blank_cpp_comments(text: str) -> str:
     return CPP_COMMENT_OR_STR_RE.sub(_repl, text)
 
 
-def _child_keys(lines: list[str], start: int, parent_indent: int) -> tuple[dict[str, str], int]:
-    """Return {key: value} for the direct children of the block opened at lines[start - 1]."""
+def _child_keys(
+    lines: list[str], start: int, parent_indent: int
+) -> tuple[dict[str, str], int]:
+    """Return {key: value} for direct children of block opened at start - 1."""
     keys: dict[str, str] = {}
     child_indent = -1
     i = start
@@ -70,7 +80,9 @@ def _child_keys(lines: list[str], start: int, parent_indent: int) -> tuple[dict[
     return keys, i
 
 
-def _extract_emit_calls(text: str, rel: str, calls: list[tuple[str, str, set[str]]]) -> None:
+def _extract_emit_calls(
+    text: str, rel: str, calls: list[tuple[str, str, set[str]]]
+) -> None:
     clean_text = _blank_cpp_comments(text)
     for m in EMIT_HEAD_RE.finditer(clean_text):
         svc = m.group(1)
@@ -118,7 +130,8 @@ def scan_yaml_file(
         stripped = line.strip()
         if stripped in ("- homeassistant.action:", "homeassistant.action:"):
             errors.append(
-                f"{rel}:{n + 1}: forbidden homeassistant.action block (use latter_rpc::emit on latter_rpc_outbox)"
+                f"{rel}:{n + 1}: forbidden homeassistant.action block "
+                "(use latter_rpc::emit on latter_rpc_outbox)"
             )
         m = re.match(r"^(\s*)-\s+action:\s+([a-z_][a-z0-9_]*)\s*$", line)
         if m:
@@ -128,7 +141,10 @@ def scan_yaml_file(
             for j in range(n + 1, len(lines)):
                 if lines[j].strip() and _indent(lines[j]) < item_indent:
                     break
-                if lines[j].strip() == "variables:" and _indent(lines[j]) == item_indent:
+                if (
+                    lines[j].strip() == "variables:"
+                    and _indent(lines[j]) == item_indent
+                ):
                     variables, _ = _child_keys(lines, j + 1, item_indent)
                     break
             if "then" in opts:
@@ -136,9 +152,10 @@ def scan_yaml_file(
 
 
 def main() -> int:
-    schema = json.loads((ROOT / "protocol" / "latter_v3.json").read_text(encoding="utf-8"))
-    rpc_methods: dict[str, dict] = schema["rpc_methods"]
-    device_actions: dict[str, dict] = schema["device_actions"]
+    schema_path = ROOT / "protocol" / "latter_v3.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    rpc_methods: dict[str, dict[str, object]] = schema["rpc_methods"]
+    device_actions: dict[str, dict[str, object]] = schema["device_actions"]
 
     calls: list[tuple[str, str, set[str]]] = []
     actions: dict[str, list[tuple[str, dict[str, str]]]] = {}
@@ -159,7 +176,11 @@ def main() -> int:
                 if any(part.startswith(".") for part in path.parts):
                     continue
                 if path.is_file() and path.suffix in {".h", ".hpp", ".cpp"}:
-                    _extract_emit_calls(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix(), calls)
+                    _extract_emit_calls(
+                        path.read_text(encoding="utf-8"),
+                        path.relative_to(ROOT).as_posix(),
+                        calls,
+                    )
 
     called: set[str] = set()
     emitted_fields: dict[str, set[str]] = {}
@@ -167,38 +188,70 @@ def main() -> int:
         called.add(svc)
         emitted_fields.setdefault(svc, set()).update(keys)
         if svc not in rpc_methods:
-            errors.append(f"{where}: RPC method latter_rpc::{svc} is not in protocol/latter_v3.json rpc_methods")
+            errors.append(
+                f"{where}: RPC method latter_rpc::{svc} is not in "
+                "protocol/latter_v3.json rpc_methods"
+            )
             continue
-        extra = keys - set(rpc_methods[svc].get("fields", []))
+        raw_fields = rpc_methods[svc].get("fields", [])
+        decl_set = set(raw_fields) if isinstance(raw_fields, list) else set()
+        extra = keys - decl_set
         if extra:
-            errors.append(f"{where}: latter_rpc::{svc} sends {sorted(extra)}, not in protocol's rpc_methods fields")
+            errors.append(
+                f"{where}: latter_rpc::{svc} sends {sorted(extra)}, "
+                "not in protocol's rpc_methods fields"
+            )
 
-    for svc in sorted(set(rpc_methods) - called):
-        errors.append(f"protocol RPC method latter_rpc::{svc} is never called by the firmware")
+    errors.extend(
+        f"protocol RPC method latter_rpc::{svc} is never called by the firmware"
+        for svc in sorted(set(rpc_methods) - called)
+    )
 
     for svc in sorted(called & set(rpc_methods)):
-        declared = set(rpc_methods[svc].get("fields", []))
+        raw_fields = rpc_methods[svc].get("fields", [])
+        declared = set(raw_fields) if isinstance(raw_fields, list) else set()
         missing = declared - emitted_fields.get(svc, set())
         if missing:
-            errors.append(f"RPC method latter_rpc::{svc} declares fields {sorted(missing)} which are never emitted by firmware")
+            errors.append(
+                f"RPC method latter_rpc::{svc} declares fields {sorted(missing)} "
+                "which are never emitted by firmware"
+            )
 
     for name, spec in device_actions.items():
         if not name.startswith("latter_"):
             errors.append(f"protocol device action {name} must have 'latter_' prefix")
         if name not in actions:
-            errors.append(f"protocol device action {name} is not declared in the firmware's api: actions:")
+            errors.append(
+                f"protocol device action {name} is not declared "
+                "in the firmware's api: actions:"
+            )
             continue
-        want = {k: str(v) for k, v in spec.get("variables", {}).items()}
+        raw_vars = spec.get("variables", {})
+        want = (
+            {str(k): str(v) for k, v in raw_vars.items()}
+            if isinstance(raw_vars, dict)
+            else {}
+        )
         for where, variables in actions[name]:
             if variables != want:
-                errors.append(f"{where}: device action {name} variables {variables} != protocol {want}")
-    for name in sorted(set(actions) - set(device_actions)):
-        errors.append(f"{actions[name][0][0]}: device action {name} is not in protocol/latter_v3.json device_actions")
+                errors.append(
+                    f"{where}: device action {name} variables {variables} != "
+                    f"protocol {want}"
+                )
+    errors.extend(
+        f"{actions[name][0][0]}: device action {name} is not in "
+        "protocol/latter_v3.json device_actions"
+        for name in sorted(set(actions) - set(device_actions))
+    )
 
     if errors:
         print("\n".join(errors))
         return 1
-    print(f"protocol usage OK: {len(calls)} RPC emit calls across {len(called)} methods, {sum(map(len, actions.values()))} device action declarations")
+    total_actions = sum(map(len, actions.values()))
+    print(
+        f"protocol usage OK: {len(calls)} RPC emit calls across {len(called)} methods, "
+        f"{total_actions} device action declarations"
+    )
     return 0
 
 

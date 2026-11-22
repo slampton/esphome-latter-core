@@ -122,6 +122,11 @@ bool hal_imu_wom_event(esphome::i2c::I2CBus *bus) {
   if (!qmi8658_wom::rd(bus, qmi8658_wom::kStatus1, &s1)) return false;
   return (s1 & 0x04) != 0;
 }
+
+void hal_imu_qmi8658_hibernate(esphome::i2c::I2CBus *bus) {
+  if (bus == nullptr) return;
+  (void)qmi8658_wom::wr(bus, qmi8658_wom::kCtrl7, 0x00);
+}
 #endif  // USE_I2C
 
 }  // namespace latter_ui

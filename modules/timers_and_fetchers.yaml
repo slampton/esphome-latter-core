@@ -276,7 +276,7 @@ interval:
           latter_actions::check_and_emit_timer_alarm_state(millis());
 
 script:
-  # Alarm engine: runs from the power supervisor's 1 s interval (power_manager.yaml), so the chip wakes
+  # Alarm engine: runs from the power supervisor's 1 s interval (power_policy.yaml), so the chip wakes
   # once a second for both.
   - id: alarm_engine_tick
     then:

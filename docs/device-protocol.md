@@ -48,32 +48,32 @@ Each Device describes its hardware in two places, both generated at compile time
 
 **Sleep-Safe Two-Way `device_prefs` Reconciliation:**
 - Studio and Tier 2 Home Assistant entities write preferences immediately to the Device's subentry—even while a battery Device is hibernating—incrementing `prefs_seq` and pushing the `device_prefs` domain when connected.
-- On-device **Settings** edits save to `PersistedDevicePrefs` v6 in NVS (`include/latter_state.h`) and emit `set_device_prefs` (`base_seq`, `changes`). If the Device was offline when edited, `device_hello` sends `prefs_seq` + `dirty_prefs` on reconnect so `ha-latter` merges offline edits with per-key last-writer-wins reconciliation before pushing the converged `device_prefs` frame.
+- On-device **Settings** edits save to `PersistedDevicePrefs` v1 in NVS (`include/state/state_nvs_snapshot.h`) and emit `set_device_prefs` (`base_seq`, `changes`). If the Device was offline when edited, `device_hello` sends `prefs_seq` + `dirty_prefs` on reconnect so `ha-latter` merges offline edits with per-key last-writer-wins reconciliation before pushing the converged `device_prefs` frame.
 
 ---
 
 ## 3. Inbound (`HA -> Device` Native API Actions)
 
-All eight ESPHome Native API actions use the `latter_` prefix (full variable schemas in [`DEVICE_CONTRACT.md` §3](../DEVICE_CONTRACT.md#3-esphome-device-actions-esphomenode_action)):
+All ESPHome Native API actions use the `latter_` prefix (full variable schemas in [`DEVICE_CONTRACT.md` §3](../DEVICE_CONTRACT.md#3-esphome-device-actions-esphomenode_action)):
 
-- **`latter_push_v3` (`domain`, `payload`)**: Pushes any of the **6 Protocol v3 domains**—`area_context` (Area climate/counts, Home Hub states & capability bitmasks `alarm_caps` / `climate_caps` / `vacuum_caps`, `area_icon`, `home_categories`, `local_tz_info`, `world_clocks_summary`, alerts, and cameras), `active_media`, `remote_config`, `weather_forecast`, `calendar_agenda`, and `device_prefs`. Payloads are `\x1f`-delimited (`v3\x1f<epoch>\x1f<rev>\x1f...`), content-hashed per domain, and reduced by `latter_ui::v3_domain_reducer()` (`include/latter_state.h`, `components/latter_core/runtime_controllers.cpp`). On API reconnect, `latter_ui::reset_all_v3_rev_guards()` clears revision guards so fresh state applies cleanly.
+- **`latter_push_v3` (`domain`, `payload`)**: Pushes any of the **7 Protocol v3 domains**—`area_context` (Area climate/counts, Home Hub states & capability bitmasks `alarm_caps` / `climate_caps` / `vacuum_caps`, `area_icon`, `home_categories`, `local_tz_info`, `world_clocks_summary`, alerts, and cameras), `active_media`, `remote_config`, `weather_forecast`, `calendar_agenda`, `shortcuts`, and `device_prefs`. Payloads are `\x1f`-delimited (`v3\x1f<epoch>\x1f<rev>\x1f...`), content-hashed per domain, and reduced by `latter_ui::v3_domain_reducer()` (`components/latter_core/state_v3_parsers_*.cpp`, `components/latter_core/runtime_controllers.cpp`). On API reconnect, `latter_ui::reset_all_v3_rev_guards()` clears revision guards so fresh state applies cleanly.
 - **`latter_set_slots` (`is_area_slots`, `req_id`, `mode`, `page`, `total_pages`, `slots`)**: Unified paginator pushing `\x1e`-separated records into `SlotBank` (`AREA` when `is_area_slots == true`, `BROWSE`/`CALENDAR` otherwise). Out-of-order responses with stale `req_id` are discarded.
 - **`latter_show_notification` (`title`, `message`, `priority`, `duration`, `chime`, `camera_url`, `alert_id`)**: Deduplicates by `alert_id`, wakes the panel, plays the embedded WAV chime, and loads the signed baseline-JPEG camera snapshot if present.
-- **`latter_device_command` (`command`)**: Executes immediate lifecycle/UI commands (`restart`, `find_my`, `activate_screensaver`, `trigger_va`, `log_memory_report`).
-- **`latter_set_beacon_uuid` (`uuid`)**, **`latter_factory_reset`**, **`latter_ui_input` (`action`, `delta`)**, and **`latter_ping`**: Provision the System's 128-bit BLE UUID into `latter_beacon` NVS, wipe NVS preferences and reboot, inject directional/navigation inputs (`up|down|left|right|select|back|home`), or trigger `device_hello`.
+- **`latter_device_command` (`command`)**: Executes immediate lifecycle/UI commands (`restart`, `find_my`, `activate_screensaver`, `deactivate_screensaver`, `wake_screen`, `screen_off`, `set_screen_bri:<1..100>`, `set_profiler_on`, `set_profiler_off`, `request_telemetry`, `set_pin_key:<key_id>:<hex_key>`, `trigger_va`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`).
+- **`latter_set_beacon_uuid` (`uuid`)**, **`latter_factory_reset`**, and **`latter_ping`**: Provision the System's 128-bit BLE UUID into `latter_beacon` NVS, wipe NVS preferences and reboot, or trigger `device_hello`.
 
 ---
 
 ## 4. Outbound (`Device -> HA` Diagnostic RPC Outbox & Security)
 
-Instead of calling `homeassistant.action`, firmware emits typed RPC calls on **`System: RPC Outbox`** (`latter_rpc_outbox`, bound at boot via `latter_rpc::bind_default_outbox`) using helpers in [`include/latter_actions.h`](../include/latter_actions.h):
+Instead of calling `homeassistant.action`, firmware emits typed RPC calls on **`System: RPC Outbox`** (`latter_rpc_outbox`, bound at boot via `latter_rpc::bind_default_outbox` and auto-hidden in Home Assistant via `RegistryEntryHider.INTEGRATION`) using helpers in [`include/latter_actions.h`](../include/latter_actions.h):
 
 ```cpp
 // Automatically issues a monotonic req_id, uses LATTER_SLOT_COUNT, and emits on latter_rpc_outbox
 const int req_id = latter_actions::emit_music_browse("favorites", 1);
 ```
 
-`latter_rpc::emit` ([`include/latter_rpc.h`](../include/latter_rpc.h)) slices JSON envelopes along UTF-8 codepoint boundaries into `<boot_hex>:<seq>:<part>/<total>|<json_slice>` frames (`<= 230` bytes each), paced across loop ticks by `LatterLoopProbe` when `total > 1`. `LatterRpcReceiver` in `ha-latter` (`identity.py`) reassembles chunks, deduplicates `(boot_hex, seq)`, injects the bound Device identity, and dispatches to the 17 outbound RPC handlers ([`DEVICE_CONTRACT.md` §4](../DEVICE_CONTRACT.md#4-firmware-rpc-outbox-methods-latter_rpc_outbox)).
+`latter_rpc::emit` ([`include/latter_rpc.h`](../include/latter_rpc.h)) slices JSON envelopes along UTF-8 codepoint boundaries into `<boot_hex>:<seq>:<part>/<total>|<json_slice>` frames (`<= 230` bytes each), paced across loop ticks by `LatterLoopProbe` when `total > 1`. `LatterRpcReceiver` in `ha-latter` (`services/rpc_receiver.py`) reassembles chunks, deduplicates `(boot_hex, seq)`, binds `caller_coord`, and dispatches privately to `LatterRpcDispatcher` across all 20 outbound RPC methods ([`DEVICE_CONTRACT.md` §4](../DEVICE_CONTRACT.md#4-firmware-rpc-outbox-methods-latter_rpc_outbox)).
 
 **Separate Alarm Capability PINs vs. Perimeter Security:**
 - `area_context` field `alarm_caps` (`AreaCtxField::ALARM_CAPS`) encodes the Home Assistant alarm entity's supported arm modes plus `code_disarm_required` and `code_arm_required`. When an alarm panel uses its own code, arming/disarming prompts `ui::pin_pad_modal` as required by `alarm_caps` and passes the entered code straight through to Home Assistant's `alarm_control_panel` (arming is never blocked by `security_pin_policy: block`).

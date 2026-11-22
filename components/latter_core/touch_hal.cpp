@@ -12,10 +12,7 @@
 
 #include <utility>
 
-#include "hal_panel_power.h"
-#include "hal_power_pm.h"
 #include "latter_prof.h"
-#include "latter_state.h"
 
 namespace esphome::latter_core {
 
@@ -167,8 +164,8 @@ void LatterTouchscreen::loop() {
   if (edges != this->last_edge_snapshot_) {
     ::latter_ui::touch_hal_telemetry().irq_edges += (edges - this->last_edge_snapshot_);
     this->last_edge_snapshot_ = edges;
-    if (::latter_ui::runtime_state().nav.display_power_state != 0) {
-      ::latter_ui::pm_wake_grace_arm(now);
+    if (::latter_ui::touch_wake_bridge().is_standby()) {
+      ::latter_ui::touch_wake_bridge().arm_wake_grace(now);
     }
   }
 
@@ -458,7 +455,7 @@ void LatterTouchscreen::update_touches() {
   }
 
   if (!this->finger_down_ && this->had_irq_this_pass_ &&
-      ::latter_ui::runtime_state().nav.display_power_state != 0) {
+      ::latter_ui::touch_wake_bridge().is_standby()) {
     const int16_t cx = static_cast<int16_t>(this->x_raw_max_ / 2);
     const int16_t cy = static_cast<int16_t>(this->y_raw_max_ / 2);
     this->wake_pulse_active_ = true;
