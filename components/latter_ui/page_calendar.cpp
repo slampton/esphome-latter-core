@@ -572,7 +572,7 @@ void render_week_tab(esphome::display::Display &it,
                          TextAlign::CENTER_LEFT, fit_n.c_str());
       }
       if (day_cnt > max_chips) {
-        char more_buf[16];
+        char more_buf[24];
         std::snprintf(more_buf, sizeof(more_buf), "+%d more", day_cnt - max_chips);
         ui::shadow_print(it, col_cx, geom.content_bot - scale_y(12), chip_font, ctx.theme_secondary,
                          TextAlign::CENTER, more_buf);

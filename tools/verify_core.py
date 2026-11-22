@@ -1050,7 +1050,22 @@ def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
         "#include <string_view>",
         "#include <vector>",
         *[f'#include "{(ROOT / "include" / h).as_posix()}"' for h in HOST_LAMBDA_HEADERS],
-        "namespace { inline uint32_t millis() { return 0U; } }",
+        "namespace {",
+        "inline uint32_t millis() { return 0U; }",
+        "struct HostApiStringRef {",
+        "  const char *p{\"\"};",
+        "  size_t n{0U};",
+        "  const char *c_str() const noexcept { return p; }",
+        "  size_t size() const noexcept { return n; }",
+        "  size_t length() const noexcept { return n; }",
+        "  bool empty() const noexcept { return n == 0U; }",
+        "  std::string str() const { return std::string(p, n); }",
+        "  operator std::string() const { return str(); }",
+        "  operator std::string_view() const noexcept { return std::string_view(p, n); }",
+        "  bool operator==(const char *o) const noexcept { return std::string_view(p, n) == (o ? o : \"\"); }",
+        "  bool operator!=(const char *o) const noexcept { return !(*this == o); }",
+        "};",
+        "}",
     ]
     fn_idx = 0
     for folder in ("modules", "guis"):
@@ -1064,6 +1079,7 @@ def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
             lines = yf.read_text(encoding="utf-8").splitlines()
             active_vars: list[tuple[str, str]] = []
             in_vars = False
+            is_api_vars = False
             vars_indent = -1
             client_hook = ""
             idx = 0
@@ -1075,15 +1091,18 @@ def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
                     if re.match(r"^\s*-\s*(?:id|action)\s*:", stripped) and ind <= 6:
                         active_vars = []
                         in_vars = False
+                        is_api_vars = False
                         client_hook = ""
                     m_ch = re.match(r"^\s*(on_client_connected|on_client_disconnected)\s*:\s*$", stripped)
                     if m_ch:
                         client_hook = m_ch.group(1)
                         active_vars = []
                         in_vars = False
-                    m_vh = re.match(r"^(\s*)(?:parameters|variables)\s*:\s*$", stripped)
+                        is_api_vars = False
+                    m_vh = re.match(r"^(\s*)(parameters|variables)\s*:\s*$", stripped)
                     if m_vh:
                         in_vars = True
+                        is_api_vars = m_vh.group(2) == "variables"
                         vars_indent = len(m_vh.group(1))
                         active_vars = []
                         idx += 1
@@ -1094,7 +1113,8 @@ def _write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
                         else:
                             m_kv = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z0-9_\[\]]+)\s*$", stripped)
                             if m_kv and m_kv.group(2) in type_map:
-                                active_vars.append((m_kv.group(1), type_map[m_kv.group(2)]))
+                                ctype = "HostApiStringRef" if (is_api_vars and m_kv.group(2) == "string") else type_map[m_kv.group(2)]
+                                active_vars.append((m_kv.group(1), ctype))
                 m_lam = re.match(r"^(\s*)-\s*lambda\s*:\s*\|-?\s*$", raw_ln)
                 if not m_lam:
                     idx += 1
@@ -2422,6 +2442,19 @@ struct VaTimerStub {
   uint32_t seconds_left{30};
   bool is_active{true};
 };
+struct HostApiStringRef {
+  const char *p{""};
+  size_t n{0U};
+  const char *c_str() const noexcept { return p; }
+  size_t size() const noexcept { return n; }
+  size_t length() const noexcept { return n; }
+  bool empty() const noexcept { return n == 0U; }
+  std::string str() const { return std::string(p, n); }
+  operator std::string() const { return str(); }
+  operator std::string_view() const noexcept { return std::string_view(p, n); }
+  bool operator==(const char *o) const noexcept { return std::string_view(p, n) == (o ? o : ""); }
+  bool operator!=(const char *o) const noexcept { return !(*this == o); }
+};
 """
 
 
@@ -2587,7 +2620,7 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path, *, include_hal_boards
                 m_ot = re.match(r"^\s*(on_touch|on_update|on_release)\s*:\s*$", stripped)
                 if m_ot and rel.endswith("gui.yaml"):
                     on_touch = m_ot.group(1)
-                m_vh = re.match(r"^(\s*)(?:parameters|variables)\s*:\s*$", stripped)
+                m_vh = re.match(r"^(\s*)(parameters|variables)\s*:\s*$", stripped)
                 if m_vh:
                     in_vars = True
                     vars_indent = len(m_vh.group(1))
@@ -2600,7 +2633,8 @@ def _write_yaml_full_lambdas_syntax_harness(out_cpp: Path, *, include_hal_boards
                     else:
                         m_kv = re.match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([A-Za-z0-9_\[\]]+)\s*$", stripped)
                         if m_kv and m_kv.group(2) in type_map:
-                            active_vars.append((m_kv.group(1), type_map[m_kv.group(2)]))
+                            ctype = "HostApiStringRef" if (section == "api" and m_kv.group(2) == "string") else type_map[m_kv.group(2)]
+                            active_vars.append((m_kv.group(1), ctype))
 
             def resolve_hook_params() -> list[tuple[str, str]]:
                 if rel.endswith("gui.yaml") and on_touch == "on_touch":

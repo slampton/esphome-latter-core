@@ -255,8 +255,8 @@ inline void submit_calendar_draft_event(DeviceRuntimeState &rs,
     const int32_t end_ymd = (e_min >= 1440) ? add_days_ymd(ev_ymd, 1) : ev_ymd;
     const int eff_e_min = (e_min >= 1440) ? 0 : e_min;
     format_ymd_iso(end_ymd, e_date);
-    char s_dt[24];
-    char e_dt[24];
+    char s_dt[32];
+    char e_dt[32];
     std::snprintf(s_dt, sizeof(s_dt), "%sT%02d:%02d:00", s_date, s_min / 60, s_min % 60);
     std::snprintf(e_dt, sizeof(e_dt), "%sT%02d:%02d:00", e_date, eff_e_min / 60, eff_e_min % 60);
     latter_actions::emit_calendar_create_event(

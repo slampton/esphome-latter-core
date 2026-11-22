@@ -1068,7 +1068,7 @@ void handle_calculator_keypad_tap(int tx, int ty) {
       if (st.op != 0) {
         char prev_b[20];
         format_calc_num_buf(st.prev_val, prev_b, sizeof(prev_b));
-        std::snprintf(st.history, sizeof(st.history), "%s %s %s =", prev_b, op_to_str(st.op), st.entry);
+        std::snprintf(st.history, sizeof(st.history), "%.18s %.3s %.20s =", prev_b, op_to_str(st.op), st.entry);
         const double res = compute_op(st.prev_val, cur, st.op);
         format_calc_num_buf(res, st.entry, sizeof(st.entry));
         st.op = 0;

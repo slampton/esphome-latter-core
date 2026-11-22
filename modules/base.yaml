@@ -137,7 +137,6 @@ api:
               if (sep != std::string_view::npos) {
                 (void)latter_rpc::set_pin_session_key(rest.substr(0, sep), rest.substr(sep + 1U));
               }
-              latter_rpc::secure_zero_string(command);
               return;
             }
             auto &rs = latter_ui::runtime_state();
