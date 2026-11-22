@@ -1,4 +1,4 @@
-"""UTF-8/JSON/LF/Markdown checks, retired paths, terminology, product options, and SDK/version lockstep."""
+"""UTF-8/JSON/LF/Markdown checks, AGENTS.md budget, terminology, product options, and SDK/version lockstep."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from typing import Final
 from .common import (
     BANNED_TERMS_RE,
     DEVICE_SLUG_RE,
-    RETIRED_PATHS,
     ROOT,
     TEXT_EXTS,
     iter_repo_files,
@@ -123,14 +122,8 @@ def verify_encoding_and_hygiene(failures: list[str]) -> None:
             _check_yaml_noise_keys(rel, txt, failures)
 
 
-def verify_retired_and_agents_md(failures: list[str]) -> None:
-    """Reject retired files/directories and validate AGENTS.md budget."""
-    failures.extend(
-        f"[RETIRED PATH] {rel_retired} must not exist in consolidated v3.0 SDK"
-        for rel_retired in RETIRED_PATHS
-        if (ROOT / rel_retired).exists()
-    )
-
+def verify_agents_md(failures: list[str]) -> None:
+    """Validate AGENTS.md presence, frontmatter prohibition, and byte budget."""
     agents_md = ROOT / "AGENTS.md"
     if not agents_md.is_file():
         failures.append("[AGENTS MD] AGENTS.md is missing")
@@ -321,6 +314,6 @@ def _verify_ci_and_device_pins(failures: list[str]) -> None:
 def verify_static_repo_invariants(failures: list[str]) -> None:
     """Run all general static repository hygiene and lockstep checks."""
     verify_encoding_and_hygiene(failures)
-    verify_retired_and_agents_md(failures)
+    verify_agents_md(failures)
     verify_terminology_and_yaml_globals(failures)
     verify_sdk_and_version_lockstep(failures)

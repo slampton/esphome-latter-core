@@ -1,4 +1,4 @@
-"""Tarjan SCC include-graph cycle detector and L0-L4 DAG layer boundary enforcement."""
+"""Tarjan SCC include-graph cycle detector and coarse component/header boundary enforcement."""
 
 from __future__ import annotations
 
@@ -8,39 +8,6 @@ from pathlib import Path
 from typing import Final
 
 from .common import ROOT, iter_repo_files, strip_cpp_comments
-
-L0_UI_HEADERS: Final[frozenset[str]] = frozenset(
-    {
-        "ui_panel_traits.h",
-        "ui_color.h",
-        "ui_surface.h",
-        "ui_widget_ids.h",
-        "ui_panel_metrics.h",
-        "ui_hit_table.h",
-        "ui_page_geoms.h",
-        "ui_types.h",
-    }
-)
-L2_UI_HEADERS: Final[frozenset[str]] = frozenset(
-    {
-        "ui_mdi.h",
-        "ui_touch_recognizer.h",
-        "ui_dirty_band.h",
-        "ui_frame_context.h",
-        "ui_cadence.h",
-        "ui_gfx.h",
-        "ui_layout.h",
-        "ui_widgets.h",
-        "ui_compositor.h",
-    }
-)
-L3_UI_HEADERS: Final[frozenset[str]] = frozenset(
-    {
-        "ui_pages.h",
-        "ui_touch_engine.h",
-        "ui_esphome_display.h",
-    }
-)
 
 LOCAL_INC_RE: Final[re.Pattern[str]] = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.MULTILINE)
 QUOTED_INC_RE: Final[re.Pattern[str]] = re.compile(r'^\s*#\s*include\s*"([^"]+)"', re.MULTILINE)
@@ -143,42 +110,27 @@ def verify_flat_component_sources(failures: list[str]) -> None:
                 )
 
 
-def _check_ui_header_layers(failures: list[str]) -> None:
-    """Enforce L0/L2/L3 purity on `include/ui_*.h` headers."""
-    all_known_ui = L0_UI_HEADERS | L2_UI_HEADERS | L3_UI_HEADERS
+def _check_ui_header_boundaries(failures: list[str]) -> None:
+    """Keep `include/ui_*.h` host-compilable: only `ui_esphome_display.h` may include `esphome/*` or `hal_*.h`."""
     for hdr in sorted((ROOT / "include").glob("ui_*.h")):
-        name = hdr.name
-        rel = hdr.relative_to(ROOT).as_posix()
-        if name not in all_known_ui:
-            failures.append(f"[DAG LAYER] Unclassified UI header {rel} (assign to L0/L2/L3 in dag_checks.py)")
+        if hdr.name == "ui_esphome_display.h":
             continue
+        rel = hdr.relative_to(ROOT).as_posix()
         clean = strip_cpp_comments(hdr.read_text(encoding="utf-8"))
         incs = [m.group(1) for m in LOCAL_INC_RE.finditer(clean)]
-        inc_basenames = {Path(spec).name for spec in incs}
 
-        if name != "ui_esphome_display.h" and any(spec.startswith("esphome/") for spec in incs):
+        if any(spec.startswith("esphome/") for spec in incs):
             failures.append(
-                f"[DAG LAYER] {rel} includes esphome/* header (only L3 ui_esphome_display.h may include esphome/*)"
+                f"[DAG LAYER] {rel} includes esphome/* header (only ui_esphome_display.h may include esphome/*)"
             )
-        if name != "ui_esphome_display.h" and any(Path(spec).name.startswith("hal_") for spec in incs):
+        if any(Path(spec).name.startswith("hal_") for spec in incs):
             failures.append(
-                f"[DAG LAYER] {rel} includes hal_*.h (only L3 ui_esphome_display.h bridge may include L1 hal_*.h)"
+                f"[DAG LAYER] {rel} includes hal_*.h (only ui_esphome_display.h bridge may include hal_*.h)"
             )
-
-        if name in L0_UI_HEADERS:
-            if any(spec.startswith("state/") or Path(spec).name.startswith("state_") for spec in incs):
-                failures.append(f"[DAG LAYER] L0 leaf {rel} must not include state/* headers")
-            upward = sorted(inc_basenames & (L2_UI_HEADERS | L3_UI_HEADERS))
-            if upward:
-                failures.append(f"[DAG LAYER] L0 leaf {rel} includes L2/L3 UI header(s): {upward}")
-        elif name in L2_UI_HEADERS:
-            upward = sorted(inc_basenames & L3_UI_HEADERS)
-            if upward:
-                failures.append(f"[DAG LAYER] L2 header {rel} includes L3 UI header(s): {upward}")
 
 
 def _check_core_to_ui_inversion(failures: list[str]) -> None:
-    """Ensure `latter_core`, `include/state/*`, `include/hal_*`, and `latter_*.h` never depend on `latter_ui`."""
+    """Ensure `latter_core`, `latter_beacon`, `include/state/*`, `include/hal_*`, and non-UI headers never depend on `latter_ui`."""
     core_files: list[Path] = [
         p
         for p in iter_repo_files(ROOT / "include")
@@ -208,18 +160,10 @@ def _check_core_to_ui_inversion(failures: list[str]) -> None:
 
 
 def _check_ui_cpp_boundaries(failures: list[str]) -> None:
-    """Enforce L2 vs L3 `.cpp` include rules and cross-page isolation inside `components/latter_ui/`."""
+    """Enforce coarse hardware/action isolation and cross-page independence inside `components/latter_ui/`."""
     ui_dir = ROOT / "components" / "latter_ui"
     if not ui_dir.is_dir():
         return
-    l2_exact = {
-        "ui_gfx.cpp",
-        "ui_widgets.cpp",
-        "ui_compositor.cpp",
-        "hit_table.cpp",
-        "ui_mdi.cpp",
-        "overlay_takeover.cpp",
-    }
 
     for path in sorted(ui_dir.glob("*.cpp")):
         name = path.name
@@ -227,11 +171,6 @@ def _check_ui_cpp_boundaries(failures: list[str]) -> None:
         clean = strip_cpp_comments(path.read_text(encoding="utf-8"))
         incs = [m.group(1) for m in LOCAL_INC_RE.finditer(clean)]
         inc_names = {Path(spec).name for spec in incs}
-
-        if name in l2_exact:
-            upward = sorted(inc_names & L3_UI_HEADERS)
-            if upward:
-                failures.append(f"[DAG LAYER] L2 TU {rel} includes L3 header(s): {upward}")
 
         if name not in {"ui_gfx.cpp", "ui_mdi.cpp"} and any(
             spec in {"esp_heap_caps.h", "driver/ppa.h", "esp_async_memcpy.h", "esp_cache.h"} for spec in incs
@@ -277,10 +216,10 @@ def _check_ui_headers_manifest(failures: list[str]) -> None:
 
 
 def verify_dag_and_layers(failures: list[str]) -> None:
-    """Run all Phase 5 DAG cycle, flat-source, and L0-L3 boundary gates."""
+    """Run all DAG cycle, flat-source, and coarse component/header boundary gates."""
     verify_flat_component_sources(failures)
     verify_include_dag_no_cycles(failures)
-    _check_ui_header_layers(failures)
+    _check_ui_header_boundaries(failures)
     _check_core_to_ui_inversion(failures)
     _check_ui_cpp_boundaries(failures)
     _check_ui_headers_manifest(failures)

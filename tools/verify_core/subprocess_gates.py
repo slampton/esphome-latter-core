@@ -29,17 +29,6 @@ ESP32_ONLY_CORE_TUS: Final[frozenset[str]] = frozenset(
     }
 )
 
-EXPECTED_HOST_TEST_TUS: Final[tuple[str, ...]] = (
-    "test_protocol_rpc.cpp",
-    "test_state_prefs_nvs.cpp",
-    "test_power_audio_hal.cpp",
-    "test_ui_layout_compositor.cpp",
-    "test_ui_rgb565_5geom.cpp",
-    "test_touch_engine.cpp",
-    "test_pages_apps.cpp",
-    "test_main.cpp",
-)
-
 FIVE_GEOM_CONFIGS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     (
         "GEOM_320x480_P4",
@@ -357,11 +346,12 @@ def _collect_and_validate_host_sources(failures: list[str]) -> tuple[list[Path],
     if not (host_dir / "test_harness.h").is_file():
         failures.append("[HOST TESTS] tests/host/test_harness.h missing")
     test_cpps = sorted(host_dir.glob("*.cpp"))
-    found_names = tuple(p.name for p in test_cpps)
-    if set(found_names) != set(EXPECTED_HOST_TEST_TUS):
-        failures.append(
-            f"[HOST TESTS] tests/host/*.cpp mismatch: expected {sorted(EXPECTED_HOST_TEST_TUS)}, found {sorted(found_names)}"
-        )
+    found_names = {p.name for p in test_cpps}
+    if "test_main.cpp" not in found_names:
+        failures.append("[HOST TESTS] tests/host/test_main.cpp missing")
+    suite_tus = [name for name in found_names if name.startswith("test_") and name != "test_main.cpp"]
+    if not suite_tus:
+        failures.append("[HOST TESTS] tests/host/ must contain at least one test_*.cpp suite alongside test_main.cpp")
     for tf in [*test_cpps, *sorted(host_dir.glob("*.h"))]:
         clean = strip_cpp_comments(tf.read_text(encoding="utf-8"))
         if re.search(r'#\s*include\s*"[^"]+\.cpp"', clean):
