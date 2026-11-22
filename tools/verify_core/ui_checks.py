@@ -30,10 +30,7 @@ LOW_LEVEL_GFX_FILES: Final[frozenset[str]] = frozenset(
         "ui_surface.h",
         "ui_esphome_display.h",
         "ui_gfx.h",
-        "gfx_fb_clear.cpp",
-        "gfx_primitives.cpp",
-        "gfx_text.cpp",
-        "gfx_art_blit.cpp",
+        "ui_gfx.cpp",
     }
 )
 MODE_BAR_FAMILIES: Final[frozenset[str]] = frozenset(
@@ -118,14 +115,7 @@ def _split_top_level_args(arg_str: str) -> list[str]:
 
 
 def _page_family(filename: str) -> str:
-    stem = filename.removesuffix(".cpp").removeprefix("page_")
-    if stem.startswith("calendar_"):
-        return "calendar"
-    if stem.startswith("music_"):
-        return "music"
-    if stem.startswith("tool"):
-        return "tools"
-    return stem
+    return filename.removesuffix(".cpp").removeprefix("page_")
 
 
 def _check_gui_yaml_and_fast_primitives(gui_uncommented: str, failures: list[str]) -> None:
@@ -153,7 +143,7 @@ def _check_gui_yaml_and_fast_primitives(gui_uncommented: str, failures: list[str
         rel = path.relative_to(ROOT).as_posix()
         clean = strip_cpp_comments(path.read_text(encoding="utf-8"))
         if RAW_IT_DRAW_RE.search(clean) or re.search(r"(?<![\w.>])it\.draw_pixel_at\s*\(", clean):
-            failures.append(f"[FAST PRIMITIVES] {rel} calls raw ESPHome it.* drawing primitive outside gfx_*")
+            failures.append(f"[FAST PRIMITIVES] {rel} calls raw ESPHome it.* drawing primitive outside ui_gfx.cpp")
     if RAW_IT_DRAW_RE.search(gui_uncommented):
         failures.append("[FAST PRIMITIVES] guis/universal/gui.yaml calls raw ESPHome it.* primitive")
 
@@ -265,16 +255,6 @@ def _check_pages_d070_d072(failures: list[str]) -> None:
         fam = _page_family(page_cpp.name)
         pclean = _check_single_page_file(page_cpp, fam, failures)
         family_blobs.setdefault(fam, []).append(pclean)
-    for fam, hdr_name in (
-        ("music", "page_music_shared.h"),
-        ("calendar", "calendar_internal.h"),
-        ("weather", "weather_internal.h"),
-        ("home", "home_internal.h"),
-        ("tools", "tools_internal.h"),
-    ):
-        hdr_path = ui_dir / hdr_name
-        if hdr_path.is_file():
-            family_blobs.setdefault(fam, []).append(_check_single_page_file(hdr_path, fam, failures))
 
     for fam in sorted(MODE_BAR_FAMILIES):
         combined = "\n".join(family_blobs.get(fam, ()))

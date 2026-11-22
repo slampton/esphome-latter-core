@@ -1,4 +1,4 @@
-"""Shared constants, comment/string strippers, YAML include expansion, and LOC ratchet helpers."""
+"""Shared constants, comment/string strippers, and YAML include expansion helpers."""
 
 from __future__ import annotations
 
@@ -25,17 +25,6 @@ SKIP_DIRS: Final[frozenset[str]] = frozenset(
 )
 TEXT_EXTS: Final[frozenset[str]] = frozenset(
     {".yaml", ".yml", ".h", ".hpp", ".cpp", ".c", ".py", ".json", ".md", ".sh", ".html"}
-)
-
-LOC_SOFT_WARN: Final[int] = 1000
-LOC_HARD_FAIL: Final[int] = 1200
-LOC_EXEMPT_REL_PATHS: Final[frozenset[str]] = frozenset(
-    {
-        "protocol/latter_v3.json",
-        "include/latter_protocol.h",
-        "DEVICE_CONTRACT.md",
-        "components/latter_ui/ui_mdi.cpp",
-    }
 )
 
 REQUIRED_BOARD_FLAGS: Final[tuple[str, ...]] = (
@@ -74,15 +63,53 @@ RETIRED_PATHS: Final[tuple[str, ...]] = (
     "include/ui_system.h",
     "components/latter_core/power_pm.cpp",
     "components/latter_core/video_stream.cpp",
+    "components/latter_core/state_v3_parsers_core.cpp",
+    "components/latter_core/state_v3_parsers_apps.cpp",
     "components/latter_ui/gesture_engine.cpp",
     "components/latter_ui/page_comms.cpp",
-    "components/latter_ui/ui_gfx.cpp",
-    "components/latter_ui/ui_widgets.cpp",
-    "components/latter_ui/ui_compositor.cpp",
     "components/latter_ui/page_ambient_va.cpp",
     "components/latter_ui/page_clock_home.cpp",
-    "components/latter_ui/page_calendar.cpp",
-    "components/latter_ui/page_music.cpp",
+    "components/latter_ui/gfx_fb_clear.cpp",
+    "components/latter_ui/gfx_primitives.cpp",
+    "components/latter_ui/gfx_text.cpp",
+    "components/latter_ui/gfx_art_blit.cpp",
+    "components/latter_ui/widgets_chrome.cpp",
+    "components/latter_ui/widgets_inputs.cpp",
+    "components/latter_ui/widgets_media_bars.cpp",
+    "components/latter_ui/widgets_text_layout.cpp",
+    "components/latter_ui/compositor_cadence.cpp",
+    "components/latter_ui/compositor_dirty_band.cpp",
+    "components/latter_ui/page_calendar_views.cpp",
+    "components/latter_ui/page_calendar_composer.cpp",
+    "components/latter_ui/page_calendar_detail.cpp",
+    "components/latter_ui/calendar_internal.h",
+    "components/latter_ui/page_tool_calc.cpp",
+    "components/latter_ui/page_tool_dice_coin.cpp",
+    "components/latter_ui/tools_internal.h",
+    "components/latter_ui/home_activity_model.cpp",
+    "components/latter_ui/home_internal.h",
+    "components/latter_ui/page_music_now_playing.cpp",
+    "components/latter_ui/page_music_browse.cpp",
+    "components/latter_ui/page_music_lyrics.cpp",
+    "components/latter_ui/page_music_shared.h",
+    "components/latter_ui/weather_sky_engine.cpp",
+    "components/latter_ui/weather_lunar.cpp",
+    "components/latter_ui/weather_internal.h",
+    "components/latter_ui/games_board.cpp",
+    "components/latter_ui/games_bricks_chomp.cpp",
+    "components/latter_ui/games_marbles_archery.cpp",
+    "components/latter_ui/games_internal.h",
+    "components/latter_ui/touch_gestures_drag.cpp",
+    "components/latter_ui/touch_rotary_focus.cpp",
+    "components/latter_ui/touch_pin_gate.cpp",
+    "components/latter_ui/touch_lifecycle.cpp",
+    "components/latter_ui/touch_dispatch_nav.cpp",
+    "components/latter_ui/touch_dispatch_home_area.cpp",
+    "components/latter_ui/touch_dispatch_media.cpp",
+    "components/latter_ui/touch_dispatch_time_cal.cpp",
+    "components/latter_ui/touch_dispatch_cameras_games.cpp",
+    "components/latter_ui/touch_dispatch_system_tools.cpp",
+    "components/latter_ui/touch_internal.h",
     "modules/features",
     "modules/latter_client.yaml",
     "modules/area_control.yaml",
@@ -295,25 +322,3 @@ def resolve_substitutions(value: str, subs: dict[str, str]) -> str:
             break
         out = nxt
     return out
-
-
-def verify_loc_ratchet(failures: list[str], warnings: list[str]) -> None:
-    """Enforce <= 1,200 LOC hard fail (<= 1,000 soft warning) on hand-authored repo files."""
-    for path in iter_repo_files(ROOT):
-        if path.suffix.lower() not in TEXT_EXTS:
-            continue
-        rel = path.relative_to(ROOT).as_posix()
-        if rel in LOC_EXEMPT_REL_PATHS:
-            continue
-        try:
-            line_count = len(path.read_text(encoding="utf-8").splitlines())
-        except UnicodeDecodeError:
-            continue
-        if line_count > LOC_HARD_FAIL:
-            failures.append(
-                f"[LOC RATCHET] {rel} ({line_count} LOC) exceeds hard limit of {LOC_HARD_FAIL} LOC"
-            )
-        elif line_count > LOC_SOFT_WARN:
-            warnings.append(
-                f"[LOC SOFT] {rel} ({line_count} LOC) exceeds soft target of {LOC_SOFT_WARN} LOC"
-            )

@@ -191,22 +191,15 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(all_rpc.find("\"seek_position\":\"20\"") != std::string::npos);
   }
 
-  // Zero-legacy & D-043 / D-048 / D-059 / D-060 source-level invariants across split Music & UI TUs
+  // Zero-legacy & D-043 / D-048 / D-059 / D-060 source-level invariants across Music & UI TUs
   {
-    const std::string mu_shared = read_repo_file("../../components/latter_ui/page_music_shared.h");
-    const std::string mu_np = read_repo_file("../../components/latter_ui/page_music_now_playing.cpp");
-    const std::string mu_lyr = read_repo_file("../../components/latter_ui/page_music_lyrics.cpp");
-    const std::string mu_brw = read_repo_file("../../components/latter_ui/page_music_browse.cpp");
-    const std::string mu_src = mu_shared + "\n" + mu_np + "\n" + mu_lyr + "\n" + mu_brw;
+    const std::string mu_src = read_repo_file("../../components/latter_ui/page_music.cpp");
 
     const std::string te_src = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
-    const std::string comp_src = read_repo_files({
-        "../../components/latter_ui/compositor_dirty_band.cpp",
-        "../../components/latter_ui/compositor_cadence.cpp",
-    });
-    const std::string gfx_art_src = read_repo_file("../../components/latter_ui/gfx_art_blit.cpp");
-    const std::string wid_chr_src = read_repo_file("../../components/latter_ui/widgets_chrome.cpp");
-    const std::string wid_txt_src = read_repo_file("../../components/latter_ui/widgets_text_layout.cpp");
+    const std::string comp_src = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+    const std::string gfx_art_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
+    const std::string wid_chr_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+    const std::string &wid_txt_src = wid_chr_src;
     const std::string lay_src = read_repo_file("../../include/ui_layout.h");
     const std::string sys_yaml = read_repo_files({
         "../../modules/system_core.yaml",
@@ -257,14 +250,14 @@ void test_music_app_v3_d059() {
       return src.substr(s, e - s);
     };
 
-    const std::string scrub_fn = slice_in(mu_np, "void render_scrub_takeover(", "void render_now_playing_view(");
-    const std::string np_fn = slice_in(mu_np, "void render_now_playing_view(", "void render_volume_peer_tab(");
-    const std::string vol_fn = slice_in(mu_np, "void render_volume_peer_tab(", "void render_music_page(");
-    const std::string page_fn = slice_in(mu_np, "void render_music_page(", "");
-    const std::string lyr_fn = slice_in(mu_lyr, "void render_music_lyrics_view(", "void render_music_info_view(");
-    const std::string info_fn = slice_in(mu_lyr, "void render_music_info_view(", "");
-    const std::string sheet_fn = slice_in(mu_brw, "void render_music_action_sheet_takeover(", "void render_music_settings_view(");
-    const std::string set_fn = slice_in(mu_brw, "void render_music_settings_view(", "void render_music_browse_views(");
+    const std::string lyr_fn = slice_in(mu_src, "void render_music_lyrics_view(", "void render_music_info_view(");
+    const std::string info_fn = slice_in(mu_src, "void render_music_info_view(", "int compute_two_line_half_gap(");
+    const std::string sheet_fn = slice_in(mu_src, "void render_music_action_sheet_takeover(", "void render_music_settings_view(");
+    const std::string set_fn = slice_in(mu_src, "void render_music_settings_view(", "void render_music_browse_views(");
+    const std::string scrub_fn = slice_in(mu_src, "void render_scrub_takeover(", "void render_now_playing_view(");
+    const std::string np_fn = slice_in(mu_src, "void render_now_playing_view(", "void render_volume_peer_tab(");
+    const std::string vol_fn = slice_in(mu_src, "void render_volume_peer_tab(", "void render_music_page(");
+    const std::string page_fn = slice_in(mu_src, "void render_music_page(", "");
 
     LATTER_CHECK(scrub_fn.find("render_card_box(") == std::string::npos);
     const size_t first_sheet_card = sheet_fn.find("render_card_box(");

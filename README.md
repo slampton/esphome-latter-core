@@ -109,7 +109,7 @@ Version **3.0.0** — built, bench-validated, and maintained across all five fla
 | Doorbell listen & push-to-talk reply | **Experimental**: camera audio streams to the device with FFmpeg noise reduction; push-to-talk transcribes speech and speaks it at the door via TTS (full-duplex calls with on-device AEC planned) |
 
 **CI & Release Discipline:**
-- Every push to `dev` runs `tools/verify_core.py` (Tarjan SCC zero-cycle `L0`–`L4` DAG + `<= 1,200` LOC ratchet), `tools/gen_protocol.py --check`, `tools/check_protocol_usage.py`, `tools/check_boards.py --release --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, `tools/gen_mdi_pack.py --check`, 5-geometry ASan/UBSan C++20 RGB565 host binaries, `esphome config` across examples/probes/devices, and **full 6-variant firmware compilation** (including `desk-assistant` `rev1` + `rev3`) before CI fast-forwards `main`, alongside a weekly `esphome:dev` canary.
+- Every push to `dev` runs `tools/verify_core.py` (Tarjan SCC zero-cycle `L0`–`L4` DAG + UI/HAL/security gates), `tools/gen_protocol.py --check`, `tools/check_protocol_usage.py`, `tools/check_boards.py --release --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, `tools/gen_mdi_pack.py --check`, 5-geometry ASan/UBSan C++20 RGB565 host binaries, `esphome config` across examples/probes/devices, and **full 6-variant firmware compilation** (including `desk-assistant` `rev1` + `rev3`) before CI fast-forwards `main`, alongside a weekly `esphome:dev` canary.
 - Bugs and feature requests: [GitHub Issues](https://github.com/slampton/esphome-latter-core/issues).
 
 ## Documentation

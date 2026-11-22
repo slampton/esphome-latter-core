@@ -22,7 +22,7 @@ namespace latter_ui {
 
 // ------------------------------------------------------------------------------
 // 1. Retryable PSRAM / Host Heap Helpers & Framebuffer Clear Hooks
-//    (ESP-IDF guarded inside gfx_fb_clear.cpp only)
+//    (ESP-IDF guarded inside ui_gfx.cpp only)
 // ------------------------------------------------------------------------------
 void *ui_psram_malloc(size_t bytes) noexcept;
 void *ui_psram_calloc(size_t count, size_t elem_size) noexcept;

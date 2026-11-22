@@ -23,8 +23,7 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(touch_cpp.find(".last_tap_ms") == std::string::npos);
   LATTER_CHECK(touch_cpp.find("{\"Full Screen\", \"Letterbox\", \"Standard\", \"None\"}") != std::string::npos);
 
-  const std::string music_cpp = read_repo_file("../../components/latter_ui/page_music_shared.h") +
-                                "\n" + read_repo_glob("../../components/latter_ui", "page_music_", ".cpp");
+  const std::string music_cpp = read_repo_file("../../components/latter_ui/page_music.cpp");
   const std::string remote_cpp = read_repo_file("../../components/latter_ui/page_remote.cpp");
   const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
   const std::string state_h = read_repo_glob("../../include/state", "", ".h");
@@ -102,19 +101,9 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
       "../../include/ui_frame_context.h",
       "../../include/ui_compositor.h",
   });
-  const std::string comp_cpp = read_repo_files({
-      "../../components/latter_ui/compositor_dirty_band.cpp",
-      "../../components/latter_ui/compositor_cadence.cpp",
-  });
-  const std::string weather_cpp = read_repo_files({
-      "../../components/latter_ui/weather_lunar.cpp",
-      "../../components/latter_ui/weather_sky_engine.cpp",
-      "../../components/latter_ui/page_weather.cpp",
-  });
-  const std::string home_cpp = read_repo_files({
-      "../../components/latter_ui/home_activity_model.cpp",
-      "../../components/latter_ui/page_home.cpp",
-  });
+  const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
+  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string home_cpp = read_repo_file("../../components/latter_ui/page_home.cpp");
   const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
 
   LATTER_CHECK(comp_h.find("struct UiStrView") != std::string::npos);
@@ -192,12 +181,7 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   static_assert(tools_launcher_page_count(6) == 1);
   static_assert(tools_launcher_page_count(7) == 2);
 
-  const std::string wx_src = read_repo_files({
-      "../../components/latter_ui/weather_internal.h",
-      "../../components/latter_ui/weather_lunar.cpp",
-      "../../components/latter_ui/weather_sky_engine.cpp",
-      "../../components/latter_ui/page_weather.cpp",
-  });
+  const std::string wx_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
   LATTER_CHECK(wx_src.find("enum class RainTier") != std::string::npos);
   LATTER_CHECK(wx_src.find("draw_soft_snowflake_q8(") != std::string::npos);
 }

@@ -212,8 +212,14 @@ def _check_ui_cpp_boundaries(failures: list[str]) -> None:
     ui_dir = ROOT / "components" / "latter_ui"
     if not ui_dir.is_dir():
         return
-    l2_prefixes = ("gfx_", "widgets_", "compositor_")
-    l2_exact = {"hit_table.cpp", "ui_mdi.cpp", "overlay_takeover.cpp"}
+    l2_exact = {
+        "ui_gfx.cpp",
+        "ui_widgets.cpp",
+        "ui_compositor.cpp",
+        "hit_table.cpp",
+        "ui_mdi.cpp",
+        "overlay_takeover.cpp",
+    }
 
     for path in sorted(ui_dir.glob("*.cpp")):
         name = path.name
@@ -222,12 +228,12 @@ def _check_ui_cpp_boundaries(failures: list[str]) -> None:
         incs = [m.group(1) for m in LOCAL_INC_RE.finditer(clean)]
         inc_names = {Path(spec).name for spec in incs}
 
-        if name in l2_exact or name.startswith(l2_prefixes):
+        if name in l2_exact:
             upward = sorted(inc_names & L3_UI_HEADERS)
             if upward:
                 failures.append(f"[DAG LAYER] L2 TU {rel} includes L3 header(s): {upward}")
 
-        if name not in {"gfx_fb_clear.cpp", "ui_mdi.cpp"} and any(
+        if name not in {"ui_gfx.cpp", "ui_mdi.cpp"} and any(
             spec in {"esp_heap_caps.h", "driver/ppa.h", "esp_async_memcpy.h", "esp_cache.h"} for spec in incs
         ):
             failures.append(

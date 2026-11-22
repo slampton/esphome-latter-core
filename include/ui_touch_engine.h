@@ -8,6 +8,7 @@
 // ==============================================================================
 
 #include "state/device_runtime_state.h"
+#include "ui_cadence.h"
 #include "ui_compositor.h"
 #include "ui_hit_table.h"
 #include "ui_layout.h"
@@ -563,6 +564,8 @@ struct UiTouchRuntime {
   void set_num_val(UiNumberId id, float v) const;
 };
 
+void activate_music_peer_tab(MusicView target, uint32_t now_ms);
+
 class TouchGestureEngine {
  public:
   UiTouchRuntime &runtime() { return rt_; }
@@ -579,7 +582,7 @@ class TouchGestureEngine {
   void navigate_home(uint32_t now_ms);
   void navigate_to_start_screen(uint32_t now_ms);
 
-  // Internal cross-TU helpers (implemented in touch_*.cpp)
+  // Internal cross-TU helpers (implemented in touch_engine.cpp / touch_dispatch.cpp)
   bool try_commit_long_press_(uint32_t now_ms);
   bool try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms);
   bool handle_pin_pad_tap(int tx, int ty, uint32_t now_ms);
@@ -599,7 +602,102 @@ class TouchGestureEngine {
   bool handle_tap_cameras_games_(int tx, int ty, uint32_t now_ms, const HitRegion *hit, uint16_t hit_wid);
 
  private:
-  friend struct TouchEngineAccess;
+  friend struct UiTouchRuntime;
+  friend void activate_music_peer_tab(MusicView target, uint32_t now_ms);
+
+  static uint32_t now_or_hal_ms_(uint32_t fallback_ms = 0U) noexcept {
+    const uint32_t h = hal_millis_now();
+    return (h != 0U) ? h : fallback_ms;
+  }
+
+  static bool resolve_sys_bri_slider_id_(int16_t param, std::string_view auto_bri_mode,
+                                         UiNumberId &out_id) noexcept {
+    const bool ab_off = (auto_bri_mode == "Disabled" || auto_bri_mode.empty());
+    if (param == 5 && ab_off) {
+      out_id = UiNumberId::MANUAL_BRIGHTNESS;
+      return true;
+    }
+    if (param == 7 && !ab_off) {
+      out_id = UiNumberId::DAY_BRIGHTNESS;
+      return true;
+    }
+    if (param == 8 && !ab_off) {
+      out_id = UiNumberId::NIGHT_BRIGHTNESS;
+      return true;
+    }
+    return false;
+  }
+
+  static UiNumberId brightness_number_id_for_kind_(ActiveBrightnessTargetKind kind) noexcept {
+    switch (kind) {
+      case ActiveBrightnessTargetKind::DAY:     return UiNumberId::DAY_BRIGHTNESS;
+      case ActiveBrightnessTargetKind::NIGHT:   return UiNumberId::NIGHT_BRIGHTNESS;
+      case ActiveBrightnessTargetKind::BEDTIME: return UiNumberId::BEDTIME_BRIGHTNESS;
+      case ActiveBrightnessTargetKind::MANUAL:
+      default:                                  return UiNumberId::MANUAL_BRIGHTNESS;
+    }
+  }
+
+  static int32_t resolve_touch_today_ymd_(const UiTouchRuntime &rt) noexcept {
+    if (rt.time_valid && rt.time_year >= 2020) {
+      return make_ymd(rt.time_year, rt.time_month, rt.time_day);
+    }
+    return 20260101;
+  }
+
+  static void scrub_pin_and_pending_(TouchGestureEngine &eng, DeviceRuntimeState &rs,
+                                     bool clear_feedback_and_shortcut = true);
+  static bool allow_active_touch_down_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms);
+  static bool handle_down_takeovers_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms);
+  static void handle_quick_actions_release_(TouchGestureEngine &eng, uint32_t now_ms,
+                                            const HitRegion *start_slider);
+  static void handle_down_alert_overlay_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms);
+  static bool handle_down_cameras_games_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms,
+                                         uint16_t wid);
+  static bool handle_down_system_tools_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms,
+                                        const HitRegion *hit, uint16_t wid, uint32_t tkey);
+  static bool handle_down_time_cal_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms,
+                                    const HitRegion *hit, uint16_t wid, uint32_t tkey);
+
+  static void do_execute_area_action_();
+  static void apply_optimistic_shortcut_feedback_(const std::string &entity_id,
+                                                  const std::string &action,
+                                                  const std::string &label,
+                                                  DeviceRuntimeState &rs,
+                                                  uint32_t now_ms);
+  static void activate_shortcut_item_(const ShortcutItem &item, ShortcutOrigin origin,
+                                      DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+                                      uint32_t now_ms);
+  static void launch_dock_app_(int chosen_app, DeviceRuntimeState &rs,
+                               const UiTouchRuntime &rt, uint32_t now_ms);
+  static void launch_shortcut_route_(RouteId route_id, ShortcutOrigin origin,
+                                     DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+                                     uint32_t now_ms);
+  static bool return_from_shortcut_origin_(DeviceRuntimeState &rs,
+                                           const UiTouchRuntime &rt,
+                                           uint32_t now_ms);
+  static void handle_home_activity_action_(const HomeActivityItem *items, int count, int item_idx,
+                                           bool quick_btn_tap, uint32_t now_ms,
+                                           DeviceRuntimeState &rs, PersistedDevicePrefs &prefs,
+                                           const UiTouchRuntime &rt);
+  static void dispatch_music_play_item_(const std::string &media_id, const std::string &media_type,
+                                        const std::string &item_name, std::string_view enqueue,
+                                        bool radio_mode, DeviceRuntimeState &rs, uint32_t now_ms);
+  static std::string resolve_music_speaker_entity_(const DeviceRuntimeState &rs);
+  static int fetch_music_browse_for_current_view_(const DeviceRuntimeState &rs, uint32_t now_ms);
+  static bool open_music_row_action_sheet_(int slot_idx, DeviceRuntimeState &rs, uint32_t now_ms);
+  static bool handle_music_back_step_(DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms);
+  static void do_fetch_area_browse_();
+  static void do_fetch_area_list_browse_();
+  static void enter_home_hub_tab_(int target_tab, bool expand_cam, DeviceRuntimeState &rs,
+                                  const UiTouchRuntime &rt, uint32_t now_ms);
+  static const HomeActivityItem *resolve_home_activities_(uint32_t now_ms, const DeviceRuntimeState &rs,
+                                                          const PersistedDevicePrefs &prefs,
+                                                          const UiTouchRuntime &rt, int &out_count);
+  static int remote_key_for_widget_(uint16_t wid) noexcept;
+  static void do_remote_send_key_(int key_idx, int target_slot, bool long_press = false,
+                                  uint32_t now_override_ms = 0U);
+
   UiTouchRuntime rt_{};
   uint32_t last_touch_activity_ms_{0};
   uint32_t last_drag_sleep_rst_ms_{0};

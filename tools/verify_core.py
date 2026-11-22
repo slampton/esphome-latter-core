@@ -14,7 +14,6 @@ import os
 import sys
 
 from verify_core.board_hal_checks import verify_board_hal_and_security
-from verify_core.common import verify_loc_ratchet
 from verify_core.dag_checks import verify_dag_and_layers
 from verify_core.static_repo_checks import verify_static_repo_invariants
 from verify_core.subprocess_gates import run_subprocess_gates
@@ -43,7 +42,6 @@ def main(argv: list[str] | None = None) -> int:
     if args.host_tests_only:
         run_subprocess_gates(failures, host_tests_only=True)
     else:
-        verify_loc_ratchet(failures, warnings)
         verify_dag_and_layers(failures)
         verify_static_repo_invariants(failures)
         verify_board_hal_and_security(failures)

@@ -224,15 +224,14 @@ void test_battery_model_and_power_policy() {
   const std::string batt_h = read_repo_file("../../include/hal_battery.h");
   const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
   const std::string link_h = read_repo_file("../../include/hal_link_report.h");
-  const std::string gfx_cpp = read_repo_glob("../../components/latter_ui", "gfx_", ".cpp");
+  const std::string gfx_cpp = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
   const std::string comp_h = read_repo_files({
       "../../include/ui_cadence.h",
       "../../include/ui_compositor.h",
       "../../include/ui_esphome_display.h",
   });
   const std::string comp_cpp = read_repo_files({
-      "../../components/latter_ui/compositor_dirty_band.cpp",
-      "../../components/latter_ui/compositor_cadence.cpp",
+      "../../components/latter_ui/ui_compositor.cpp",
       "../../components/latter_ui/overlay_takeover.cpp",
   });
   const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
@@ -240,12 +239,7 @@ void test_battery_model_and_power_policy() {
       "../../modules/power_policy.yaml",
       "../../modules/sleep_lifecycle.yaml",
   });
-  const std::string weather_cpp = read_repo_files({
-      "../../components/latter_ui/weather_internal.h",
-      "../../components/latter_ui/weather_lunar.cpp",
-      "../../components/latter_ui/weather_sky_engine.cpp",
-      "../../components/latter_ui/page_weather.cpp",
-  });
+  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
 
   LATTER_CHECK(gfx_cpp.find("last_ambient_anim_ms() = start_m") != std::string::npos);
   LATTER_CHECK(comp_h.find("sync_disp_poller_for_anim(") != std::string::npos);
@@ -668,15 +662,9 @@ void test_phase4_audio_session_and_music_pause_timeout() {
       "../../modules/voice_assistant.yaml",
   });
   const std::string timers_yaml = read_repo_file("../../modules/timers_and_fetchers.yaml");
-  const std::string home_cpp = read_repo_files({
-      "../../components/latter_ui/home_activity_model.cpp",
-      "../../components/latter_ui/page_home.cpp",
-  });
+  const std::string home_cpp = read_repo_file("../../components/latter_ui/page_home.cpp");
   const std::string touch_cpp = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
-  const std::string comp_cpp = read_repo_files({
-      "../../components/latter_ui/compositor_dirty_band.cpp",
-      "../../components/latter_ui/compositor_cadence.cpp",
-  });
+  const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
 
   LATTER_CHECK(audio_yaml.find("- id: preempt_va_for_alert") != std::string::npos);
   LATTER_CHECK(audio_yaml.find("- script.execute: preempt_va_for_alert") != std::string::npos);

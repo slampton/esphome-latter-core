@@ -493,12 +493,8 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
   }
 
   {
-    const std::string cal_cpp = read_repo_glob("../../components/latter_ui", "page_calendar_", ".cpp");
-    const std::string wth_cpp = read_repo_files({
-        "../../components/latter_ui/weather_lunar.cpp",
-        "../../components/latter_ui/weather_sky_engine.cpp",
-        "../../components/latter_ui/page_weather.cpp",
-    });
+    const std::string cal_cpp = read_repo_file("../../components/latter_ui/page_calendar.cpp");
+    const std::string wth_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
     const std::string tch_cpp = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
     const std::string gui_yml = read_repo_file("../../guis/universal/gui.yaml");
     LATTER_CHECK(cal_cpp.find("render_map_drilldown") == std::string::npos);
@@ -533,16 +529,12 @@ void test_sram_psram_budget_and_http_stall_guards() {
   cam_error_backoff_until_ms() = 0U;
 
   const std::string st_src = read_repo_glob("../../include/state", "", ".h");
-  const std::string cal_src = read_repo_glob("../../components/latter_ui", "page_calendar_", ".cpp");
+  const std::string cal_src = read_repo_file("../../components/latter_ui/page_calendar.cpp");
   const std::string th_src = read_repo_file("../../components/latter_core/touch_hal.cpp");
   const std::string s3_yaml = read_repo_file("../../modules/hal/chip_esp32s3.yaml");
-  const std::string gfx_src = read_repo_glob("../../components/latter_ui", "gfx_", ".cpp") +
+  const std::string gfx_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp") +
                               "\n" + read_repo_file("../../include/ui_gfx.h");
-  const std::string wth_src = read_repo_files({
-      "../../components/latter_ui/weather_lunar.cpp",
-      "../../components/latter_ui/weather_sky_engine.cpp",
-      "../../components/latter_ui/page_weather.cpp",
-  });
+  const std::string wth_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
   const std::string mdi_src = read_repo_file("../../components/latter_ui/ui_mdi.cpp");
   const std::string dp_yaml = read_repo_file("../../modules/display_pipeline.yaml");
 
@@ -587,7 +579,7 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(gfx_src.find("blit_dimmed_rgb565_scanline(") != std::string::npos);
   LATTER_CHECK(gfx_src.find("full_rect_overwrite") != std::string::npos);
   LATTER_CHECK(gfx_src.find("sample_glass_mean(") != std::string::npos);
-  const std::string wid_src = read_repo_glob("../../components/latter_ui", "widgets_", ".cpp");
+  const std::string wid_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
   const std::string pm_yaml = read_repo_files({
       "../../modules/power_policy.yaml",
       "../../modules/sleep_lifecycle.yaml",

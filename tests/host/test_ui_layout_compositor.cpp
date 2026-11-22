@@ -355,14 +355,9 @@ void test_phase2_glass_and_scissor_compositor() {
   const std::string ui_gfx_h = read_repo_file("../../include/ui_gfx.h");
   const std::string home_cpp = read_repo_files({
       "../../components/latter_ui/page_clock.cpp",
-      "../../components/latter_ui/home_activity_model.cpp",
       "../../components/latter_ui/page_home.cpp",
   });
-  const std::string tools_cpp = read_repo_files({
-      "../../components/latter_ui/page_tools.cpp",
-      "../../components/latter_ui/page_tool_calc.cpp",
-      "../../components/latter_ui/page_tool_dice_coin.cpp",
-  });
+  const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
   const std::string home_hub_cpp = read_repo_file("../../components/latter_ui/page_home_hub.cpp");
 
   LATTER_CHECK(ui_color_types.find("enum class GlassVariant : uint8_t") != std::string::npos);
@@ -450,7 +445,7 @@ void test_custom_icon_tiers_and_d051() {
   }
 
   const std::string w_hdr = read_repo_file("../../include/ui_widgets.h");
-  const std::string w_chrome = read_repo_file("../../components/latter_ui/widgets_chrome.cpp");
+  const std::string w_chrome = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
   const std::string home_src = read_repo_files({
       "../../components/latter_ui/page_clock.cpp",
       "../../components/latter_ui/page_home.cpp",
@@ -516,9 +511,8 @@ void test_gui_standardization_d070() {
       read_repo_file("../../components/latter_ui/page_weather.cpp"),
       read_repo_file("../../components/latter_ui/page_home_hub.cpp"),
       read_repo_file("../../components/latter_ui/page_time.cpp"),
-      read_repo_glob("../../components/latter_ui", "page_calendar_", ".cpp"),
-      read_repo_file("../../components/latter_ui/page_music_shared.h") + "\n" +
-          read_repo_glob("../../components/latter_ui", "page_music_", ".cpp"),
+      read_repo_file("../../components/latter_ui/page_calendar.cpp"),
+      read_repo_file("../../components/latter_ui/page_music.cpp"),
       read_repo_file("../../components/latter_ui/page_cameras.cpp"),
   };
   for (const auto &src : mode_bar_families) {
