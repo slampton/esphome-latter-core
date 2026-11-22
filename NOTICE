@@ -24,3 +24,9 @@ Third-Party Attributions
    Source: https://github.com/esphome/esp-web-tools
    Copyright Open Home Foundation
    Licensed under the MIT License.
+
+4. Pictogrammers Material Design Icons (`@mdi/js` v7.4.47, rasterized in
+   `components/latter_ui/ui_mdi.cpp` via `tools/gen_mdi_pack.py`)
+   Source: https://github.com/Templarian/MaterialDesign-JS
+   Copyright Pictogrammers / Austin Andrews & Contributors
+   Licensed under the Pictogrammers Free License / Apache License, Version 2.0.

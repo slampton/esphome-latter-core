@@ -15,12 +15,14 @@ substitutions:
   name: "latter-panel-demo"
   friendly_name: "Latter Panel Demo"
   version: "3.0.0"
+  latter_asset_ref: "main"
+  api_reboot_timeout: "15min"
   art_resize: "480x480"
   sendspin_art_resize: "480x480"
   default_clock_face: "Minimal Digital"
   sendspin_buffer_size: "524288"  # PSRAM; 48 kHz holds 3x the bytes per second of 16 kHz
   mww_internal_ram: "false"  # "true" only with internal-RAM headroom (P4-class boards)
-  announcement_buffer_size: "65536"
+  announcement_buffer_size: "131072"
   audio_out_rate: "48000"  # full-duplex I2S bus rate; latter_mic resamples to audio_in_rate
   audio_out_channels: "1"
   audio_out_bits: "16"
@@ -44,11 +46,13 @@ esphome:
     - "-DLATTER_SCREEN_W=480"
     - "-DLATTER_SCREEN_H=480"
     - "-DLATTER_ROUND_DISPLAY=0"
+    - "-DLATTER_CORNER_R=0"
     - "-DLATTER_HAS_DISPLAY=1"
     - "-DLATTER_HAS_TOUCH=1"
     - "-DLATTER_HAS_AUDIO=1"
     - "-DLATTER_HAS_IMU=1"
     - "-DLATTER_HAS_BATTERY=0"
+    - "-DLATTER_HAS_RTC=0"
     - "-DLATTER_IS_STATIONARY=1"
     - "-DLATTER_IS_WEARABLE=0"
     - "-DLATTER_PANEL_IPS=0"
@@ -266,7 +270,7 @@ script:
 #       auto_clear_enabled: false
 #       lambda: |-
 #         const auto &rs = latter_ui::runtime_state();
-#         latter_ui::UiFrameContext ctx;
+#         latter_ui::UiFrameContext &ctx = latter_ui::acquire_frame_context();
 #         ctx.now = id(ha_time).now();
 #         if (!ctx.now.is_valid()) ctx.now = id(sntp_time).now();
 #         ctx.now_ms = millis();
@@ -287,20 +291,22 @@ script:
 #         ctx.col_gold = id(col_gold);
 #         ctx.col_red = id(col_red);
 #         ctx.col_solaris_gold = id(col_solaris_gold);
-#         const auto takeover_st = latter_ui::SystemTakeoverState::from_context(ctx);
+#         const auto &takeover_st = latter_ui::acquire_takeover_state(ctx);
 #         const uint32_t sig = latter_ui::compute_takeover_signature(takeover_st);
-#         latter_ui::dirty_band().begin_frame(rs.nav.gui_page, 0, sig, sig != 0U);
-#         const int band_y0 = latter_ui::dirty_band().y0();
-#         const int band_y1 = latter_ui::dirty_band().y1();
+#         if (!latter_ui::dirty_band().begin_frame(rs.nav.gui_page, 0, sig, sig != 0U)) return;
+#         const int band_y0 = latter_ui::dirty_band().band_y0();
+#         const int band_y1 = latter_ui::dirty_band().band_y1();
 #         it.draw_pixel_at(0, band_y0, Color(8, 8, 8));
 #         it.draw_pixel_at(0, band_y0, id(col_bg));
 #         it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, Color(8, 8, 8));
 #         it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
 #         latter_ui::bind_frame_buffer(id(disp1), it);
 #         latter_ui::frame_base_begin();
+#         latter_ui::set_clip_y_band(band_y0, band_y1);
 #         if (latter_ui::render_system_takeovers(it, ctx, takeover_st)) return;
-#         latter_ui::frame_base(it, id(col_bg));
-#         // ... draw your custom pages here using latter_ui::fast_* primitives ...
+#         latter_ui::Rgb565Surface surf = latter_ui::make_surface(it);
+#         latter_ui::frame_base(surf, id(col_bg));
+#         // ... draw your custom pages here using latter_ui::fast_* primitives on `surf` ...
 packages:
   latter_imu:      !include ../modules/hal/imu_qmi8658.yaml
   latter_firmware: !include ../modules/latter_display_firmware.yaml

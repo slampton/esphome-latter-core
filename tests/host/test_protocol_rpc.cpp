@@ -444,25 +444,13 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
   }
 
   {
-    struct Panel5 {
-      int w;
-      int h;
-      bool round;
-      bool wearable;
-      int ppi;
-      int corner_r;
-    };
-    constexpr Panel5 kP5[5] = {
-        {466, 466, true,  false, 266, 233},
-        {480, 480, false, false, 313, 20},
-        {410, 502, false, true,  315, 98},
-        {320, 480, false, false, 165, 20},
-        {720, 720, false, false, 254, 20},
-    };
-    for (const auto &g : kP5) {
+    for (const auto &g : kFlagshipPanels) {
       LATTER_CHECK(is_inside_bezel_for(g.w / 2, g.h / 2, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
       LATTER_CHECK(!is_inside_bezel_for(6, 6, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
       LATTER_CHECK(!is_inside_bezel_for(g.w - 7, g.h - 7, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      if (g.corner_r >= 76) {
+        LATTER_CHECK(!is_inside_bezel_for(18, 18, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      }
 
       const int min_hit = std::max(scale_s_for(36, std::min(g.w, g.h)), mm_to_px_for(7.0f, g.ppi));
       const int div_off = compute_area_card_div_offset(g.w, g.h, g.ppi);

@@ -4,14 +4,9 @@ on:
   workflow_dispatch:
   release:
     types: [published]
-  push:
-    tags:
-      - "v*"
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
 
 jobs:
   build_device:
@@ -57,13 +52,12 @@ jobs:
             subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Board facts release gate (no L-confidence facts)
-        if: startsWith(github.ref, 'refs/tags/v')
         run: python3 tools/check_boards.py --release --check-docs
 
-      - name: Resolve and verify release version & pin @main refs on tagged releases
+      - name: Resolve and verify release version & pin @main / ${latter_asset_ref} refs on releases
         id: rel_meta
         shell: bash
         run: |
@@ -75,14 +69,19 @@ jobs:
               echo "::error::Release tag ${TAG_NAME} (${VERSION}) does not match modules/base.yaml (${BASE_VER})"
               exit 1
             fi
-            find devices modules examples -name '*.yaml' -exec sed -i "s/@main/@${TAG_NAME}/g; s/ref: main/ref: ${TAG_NAME}/g; s#/esphome-latter-core/main/#/esphome-latter-core/${TAG_NAME}/#g" {} +
+            find devices modules examples -name '*.yaml' -exec sed -i \
+              -e "s/@main/@${TAG_NAME}/g" \
+              -e "s/latter_ref:[[:space:]]*[\"']*main[\"']*/latter_ref: \"${TAG_NAME}\"/g" \
+              -e "s/latter_asset_ref:[[:space:]]*[\"']*main[\"']*/latter_asset_ref: \"${TAG_NAME}\"/g" \
+              -e "s/ref:[[:space:]]*main$/ref: ${TAG_NAME}/g" \
+              -e "s#/esphome-latter-core/main/#/esphome-latter-core/${TAG_NAME}/#g" {} +
           else
             VERSION="${BASE_VER}"
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Compile ${{ matrix.device.slug }} with ESPHome
-        uses: docker://ghcr.io/esphome/esphome:2026.11.0
+        uses: docker://ghcr.io/esphome/esphome:2026.11.0@sha256:6351ae811202064bb3eb49dde982609b47acd523103a66d7b9c5c1431beea055
         with:
           args: ${{ matrix.device.subs }} compile devices/${{ matrix.device.file }}.yaml
 
@@ -124,20 +123,34 @@ jobs:
           EOF
 
       - name: Upload artifact for ${{ matrix.device.slug }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: build-${{ matrix.device.slug }}
           path: dist/
 
       - name: Upload debug symbols for ${{ matrix.device.slug }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: elf-${{ matrix.device.slug }}
           path: elf/
           retention-days: 90
 
+  attach_release_assets:
+    name: Attach Debug Symbols to GitHub Release
+    if: github.event_name == 'release'
+    needs: build_device
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all debug symbol artifacts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: elf-*
+          path: elf
+          merge-multiple: true
+
       - name: Attach debug symbols to the GitHub Release
-        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.release.tag_name }}" elf/*.elf --clobber
@@ -146,17 +159,21 @@ jobs:
     name: Deploy Unified Web Installer to GitHub Pages
     needs: build_device
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Download all device build artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: build-*
           path: _site
@@ -170,7 +187,8 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
             VERSION="${BASE_VER}"
           fi
-          sed "s/v[0-9]\+\.[0-9]\+\.[0-9]\+/v${VERSION}/g" index.html > _site/index.html
+          sed -E "s#<span class=\"nav-badge\">v[0-9]+\.[0-9]+\.[0-9]+</span>#<span class=\"nav-badge\">v${VERSION}</span>#g" index.html > _site/index.html
+          grep -Fq "<span class=\"nav-badge\">v${VERSION}</span>" _site/index.html
 
       - name: Fast-forward stable branch on tagged release
         if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
@@ -179,13 +197,13 @@ jobs:
           git push origin "HEAD:refs/heads/stable" --force
 
       - name: Configure Pages
-        uses: actions/configure-pages@v6
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

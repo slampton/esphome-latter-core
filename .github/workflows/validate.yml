@@ -1,8 +1,8 @@
 name: Validate SDK & Examples
 
-# dev is the integration branch. A push to dev runs every check, compiles all five devices from that
-# exact commit, and only then fast-forwards main, the branch devices build from (packages,
-# external_components, sounds and models all reference @main). main is never ahead of a green build.
+# dev is the integration branch. A push to dev runs every check, compiles all flagship device
+# variants from that exact commit, and only then fast-forwards main, the branch devices build from
+# (packages, external_components, sounds, and models default to main). main is never ahead of a green build.
 
 on:
   push:
@@ -10,6 +10,9 @@ on:
   pull_request:
     branches: [main, dev]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 # A running build is never cancelled: it finishes and promotes, then only the newest queued push runs.
 # (Cancelling on every push would starve main whenever pushes come faster than a build.)
@@ -23,10 +26,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.13"
 
@@ -40,7 +43,7 @@ jobs:
       # a brief outage of a download host does not fail a build that did not change them. Wake word models are
       # vendored in models/ and never downloaded from github.com's /raw/ path (it returned 504 to runners).
       - name: Restore downloaded remote files
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: '**/.esphome/external_files'
           key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
@@ -56,8 +59,8 @@ jobs:
       - name: Check firmware service calls and device actions against the protocol
         run: python tools/check_protocol_usage.py
 
-      - name: Check board facts ledger and generated pin maps
-        run: python tools/check_boards.py --check-docs
+      - name: Check board facts release ledger and generated pin maps
+        run: python tools/check_boards.py --release --check-docs
 
       - name: Check generated bring-up probes
         run: python tools/new_board.py --bringup --check
@@ -104,7 +107,7 @@ jobs:
           done
 
   compile:
-    name: Compile ${{ matrix.device }}
+    name: Compile ${{ matrix.target.slug }}
     # Full firmware builds gate dev -> main (C++ lambdas and headers only fail at compile time).
     if: github.ref == 'refs/heads/dev' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     needs: validate
@@ -112,14 +115,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [pocket-assistant, mobile-assistant, wrist-assist, remote-assistant, desk-assistant]
+        target:
+          - slug: pocket-assistant
+            file: pocket-assistant
+            subs: ""
+          - slug: mobile-assistant
+            file: mobile-assistant
+            subs: ""
+          - slug: wrist-assist
+            file: wrist-assist
+            subs: ""
+          - slug: remote-assistant
+            file: remote-assistant
+            subs: ""
+          - slug: desk-assistant-rev1
+            file: desk-assistant
+            subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
+          - slug: desk-assistant-rev3
+            file: desk-assistant
+            subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Python
         id: py
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.13"
 
@@ -131,7 +152,7 @@ jobs:
       # at it. Build directories are never cached: CMake stores absolute tool paths that a later runner
       # does not have (a cached build dir failed with "ninja --version: no such file or directory").
       - name: Restore ESP-IDF toolchain cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/esphome
           key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0
@@ -139,11 +160,8 @@ jobs:
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
 
-      # Remote files ESPHome downloads during config validation (fonts, remote sounds) are kept between runs, so
-      # a brief outage of a download host does not fail a build that did not change them. Wake word models are
-      # vendored in models/ and never downloaded from github.com's /raw/ path (it returned 504 to runners).
       - name: Restore downloaded remote files
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: '**/.esphome/external_files'
           key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
@@ -151,7 +169,7 @@ jobs:
             external-files-esphome-2026.11.0-
 
       - name: Compile
-        run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml
+        run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.target.slug }}" ${{ matrix.target.subs }} compile devices/${{ matrix.target.file }}.yaml
 
   promote:
     name: Fast-forward main to this commit
@@ -162,7 +180,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 

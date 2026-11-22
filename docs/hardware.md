@@ -1,6 +1,6 @@
 # Hardware
 
-Latter firmware supports five Waveshare boards. Purchase links are in the [device table](../README.md#devices).
+Latter firmware supports five Waveshare boards. Purchase links are in the [device table](../README.md#supported-hardware--3-minute-setup).
 
 ## What else you need
 

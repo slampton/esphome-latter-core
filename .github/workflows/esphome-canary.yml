@@ -1,0 +1,52 @@
+name: ESPHome Upstream Dev Canary
+
+# Weekly forward-adoption canary against upstream esphome:dev (M-P1-16).
+# Detects upstream VoiceAssistant, MipiDsi, or ESP-IDF header/ABI changes before
+# a new ESPHome release ships so esphome_bridge.cpp stays ahead of upstream cuts.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Canary Compile (${{ matrix.device }}) on esphome:dev
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [pocket-assistant, desk-assistant]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        id: py
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install upstream esphome@dev
+        run: pip install --upgrade pip "git+https://github.com/esphome/esphome.git@dev"
+
+      - name: Restore ESP-IDF toolchain cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cache/esphome
+          key: idf-canary-${{ runner.os }}-py${{ steps.py.outputs.python-version }}
+          restore-keys: |
+            idf-canary-${{ runner.os }}-py${{ steps.py.outputs.python-version }}
+            idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-
+
+      - name: Point remote references at this checkout
+        run: bash .github/scripts/pin_to_checkout.sh "${GITHUB_SHA}"
+
+      - name: Verify static architecture and C++20 host unit tests
+        run: python tools/verify_core.py
+
+      - name: Compile ${{ matrix.device }} against esphome:dev
+        run: bash .github/scripts/esphome_run.sh "esphome canary ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml

@@ -156,33 +156,151 @@ void populate_rich_host_state(latter_ui::UiFrameContext &ctx) {
   sync_multi_timer_state();
 }
 
+bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
+  using namespace latter_ui;
+  return (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) ||
+         (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) ||
+         wid == WidgetId::SYS_BRI_SLIDER ||
+         wid == WidgetId::SYS_VOL_SLIDER ||
+         wid == WidgetId::SYS_SECONDARY_BTN ||
+         wid == WidgetId::QUICK_VOL_SLIDER ||
+         wid == WidgetId::QUICK_BRI_SLIDER ||
+         wid == WidgetId::QUICK_BEDTIME_TOGGLE ||
+         wid == WidgetId::QUICK_DND_TOGGLE ||
+         (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + 5) ||
+         (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5) ||
+         wid == WidgetId::REMOTE_PRIMARY_PWR ||
+         (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4) ||
+         (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4) ||
+         (wid >= WidgetId::CAL_EVENT_BASE && wid < WidgetId::CAL_EVENT_BASE + 5) ||
+         (wid >= WidgetId::CAL_PICKER_SLOT_BASE && wid < WidgetId::CAL_PICKER_SLOT_BASE + 5) ||
+         (wid >= WidgetId::CAL_ADD_TITLE_BTN && wid <= WidgetId::CAL_ADD_REPEAT_BTN) ||
+         (wid >= WidgetId::CAL_ADD_ALLDAY_BTN && wid <= WidgetId::CAL_ADD_END_BTN) ||
+         (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5) ||
+         (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) ||
+         wid == WidgetId::MUSIC_QUEUE_CLEAR ||
+         wid == WidgetId::MUSIC_SHUFFLE_BTN ||
+         wid == WidgetId::MUSIC_REPEAT_BTN ||
+         wid == WidgetId::LIGHT_COLOR_BTN ||
+         wid == WidgetId::ALERT_DISMISS_BTN;
+}
+
+bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
+  using namespace latter_ui;
+  return wid == WidgetId::CHEVRON_UP ||
+         wid == WidgetId::CHEVRON_DOWN ||
+         wid == WidgetId::MODE_BAR_LEFT ||
+         wid == WidgetId::MODE_BAR_RIGHT ||
+         wid == WidgetId::MUSIC_TAKEOVER_BACKDROP ||
+         wid == WidgetId::MUSIC_ART_TAP ||
+         wid == WidgetId::CAM_VIDEO_TAP ||
+         (wid >= WidgetId::GRID_CARD_BASE && wid < WidgetId::GRID_CARD_BASE + 6) ||
+         wid == WidgetId::GAMES_PREV_BTN ||
+         wid == WidgetId::GAMES_NEXT_BTN ||
+         wid == WidgetId::GAMES_HERO_CARD ||
+         (wid >= WidgetId::STEPPER_BASE && wid < WidgetId::STEPPER_BASE + 4) ||
+         (wid >= WidgetId::COLOR_SWATCH_BASE && wid < WidgetId::COLOR_SWATCH_BASE + 10) ||
+         wid == WidgetId::COLOR_WHEEL_RING ||
+         (wid >= WidgetId::REMOTE_DPAD_UP && wid <= WidgetId::REMOTE_DPAD_OK) ||
+         wid == WidgetId::HOME_WEATHER_HERO ||
+         wid == WidgetId::HOME_TIME_READOUT ||
+         wid == WidgetId::HOME_QUICK_BTN ||
+         wid == WidgetId::HOME_DATE_HERO ||
+         (wid >= WidgetId::HOME_ACT_ROW_0 && wid <= WidgetId::HOME_ACT_EXPAND) ||
+         (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) ||
+         (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6) ||
+         (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 6) ||
+         (wid >= WidgetId::CAL_WEEK_DAY_BASE && wid < WidgetId::CAL_WEEK_DAY_BASE + 7) ||
+         (wid >= WidgetId::CAL_MONTH_WEEK_BASE && wid < WidgetId::CAL_MONTH_WEEK_BASE + 6) ||
+         (wid >= WidgetId::CAL_MONTH_CELL_BASE && wid < WidgetId::CAL_MONTH_CELL_BASE + 42) ||
+         (wid >= WidgetId::MUSIC_LYRIC_LINE_BASE && wid < WidgetId::MUSIC_LYRIC_LINE_BASE + 8);
+}
+
+int sibling_family_key(uint16_t wid) noexcept {
+  using namespace latter_ui;
+  if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) return 1;
+  if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) return 2;
+  if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) return 3;
+  if (wid >= WidgetId::PIN_PAD_KEY_BASE && wid <= WidgetId::PIN_PAD_CANCEL) return 4;
+  if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) return 5;
+  if (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3) return 6;
+  if (wid >= WidgetId::AREA_CARD_TOGGLE && wid < WidgetId::AREA_CARD_TOGGLE + 3) return 7;
+  if (wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5) return 8;
+  if (wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6) return 9;
+  if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) return 10;
+  if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6) return 11;
+  if (wid >= WidgetId::CALC_KEY_BASE && wid < WidgetId::CALC_KEY_BASE + 20) return 12;
+  if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 6) return 13;
+  if (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) return 14;
+  return 0;
+}
+
 void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char *label) {
   using namespace latter_ui;
   const auto &ht = frame_hits();
-  if (ht.dropped_count != 0U) {
-    std::fprintf(stderr, "[HOST TEST FAIL] %s dropped %u hit regions\n",
-                 label, static_cast<unsigned>(ht.dropped_count));
+  if (ht.dropped_count != 0U || ht.count > FrameHitTable::kMaxRegions) {
+    std::fprintf(stderr, "[HOST TEST FAIL] %s dropped=%u count=%u\n",
+                 label, static_cast<unsigned>(ht.dropped_count), static_cast<unsigned>(ht.count));
     std::exit(1);
   }
   const int min_7mm = mm_to_px(7.0f);
+  const auto &ly = layout();
   for (uint8_t i = 0; i < ht.count; ++i) {
     const auto &r = ht.regions[i];
     LATTER_CHECK(r.x0 >= 0 && r.y0 >= 0 && r.x1 < SCREEN_W && r.y1 < SCREEN_H);
     LATTER_CHECK(r.x0 <= r.x1 && r.y0 <= r.y1);
+
+    // Bezel check across all 5 canonical geometries (round R=233 & rounded-rect R=20/76/98).
+    if (r.widget_id == WidgetId::MODE_BAR_LEFT) {
+      LATTER_CHECK(is_inside_bezel_for(r.x1, r.y0, SCREEN_W, SCREEN_H,
+                                       LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 1, LATTER_CORNER_R));
+    } else if (r.widget_id == WidgetId::MODE_BAR_RIGHT) {
+      LATTER_CHECK(is_inside_bezel_for(r.x0, r.y0, SCREEN_W, SCREEN_H,
+                                       LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 1, LATTER_CORNER_R));
+    } else if (r.widget_id != WidgetId::MUSIC_TAKEOVER_BACKDROP) {
+      if (!is_inside_bezel_for(r.cx(), r.cy(), SCREEN_W, SCREEN_H,
+                               LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 1, LATTER_CORNER_R)) {
+        std::fprintf(stderr, "[HOST TEST FAIL] %s widget %u center (%d,%d) clipped by bezel R=%d\n",
+                     label, static_cast<unsigned>(r.widget_id), r.cx(), r.cy(), LATTER_CORNER_R);
+        std::exit(1);
+      }
+    }
+
     const int pw = r.width() + 2 * static_cast<int>(r.hit_pad);
     const int ph = r.height() + 2 * static_cast<int>(r.hit_pad);
-    const bool is_primary_circle_or_back =
-        (r.widget_id >= WidgetId::DOCK_SLOT_BASE && r.widget_id < WidgetId::DOCK_SLOT_BASE + 4) ||
-        (r.widget_id >= WidgetId::MODE_BAR_SLOT_BASE && r.widget_id < WidgetId::MODE_BAR_SLOT_BASE + 4) ||
-        r.widget_id == WidgetId::MUSIC_PLAY_PAUSE ||
-        r.widget_id == WidgetId::MUSIC_PREV_BTN ||
-        r.widget_id == WidgetId::MUSIC_NEXT_BTN ||
-        r.widget_id == WidgetId::BACK_BUTTON;
-    if (is_primary_circle_or_back) {
+    if (is_d019_slot5_row_widget(r.widget_id)) {
+      // Ratified Decision #2 (M-P1-11): 5-row list/form items keep slot5 vertical stride on compact panels.
+      const int min_slot5_h = (r.widget_id == WidgetId::LIGHT_COLOR_BTN) ? (ly.slot5_h - 2) : ly.slot5_h;
+      if (pw < min_7mm || ph < min_slot5_h) {
+        std::fprintf(stderr, "[HOST TEST FAIL] %s slot5 widget %u padded=%dx%d < %dx%d\n",
+                     label, static_cast<unsigned>(r.widget_id), pw, ph, min_7mm, min_slot5_h);
+        std::exit(1);
+      }
+    } else if ((r.widget_id >= WidgetId::TOOLS_CARD_BASE && r.widget_id < WidgetId::TOOLS_CARD_BASE + 6) ||
+               (r.widget_id >= WidgetId::PINNED_CARD_BASE && r.widget_id < WidgetId::PINNED_CARD_BASE + 6)) {
+      // 2x3 launcher grid cards (>= 6.90 mm on Wrist 315 PPI; >= 7.0 mm on all other geometries).
+      const int min_grid_px = mm_to_px(6.90f);
+      LATTER_CHECK(pw >= min_7mm && ph >= min_grid_px);
+    } else if (!is_dense_grid_or_gutter_widget(r.widget_id)) {
       if (pw < min_7mm || ph < min_7mm) {
-        std::fprintf(stderr, "[HOST TEST FAIL] %s widget %u padded=%dx%d < 7mm (%dpx)\n",
+        std::fprintf(stderr, "[HOST TEST FAIL] %s widget %u padded=%dx%d < 7.0mm (%dpx)\n",
                      label, static_cast<unsigned>(r.widget_id), pw, ph, min_7mm);
         std::exit(1);
+      }
+    }
+
+    // Zero sibling-family AABB overlaps across docks, mode bars, lists, grids, keypads & Home Hub pills.
+    const int fam_i = sibling_family_key(r.widget_id);
+    if (fam_i != 0) {
+      for (uint8_t j = static_cast<uint8_t>(i + 1U); j < ht.count; ++j) {
+        const auto &b = ht.regions[j];
+        if (sibling_family_key(b.widget_id) != fam_i) continue;
+        const bool overlap = (r.x0 <= b.x1) && (b.x0 <= r.x1) && (r.y0 <= b.y1) && (b.y0 <= r.y1);
+        if (overlap) {
+          std::fprintf(stderr, "[HOST TEST FAIL] %s sibling overlap (%u vs %u)\n",
+                       label, static_cast<unsigned>(r.widget_id), static_cast<unsigned>(b.widget_id));
+          std::exit(1);
+        }
       }
     }
   }
@@ -284,10 +402,10 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
   rs.music.takeover = MusicTakeover::NONE;
   verify_scissor_band_isolation(fix, PageId::MUSIC, 100, 259);
 
-  // 3. PageId::GAMES (Launcher + active games + game_arena_drop)
+  // 3. PageId::GAMES (Launcher + all 6 active games + game_arena_drop)
   rs.nav.active_game = 0;
   render_page_full_and_check(fix, PageId::GAMES, "PageId::GAMES launcher");
-  for (int gid : {1, 3, 5, 6}) {
+  for (int gid : {1, 2, 3, 4, 5, 6}) {
     rs.nav.active_game = gid;
     render_page_full_and_check(fix, PageId::GAMES, "PageId::GAMES active");
   }
@@ -373,6 +491,8 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
   render_page_full_and_check(fix, PageId::CALENDAR, "CalDrilldown::DETAIL");
   rs.cal.drilldown = CalDrilldown::ADD_STEP1;
   render_page_full_and_check(fix, PageId::CALENDAR, "CalDrilldown::ADD_STEP1");
+  rs.cal.drilldown = CalDrilldown::ADD_STEP2;
+  render_page_full_and_check(fix, PageId::CALENDAR, "CalDrilldown::ADD_STEP2");
   rs.cal.drilldown = CalDrilldown::NONE;
   verify_scissor_band_isolation(fix, PageId::CALENDAR, 110, 269);
 
@@ -556,11 +676,89 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   LATTER_CHECK(te_src.find("\"clean_spot\"") != std::string::npos);
 }
 
+void test_wcag_palette_and_surface_contrast_5geom() {
+  using namespace latter_ui;
+
+  auto srgb_lin = [](uint8_t c) noexcept -> double {
+    const double x = static_cast<double>(c) / 255.0;
+    return (x <= 0.04045) ? (x / 12.92) : std::pow((x + 0.055) / 1.055, 2.4);
+  };
+  auto rel_lum = [&](UiColor c) noexcept -> double {
+    return 0.2126 * srgb_lin(c.r) + 0.7152 * srgb_lin(c.g) + 0.0722 * srgb_lin(c.b);
+  };
+  auto quantize_rgb565 = [](UiColor c) noexcept -> UiColor {
+    const uint16_t px = static_cast<uint16_t>(
+        ((static_cast<uint16_t>(c.r >> 3) & 0x1FU) << 11) |
+        ((static_cast<uint16_t>(c.g >> 2) & 0x3FU) << 5) |
+        (static_cast<uint16_t>(c.b >> 3) & 0x1FU));
+    const uint8_t r5 = static_cast<uint8_t>((px >> 11) & 0x1FU);
+    const uint8_t g6 = static_cast<uint8_t>((px >> 5) & 0x3FU);
+    const uint8_t b5 = static_cast<uint8_t>(px & 0x1FU);
+    return UiColor(static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+                   static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+                   static_cast<uint8_t>((b5 << 3) | (b5 >> 2)));
+  };
+  auto contrast_ratio = [&](UiColor fg, UiColor bg) noexcept -> double {
+    const double l1 = rel_lum(fg);
+    const double l2 = rel_lum(bg);
+    return (l1 > l2) ? ((l1 + 0.05) / (l2 + 0.05)) : ((l2 + 0.05) / (l1 + 0.05));
+  };
+
+  const UiFrameContext ctx{};
+  const UiColor surfaces[] = {
+      ctx.col_bg,
+      kChromeCardBgOff,
+      kChromeCardBgOn,
+      kChromeModalBg,
+      kChromeKeyBg,
+      kChromeCaptionBg,
+      kChromeGridBg,
+  };
+  const UiColor text_tokens[] = {
+      ctx.col_white,
+      ctx.col_slate,
+      ctx.theme_primary,
+      ctx.theme_secondary,
+      ctx.col_gold,
+      ctx.col_warm_gold,
+      ctx.col_solaris_gold,
+      ctx.col_accent_cyan,
+      ctx.col_green,
+      ctx.col_red,
+      kChromeMuted,
+      kChromeSubtle,
+      kChromeBackLabel,
+      kChromeCustomSecondary,
+      kChromePlayGlyph,
+      kChromeDegSilver,
+      kChromeTeleIce,
+      kChromeDayGold,
+      kChromeWarmKelvin,
+      kChromeCoolKelvin,
+      kChromeRgbRed,
+      kChromeRgbGreen,
+      kChromeRgbBlue,
+      kChromeFanAccent,
+  };
+
+  for (UiColor bg : surfaces) {
+    const UiColor bg565 = quantize_rgb565(bg);
+    for (UiColor fg : text_tokens) {
+      LATTER_CHECK(contrast_ratio(fg, bg) >= 4.5);
+      LATTER_CHECK(contrast_ratio(quantize_rgb565(fg), bg565) >= 4.5);
+    }
+  }
+  LATTER_CHECK(contrast_ratio(ctx.col_white, kChromeDangerBg) >= 4.5);
+  LATTER_CHECK(contrast_ratio(ctx.col_red, kChromeDangerBg) >= 4.5);
+  LATTER_CHECK(contrast_ratio(quantize_rgb565(ctx.col_red), quantize_rgb565(kChromeDangerBg)) >= 4.5);
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
   test_all_14_pages_and_system_takeovers_rgb565_5geom();
   test_home_hub_d048_button_only_glass_and_conditional_controls();
+  test_wcag_palette_and_surface_contrast_5geom();
 }
 
 }  // namespace latter_test

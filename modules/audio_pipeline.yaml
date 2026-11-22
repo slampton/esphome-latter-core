@@ -87,37 +87,37 @@ speaker:
 # synthesizes at a fixed 16 kHz, so it cannot feed a 48 kHz mixer.
 audio_file:
   - id: sound_alarm
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/alarm.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/alarm.wav
   - id: sound_find_my
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/find_my.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/find_my.wav
   - id: sound_sfx_1
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_1.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_1.wav
   - id: sound_sfx_2
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_2.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_2.wav
   - id: sound_sfx_3
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_3.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_3.wav
   - id: sound_sfx_4
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_4.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_4.wav
   - id: sound_sfx_5
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_5.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_5.wav
   - id: sound_sfx_6
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_6.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_6.wav
   - id: sound_sfx_7
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_7.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_7.wav
   - id: sound_sfx_8
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_8.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_8.wav
   - id: sound_sfx_9
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_9.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_9.wav
   - id: sound_sfx_10
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_10.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_10.wav
   - id: sound_sfx_11
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_11.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_11.wav
   - id: sound_sfx_12
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_12.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_12.wav
   - id: sound_sfx_13
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_13.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_13.wav
   - id: sound_sfx_14
-    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/sounds/${audio_out_rate}/sfx_14.wav
+    file: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/sounds/${audio_out_rate}/sfx_14.wav
 
 # Internal RAM is the scarce resource on the S3 boards (measured with System: Log Memory Report), so the
 # Sendspin hub's protocol, artwork and HTTP-server stacks live in PSRAM: they stay allocated whenever

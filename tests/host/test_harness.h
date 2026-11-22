@@ -71,23 +71,23 @@ struct MockRpcOutbox {
   void publish_state(const std::string &payload) { published.push_back(payload); }
 };
 
-struct PanelSpec7 {
+struct PanelSpec5 {
   const char *name;
   int w;
   int h;
   bool round;
   bool wearable;
+  int corner_r;
   int ppi;
+  bool chip_p4;
 };
 
-inline constexpr PanelSpec7 kFlagshipPanels[7] = {
-    {"p4_320x480_rect",  320, 480, false, false, 165},
-    {"s3_360x360_round", 360, 360, true,  true,  277},
-    {"s3_410x502_watch", 410, 502, false, true,  315},
-    {"s3_412x412_round", 412, 412, true,  true,  398},
-    {"s3_466x466_ref",   466, 466, true,  false, 316},
-    {"s3_480x480_sq",    480, 480, false, false, 313},
-    {"p4_720x720_hd",    720, 720, true,  false, 254},
+inline constexpr PanelSpec5 kFlagshipPanels[5] = {
+    {"p4_320x480_rect",   320, 480, false, false,  20, 165, true},
+    {"s3_410x502_wrist",  410, 502, false, true,   98, 315, false},
+    {"s3_466x466_pocket", 466, 466, true,  false, 233, 266, false},
+    {"s3_480x480_mobile", 480, 480, false, false,  76, 313, false},
+    {"p4_720x720_desk",   720, 720, false, false,  20, 254, true},
 };
 
 inline std::string build_v3_packet(uint32_t epoch, uint32_t rev,

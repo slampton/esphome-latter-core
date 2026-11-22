@@ -1,10 +1,10 @@
-# Contributing to Latter Core
+# Contributing to Latter Core (`esphome-latter-core`)
 
-Thank you for contributing to `esphome-latter-core`! Latter is built as a clean, trait-driven SDK and firmware OS for Home Assistant touch displays, wearables, and companion sensors.
+Thank you for contributing to `esphome-latter-core`! Latter Core is a modular, trait-driven C++20 SDK, hardware catalog, and embedded UI/OS for Home Assistant companion displays, wearables, and headless nodes (`ESPHome 2026.11.0+`, `ESP-IDF 5.5+`).
 
 ## License & Developer Certificate of Origin (DCO)
 
-All contributions are licensed under the **[Apache License, Version 2.0](LICENSE)** (inbound = outbound; no separate CLA required).
+All contributions are licensed under the **[Apache License, Version 2.0](LICENSE)** (inbound = outbound; no separate CLA required). Third-party attributions live in **[NOTICE](NOTICE)**.
 
 Every commit must include a `Signed-off-by` trailer certifying the [Developer Certificate of Origin v1.1](https://developercertificate.org/):
 
@@ -15,27 +15,30 @@ git commit -s -m "Short summary of your change"
 ## Branching & CI Gate (`dev` -> `main`)
 
 - Target all pull requests against the **`dev`** branch (never directly against `main`).
-- `main` is the branch ESPHome Device Builder packages pull from, and moves **only** by automated fast-forward after `validate` and all 5 flagship device firmware compiles pass on `dev`.
-- CI rewrites `external_components` and asset URLs to the checked-out worktree automatically via `.github/scripts/pin_to_checkout.sh`, so fork pull requests validate and compile out of the box.
+- `main` is the branch ESPHome Device Builder packages pull from, and moves **only** by automated fast-forward after `validate` and all flagship device firmware compiles (`pocket-assistant`, `mobile-assistant`, `wrist-assist`, `remote-assistant`, and `desk-assistant` `rev1` + `rev3`) pass on `dev`.
+- CI rewrites `external_components`, `${latter_asset_ref}` sound/model URLs, and package includes to the checked-out worktree automatically via `.github/scripts/pin_to_checkout.sh`, so fork pull requests validate and compile out of the box.
 
 ## Architectural Ground Rules
 
-1. **Capabilities via Traits, Never Product Names**: Core C++ and YAML modules branch strictly on `LATTER_*` hardware capability flags and screen geometry (`UiLayout`), never on board IDs or device names.
-2. **Standard Terminology**: Use Home Assistant and standard systems terminology (`System`, `Sites`, `Areas`, `Devices`, `Roles`, `Policies`, `Bridges`).
-3. **Hardware Onboarding**: Adding a new board follows the 12-point onboarding gates in [`docs/porting-hardware.md`](docs/porting-hardware.md), backed by schematic-sourced `boards/facts/<board_id>.json` and `python tools/check_boards.py --check-docs`.
-4. **On-Device UI**: Read [`docs/device-ui-design.md`](docs/device-ui-design.md) before modifying layout, touch hit-testing, colors, or rendering primitives.
-5. **Protocol v3 Parity**: `protocol/latter_v3.json` is the single source of truth for Protocol v3. After editing it, run `python tools/gen_protocol.py` to regenerate headers, docs, and the companion `ha-latter` schema.
+1. **Acyclic `L0`–`L4` DAG (`<= 1,000` LOC Target / `<= 1,200` LOC Gate)**: Every header, `.cpp` translation unit, YAML package, and tool obeys strict downward `L0 -> L1 -> L2 -> L3 -> L4` layering enforced by Tarjan SCC in `tools/verify_core/` (see [`AGENTS.md`](AGENTS.md) and [`docs/architecture.md`](docs/architecture.md)). `latter_core` (`L0`–`L1`) never includes `ui_*.h`, and `latter_ui` renders over pure-C++20 `Rgb565Surface` so all 14 page renderers execute natively in the 5-geometry host test suite.
+2. **Capabilities via Traits, Never Product Names**: Core C++ and YAML modules branch strictly on `LATTER_*` hardware capability flags and screen geometry (`UiLayout`), never on board IDs or product names, with zero legacy shims.
+3. **Standard Terminology**: Use Home Assistant and standard systems terminology (`System`, `Sites`, `Areas`, `Devices`, `Roles`, `Policies`, `Bridges`).
+4. **Hardware Onboarding**: Adding a new board follows the 12-point onboarding gates in [`docs/porting-hardware.md`](docs/porting-hardware.md), backed by schematic-sourced `boards/facts/<board_id>.json` and `python tools/check_boards.py --release --check-docs`.
+5. **On-Device UI**: Read [`docs/device-ui-design.md`](docs/device-ui-design.md) before modifying layout, `FrameHitTable` (`kMaxRegions = 56`, `D-019` `>= 7.0 mm` targets), colors (`>= 4.5:1` WCAG AA contrast), or row-major RGB565 `fast_*` rendering primitives.
+6. **Protocol v3 Parity**: `protocol/latter_v3.json` is the single source of truth for Protocol v3. After editing it, run `python tools/gen_protocol.py` to regenerate `include/latter_protocol.h`, `DEVICE_CONTRACT.md`, and the sibling `ha-latter` schema.
 
 ## Local Pre-Flight Checks
 
-Before opening a pull request, run the repository verification suite from the root of `esphome-latter-core`:
+Before opening a pull request, run the repository verification suite from `esphome-latter-core/` (including the 5-geometry C++20 RGB565 framebuffer & `FrameHitTable` host binaries, compiled with ASan + UBSan on Linux):
 
 ```bash
 python tools/verify_core.py
 python tools/gen_protocol.py --check
 python tools/check_protocol_usage.py
-python tools/check_boards.py --check-docs
+python tools/check_boards.py --release --check-docs
 python tools/new_board.py --bringup --check
 python tools/gen_sounds.py --check
 python tools/gen_mdi_pack.py --check
 ```
+
+When working in a dual-repo checkout alongside `ha-latter`, run the unified cross-repo gate (`python .agents/scripts/verify_workspace.py`) from the workspace root.

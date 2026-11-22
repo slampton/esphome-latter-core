@@ -103,8 +103,8 @@ void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
 }
 
 void test_ui_layout_hit_table_and_dirty_band() {
-  const auto ref = latter_ui::compute_panel_layout(466, 466, true, false, 316);
-  LATTER_CHECK(ref.drag_start == 8 && ref.tap_max == 21 && ref.swipe_min == 29);
+  const auto ref = latter_ui::compute_panel_layout(466, 466, true, false, 266);
+  LATTER_CHECK(ref.drag_start == 7 && ref.tap_max == 17 && ref.swipe_min == 25);
   LATTER_CHECK(ref.dock_hit_r >= 43 && ref.back_y == 426 && ref.home_bar_y == 434);
   LATTER_CHECK(latter_ui::scale_x_for(233, 466) == 233);
   LATTER_CHECK(latter_ui::scale_y_for(233, 466) == 233);

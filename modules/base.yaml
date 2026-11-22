@@ -8,6 +8,7 @@ substitutions:
   name: "latter-device"
   friendly_name: "Latter Device"
   version: "3.0.0"
+  latter_asset_ref: "main"
   font_time_size: "77"
   font_chrono_size: "38"
   font_date_size: "27"

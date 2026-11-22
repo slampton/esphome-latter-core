@@ -4,7 +4,7 @@
 # SHA does not exist on slampton/esphome-latter-core):
 #   - external_components (latter_core, latter_ui, latter_beacon): rewritten to type: local
 #     pointing at the checked-out components/ directory (with git-only refresh: stripped);
-#   - sounds, models, and github:// package includes: rewritten to local relative paths;
+#   - sounds, models (${latter_asset_ref} / main), and github:// package includes: rewritten to local relative paths;
 #   - dashboard_import package_import_url keeps @main (metadata only, not part of the build).
 #
 # Usage: .github/scripts/pin_to_checkout.sh [commit_sha]
@@ -38,7 +38,7 @@ for folder in ('devices', 'modules', 'guis', 'boards', 'examples'):
         for line in orig.splitlines(keepends=True):
             if 'package_import_url' not in line:
                 line = re.sub(
-                    r'https://raw\.githubusercontent\.com/[^/]+/esphome-latter-core/main/',
+                    r'https://raw\.githubusercontent\.com/[^/]+/esphome-latter-core/(?:main|\$\{latter_asset_ref\})/',
                     f'{rel_root}/',
                     line,
                 )

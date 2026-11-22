@@ -240,6 +240,14 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
         failures.append("[ESPHOME PIN LOCKSTEP] include/esphome_bridge.h must static_assert VERSION_CODE(2026, 11, 0)")
 
     base_txt = (ROOT / "modules" / "base.yaml").read_text(encoding="utf-8")
+    if not re.search(r'(?m)^\s*latter_asset_ref:\s*"main"\s*$', base_txt):
+        failures.append('[ASSET REF LOCKSTEP] modules/base.yaml must define `latter_asset_ref: "main"`')
+    for mod_rel in ("modules/audio_pipeline.yaml", "modules/voice_assistant.yaml"):
+        mod_txt = (ROOT / mod_rel).read_text(encoding="utf-8")
+        if "/esphome-latter-core/main/" in mod_txt:
+            failures.append(
+                f"[ASSET REF LOCKSTEP] {mod_rel} hardcodes /esphome-latter-core/main/ (use ${{latter_asset_ref}})"
+            )
     m_ver = re.search(r'(?m)^\s*version:\s*"([^"]+)"', base_txt)
     if not m_ver:
         failures.append("[VERSION LOCKSTEP] modules/base.yaml missing version substitution")
@@ -263,7 +271,28 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
 def _verify_ci_and_device_pins(failures: list[str]) -> None:
     val_txt = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     rel_txt = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
-    ci_pins = re.findall(r"esphome==(\S+)", val_txt) + re.findall(r"ghcr\.io/esphome/esphome:(\S+)", rel_txt)
+    canary_path = ROOT / ".github" / "workflows" / "esphome-canary.yml"
+    if not canary_path.is_file():
+        failures.append("[CI CANARY] .github/workflows/esphome-canary.yml is missing")
+    for wf_path in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        wf_rel = wf_path.relative_to(ROOT).as_posix()
+        wf_txt = wf_path.read_text(encoding="utf-8")
+        if not re.search(r"(?m)^permissions:\s*\n\s+contents:\s*read\b", wf_txt):
+            failures.append(f"[CI PERMISSIONS] {wf_rel} must set workflow-level `permissions: contents: read`")
+        for line_no, raw_ln in enumerate(wf_txt.splitlines(), 1):
+            m_uses = re.match(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)", raw_ln)
+            if not m_uses:
+                continue
+            ref = m_uses.group(1)
+            if ref.startswith("docker://"):
+                if not re.search(r"@sha256:[0-9a-f]{64}$", ref):
+                    failures.append(f"[CI SHA PIN] {wf_rel}:{line_no} unpinned docker image {ref!r}")
+            elif not re.search(r"@[0-9a-f]{40}$", ref):
+                failures.append(f"[CI SHA PIN] {wf_rel}:{line_no} unpinned GitHub Action {ref!r}")
+
+    ci_pins = re.findall(r"esphome==(\S+)", val_txt) + re.findall(
+        r"ghcr\.io/esphome/esphome:([^@\s]+)", rel_txt
+    )
     dev_mins: set[str] = set()
     for dev_file in sorted((ROOT / "devices").glob("*.yaml")):
         dtxt = dev_file.read_text(encoding="utf-8")
@@ -281,6 +310,10 @@ def _verify_ci_and_device_pins(failures: list[str]) -> None:
         failures.append(f"[ESPHOME PIN LOCKSTEP] device min_version {sorted(dev_mins)} != CI pins {ci_pins}")
     if "compile devices/" not in val_txt or "\n  promote:" not in val_txt or "refs/heads/main" not in val_txt:
         failures.append("[DEV GATE] validate.yml must compile devices and fast-forward main in promote job")
+    if "desk-assistant-rev1" not in val_txt:
+        failures.append("[DEV GATE] validate.yml must compile desk-assistant-rev1 silicon variant")
+    if re.search(r"(?m)^\s*push:\s*\n\s+tags:", rel_txt):
+        failures.append("[RELEASE GATE] release.yml must not duplicate triggers with `push: tags:`")
     if "test_latter_state" in val_txt or "test_all.cpp" in val_txt:
         failures.append("[DEV GATE] validate.yml still references retired single-file host test")
 

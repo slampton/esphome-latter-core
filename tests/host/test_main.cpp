@@ -1,5 +1,7 @@
 #include "test_harness.h"
 
+#include <iostream>
+
 namespace latter_test {
 
 namespace {
@@ -107,10 +109,13 @@ void test_music_app_v3_d059() {
       register_music_action_sheet_hits(ht, ag, wids);
       ht.add_rect(p.w / 2 - 80, ag.back_hit_y0, 160, p.h - ag.back_hit_y0, WidgetId::BACK_BUTTON, kHitTap);
       check_zero_aabb_overlaps(ht, p.w, p.h);
-      const int min_row_hit_h = std::min(min_hit, ly.slot5_stride - 2);
+      // Ratified Decision #2 (M-P1-11): 5-row action sheets keep slot5 vertical stride on compact panels.
+      const int max_gap_pad = std::max(0, (ly.slot5_stride - ly.slot5_h - 1) / 2);
+      const int expected_row_hit_h =
+          (p.h <= 520 && p.ppi >= 266) ? (ly.slot5_h + 2 * max_gap_pad) : min_hit;
       for (int i = 0; i < 5; ++i) {
         const HitRegion *r = ht.find_by_id(wids[i]);
-        LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_row_hit_h);
+        LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= expected_row_hit_h);
       }
     }
 
@@ -279,11 +284,599 @@ void test_music_app_v3_d059() {
   }
 }
 
+void append_utf8_codepoint(uint32_t cp, std::string &out) {
+  if (cp <= 0x7FU) {
+    out.push_back(static_cast<char>(cp));
+  } else if (cp <= 0x7FFU) {
+    out.push_back(static_cast<char>(0xC0U | (cp >> 6)));
+    out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+  } else if (cp <= 0xFFFFU) {
+    out.push_back(static_cast<char>(0xE0U | (cp >> 12)));
+    out.push_back(static_cast<char>(0x80U | ((cp >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+  } else if (cp <= 0x10FFFFU) {
+    out.push_back(static_cast<char>(0xF0U | (cp >> 18)));
+    out.push_back(static_cast<char>(0x80U | ((cp >> 12) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | ((cp >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+  }
+}
+
+bool parse_hex4(std::string_view sv, size_t pos, uint32_t &out) noexcept {
+  if (pos + 4U > sv.size()) return false;
+  uint32_t v = 0U;
+  for (size_t k = 0; k < 4U; ++k) {
+    const char c = sv[pos + k];
+    v <<= 4;
+    if (c >= '0' && c <= '9') v |= static_cast<uint32_t>(c - '0');
+    else if (c >= 'a' && c <= 'f') v |= static_cast<uint32_t>(c - 'a' + 10);
+    else if (c >= 'A' && c <= 'F') v |= static_cast<uint32_t>(c - 'A' + 10);
+    else return false;
+  }
+  out = v;
+  return true;
+}
+
+bool json_extract_raw_value(std::string_view line, std::string_view key, size_t &val_pos) noexcept {
+  std::string needle = "\"";
+  needle.append(key);
+  needle.push_back('"');
+  size_t pos = 0U;
+  while (pos < line.size()) {
+    const size_t hit = line.find(needle, pos);
+    if (hit == std::string_view::npos) return false;
+    size_t p = hit + needle.size();
+    while (p < line.size() && (line[p] == ' ' || line[p] == '\t')) ++p;
+    if (p < line.size() && line[p] == ':') {
+      ++p;
+      while (p < line.size() && (line[p] == ' ' || line[p] == '\t')) ++p;
+      val_pos = p;
+      return p < line.size();
+    }
+    pos = hit + 1U;
+  }
+  return false;
+}
+
+bool json_get_string(std::string_view line, std::string_view key, std::string &out) {
+  size_t p = 0U;
+  if (!json_extract_raw_value(line, key, p) || line[p] != '"') return false;
+  ++p;
+  out.clear();
+  while (p < line.size()) {
+    const char ch = line[p++];
+    if (ch == '"') return true;
+    if (ch != '\\') {
+      out.push_back(ch);
+      continue;
+    }
+    if (p >= line.size()) return false;
+    const char esc = line[p++];
+    switch (esc) {
+      case '"': out.push_back('"'); break;
+      case '\\': out.push_back('\\'); break;
+      case '/': out.push_back('/'); break;
+      case 'b': out.push_back('\b'); break;
+      case 'f': out.push_back('\f'); break;
+      case 'n': out.push_back('\n'); break;
+      case 'r': out.push_back('\r'); break;
+      case 't': out.push_back('\t'); break;
+      case 'u': {
+        uint32_t u1 = 0U;
+        if (!parse_hex4(line, p, u1)) return false;
+        p += 4U;
+        if (u1 >= 0xD800U && u1 <= 0xDBFFU && p + 6U <= line.size() &&
+            line[p] == '\\' && line[p + 1U] == 'u') {
+          uint32_t u2 = 0U;
+          if (parse_hex4(line, p + 2U, u2) && u2 >= 0xDC00U && u2 <= 0xDFFFU) {
+            p += 6U;
+            const uint32_t cp = 0x10000U + (((u1 - 0xD800U) << 10) | (u2 - 0xDC00U));
+            append_utf8_codepoint(cp, out);
+            break;
+          }
+        }
+        append_utf8_codepoint(u1, out);
+        break;
+      }
+      default:
+        out.push_back(esc);
+        break;
+    }
+  }
+  return false;
+}
+
+int64_t json_get_int(std::string_view line, std::string_view key, int64_t def_val) noexcept {
+  size_t p = 0U;
+  if (!json_extract_raw_value(line, key, p)) return def_val;
+  bool neg = false;
+  if (line[p] == '-') {
+    neg = true;
+    ++p;
+  }
+  if (p >= line.size() || line[p] < '0' || line[p] > '9') return def_val;
+  int64_t acc = 0;
+  while (p < line.size() && line[p] >= '0' && line[p] <= '9') {
+    acc = acc * 10 + (line[p] - '0');
+    ++p;
+  }
+  return neg ? -acc : acc;
+}
+
+bool json_get_bool(std::string_view line, std::string_view key, bool def_val) noexcept {
+  size_t p = 0U;
+  if (!json_extract_raw_value(line, key, p)) return def_val;
+  if (line.substr(p, 4U) == "true") return true;
+  if (line.substr(p, 5U) == "false") return false;
+  return def_val;
+}
+
+void json_append_escaped(std::string &dst, std::string_view sv) {
+  dst.push_back('"');
+  for (unsigned char b : sv) {
+    switch (b) {
+      case '"': dst += "\\\""; break;
+      case '\\': dst += "\\\\"; break;
+      case '\b': dst += "\\b"; break;
+      case '\f': dst += "\\f"; break;
+      case '\n': dst += "\\n"; break;
+      case '\r': dst += "\\r"; break;
+      case '\t': dst += "\\t"; break;
+      default:
+        if (b < 0x20U) {
+          char ubuf[7];
+          std::snprintf(ubuf, sizeof(ubuf), "\\u%04x", static_cast<unsigned>(b));
+          dst += ubuf;
+        } else {
+          dst.push_back(static_cast<char>(b));
+        }
+        break;
+    }
+  }
+  dst.push_back('"');
+}
+
+size_t count_non_empty_records(std::string_view sv, char sep) noexcept {
+  if (sv.empty()) return 0U;
+  size_t count = 0U;
+  size_t pos = 0U;
+  while (pos <= sv.size()) {
+    const size_t next = sv.find(sep, pos);
+    const std::string_view tok =
+        (next == std::string_view::npos) ? sv.substr(pos) : sv.substr(pos, next - pos);
+    if (!tok.empty()) ++count;
+    if (next == std::string_view::npos) break;
+    pos = next + 1U;
+  }
+  return count;
+}
+
+std::string build_verify_wire_dump() {
+  using namespace latter_ui;
+  const auto &prefs = persisted_prefs();
+  const auto &ms = media_state();
+  const auto &wx = weather_state();
+  const auto &ac = area_ctx_state();
+  const auto &cal = calendar_state();
+  const auto &cwin = calendar_window_store();
+  const auto &rem = remote_state();
+  const auto &hh = home_hub_state();
+  const auto &sc = shortcuts_state();
+  const auto &rs = runtime_state();
+
+  int alarms_enabled = 0;
+  for (const auto &a : prefs.alarms) {
+    if (a.enabled) ++alarms_enabled;
+  }
+
+  std::string dock_csv;
+  for (size_t i = 0; i < sc.dock_items.size(); ++i) {
+    if (i > 0U) dock_csv.push_back(',');
+    dock_csv += sc.dock_items[i].target;
+  }
+
+  int area_slot_count = 0;
+  const BrowseSlotItem *aslots = rs.area_entity_slots();
+  for (size_t i = 0; i < DeviceRuntimeState::kCardSlotsPerPage; ++i) {
+    if (!aslots[i].id.empty() || (!aslots[i].name.empty() && aslots[i].type != "text")) {
+      ++area_slot_count;
+    }
+  }
+
+  CalendarRecord cal_recs[8]{};
+  const size_t cal_rec_n = parse_calendar_records(cal.summary, cal_recs, 8U);
+  const std::string_view first_cal_title =
+      (cwin.count > 0) ? std::string_view(cwin.events[0].title)
+                       : (cal_rec_n > 0U ? cal_recs[0].title : std::string_view{});
+  const std::string_view first_cal_loc =
+      (cwin.count > 0) ? std::string_view(cwin.events[0].location)
+                       : (cal_rec_n > 0U ? cal_recs[0].location : std::string_view{});
+
+  std::vector<std::string> phrases;
+  const int phrase_cnt = parse_broadcast_phrases(ac.broadcast_phrases, phrases);
+
+  std::string out;
+  out.reserve(4096U);
+  out += "{\"ok\":true,\"sdk_rev\":";
+  out += std::to_string(LATTER_SDK_REV);
+
+  out += ",\"prefs\":{\"prefs_seq\":";
+  out += std::to_string(prefs.prefs_seq);
+  out += ",\"wake_word_mode\":";
+  json_append_escaped(out, get_pref_value_str(PrefKey::WAKE_WORD_MODE, prefs));
+  out += ",\"auto_brightness_mode\":";
+  json_append_escaped(out, get_pref_value_str(PrefKey::AUTO_BRIGHTNESS_MODE, prefs));
+  out += ",\"do_not_disturb\":";
+  out += prefs.do_not_disturb ? "true" : "false";
+  out += ",\"bedtime_active\":";
+  out += prefs.bedtime_active ? "true" : "false";
+  out += ",\"manual_brightness\":";
+  out += std::to_string(prefs.manual_brightness_pct());
+  out += ",\"day_brightness\":";
+  out += std::to_string(prefs.day_brightness_pct());
+  out += ",\"night_brightness\":";
+  out += std::to_string(prefs.night_brightness_pct());
+  out += ",\"bedtime_brightness\":";
+  out += std::to_string(prefs.bedtime_brightness_pct());
+  out += ",\"theme_color_hex\":";
+  json_append_escaped(out, format_hex_rgb(prefs.custom_theme_rgb));
+  out += ",\"dock_count\":";
+  out += std::to_string(sc.dock_items.size());
+  out += ",\"dock_items\":";
+  json_append_escaped(out, dock_csv);
+  out += ",\"world_clocks\":";
+  json_append_escaped(out, prefs.world_clocks_spec);
+  out += ",\"alarms_count\":";
+  out += std::to_string(alarms_enabled);
+  out += ",\"alarms_summary\":";
+  json_append_escaped(out, format_alarms_summary(prefs));
+  out += ",\"dirty_prefs\":";
+  json_append_escaped(out, format_dirty_prefs(prefs));
+  out += ",\"values\":{";
+  for (uint8_t k = 0; k < static_cast<uint8_t>(PrefKey::COUNT); ++k) {
+    if (k > 0U) out.push_back(',');
+    const auto pk = static_cast<PrefKey>(k);
+    json_append_escaped(out, pref_key_name(pk));
+    out.push_back(':');
+    json_append_escaped(out, get_pref_value_str(pk, prefs));
+  }
+  out += ",\"weather_sim_condition\":";
+  json_append_escaped(out, pref_weather_sim_cstr());
+  out += "}}";
+
+  out += ",\"media\":{\"title\":";
+  json_append_escaped(out, ms.title);
+  out += ",\"artist\":";
+  json_append_escaped(out, ms.artist);
+  out += ",\"album\":";
+  json_append_escaped(out, ms.album);
+  out += ",\"speaker_entity\":";
+  json_append_escaped(out, ms.active_speaker);
+  out += ",\"speaker_name\":";
+  json_append_escaped(out, ms.speaker_name);
+  out += ",\"caps\":";
+  out += std::to_string(ms.media_caps);
+  out += ",\"is_playing\":";
+  out += ms.playing ? "true" : "false";
+  out += ",\"state\":";
+  json_append_escaped(out, ms.state);
+  out += ",\"has_volume\":";
+  out += ms.has_volume ? "true" : "false";
+  out += ",\"volume_pct\":";
+  out += std::to_string(static_cast<int>(std::lround(ms.volume * 100.0f)));
+  out += ",\"queue_count\":";
+  out += std::to_string(ms.queue_count);
+  out += ",\"lyrics_count\":";
+  out += std::to_string(rs.music.lyrics.lines.size());
+  out += "}";
+
+  char fbuf[32];
+  out += ",\"weather\":{\"temp\":";
+  if (std::isnan(wx.temperature)) out += "null";
+  else {
+    std::snprintf(fbuf, sizeof(fbuf), "%.2f", static_cast<double>(wx.temperature));
+    out += fbuf;
+  }
+  out += ",\"wind_bearing\":";
+  if (std::isnan(wx.wind_bearing)) out += "null";
+  else {
+    std::snprintf(fbuf, sizeof(fbuf), "%.2f", static_cast<double>(wx.wind_bearing));
+    out += fbuf;
+  }
+  out += ",\"condition\":";
+  json_append_escaped(out, wx.condition);
+  out += ",\"temp_unit\":";
+  json_append_escaped(out, wx.temp_unit);
+  out += ",\"sun_state\":";
+  json_append_escaped(out, wx.sun_state);
+  out += ",\"moon_phase\":";
+  json_append_escaped(out, wx.moon_phase);
+  out += ",\"forecast_count\":";
+  out += std::to_string(count_non_empty_records(wx.forecast_5d, kProtocolRecordSep));
+  out += "}";
+
+  out += ",\"area\":{\"area_id\":";
+  json_append_escaped(out, ac.area_id);
+  out += ",\"area_name\":";
+  json_append_escaped(out, ac.area_name);
+  out += ",\"site_id\":";
+  json_append_escaped(out, ac.site_id);
+  out += ",\"ambient_light_pct\":";
+  out += std::to_string(static_cast<int>(ac.area_ambient_pct));
+  out += ",\"ambient_lux\":";
+  json_append_escaped(out, ac.area_lux_display);
+  out += ",\"security_pin_policy\":";
+  json_append_escaped(out, ac.security_pin_policy);
+  out += ",\"alarm_entity\":";
+  json_append_escaped(out, ac.alarm_entity);
+  out += ",\"alarm_caps\":";
+  out += std::to_string(ac.alarm_caps);
+  out += ",\"broadcast_phrase_count\":";
+  out += std::to_string(phrase_cnt);
+  out += ",\"slot_count\":";
+  out += std::to_string(area_slot_count);
+  out += ",\"slot0_id\":";
+  json_append_escaped(out, aslots[0].id);
+  out += ",\"slot0_name\":";
+  json_append_escaped(out, aslots[0].name);
+  out += ",\"slot0_level\":";
+  out += std::to_string(aslots[0].level);
+  out += ",\"area_list_slot0_name\":";
+  json_append_escaped(out, rs.area_list_slots()[0].name);
+  out += ",\"music_slot0_name\":";
+  json_append_escaped(out, rs.music_slots()[0].name);
+  out += "}";
+
+  out += ",\"calendar\":{\"event_count\":";
+  out += std::to_string(cal.count);
+  out += ",\"window_event_count\":";
+  out += std::to_string(cwin.count);
+  out += ",\"source_count\":";
+  out += std::to_string(count_non_empty_records(cal.calendars_meta, kProtocolRecordSep));
+  out += ",\"location_count\":";
+  out += std::to_string(count_non_empty_records(cal.locations_catalog, kProtocolRecordSep));
+  out += ",\"first_title\":";
+  json_append_escaped(out, first_cal_title);
+  out += ",\"first_location\":";
+  json_append_escaped(out, first_cal_loc);
+  out += "}";
+
+  out += ",\"remote\":{\"active_slot\":";
+  out += std::to_string(rem.active_slot);
+  out += ",\"configured_count\":";
+  out += std::to_string(rem.configured_count);
+  out += ",\"slot0_name\":";
+  json_append_escaped(out, rs.remote.slot_names[0]);
+  out += ",\"slot0_entity\":";
+  json_append_escaped(out, rs.remote.slot_ents[0]);
+  out += "}";
+
+  out += ",\"home_hub\":{\"thermostat_count\":";
+  out += std::to_string(hh.thermostat_count);
+  out += ",\"first_thermostat_name\":";
+  json_append_escaped(out, hh.thermostat_count > 0 ? hh.thermostats[0].name : std::string_view{});
+  out += ",\"entry_count\":";
+  out += std::to_string(hh.entry_count);
+  out += ",\"first_entry_name\":";
+  json_append_escaped(out, hh.entry_count > 0 ? hh.entries[0].name : std::string_view{});
+  out += ",\"vacuum_count\":";
+  out += std::to_string(hh.vacuum_count);
+  out += ",\"first_vacuum_name\":";
+  json_append_escaped(out, hh.vacuum_count > 0 ? hh.vacuums[0].name : std::string_view{});
+  out += ",\"camera_count\":";
+  out += std::to_string(count_non_empty_records(ac.cameras_summary, kProtocolRecordSep));
+  out += "}";
+
+  out += ",\"shortcuts\":{\"dock_count\":";
+  out += std::to_string(sc.dock_items.size());
+  out += ",\"pinned_count\":";
+  out += std::to_string(sc.pinned_items.size());
+  out += ",\"first_pinned_label\":";
+  json_append_escaped(out, sc.pinned_items.empty() ? std::string_view{} : std::string_view(sc.pinned_items[0].label));
+  out += ",\"activity_text\":";
+  json_append_escaped(out, ac.activity_sources);
+  out += ",\"activity_source_mask\":";
+  out += std::to_string(activity_source_mask());
+  out += "}}";
+  return out;
+}
+
+int run_verify_wire_cli() {
+  using namespace latter_ui;
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+  reset_calendar_window_store();
+  persisted_prefs() = PersistedDevicePrefs{};
+  device_prefs_state() = DevicePrefsState{};
+  v3_domain_reducer().reset();
+  latter_rpc::clear_pin_session_key();
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+
+  std::string line;
+  while (std::getline(std::cin, line)) {
+    while (!line.empty() && (line.back() == '\r' || line.back() == '\n' || line.back() == ' ')) {
+      line.pop_back();
+    }
+    if (line.empty()) continue;
+
+    std::string op;
+    if (!json_get_string(line, "op", op)) {
+      std::cout << "{\"ok\":false,\"error\":\"missing_op\"}\n" << std::flush;
+      continue;
+    }
+
+    if (op == "reset") {
+      reset_runtime_state();
+      reset_all_v3_rev_guards();
+      reset_calendar_window_store();
+      persisted_prefs() = PersistedDevicePrefs{};
+      device_prefs_state() = DevicePrefsState{};
+      v3_domain_reducer().reset();
+      latter_rpc::clear_pin_session_key();
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      std::cout << "{\"ok\":true}\n" << std::flush;
+    } else if (op == "push_v3") {
+      std::string domain;
+      std::string payload;
+      (void)json_get_string(line, "domain", domain);
+      (void)json_get_string(line, "payload", payload);
+      const uint32_t now_ms = static_cast<uint32_t>(json_get_int(line, "now_ms", 1000));
+      bool parsed = false;
+      if (domain == "area_context") {
+        parsed = parse_v3_area_ctx_payload(payload, area_ctx_state(), home_hub_state());
+      } else if (domain == "active_media") {
+        parsed = parse_v3_media_payload(payload, media_state());
+      } else if (domain == "remote_config") {
+        parsed = parse_v3_remote_payload(payload, remote_state());
+        if (parsed) parse_latter_remote_slots_summary(remote_state().slots_summary);
+      } else if (domain == "weather_forecast") {
+        parsed = parse_v3_weather_payload(payload, weather_state());
+      } else if (domain == "calendar_agenda") {
+        parsed = parse_v3_calendar_payload(payload, calendar_state());
+      } else if (domain == "device_prefs") {
+        uint32_t eff_mask = 0U;
+        parsed = parse_v3_device_prefs_payload(payload, eff_mask, now_ms);
+        device_prefs_state().last_effects = eff_mask;
+      } else if (domain == "shortcuts") {
+        parsed = parse_v3_shortcuts_payload(payload, shortcuts_state());
+      }
+      V3DomainEffects eff{};
+      if (parsed) {
+        V3ReduceContext rctx{};
+        rctx.now_ms = now_ms;
+        eff = v3_domain_reducer().reduce(domain, rctx);
+      }
+      std::cout << "{\"ok\":true,\"parsed\":" << (parsed ? "true" : "false")
+                << ",\"area_changed\":" << (eff.area_changed ? "true" : "false")
+                << ",\"sync_brightness\":" << (eff.sync_display_brightness ? "true" : "false")
+                << ",\"mismatch_warns\":" << v3_mismatch_warn_count() << "}\n"
+                << std::flush;
+    } else if (op == "set_slots") {
+      std::string mode_str;
+      std::string channel_str;
+      (void)json_get_string(line, "channel", channel_str);
+      if (!json_get_string(line, "mode", mode_str)) {
+        if (channel_str == "area_list") mode_str = "areas";
+        else if (channel_str == "music") mode_str = "favorites";
+        else if (channel_str == "calendar") mode_str = "calendar_agenda";
+        else mode_str = "entities";
+      }
+      std::string slots_blob;
+      if (!json_get_string(line, "slots", slots_blob)) {
+        for (int i = 0; i < 5; ++i) {
+          const std::string skey = "s" + std::to_string(i);
+          std::string sv;
+          if (!json_get_string(line, skey, sv)) break;
+          if (i > 0) slots_blob.push_back(kProtocolRecordSep);
+          slots_blob += sv;
+        }
+      }
+      const int req_id = static_cast<int>(json_get_int(line, "req_id", 0));
+      const int page = static_cast<int>(json_get_int(line, "page", 1));
+      const int total = static_cast<int>(
+          json_get_int(line, "total_pages", json_get_int(line, "total", 1)));
+      const bool default_area_slots =
+          (channel_str == "area_entities" || mode_str == "entities" ||
+           mode_str.rfind("area_", 0) == 0U);
+      const bool is_area_slots = json_get_bool(line, "is_area_slots", default_area_slots);
+      const bool accepted = apply_slots_action(
+          req_id, mode_str, page, total, slots_blob, 1000U, is_area_slots);
+      std::cout << "{\"ok\":true,\"accepted\":" << (accepted ? "true" : "false") << "}\n"
+                << std::flush;
+    } else if (op == "set_calendar_view") {
+      std::string win_start;
+      std::string win_end;
+      std::string events;
+      (void)json_get_string(line, "window_start", win_start);
+      (void)json_get_string(line, "window_end", win_end);
+      (void)json_get_string(line, "events", events);
+      const int req_id = static_cast<int>(json_get_int(line, "req_id", 1));
+      const int cidx = static_cast<int>(json_get_int(line, "chunk_index", 0));
+      const int ccnt = static_cast<int>(json_get_int(line, "chunk_count", 1));
+      const bool committed = apply_calendar_view_action(req_id, cidx, ccnt, win_start, win_end, events);
+      std::cout << "{\"ok\":true,\"committed\":" << (committed ? "true" : "false")
+                << ",\"count\":" << calendar_window_store().count << "}\n"
+                << std::flush;
+    } else if (op == "set_music_lyrics") {
+      std::string track_key;
+      std::string lines_blob;
+      (void)json_get_string(line, "track_key", track_key);
+      (void)json_get_string(line, "lines", lines_blob);
+      const int req_id = static_cast<int>(json_get_int(line, "req_id", 1));
+      const int cidx = static_cast<int>(json_get_int(line, "chunk_index", 0));
+      const int ccnt = static_cast<int>(json_get_int(line, "chunk_count", 1));
+      const bool synced = json_get_bool(line, "synced", true);
+      const bool committed = apply_music_lyrics_action(req_id, cidx, ccnt, track_key, synced, lines_blob);
+      std::cout << "{\"ok\":true,\"committed\":" << (committed ? "true" : "false")
+                << ",\"line_count\":" << runtime_state().music.lyrics.lines.size() << "}\n"
+                << std::flush;
+    } else if (op == "local_pref_edit") {
+      std::string key_name;
+      std::string val_str;
+      (void)json_get_string(line, "key", key_name);
+      (void)json_get_string(line, "value", val_str);
+      bool applied = false;
+      for (uint8_t k = 0; k < static_cast<uint8_t>(PrefKey::COUNT); ++k) {
+        const auto pk = static_cast<PrefKey>(k);
+        if (key_name == pref_key_name(pk)) {
+          PrefMask chg{};
+          uint32_t eff = 0U;
+          applied = set_pref_by_key_str(persisted_prefs(), pk, val_str, false, chg, eff);
+          persisted_prefs().dirty_mask |= chg;
+          break;
+        }
+      }
+      std::string resp = "{\"ok\":true,\"applied\":";
+      resp += applied ? "true" : "false";
+      resp += ",\"dirty_prefs\":";
+      json_append_escaped(resp, build_hello_dirty_prefs(persisted_prefs()));
+      resp += "}\n";
+      std::cout << resp << std::flush;
+    } else if (op == "wrap_pin") {
+      std::string key_id;
+      std::string key_hex;
+      std::string entity_id = "lock.front_door";
+      std::string action = "unlock";
+      std::string pin;
+      const bool has_key = json_get_string(line, "key_id", key_id) &&
+                           json_get_string(line, "key_hex", key_hex);
+      (void)json_get_string(line, "entity_id", entity_id);
+      (void)json_get_string(line, "action", action);
+      (void)json_get_string(line, "pin", pin);
+      bool key_ok = latter_rpc::has_pin_session_key();
+      if (has_key) {
+        key_ok = latter_rpc::set_pin_session_key(key_id, key_hex);
+      }
+      const int64_t nonce_arg = json_get_int(line, "nonce", -1);
+      if (key_ok && nonce_arg >= 1) {
+        latter_rpc::detail::pin_session_state().nonce = static_cast<uint32_t>(nonce_arg - 1);
+      }
+      const std::string wrapped = key_ok ? latter_rpc::wrap_pin_code(entity_id, action, pin) : std::string{};
+      std::string resp = "{\"ok\":true,\"key_ok\":";
+      resp += key_ok ? "true" : "false";
+      resp += ",\"wrapped\":";
+      json_append_escaped(resp, wrapped);
+      resp += "}\n";
+      std::cout << resp << std::flush;
+    } else if (op == "dump") {
+      std::cout << build_verify_wire_dump() << "\n" << std::flush;
+    } else {
+      std::cout << "{\"ok\":false,\"error\":\"unknown_op\"}\n" << std::flush;
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 }  // namespace latter_test
 
-int main() {
+int main(int argc, char **argv) {
+  for (int i = 1; i < argc; ++i) {
+    if (std::string_view(argv[i]) == "--verify-wire") {
+      return latter_test::run_verify_wire_cli();
+    }
+  }
   latter_test::run_protocol_rpc_tests();
   latter_test::run_state_prefs_nvs_tests();
   latter_test::run_power_audio_hal_tests();

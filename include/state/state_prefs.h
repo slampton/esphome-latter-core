@@ -579,6 +579,8 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
     return {ActiveBrightnessTargetKind::BEDTIME, PrefKey::BEDTIME_BRIGHTNESS,
             prefs.bedtime_brightness_pct(), "Bedtime"};
   }
+  const uint8_t lo_bri = std::min(prefs.night_brightness_pct(), prefs.day_brightness_pct());
+  const uint8_t hi_bri = std::max(prefs.night_brightness_pct(), prefs.day_brightness_pct());
   switch (prefs.auto_brightness_enum()) {
     case AutoBrightnessMode::AmbientLight: {
       if (ambient_override_pct >= 1 && ambient_override_pct <= 100) {
@@ -586,10 +588,8 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
                 static_cast<uint8_t>(ambient_override_pct), "Ambient · Override"};
       }
       if (area_ambient_pct >= 0 && area_ambient_pct <= 100) {
-        const int dark_pct = static_cast<int>(prefs.night_brightness_pct());
-        const int bright_pct = static_cast<int>(prefs.day_brightness_pct());
-        const int lo = std::min(dark_pct, bright_pct);
-        const int hi = std::max(dark_pct, bright_pct);
+        const int lo = static_cast<int>(lo_bri);
+        const int hi = static_cast<int>(hi_bri);
         const int pct = std::clamp<int>(lo + (area_ambient_pct * (hi - lo) + 50) / 100, 1, 100);
         return {ActiveBrightnessTargetKind::AMBIENT, PrefKey::DAY_BRIGHTNESS,
                 static_cast<uint8_t>(pct), "Ambient"};
@@ -598,19 +598,19 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
       const bool is_night = (sun_state == "below_horizon");
       if (is_night) {
         return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
-                prefs.night_brightness_pct(), "Ambient · Night"};
+                lo_bri, "Ambient · Night"};
       }
       return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
-              prefs.day_brightness_pct(), "Ambient · Day"};
+              hi_bri, "Ambient · Day"};
     }
     case AutoBrightnessMode::SunSynchronized: {
       const bool is_night = (sun_state == "below_horizon");
       if (is_night) {
         return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
-                prefs.night_brightness_pct(), "Auto · Night"};
+                lo_bri, "Auto · Night"};
       }
       return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
-              prefs.day_brightness_pct(), "Auto · Day"};
+              hi_bri, "Auto · Day"};
     }
     case AutoBrightnessMode::TimeSchedule: {
       const int day_h = static_cast<int>(prefs.day_start_hour);
@@ -625,10 +625,10 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
       }
       if (is_day) {
         return {ActiveBrightnessTargetKind::DAY, PrefKey::DAY_BRIGHTNESS,
-                prefs.day_brightness_pct(), "Auto · Day"};
+                hi_bri, "Auto · Day"};
       }
       return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
-              prefs.night_brightness_pct(), "Auto · Night"};
+              lo_bri, "Auto · Night"};
     }
     case AutoBrightnessMode::Disabled:
       break;

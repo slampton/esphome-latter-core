@@ -792,6 +792,26 @@ void test_ambient_light_brightness_d075() {
   const auto b_fb_day = resolve_active_brightness_target(p, "above_horizon", true, 12, -1, -1);
   LATTER_CHECK(b_fb_day.kind == ActiveBrightnessTargetKind::DAY && b_fb_day.pct == 90U);
 
+  // M-P3-01: inverted night_brightness > day_brightness configuration never inverts or underflows
+  PersistedDevicePrefs inv{};
+  inv.day_brightness = 25;
+  inv.night_brightness = 85;
+  inv.day_start_hour = 7;
+  inv.night_start_hour = 21;
+  inv.bedtime_active = false;
+  inv.auto_brightness_mode = static_cast<uint8_t>(AutoBrightnessMode::AmbientLight);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "below_horizon", true, 23, 0, -1).pct == 25U);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "below_horizon", true, 23, 50, -1).pct == 55U);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "above_horizon", true, 12, 100, -1).pct == 85U);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "below_horizon", true, 23, -1, -1).pct == 25U);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "above_horizon", true, 12, -1, -1).pct == 85U);
+  inv.auto_brightness_mode = static_cast<uint8_t>(AutoBrightnessMode::SunSynchronized);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "below_horizon", true, 23).pct == 25U);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "above_horizon", true, 12).pct == 85U);
+  inv.auto_brightness_mode = static_cast<uint8_t>(AutoBrightnessMode::TimeSchedule);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "above_horizon", true, 2).pct == 25U);
+  LATTER_CHECK(resolve_active_brightness_target(inv, "below_horizon", true, 14).pct == 85U);
+
   reset_runtime_state();
   v3_domain_reducer().reset();
   persisted_prefs() = p;

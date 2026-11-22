@@ -23,17 +23,17 @@ micro_wake_word:
   # vad json=BD8C9CD4350814F761E651685AE5196E tflite=7AA4DB6D5FB7C5358609F6931E7847D3,
   # hey_luna json=4A3618E366B28A82C7AFADC8E54CA726 tflite=18A56BA916A5C7ADFF1D5D4F594EAADF.
   vad:
-    model: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/vad.json
+    model: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/models/vad.json
   models:
-    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/okay_nabu.json
+    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/models/okay_nabu.json
       id: okay_nabu
-    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/hey_luna.json
+    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/models/hey_luna.json
       id: hey_luna
-    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/hey_jarvis.json
+    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/models/hey_jarvis.json
       id: hey_jarvis
-    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/hey_mycroft.json
+    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/models/hey_mycroft.json
       id: hey_mycroft
-    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/main/models/alexa.json
+    - model: https://raw.githubusercontent.com/slampton/esphome-latter-core/${latter_asset_ref}/models/alexa.json
       id: alexa
   on_wake_word_detected:
     then:
