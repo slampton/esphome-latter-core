@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Core Subpage Constants, Fast Trig, 3D Projection & Cadence Math
 // (include/ui_types.h)
-// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
+// Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
 // ==============================================================================
 
 #include "ui_color.h"

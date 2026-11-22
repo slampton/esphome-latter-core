@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Notification Banner, Intercom, Camera Records & Stream URLs
+// Latter Core SDK: Notification Banner, Intercom, Camera Records & Stream URLs
 // (include/state/state_alerts_intercom.h)
 // ==============================================================================
 

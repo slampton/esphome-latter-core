@@ -50,7 +50,7 @@
 #endif
 #endif
 
-// M-P2-33: Isolate ESP32-S3 private LL/register headers strictly behind #if LATTER_SOC_S3.
+// Isolate ESP32-S3 private LL/register headers strictly behind #if LATTER_SOC_S3.
 #if LATTER_SOC_S3 && LATTER_PM_AUTO_SLEEP
 #include <hal/gpio_ll.h>
 #include <hal/rtc_cntl_ll.h>

@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI 2px-Aligned Dirty-Band Tracker & Subpage Signature Helpers
 // (include/ui_dirty_band.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes.
+// Pure C++20 UI header — zero ESPHome or HAL includes.
 // ==============================================================================
 
 #include "ui_panel_metrics.h"

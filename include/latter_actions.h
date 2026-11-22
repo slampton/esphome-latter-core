@@ -38,7 +38,7 @@ inline void emit_device_hello(OutboxT outbox = nullptr) {
   });
 }
 
-// 1b. device_telemetry (Pillar 3 internal telemetry consolidation)
+// 1b. device_telemetry (consolidated heap, link, BLE, and profiler telemetry)
 template <typename OutboxT = std::nullptr_t>
 inline void emit_device_telemetry(std::string_view link_json,
                                   int int_ram_free_kb,
@@ -63,7 +63,7 @@ inline void emit_device_telemetry(std::string_view link_json,
   });
 }
 
-// 1c. display_state (Pillar 6 screen light & screensaver state sync)
+// 1c. display_state (screen light & screensaver state sync)
 template <typename OutboxT = std::nullptr_t>
 inline void emit_display_state(int power_state,
                                int brightness_pct,

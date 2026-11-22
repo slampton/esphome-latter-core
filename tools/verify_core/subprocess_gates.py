@@ -682,7 +682,7 @@ def _append_msvc_syntax_and_beacon_lines(td_path: Path, bat_lines: list[str]) ->
             extra_tus = ([full_lam_esp] if has_esp_lam else []) if "USE_ESP32" in defs else ([full_lam_host] if has_host_lam else [])
             ui_cpp_args = " ".join(f'"{p}"' for p in (*ui_cpps, *extra_tus))
             def_args = " ".join(f"/D{d}" for d in defs)
-            # Zero /wd4244 or /wd4267 (M-P1-17): full /W4 /WX narrowing enforcement!
+            # Enforce full /W4 /WX narrowing checks (no /wd4244 or /wd4267 suppressions).
             bat_lines.extend(
                 [
                     (

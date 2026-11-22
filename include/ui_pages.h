@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter Concrete Compiled Page & Camera Video Declarations (include/ui_pages.h)
-// Pure C++20 L3 header — zero ESPHome includes; compiles cleanly on host via
+// Pure C++20 UI page declarations — zero ESPHome includes; compiles cleanly on host via
 // Rgb565Surface across all 5 canonical panel geometries.
 // ==============================================================================
 

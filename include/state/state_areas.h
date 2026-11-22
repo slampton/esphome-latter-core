@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Area Context, Home Hub, Remotes & Perimeter Policy PODs
+// Latter Core SDK: Area Context, Home Hub, Remotes & Perimeter Policy PODs
 // (include/state/state_areas.h)
 // ==============================================================================
 

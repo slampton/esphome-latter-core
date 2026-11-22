@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L1): NVS Preference Handles & Hibernate Cold-Boot Snapshot
+// Latter Core SDK: NVS Preference Handles & Hibernate Cold-Boot Snapshot
 // (include/state/state_nvs_snapshot.h)
 // ==============================================================================
 

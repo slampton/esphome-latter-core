@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter Compiled On-Device Touch, Rotary & Hit-Table Input Engine
 // (include/ui_touch_engine.h)
-// Pure C++20 L3 header — zero ESPHome or HAL includes; compiles standalone on
+// Pure C++20 UI touch engine header — zero ESPHome or HAL includes; compiles standalone on
 // both ESP32 and 5-geometry host tests. Absorbs compute_touch_context().
 // ==============================================================================
 
@@ -24,7 +24,7 @@
 namespace latter_ui {
 
 // ==============================================================================
-// 1. Canonical Touch Context Fingerprint (moved out of L0 state headers)
+// 1. Canonical Touch Context Fingerprint (kept in UI headers, out of core state PODs)
 // ==============================================================================
 inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state()) noexcept {
   const int gp = rs.nav.gui_page;

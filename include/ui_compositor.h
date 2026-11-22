@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Compositor, Takeover Precedence & Focus/Takeover Overlay Dispatch
 // (include/ui_compositor.h)
-// Pure C++20 L2 umbrella header — zero ESPHome or HAL includes.
+// Pure C++20 UI umbrella header — zero ESPHome or HAL includes.
 // ==============================================================================
 
 #include "ui_cadence.h"
@@ -107,7 +107,7 @@ inline void render_active_focus_overlay(Rgb565Surface &it, int /*page*/, int /*s
   render_active_focus_overlay(it, now_ms, theme_primary, col_white);
 }
 
-// System takeover overlay renderers (alert absorbed into L2 overlay_takeover.cpp)
+// System takeover overlay renderers (implemented in overlay_takeover.cpp)
 void render_alert_ringing_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                   const SystemTakeoverState &st);
 void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx,

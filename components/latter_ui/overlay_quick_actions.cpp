@@ -84,7 +84,7 @@ void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                       ctx.font_small, st.theme_primary, st.col_white, st.col_slate,
                       WidgetId::QUICK_BEDTIME_TOGGLE, 0);
 
-  // Row 3: Do Not Disturb toggle (Pillar 7 — D-074)
+  // Row 3: Do Not Disturb toggle (D-074)
   ui::toggle_card_row(it, cx, ly.slot5_y(3), row_w, row_h, "Do Not Disturb", prefs.do_not_disturb,
                       ctx.font_small, st.theme_primary, st.col_white, st.col_slate,
                       WidgetId::QUICK_DND_TOGGLE, 0);

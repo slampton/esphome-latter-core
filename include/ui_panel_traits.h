@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter UI Panel Geometry & Hardware Capability Traits (include/ui_panel_traits.h)
-// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
+// Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
 // ==============================================================================
 
 #include <cstdint>

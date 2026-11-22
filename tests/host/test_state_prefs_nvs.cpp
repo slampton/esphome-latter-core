@@ -792,7 +792,7 @@ void test_ambient_light_brightness_d075() {
   const auto b_fb_day = resolve_active_brightness_target(p, "above_horizon", true, 12, -1, -1);
   LATTER_CHECK(b_fb_day.kind == ActiveBrightnessTargetKind::DAY && b_fb_day.pct == 90U);
 
-  // M-P3-01: inverted night_brightness > day_brightness configuration never inverts or underflows
+  // Inverted night_brightness > day_brightness configuration never inverts or underflows.
   PersistedDevicePrefs inv{};
   inv.day_brightness = 25;
   inv.night_brightness = 85;

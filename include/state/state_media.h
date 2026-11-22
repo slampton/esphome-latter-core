@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Active Media, Music Peer Views & Synced Lyrics State PODs
+// Latter Core SDK: Active Media, Music Peer Views & Synced Lyrics State PODs
 // (include/state/state_media.h)
 // ==============================================================================
 

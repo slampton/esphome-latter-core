@@ -158,18 +158,18 @@ latter_ui::schedule_anim_disp_update(&id(disp1));           // animation cadence
 
 ## Public UI Headers (`include/ui_*.h` & `components/latter_ui/`)
 
-All UI geometry, pure-C++20 `Rgb565Surface` primitives, icons, hit-testing, touch gestures, compositing, and the **14 domain apps/views** are organized into `L0` / `L2` / `L3` headers:
+All UI geometry, pure-C++20 `Rgb565Surface` primitives, icons, hit-testing, touch gestures, compositing, and the **14 domain apps/views** live in host-compilable `include/ui_*.h` headers (with `ui_esphome_display.h` as the sole ESPHome display bridge):
 
 | Header(s) | Role |
 | :--- | :--- |
-| [`ui_color.h`](../include/ui_color.h), [`ui_surface.h`](../include/ui_surface.h), [`ui_panel_traits.h`](../include/ui_panel_traits.h), [`ui_types.h`](../include/ui_types.h) | Pure `L0` RGB565 surface (`Rgb565Surface`, `UiFontView`, `ArtImageView`), screen traits (`SCREEN_W`, `SCREEN_H`, `LATTER_*`), `GlassVariant`, `kChrome*` tokens, LUT/3D/HSV math |
+| [`ui_color.h`](../include/ui_color.h), [`ui_surface.h`](../include/ui_surface.h), [`ui_panel_traits.h`](../include/ui_panel_traits.h), [`ui_types.h`](../include/ui_types.h) | Pure C++20 RGB565 surface (`Rgb565Surface`, `UiFontView`, `ArtImageView`), screen traits (`SCREEN_W`, `SCREEN_H`, `LATTER_*`), `GlassVariant`, `kChrome*` tokens, LUT/3D/HSV math |
 | [`ui_widget_ids.h`](../include/ui_widget_ids.h), [`ui_hit_table.h`](../include/ui_hit_table.h), [`ui_panel_metrics.h`](../include/ui_panel_metrics.h), [`ui_page_geoms.h`](../include/ui_page_geoms.h) | `FrameHitTable` (`frame_hits()`, up to `kMaxRegions = 56` co-located `HitRegion` entries in `hit_table.cpp`), `TOUCH_DEBOUNCE_*`, and physical millimetre panel metrics (`LATTER_PANEL_PPI`) |
 | [`ui_gfx.h`](../include/ui_gfx.h) | Row-major RGB565 `fast_*` primitives, backdrop-invariant `GlassVariant::Clear` frosted-glass template (`37.5–45.3%`, plus opt-in `ReadableDark`), 1-bpp glyph cache, `ArtCanvasCache`, `frame_base()` (`ui_gfx.cpp`) |
 | [`ui_mdi.h`](../include/ui_mdi.h) | **7,447 Material Design Icons** compiled into LZSS Bezier bytecode buckets (`mdi_icon_hash`, `render_mdi_icon`, 4× AA rasterizer + LRU cache in `ui_mdi.cpp`) |
 | [`ui_layout.h`](../include/ui_layout.h), [`ui_touch_recognizer.h`](../include/ui_touch_recognizer.h) | `UiLayout` (`layout()`), `scale_*` / `safe_span`, `EdgeBounceState`, `can_go_home()` |
 | [`ui_widgets.h`](../include/ui_widgets.h) | Interactive glass cards/pills (`ui::action_pill*`, `ui::list_row`, `ui::setting_cycle_row`), headers, toggles, steppers, `ui::hsv_color_wheel`, `ui::pin_pad_modal` (`ui_widgets.cpp`) |
 | [`ui_frame_context.h`](../include/ui_frame_context.h), [`ui_dirty_band.h`](../include/ui_dirty_band.h), [`ui_cadence.h`](../include/ui_cadence.h), [`ui_compositor.h`](../include/ui_compositor.h) | `DirtyBandTracker` (`dirty_band()`), `FrameCadenceController`, `UiFrameContext`, `SystemTakeoverState` (`ui_compositor.cpp`, `overlay_takeover.cpp`) |
-| [`ui_pages.h`](../include/ui_pages.h), [`ui_touch_engine.h`](../include/ui_touch_engine.h), [`ui_esphome_display.h`](../include/ui_esphome_display.h) | `L3` entry points for all 14 domain renderers (`page_*.cpp`), `TouchRouter` / `TouchGestureEngine` (`touch_engine.cpp`, `touch_dispatch.cpp`), and the single ESPHome `Display` bridge (`make_surface`, `render_system_takeovers`) |
+| [`ui_pages.h`](../include/ui_pages.h), [`ui_touch_engine.h`](../include/ui_touch_engine.h), [`ui_esphome_display.h`](../include/ui_esphome_display.h) | Entry points for all 14 domain renderers (`page_*.cpp`), `TouchRouter` / `TouchGestureEngine` (`touch_engine.cpp`, `touch_dispatch.cpp`), and the single ESPHome `Display` bridge (`make_surface`, `render_system_takeovers`) |
 
 **Key Rendering Rules** (full spec in [Device UI design guide §5](device-ui-design.md#5-rendering-pipeline)):
 - **Row-major `fast_*` only:** never call ESPHome's `it.*` drawing methods (`it.image()`, `it.rectangle()`, `it.print()`) outside `ui_gfx`, and never dim RGB565 with lossy bitmasks (`0xC718`, `0xE79C`).

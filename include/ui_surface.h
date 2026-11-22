@@ -2,8 +2,8 @@
 
 // ==============================================================================
 // Latter UI Pure C++20 RGB565 Surface, Font View, Art View & Wall Time
-// (include/ui_surface.h — Reconciliation #1)
-// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
+// (include/ui_surface.h)
+// Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
 // ==============================================================================
 
 #include "ui_color.h"
@@ -406,7 +406,7 @@ inline uint16_t decode_hw_rgb565_raw(uint16_t hw) noexcept {
   return (mode == 4) ? decode_hw_rgb565_mode<4>(hw) : decode_hw_rgb565_mode<3>(hw);
 }
 
-// Headless & on-device RGB565 drawing surface (Reconciliation #1).
+// Headless & on-device RGB565 drawing surface.
 struct Rgb565Surface {
   using FallbackPixelFn = void (*)(void *ctx, int x, int y, UiColor c);
   using FallbackLineFn = void (*)(void *ctx, int x, int y, int len, UiColor c);

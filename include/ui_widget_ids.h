@@ -2,8 +2,8 @@
 
 // ==============================================================================
 // Latter UI Hit Flags & Canonical Widget IDs (include/ui_widget_ids.h)
-// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
-// Every WidgetId enumerator below has verified live render/touch callers (M-P1-26).
+// Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
+// Every WidgetId enumerator below has verified live render and touch callers.
 // ==============================================================================
 
 #include <cstdint>

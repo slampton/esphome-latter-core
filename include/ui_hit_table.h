@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter UI Co-Located Frame Hit Table & Touch Gesture State (include/ui_hit_table.h)
-// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
+// Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
 // Every interactive widget registers its exact rendered pixel bounds as it draws;
 // TouchGestureEngine and render_active_focus_overlay read frame_hits() directly.
 // ==============================================================================

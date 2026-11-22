@@ -1019,7 +1019,7 @@ struct VeilCol {
   int16_t x, w, y_top, y_mid1, y_mid2, y_bot;
 };
 
-// Retryable PSRAM cloud cache & scratch state (M-P1-18):
+// Retryable PSRAM cloud cache & scratch state:
 // Never latches nullptr on transient OOM; freed cleanly via weather_cloud_cache_drop().
 struct WeatherCloudCache {
   CloudShape *entries = nullptr;
@@ -1411,7 +1411,7 @@ uint32_t fnv1a_sky_str(std::string_view sv) noexcept {
   return h;
 }
 
-// Retryable PSRAM static sky base cache (M-P1-18): no permanent alloc_attempted latch.
+// Retryable PSRAM static sky base cache: retries on transient OOM instead of latching failure.
 struct SkyBaseCache {
   uint16_t *px = nullptr;
   bool valid = false, is_night = false, show_celestial = false;

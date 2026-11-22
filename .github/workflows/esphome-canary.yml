@@ -1,6 +1,6 @@
 name: ESPHome Upstream Dev Canary
 
-# Weekly forward-adoption canary against upstream esphome:dev (M-P1-16).
+# Weekly forward-adoption canary against upstream esphome:dev.
 # Detects upstream VoiceAssistant, MipiDsi, or ESP-IDF header/ABI changes before
 # a new ESPHome release ships so esphome_bridge.cpp stays ahead of upstream cuts.
 

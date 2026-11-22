@@ -151,7 +151,9 @@ def _check_core_to_ui_inversion(failures: list[str]) -> None:
         for match in LOCAL_INC_RE.finditer(clean):
             target_name = Path(match.group(1)).name
             if target_name.startswith("ui_"):
-                failures.append(f"[DAG INVERSION] {rel} includes UI header '{match.group(1)}' (L0/L1 -> L2/L3 banned)")
+                failures.append(
+                    f"[DAG INVERSION] {rel} includes UI header '{match.group(1)}' (latter_core/latter_beacon must not depend on latter_ui)"
+                )
         if re.search(r"\bvoid\s+mark_dirty_(?:full|band)\s*\(|\blatter_ui::mark_dirty_(?:full|band)\s*\(", clean):
             failures.append(
                 f"[DAG INVERSION] {rel} forward-declares or calls latter_ui::mark_dirty_* "

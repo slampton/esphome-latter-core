@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Navigation, Voice Session, Launchers & Start-Screen Policy
+// Latter Core SDK: Navigation, Voice Session, Launchers & Start-Screen Policy
 // (include/state/state_nav.h)
 // ==============================================================================
 

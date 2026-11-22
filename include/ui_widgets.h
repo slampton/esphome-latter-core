@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter Reusable On-Device Widget, Chrome & Vector Glyph Library
 // (include/ui_widgets.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes.
+// Pure C++20 UI header — zero ESPHome or HAL includes.
 // Every interactive widget co-registers its drawn bounds in frame_hits().
 // ==============================================================================
 

@@ -2,7 +2,7 @@
 # Latter Core Module: Protocol v3 UI Reducer, Device Commands & Touch Runtime Sync
 # (modules/system_ui_sync.yaml)
 # Consumes V3DomainEffects, DeviceCommandEffects::mark_dirty_full, and
-# UiTouchRuntime host command bindings at Layer L4.
+# UiTouchRuntime host command bindings in the YAML module layer.
 # ==============================================================================
 
 esphome:

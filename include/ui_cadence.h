@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Frame Cadence Controller, Home Activity Deck & HUD Auto-Fade
 // (include/ui_cadence.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes.
+// Pure C++20 UI header — zero ESPHome or HAL includes.
 // ==============================================================================
 
 #include "state/device_runtime_state.h"
@@ -338,7 +338,7 @@ inline constexpr uint32_t kTimeoutWeatherStepId = 0x4C410003U;
 inline constexpr uint32_t kTimeoutActivityRotateId = 0x4C410004U;
 inline constexpr uint32_t kTimeoutTouchLongPressId = 0x4C410005U;
 
-// Shared L2-visible cadence/dirty-band state hooks (implemented in L3 model/fx TUs)
+// Shared cadence/dirty-band state hooks (implemented in page/fx TUs)
 static constexpr uint32_t kWakeGreetingHoldMs = 2800U;
 static constexpr uint32_t kWakeGreetingFadeMs = 1200U;
 static constexpr uint32_t kWakeGreetingTotalMs = kWakeGreetingHoldMs + kWakeGreetingFadeMs;

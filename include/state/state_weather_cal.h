@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Weather Forecast, Civil Date Math & PSRAM Calendar Store
+// Latter Core SDK: Weather Forecast, Civil Date Math & PSRAM Calendar Store
 // (include/state/state_weather_cal.h)
 // ==============================================================================
 

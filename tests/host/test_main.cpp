@@ -109,7 +109,7 @@ void test_music_app_v3_d059() {
       register_music_action_sheet_hits(ht, ag, wids);
       ht.add_rect(p.w / 2 - 80, ag.back_hit_y0, 160, p.h - ag.back_hit_y0, WidgetId::BACK_BUTTON, kHitTap);
       check_zero_aabb_overlaps(ht, p.w, p.h);
-      // Ratified Decision #2 (M-P1-11): 5-row action sheets keep slot5 vertical stride on compact panels.
+      // 5-row action sheets keep the compact slot5 vertical stride on smaller high-PPI panels.
       const int max_gap_pad = std::max(0, (ly.slot5_stride - ly.slot5_h - 1) / 2);
       const int expected_row_hit_h =
           (p.h <= 520 && p.ppi >= 266) ? (ly.slot5_h + 2 * max_gap_pad) : min_hit;

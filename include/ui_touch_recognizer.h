@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter Unified Physical-Kinematics Gesture Engine & Target-Scoped Debouncer
 // (include/ui_touch_recognizer.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes (D-049).
+// Pure C++20 UI header — zero ESPHome or HAL includes (D-049).
 // ==============================================================================
 
 #include "ui_panel_metrics.h"

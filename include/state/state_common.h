@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Pure C++20 State Enums, Capabilities & Protocol Primitives
+// Latter Core SDK: Pure C++20 State Enums, Capabilities & Protocol Primitives
 // (include/state/state_common.h)
 // ==============================================================================
 

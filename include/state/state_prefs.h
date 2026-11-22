@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Versioned Persisted Device Preferences & Brightness/DND PODs
+// Latter Core SDK: Versioned Persisted Device Preferences & Brightness/DND PODs
 // (include/state/state_prefs.h)
 // ==============================================================================
 
@@ -469,7 +469,7 @@ inline constexpr bool should_suppress_alert_in_bedtime(bool bedtime_active,
   return bedtime_active && (prio != AlertPriority::Critical);
 }
 
-// Decision #4: Under Do Not Disturb, suppress normal/warning notifications & chimes;
+// Under Do Not Disturb, suppress normal/warning notifications & chimes;
 // doorbell rings (!camera_entity.empty() / !camera_url.empty()) still show the silent
 // visual popup (chime = false), while true critical non-doorbell security/safety alerts
 // break through with both visual popup and audible chime.
@@ -841,7 +841,7 @@ inline void seed_hardware_sleep_defaults(PersistedDevicePrefs &p) {
 }
 
 
-// Append-only prefix loader (Decision #10): accepts any NVS blob in [kPersistedPrefsMinSize, sizeof(PersistedDevicePrefs)]
+// Append-only prefix loader: accepts any NVS blob in [kPersistedPrefsMinSize, sizeof(PersistedDevicePrefs)]
 // and zero-initializes newly appended tail fields without wiping NVS across post-v3.0 firmware upgrades.
 inline bool load_persisted_prefs_from_buffer(const void *buf, size_t len,
                                              PersistedDevicePrefs &out = persisted_prefs()) {

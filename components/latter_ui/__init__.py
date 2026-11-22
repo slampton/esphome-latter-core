@@ -1,4 +1,4 @@
-"""Latter UI component: stages the acyclic L0/L2/L3 Latter UI C++20 headers and compiles TUs."""
+"""Latter UI component: stages the acyclic Latter UI C++20 headers and compiles TUs."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ DEPENDENCIES = ["latter_core"]
 CONFIG_SCHEMA = cv.Schema({}).extend(cv.COMPONENT_SCHEMA)
 
 UI_HEADERS: tuple[str, ...] = (
-    # L0 Pure C++20 UI Leaves
+    # Pure C++20 UI Leaves (color, surface, geometry & hit-table contracts)
     "ui_panel_traits.h",
     "ui_color.h",
     "ui_surface.h",
@@ -25,7 +25,7 @@ UI_HEADERS: tuple[str, ...] = (
     "ui_hit_table.h",
     "ui_page_geoms.h",
     "ui_types.h",
-    # L2 Pure C++20 Headless UI Infra
+    # Pure C++20 Headless UI Infrastructure (GFX, icons, layout, widgets & compositor)
     "ui_mdi.h",
     "ui_touch_recognizer.h",
     "ui_dirty_band.h",
@@ -35,7 +35,7 @@ UI_HEADERS: tuple[str, ...] = (
     "ui_layout.h",
     "ui_widgets.h",
     "ui_compositor.h",
-    # L3 Pages, Touch Engine & ESPHome Display Bridge
+    # Domain Pages, Touch Engine & ESPHome Display Bridge
     "ui_pages.h",
     "ui_touch_engine.h",
     "ui_esphome_display.h",

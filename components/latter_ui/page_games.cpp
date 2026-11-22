@@ -55,7 +55,7 @@ struct GameArena {
   bool mem_matched[16];
 };
 
-// Retryable PSRAM allocation via ui_psram_calloc / ui_psram_free (M-P1-18).
+// Retryable PSRAM allocation via ui_psram_calloc / ui_psram_free.
 // Never latches nullptr on transient allocation failure; game_arena_drop() frees cleanly.
 GameArena *acquire_game_arena() noexcept;
 bool &game_imu_retare_flag() noexcept;

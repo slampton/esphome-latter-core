@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Generated files (excluded from GitHub Linguist language stats and collapsed in diffs)
+components/latter_ui/ui_mdi.cpp linguist-generated=true
+include/latter_protocol.h linguist-generated=true
+DEVICE_CONTRACT.md linguist-generated=true

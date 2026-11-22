@@ -1,6 +1,6 @@
 # ==============================================================================
 # Latter Core Example: Minimal Headless Companion Node (examples/minimal_headless_companion.yaml)
-# Demonstrates a headless Latter Core node (`gui: "none"`, L0-L1 `latter_core` only)
+# Demonstrates a headless Latter Core node (`gui: "none"`, `latter_core` only)
 # using the shared Protocol v3 + bound RPC outbox base foundation (`modules/base.yaml`).
 # ==============================================================================
 

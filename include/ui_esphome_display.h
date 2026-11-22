@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter ESPHome Display & Cadence Scheduler Bridge (include/ui_esphome_display.h)
-// L3 Bridge (Reconciliation #1) — SOLE UI header permitted to include
+// ESPHome Display Bridge — SOLE UI header permitted to include
 // esphome/components/display/display.h and DispBufferAccessor.
 // ==============================================================================
 

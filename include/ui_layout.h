@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter Core UI Layout, Geometry, Navigation Predicates & Dock Engine (ui_layout.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes.
+// Pure C++20 UI header — zero ESPHome or HAL includes.
 // ==============================================================================
 
 #include "state/device_runtime_state.h"

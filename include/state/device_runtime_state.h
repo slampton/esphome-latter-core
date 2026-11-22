@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Complete DeviceRuntimeState POD Umbrella & Controller APIs
+// Latter Core SDK: Complete DeviceRuntimeState POD Umbrella & Controller APIs
 // (include/state/device_runtime_state.h)
 // ==============================================================================
 

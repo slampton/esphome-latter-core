@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Frame Context, Backdrop Resolver & System Takeover State
 // (include/ui_frame_context.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes.
+// Pure C++20 UI header — zero ESPHome or HAL includes.
 // ==============================================================================
 
 #include "state/device_runtime_state.h"

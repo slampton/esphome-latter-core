@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter UI Pure C++20 Color Value, Glass Variant & Chrome Tokens (include/ui_color.h)
-// Pure C++20 L0 leaf — zero ESPHome, HAL, or runtime-state includes.
+// Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
 // Seamlessly interoperates with external RGB types (e.g. esphome::Color) via
 // structural templates without including ESPHome headers.
 // ==============================================================================

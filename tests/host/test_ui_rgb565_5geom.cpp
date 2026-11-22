@@ -269,7 +269,7 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
     const int pw = r.width() + 2 * static_cast<int>(r.hit_pad);
     const int ph = r.height() + 2 * static_cast<int>(r.hit_pad);
     if (is_d019_slot5_row_widget(r.widget_id)) {
-      // Ratified Decision #2 (M-P1-11): 5-row list/form items keep slot5 vertical stride on compact panels.
+      // 5-row list/form items keep the compact slot5 vertical stride on smaller high-PPI panels.
       const int min_slot5_h = (r.widget_id == WidgetId::LIGHT_COLOR_BTN) ? (ly.slot5_h - 2) : ly.slot5_h;
       if (pw < min_7mm || ph < min_slot5_h) {
         std::fprintf(stderr, "[HOST TEST FAIL] %s slot5 widget %u padded=%dx%d < %dx%d\n",

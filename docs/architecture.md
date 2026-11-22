@@ -1,22 +1,25 @@
 # Architecture
 
-## Acyclic `L0`–`L4` Firmware DAG
+## Acyclic 3-Component Firmware Architecture
 
 ```mermaid
 flowchart TD
-    D["L4: devices/*.yaml<br/>one per product"] --> B["boards/*.yaml + modules/hal/<br/>hardware abstraction & facts"]
-    D --> U["L4: modules/latter_display_firmware.yaml<br/>shared display firmware umbrella"]
-    U --> M["L4: modules/<br/>base · system_core · system_ui_sync · power_policy · sleep_lifecycle<br/>audio_pipeline · voice_assistant · audio_scripts · display_pipeline · timers_and_fetchers"]
-    U --> G["L4: guis/universal/gui.yaml<br/>ui_esphome_display.h + UiTouchEngine"]
-    G --> CUI3["L3: components/latter_ui (Pages & Touch)<br/>14 domain pages · page_router · touch_engine.cpp · touch_dispatch.cpp · ui_esphome_display.h"]
-    CUI3 --> CUI2["L2: Headless UI Infra<br/>ui_gfx.cpp · ui_widgets.cpp · ui_compositor.cpp · overlay_takeover.cpp · hit_table.cpp · ui_mdi.cpp"]
-    M --> CC["L1: components/latter_core & latter_beacon<br/>state_v3_parsers.cpp · pm_light_sleep · video_* · audio/power/touch HAL · esphome_bridge"]
+    D["devices/*.yaml<br/>one per product"] --> B["boards/*.yaml + modules/hal/<br/>hardware abstraction & facts"]
+    D --> U["modules/latter_display_firmware.yaml<br/>shared display firmware umbrella"]
+    U --> M["modules/<br/>base · system_core · system_ui_sync · power_policy · sleep_lifecycle<br/>audio_pipeline · voice_assistant · audio_scripts · display_pipeline · timers_and_fetchers"]
+    U --> G["guis/universal/gui.yaml<br/>ui_esphome_display.h + UiTouchEngine"]
+    G --> CUI["components/latter_ui<br/>14 domain pages · page_router · touch_engine · ui_compositor · ui_gfx · ui_widgets · ui_mdi"]
+    M --> CC["components/latter_core<br/>state PODs · Protocol v3 parsers · RPC outbox · PM & sleep · video · audio/power/touch HAL · esphome_bridge"]
+    M --> CB["components/latter_beacon<br/>raw-HCI BLE iBeacon advertiser"]
     B --> CC
-    CUI2 --> L0["L0: Pure C++20 Leaves<br/>include/state/*.h · ui_{color,surface,panel_traits,widget_ids,hit_table,panel_metrics,page_geoms,types}.h<br/>latter_protocol.h · hal_manifest.h · latter_rpc.h · latter_prof.h · audio_router.h"]
-    CC --> L0
+    CUI --> CC
 ```
 
-Each product file in `devices/` combines its board HAL with the shared display umbrella and the three compiled C++20 PlatformIO components (`latter_core`, `latter_ui`, `latter_beacon`), organized into cohesive 1:1 functional modules in a strict `L0`–`L4` DAG with zero `#include` cycles:
+Each product file in `devices/` combines its board HAL with the shared display umbrella and three compiled C++20 PlatformIO components (`latter_core`, `latter_ui`, `latter_beacon`). Every hand-authored header and translation unit sits inside a zero-cycle `#include` graph enforced by full Tarjan SCC plus coarse component/header boundaries in `tools/verify_core/`:
+
+- **`latter_core` and `latter_beacon` never depend on `latter_ui`** (zero `ui_*.h` includes or `latter_ui::mark_dirty_*` references in core headers or TUs).
+- **Inside `include/ui_*.h`**, only `ui_esphome_display.h` may include `esphome/*` or `hal_*.h`, keeping the entire graphics, widget, compositor, touch, and 14-page rendering engine pure C++20 and host-compilable.
+- **Inside `components/latter_ui/*.cpp`**, ESP-IDF heap/DMA headers stay isolated to `ui_gfx.cpp` and `ui_mdi.cpp`, and domain page renderers never include sibling `page_*.cpp` files (only `page_router.cpp` dispatches across pages).
 
 ```yaml
 # devices/pocket-assistant.yaml (abridged)
@@ -34,6 +37,17 @@ Device files define only what varies per SKU: `wifi` (`id: wifi_ctrl`), `latter_
 
 ---
 
+## Why Custom C++20 UI Instead of LVGL?
+
+LVGL is a solid general-purpose widget toolkit, and ESPHome ships first-class integration for it—but Latter's five target displays span 320×480 SPI panels, 410×502 / 466×466 QSPI AMOLEDs, and a 720×720 ESP32-P4 MIPI-DSI wall panel while running full-duplex 48 kHz audio, microWakeWord, Sendspin streaming, and MJPEG cameras concurrently in the same address space. Writing a small, self-contained C++20 immediate-mode renderer directly over `Rgb565Surface` gave us deterministic memory, flush bandwidth, and testing guarantees that an object-tree toolkit makes hard to hold:
+
+- **Contiguous `stride == W` `2px` dirty-band DMA:** `DirtyBandTracker` aligns partial redraws (clock ticks, timers, sliders, dock focus) to even-to-odd full-width scanline bands `[y0, y1]` across `0 .. W - 1`, preserving `MipiSpiBuffer`'s zero-copy contiguous DMA fast path while cutting SPI/QSPI bus traffic 5–12× without tile-stitching stalls.
+- **One 5-geometry responsive engine with zero object-tree RAM overhead:** All 14 apps share a single immediate-mode layout and co-located `FrameHitTable` (`kMaxRegions = 56`, physical millimetre targets from `LATTER_PANEL_PPI`) scaling from a 466×466 round AMOLED to a 720×720 ESP32-P4 MIPI-DSI panel—no retained widget trees, per-object style allocations, or heap fragmentation across view transitions.
+- **PSRAM `SkyBaseCache` procedural weather:** Static sky gradients, star domes, cumulus layers, and a 139×139 spherical-terminator lunar disc bake once into PSRAM (`SkyBaseCache`), letting stateless Q8 fixed-point rain, snow, and plasma-corona lightning composite directly over RGB565 scanlines with zero floating-point trig in per-pixel loops.
+- **Native 5-geometry ASan/UBSan C++20 host tests:** Because every UI header except `ui_esphome_display.h` has zero ESPHome or ESP-IDF includes, CI compiles and executes all 14 page renderers, hit-table geometry invariants, and touch dispatch natively on the host across all 5 panel geometries under AddressSanitizer and UndefinedBehaviorSanitizer in seconds—no simulator harness or device-in-the-loop required.
+
+---
+
 ## Directory Map
 
 ### `boards/`: Hardware Abstraction & Machine Facts
@@ -42,7 +56,7 @@ Each board pairs `boards/<board_id>.yaml` with a schematic-verified `boards/fact
 - **Shared HAL packages (`modules/hal/`):** chip config (`chip_esp32s3.yaml` or `chip_esp32p4.yaml`), full-duplex 48 kHz audio (`audio_es8311_duplex.yaml` or `audio_es8311_es7210_duplex.yaml`), plus optional `pmu_axp2101.yaml` and `imu_qmi8658.yaml`.
 - **Compile-time traits:** explicit `LATTER_*` capability flags (`LATTER_SCREEN_W/H`, `LATTER_PANEL_PPI`, `LATTER_HAS_VIDEO_STREAM`, `LATTER_HAS_IMU`, `LATTER_HAS_BATTERY`, `LATTER_HAS_RTC`, etc.) and HAL scripts (`hal_release_deep_sleep_holds`, `hal_enter_hardware_hibernate`). → [Porting hardware](porting-hardware.md)
 
-### `modules/`: Core OS (`L4` YAML Modules)
+### `modules/`: Core OS YAML Modules
 
 | File | Role |
 | :--- | :--- |
@@ -61,9 +75,9 @@ Each board pairs `boards/<board_id>.yaml` with a schematic-verified `boards/fact
 
 | Component | Staged Headers & Compiled Translation Units |
 | :--- | :--- |
-| **`components/latter_core/`** *(`L0`–`L1`, zero `ui_*.h` coupling)* | **Headers (`include/` & `include/state/`):** `state/{state_common,state_prefs,state_shortcuts,state_nav,state_media,state_areas,state_weather_cal,state_time_alarms,state_alerts_intercom,device_runtime_state,state_nvs_snapshot}.h`, `esphome_bridge.h`, `hal_manifest.h`, `hal_battery.h`, `hal_imu_qmi8658.h`, `hal_panel_power.h`, `hal_{sleep_pm,radio_policy,display_lifecycle}.h`, `hal_touch.h`, `hal_video_stream.h`, `hal_link_report.h`, `audio_router.h`, `latter_protocol.h` (generated), `latter_rpc.h`, `latter_actions.h`, `latter_prof.h`.<br/>**Flat TUs (`components/latter_core/`):** `state_v3_parsers.cpp`, `power_battery.cpp`, `audio_es8311.cpp`, `audio_session.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp`, `touch_hal.cpp`, `pm_light_sleep.cpp`, `pm_telemetry_stall.cpp`, `weak_link_policy.cpp`, `display_lifecycle.cpp`, `video_{parser,decoder,client_esp}.cpp`, `runtime_controllers.cpp`, `esphome_bridge.cpp`. Auto-loads `latter_ui` unless `latter_core: gui: "none"` is set. |
-| **`components/latter_ui/`** *(`L0` / `L2` / `L3`)* | **Headers (`include/`):** `L0` `ui_{color,surface,panel_traits,widget_ids,hit_table,panel_metrics,page_geoms,types}.h`; `L2` `ui_{mdi,frame_context,dirty_band,cadence,compositor,gfx,widgets,layout,touch_recognizer}.h` (pure C++20, zero `esphome/` includes); `L3` `ui_pages.h`, `ui_touch_engine.h`, `ui_esphome_display.h`.<br/>**Flat TUs (`components/latter_ui/`):** `ui_gfx.cpp`, `ui_mdi.cpp`, `ui_widgets.cpp`, `ui_compositor.cpp`, `overlay_takeover.cpp`, `hit_table.cpp`, `touch_engine.cpp`, `touch_dispatch.cpp`, `page_router.cpp`, and **14 cohesive 1:1 domain apps/views** (`page_clock`, `page_home`, `page_time`, `page_music`, `page_area_hub`, `page_home_hub`, `page_cameras`, `page_remote`, `page_weather`, `page_calendar`, `page_tools`, `page_pinned`, `page_games`, `screensaver_fx` + `overlay_*`, `page_system`). |
-| **`components/latter_beacon/`** *(`L1`)* | `latter_beacon.h` / `latter_beacon.cpp`: raw-HCI BLE iBeacon advertiser (`ble_ctrl`) over VHCI or `esp32_hosted` with zero Bluedroid/NimBLE host-stack RAM and `< 1 ms` warm `pause()`/`enable()` transitions. |
+| **`components/latter_core/`** *(zero `ui_*.h` coupling)* | **Headers (`include/` & `include/state/`):** `state/{state_common,state_prefs,state_shortcuts,state_nav,state_media,state_areas,state_weather_cal,state_time_alarms,state_alerts_intercom,device_runtime_state,state_nvs_snapshot}.h`, `esphome_bridge.h`, `hal_manifest.h`, `hal_battery.h`, `hal_imu_qmi8658.h`, `hal_panel_power.h`, `hal_{sleep_pm,radio_policy,display_lifecycle}.h`, `hal_touch.h`, `hal_video_stream.h`, `hal_link_report.h`, `audio_router.h`, `latter_protocol.h` (generated), `latter_rpc.h`, `latter_actions.h`, `latter_prof.h`.<br/>**Flat TUs (`components/latter_core/`):** `state_v3_parsers.cpp`, `power_battery.cpp`, `audio_es8311.cpp`, `audio_session.cpp`, `imu_qmi8658.cpp`, `panel_power.cpp`, `touch_hal.cpp`, `pm_light_sleep.cpp`, `pm_telemetry_stall.cpp`, `weak_link_policy.cpp`, `display_lifecycle.cpp`, `video_{parser,decoder,client_esp}.cpp`, `runtime_controllers.cpp`, `esphome_bridge.cpp`. Auto-loads `latter_ui` unless `latter_core: gui: "none"` is set. |
+| **`components/latter_ui/`** *(host-compilable headless UI + display bridge)* | **Headers (`include/`):** pure C++20 leaves (`ui_{color,surface,panel_traits,widget_ids,hit_table,panel_metrics,page_geoms,types}.h`), headless UI infrastructure (`ui_{mdi,frame_context,dirty_band,cadence,compositor,gfx,widgets,layout,touch_recognizer}.h`), domain pages & touch (`ui_pages.h`, `ui_touch_engine.h`), and the sole ESPHome display bridge (`ui_esphome_display.h`).<br/>**Flat TUs (`components/latter_ui/`):** `ui_gfx.cpp`, `ui_mdi.cpp`, `ui_widgets.cpp`, `ui_compositor.cpp`, `overlay_takeover.cpp`, `hit_table.cpp`, `touch_engine.cpp`, `touch_dispatch.cpp`, `page_router.cpp`, and **14 cohesive domain apps/views** (`page_clock`, `page_home`, `page_time`, `page_music`, `page_area_hub`, `page_home_hub`, `page_cameras`, `page_remote`, `page_weather`, `page_calendar`, `page_tools`, `page_pinned`, `page_games`, `screensaver_fx` + `overlay_*`, `page_system`). |
+| **`components/latter_beacon/`** *(independent BLE component)* | `latter_beacon.h` / `latter_beacon.cpp`: raw-HCI BLE iBeacon advertiser (`ble_ctrl`) over VHCI or `esp32_hosted` with zero Bluedroid/NimBLE host-stack RAM and `< 1 ms` warm `pause()`/`enable()` transitions; never depends on `latter_ui`. |
 
 ### `guis/`, `examples/`, `manifests/` & `index.html`
 - **`guis/universal/gui.yaml`**: Fonts, WCAG-verified palette, `!extend disp1` render lambda (`ui_esphome_display.h` + `DirtyBandTracker` `2px` dirty bands + `render_system_takeovers` + `page_router`), and `!extend touch_screen` forwarding into `UiTouchEngine`. → [Building a GUI](building-a-gui.md)

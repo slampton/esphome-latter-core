@@ -2,7 +2,7 @@
 
 // ==============================================================================
 // Latter UI Pure-C++20 Page & Modal Hit Geometries (include/ui_page_geoms.h)
-// Pure C++20 L0 leaf (Home Activity, Home Hub, Music v3, Remote D-Pad, Cameras)
+// Pure C++20 UI leaf (Home Activity, Home Hub, Music v3, Remote D-Pad, Cameras)
 // — zero ESPHome, HAL, or runtime-state includes.
 // ==============================================================================
 

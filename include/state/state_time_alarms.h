@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK (L0): Timers, Stopwatch, Alarms & World Clock Catalog/Codec
+// Latter Core SDK: Timers, Stopwatch, Alarms & World Clock Catalog/Codec
 // (include/state/state_time_alarms.h)
 // ==============================================================================
 

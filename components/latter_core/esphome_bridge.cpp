@@ -29,6 +29,14 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 
 namespace {
 
+// Standard C++ explicit-instantiation private-member bridge, isolated to this single TU.
+// Awaits two upstream ESPHome public APIs so these tags can be deleted:
+//   1. VoiceAssistant public session-abort & API-connection-release hooks
+//      (replacing set_state_, mic_source_, and api_client_; see components/latter_core/README.md).
+//   2. MipiDsi public framebuffer pointer getter
+//      (replacing MipiDsi::buffer_ for zero-copy RGB565 scanlines on ESP32-P4 MIPI-DSI panels).
+// Guarded by the ESPHOME_VERSION_CODE >= 2026.11.0 static_assert and 2027.1.0 #warning above,
+// plus the weekly .github/workflows/esphome-canary.yml build against upstream esphome:dev.
 template <typename Tag, typename Tag::type M>
 struct BridgeRob {
   friend constexpr typename Tag::type bridge_get(Tag) { return M; }

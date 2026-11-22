@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Graphics Primitives, 2-Tier Frosted Glass (D-041), 1-bpp Span Cache,
 // ArtCanvasCache, Dirty-Band Frame Base & FrameProfileScope (include/ui_gfx.h)
-// Pure C++20 L2 header — zero ESPHome or HAL includes (Reconciliation #1).
+// Pure C++20 UI graphics header — zero ESPHome or HAL includes.
 // ==============================================================================
 
 #include "latter_prof.h"

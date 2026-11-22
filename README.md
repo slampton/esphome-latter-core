@@ -13,6 +13,27 @@ Turnkey firmware and a compiled C++20 UI/OS for five off-the-shelf Waveshare ESP
 
 ---
 
+## What Runs on the Device
+
+| App | Highlights |
+| :--- | :--- |
+| **Home** | Digital clock, live weather sky, native Day & Night Sky, or `720p` wallpaper, adaptive `0/1/2`-row **Activity Card** (calls, timers, alarms, stopwatch, music queue, next event), and customizable up-to-24-item app dock (with dynamic active-Area icon, or locked single-app kiosk mode) |
+| **Clock** | Three zero-chrome SDF clock faces (**Minimal Digital**, **Modern Analog** on round panels, **Hybrid Digital**) with smooth 20 FPS sweep on USB and for 15 s after wake on battery |
+| **Time** | 4-tab app: **Clock** (optional custom local label, DST/zone info, UTC, and up to 4 custom-city World Clocks), **Timers** (3 local slots + Assist timers), **Alarms** (3 recurring NVS slots synced 2-way with Studio), and **Stopwatch** (lap splits) |
+| **Music** | Now Playing with full-bleed art, seek/skip, speaker picker, one-tap Music Assistant queue transfer, speaker grouping, library browser, LRC/plain lyrics, and Music Assistant artist/album metadata |
+| **Area Control** | Entity cards and dedicated inspector scoped to the device's current Area (Scenes, Lights with HSV wheel & 2000–6500 K slider, Blinds & Curtains, Fans, Switches, Climate, Media) |
+| **Home Hub** | 5-tab whole-home deck: **Alarm**, **Broadcast** (`Speak` inline STT + Quick Phrases), **Thermostat**, **Entry & Garage**, and **Vacuum**, with separate HA Alarm PIN vs. `v1:` session-key-wrapped Perimeter Security PIN prompts (`4–12` digits) |
+| **Cameras** | 4-tab live MJPEG app (**Grid** 2×2, **Single** uncropped feed + doorbell listen/PTT talk/reply/unlock, **Carousel**, and **Settings**) plus live doorbell ring popups |
+| **Remote** | Tactile D-pad (with `480 ms` hold-in-place `OK`/`Home`/`Back` long-press), transport, volume, and power for up to 10 TVs, streaming boxes, or AV receivers |
+| **Sky & Weather** | Current conditions, 5-day forecast, solar arc, and real-albedo 3D lunar phase over animated clouds, fog, rain, snow, plasma-bolt storms, tumbling leaves, and night meteors |
+| **Calendar & Tools** | Dedicated **Calendar** app (`Overview`, `Day`, `Week`, `Month` + `+ Add Event` composer & `zone.*` location picker), plus **Tools** (Calculator, Dice, Coin Flip, Flashlight, Bubble Level on IMU boards, and Analog Chronograph on round displays) |
+| **Voice** | On-device [microWakeWord](https://github.com/kahrendt/microWakeWord) (*Okay Nabu*, *Hey Jarvis*, *Hey Mycroft*, *Alexa*, *Hey Luna*) into Home Assistant Assist with 5 reactive visual overlays |
+| **Games** | Optional IMU/touch mini-games: Marbles, Archery, Bricks, Chomp, 2048, and Memory Match (tilt-steered with touch fallback on IMU boards; touch-steered elsewhere) |
+
+→ [Using your device](docs/using-your-device.md)
+
+---
+
 ## Supported Hardware & 3-Minute Setup
 
 | Device | Waveshare Hardware | Display | Best For |
@@ -34,27 +55,6 @@ All five boards run the **exact same firmware and universal GUI**. Each board fi
 
 ---
 
-## What Runs on the Device
-
-| App | Highlights |
-| :--- | :--- |
-| **Home** | Digital clock, live weather sky, native Day & Night Sky, or `720p` wallpaper, adaptive `0/1/2`-row **Activity Card** (calls, timers, alarms, stopwatch, music queue, next event), and customizable up-to-24-item app dock (with dynamic active-Area icon, or locked single-app kiosk mode) |
-| **Clock** | Three zero-chrome SDF clock faces (**Minimal Digital**, **Modern Analog** on round panels, **Hybrid Digital**) with smooth 20 FPS sweep on USB and for 15 s after wake on battery |
-| **Time** | 4-tab app: **Clock** (optional custom local label, DST/zone info, UTC, and up to 4 custom-city World Clocks), **Timers** (3 local slots + Assist timers), **Alarms** (3 recurring NVS slots synced 2-way with Studio), and **Stopwatch** (lap splits) |
-| **Music** | Now Playing with full-bleed art, seek/skip, speaker picker, seamless Music Assistant queue transfer, speaker grouping, library browser, LRC/plain lyrics, and Music Assistant artist/album metadata |
-| **Area Control** | Entity cards and dedicated inspector scoped to the device's current Area (Scenes, Lights with HSV wheel & 2000–6500 K slider, Blinds & Curtains, Fans, Switches, Climate, Media) |
-| **Home Hub** | 5-tab whole-home deck: **Alarm**, **Broadcast** (`Speak` inline STT + Quick Phrases), **Thermostat**, **Entry & Garage**, and **Vacuum**, with separate HA Alarm PIN vs. `v1:` session-key-wrapped Perimeter Security PIN prompts (`4–12` digits) |
-| **Cameras** | 4-tab live MJPEG app (**Grid** 2×2, **Single** uncropped feed + doorbell listen/PTT talk/reply/unlock, **Carousel**, and **Settings**) plus live doorbell ring popups |
-| **Remote** | Tactile D-pad (with `480 ms` hold-in-place `OK`/`Home`/`Back` long-press), transport, volume, and power for up to 10 TVs, streaming boxes, or AV receivers |
-| **Sky & Weather** | Current conditions, 5-day forecast, solar arc, and real-albedo 3D lunar phase over animated clouds, fog, rain, snow, plasma-bolt storms, tumbling leaves, and night meteors |
-| **Calendar & Tools** | Dedicated **Calendar** app (`Overview`, `Day`, `Week`, `Month` + `+ Add Event` composer & `zone.*` location picker), plus **Tools** (Calculator, Dice, Coin Flip, Flashlight, Bubble Level on IMU boards, and Analog Chronograph on round displays) |
-| **Games** | Marbles, Archery, Bricks, Chomp, 2048, and Memory Match (tilt-steered with touch fallback on IMU boards; touch-steered elsewhere) |
-| **Voice** | On-device [microWakeWord](https://github.com/kahrendt/microWakeWord) (*Okay Nabu*, *Hey Jarvis*, *Hey Mycroft*, *Alexa*, *Hey Luna*) into Home Assistant Assist with 5 reactive visual overlays |
-
-→ [Using your device](docs/using-your-device.md)
-
----
-
 ## Under the Hood
 
 ```mermaid
@@ -66,32 +66,32 @@ flowchart LR
     HA <--> ECOSYS["HA Areas · Assist · Music Assistant"]
 ```
 
-If you're evaluating the firmware or building on the SDK, these are the engineering choices doing the heavy lifting—each linked directly to source:
+If you're evaluating the firmware or building on the SDK, these are the core engineering choices—and [why Latter uses a custom C++20 UI instead of LVGL](docs/architecture.md#why-custom-c20-ui-instead-of-lvgl):
 
-- **`2px` Dirty-Band Compositor, Co-Located `FrameHitTable` (`kMaxRegions = 56`) & 2-Tier Neutral Glass.** Localized updates (clock ticks, timers, progress bars, sliders) align dirty spans `[y0, y1]` to even-to-odd rows across full width `0 .. W − 1`, preserving `MipiSpiBuffer`'s contiguous `stride == W` zero-copy DMA fast path while cutting SPI/QSPI pixel traffic 5–12×. Row-major RGB565 scanlines over `Rgb565Surface` group identical pixel runs and dim scrims in 1/256 with ordered Bayer dithering (never lossy bitmask shifts). Interactive controls use a backdrop-invariant `37.5–45.3%` frosted-glass template (`GlassVariant::Clear`) and register exact bounds into `FrameHitTable` (`>= 7.0 mm` targets across all 5 geometries) as they draw, backed by **7,447 Material Design Icons** compiled into LZSS Bezier bytecode (`4×` AA rasterizer). → [`ui_compositor.h`](include/ui_compositor.h), [`ui_gfx.h`](include/ui_gfx.h), [`ui_hit_table.h`](include/ui_hit_table.h), [`ui_mdi.h`](include/ui_mdi.h)
-- **Procedural `WeatherSkyEngine` & Zero-Trig Hot Path.** Static atmospheric gradients, star domes, cumulus canopies, and a 139×139 real lunar albedo texture shaded with a 3D spherical terminator render once into a PSRAM `SkyBaseCache`; stateless rain, snow, and plasma-corona lightning composite in Q8 fixed-point on top (animating continuously on USB, or for 35 s after wake on battery before an 800 ms fade to 0 FPS). Trig uses a 60-entry interpolated LUT and round/corner bezel clipping uses a flash chord & corner-arc SDF—no `sinf` or `sqrtf` in per-pixel loops. → [`page_weather.cpp`](components/latter_ui/page_weather.cpp), [`ui_types.h`](include/ui_types.h)
-- **Zero-Privilege Bound RPC & Sleep-Safe 63-Preference NVS Sync.** Outbound taps emit compact chunked envelopes on the hidden `latter_rpc_outbox` pipe (`latter_rpc::emit`, with `v1:` HMAC-SHA256 session-key wrapping on `4–12` digit PINs) and inbound state arrives across **7 Protocol v3 domains** via `latter_push_v3` and `latter_set_slots`—requiring neither `allow_service_calls` nor `device_slug` substitutions. Storing all 63 device preferences in a single append-only NVS struct (`PersistedDevicePrefs` v1 + cold-boot `HibernateSnapshot` v3) reclaims ESP32-S3 internal SRAM and reconciles offline edits on `device_hello`. → [`latter_rpc.h`](include/latter_rpc.h), [`device_runtime_state.h`](include/state/device_runtime_state.h), [`DEVICE_CONTRACT.md`](DEVICE_CONTRACT.md)
-- **Full-Duplex 48 kHz Audio & Synchronous Voice Preemption.** Every board runs DAC and ADC together on one shared-clock 48 kHz I2S bus (with `latter_mic` resampling mic input to 16 kHz for wake word and Assist), eliminating I2S teardown clicks and bus handoffs. `AudioPathArbitrator` and `AudioSessionController` pause media and drain mixer buffers synchronously when a voice turn starts, keep wake-word listening muted over local playback (until on-device AEC lands), and never resume music over a ringing alarm or timer. → [`audio_router.h`](include/audio_router.h), [`audio_session.cpp`](components/latter_core/audio_session.cpp), [`audio_pipeline.yaml`](modules/audio_pipeline.yaml)
-- **S3 Light Sleep + BLE Modem-Sleep, `< 1 ms` Raw-HCI Beacon & Native IRAM P4 DSI.** ESP32-S3 battery boards enter automatic FreeRTOS tickless light sleep (`1,000 ms` quiet loop, `250 ms` with touch wake, `-78 / -74 dBm` weak-link hold; `~5–8 mA` with BLE paused, `~24–35 mA` with BLE modem-sleep active via `MAIN_XTAL_PU_DURING_LIGHT_SLEEP`, `~2–4 mA` off-site with exponential scan backoff). `latter_beacon` speaks raw HCI over VHCI (S3) or `esp_hosted` (P4) with zero Bluedroid/NimBLE RAM overhead and `< 1 ms` warm transitions. Wrist and Mobile restore UTC wall time at cold boot from onboard PCF85063 RTCs. ESP32-P4 boards keep fixed `CPLL` + `200 MHz` PSRAM and pair ESPHome `2026.11.0+` native IRAM MIPI-DSI callbacks with IRAM GDMA ISRs so the 720×720 panel stays tear-free during OTA flash erases. → [`pm_light_sleep.cpp`](components/latter_core/pm_light_sleep.cpp), [`latter_beacon.cpp`](components/latter_beacon/latter_beacon.cpp), [`power_battery.cpp`](components/latter_core/power_battery.cpp), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
-- **Adaptive Frame Cadence & `[PROF:*]` Flight Recorder.** `FrameCadenceController` coalesces same-loop redraws into 18 ms frames on P4 and 26 ms on S3, steps ambient screensavers at `16.7 FPS` (`12.5 FPS` during audio), and pairs with Studio's **Developer & telemetry** profiler toggle (`device_telemetry` RPC) and `RTC_NOINIT` `PmCrumb` crash forensics. → [`ui_compositor.h`](include/ui_compositor.h), [`latter_prof.h`](include/latter_prof.h)
+- **`2px` Dirty-Band Compositor & Co-Located `FrameHitTable`.** Localized updates (clock ticks, timers, sliders, dock focus) align dirty rows `[y0, y1]` to full-width even-to-odd bands, preserving `MipiSpiBuffer`'s contiguous `stride == W` zero-copy DMA fast path while cutting SPI/QSPI bus traffic 5–12×. Interactive controls draw in row-major RGB565 with Bayer-dithered frosted glass, register their exact bounds into `FrameHitTable` (`kMaxRegions = 56`, `>= 7.0 mm` targets) as they render, and draw from 7,447 baked Material Design Icons (LZSS Bezier bytecode with `4×` AA). → [`ui_compositor.h`](include/ui_compositor.h), [`ui_gfx.h`](include/ui_gfx.h), [`ui_hit_table.h`](include/ui_hit_table.h), [`ui_mdi.h`](include/ui_mdi.h)
+- **Procedural `WeatherSkyEngine` & Zero-Trig Hot Path.** Static atmospheric gradients, star domes, cumulus canopies, and a 139×139 spherical-terminator lunar disc bake once into a PSRAM `SkyBaseCache`. Stateless rain, snow, and plasma-corona lightning composite on top in Q8 fixed-point using a 60-entry trig LUT and flash bezel SDFs, keeping `sinf` and `sqrtf` out of per-pixel loops (animating continuously on USB, or for 35 s after wake on battery before fading to 0 FPS). → [`page_weather.cpp`](components/latter_ui/page_weather.cpp), [`ui_types.h`](include/ui_types.h)
+- **Zero-Privilege Bound RPC & Sleep-Safe NVS Sync.** Outbound actions emit chunked envelopes on the hidden `latter_rpc_outbox` pipe (with `v1:` HMAC-SHA256 session-key wrapping on `4–12` digit PINs), while inbound state arrives across 7 Protocol v3 domains via `latter_push_v3` and `latter_set_slots` without `allow_service_calls` or `device_slug` substitutions. Storing all 63 preferences in one append-only NVS struct (`PersistedDevicePrefs` v1 + cold-boot `HibernateSnapshot` v3) saves ESP32-S3 internal SRAM and reconciles offline edits on `device_hello`. → [`latter_rpc.h`](include/latter_rpc.h), [`device_runtime_state.h`](include/state/device_runtime_state.h), [`DEVICE_CONTRACT.md`](DEVICE_CONTRACT.md)
+- **Full-Duplex 48 kHz Audio & Synchronous Voice Preemption.** Every board runs DAC and ADC together on one shared-clock 48 kHz I2S bus (resampling mic input to 16 kHz for wake word and Assist), eliminating I2S teardown clicks and bus handoffs. `AudioPathArbitrator` and `AudioSessionController` pause media and drain mixer buffers synchronously on voice turns, mute wake-word listening over local playback until on-device AEC lands, and never resume music over a ringing alarm or timer. → [`audio_router.h`](include/audio_router.h), [`audio_session.cpp`](components/latter_core/audio_session.cpp), [`audio_pipeline.yaml`](modules/audio_pipeline.yaml)
+- **S3 Light Sleep, `< 1 ms` Raw-HCI Beacon & IRAM-Safe P4 DSI.** ESP32-S3 battery boards use FreeRTOS tickless light sleep (`~5–8 mA` quiet with BLE paused, `~24–35 mA` with BLE modem-sleep active, `~2–4 mA` off-site with scan backoff), while `latter_beacon` speaks raw HCI over VHCI or `esp_hosted` with zero Bluedroid/NimBLE RAM overhead and `< 1 ms` warm transitions. ESP32-P4 panels keep fixed `CPLL` + `200 MHz` PSRAM and pair ESPHome `2026.11.0+` native IRAM MIPI-DSI callbacks with IRAM GDMA ISRs so the 720×720 panel stays tear-free during OTA flash erases. → [`pm_light_sleep.cpp`](components/latter_core/pm_light_sleep.cpp), [`latter_beacon.cpp`](components/latter_beacon/latter_beacon.cpp), [`power_battery.cpp`](components/latter_core/power_battery.cpp), [`waveshare_p4_86_panel.yaml`](boards/waveshare_p4_86_panel.yaml)
+- **Adaptive Frame Cadence & `[PROF:*]` Telemetry Profiler.** `FrameCadenceController` coalesces same-loop redraws into 18 ms frames on P4 and 26 ms on S3, stepping ambient screensavers at `16.7 FPS` (`12.5 FPS` during audio). Studio's **Developer & telemetry** toggle enables live `[PROF:*]` telemetry profiler logs over `device_telemetry` RPC alongside `RTC_NOINIT` `PmCrumb` crash breadcrumbs. → [`ui_compositor.h`](include/ui_compositor.h), [`latter_prof.h`](include/latter_prof.h)
 
 ---
 
 ## Build on Latter Core
 
-The firmware is organized as an acyclic **`L0`–`L4` DAG** backed by three compiled C++20 PlatformIO components (`latter_core`, `latter_ui`, `latter_beacon`), so you can swap the board HAL, replace the GUI, or run a headless node without forking the OS:
+The firmware is built around three zero-cycle compiled C++20 PlatformIO components (`latter_core`, `latter_ui`, `latter_beacon`) with coarse component/header boundaries, so you can swap the board HAL, replace the GUI, or run a headless node without forking the OS:
 
 ```text
-components/  Compiled C++20 SDK: latter_core (L0-L1 HAL, Protocol v3, RPC, audio/power), latter_ui (L0/L2/L3), latter_beacon (L1)
+components/  Compiled C++20 SDK: latter_core (state, HAL, Protocol v3, RPC, audio/power), latter_ui (headless UI + display bridge), latter_beacon (raw-HCI BLE)
 boards/      Board HAL + facts ledger: pins, buses, codecs, PMU, IMU, RTC, and LATTER_* traits
-modules/     Core L4 YAML: base, system_core & system_ui_sync, power_policy & sleep_lifecycle, audio_pipeline & voice_assistant, display_pipeline
+modules/     Core OS YAML: base, system_core & system_ui_sync, power_policy & sleep_lifecycle, audio_pipeline & voice_assistant, display_pipeline
 guis/        Universal GUI: display lambda + UiTouchEngine / FrameHitTable (replaceable; base.yaml for headless)
 devices/     Turnkey product configs combining one board HAL with latter_display_firmware.yaml
 ```
 
 | Guide | When to read it |
 | :--- | :--- |
-| **[Architecture](docs/architecture.md)** | How the 3 C++20 components, `L0`–`L4` DAG layers, YAML modules, and S3/P4 power policies fit together |
+| **[Architecture](docs/architecture.md)** | How the 3 C++20 components, zero-cycle coarse boundaries, YAML modules, custom UI rationale, and S3/P4 power policies fit together |
 | **[Device protocol](docs/device-protocol.md)** & **[Contract](DEVICE_CONTRACT.md)** | How `ha-latter` discovers, pushes 7 Protocol v3 domains to, and receives 20 RPC methods from a device |
 | **[Building a GUI](docs/building-a-gui.md)** | Writing a custom touch or rotary interface on top of `latter_core` |
 | **[Device UI design guide](docs/device-ui-design.md)** | Design tokens, 2-tier glass, layout math, `FrameHitTable`, and rendering budgets |
@@ -108,8 +108,7 @@ Version **3.0.0** — built, bench-validated, and maintained across all five fla
 | Five flagship devices, universal GUI, 7-domain Protocol v3 sync, full-duplex audio, voice, and power | **Stable** |
 | Doorbell listen & push-to-talk reply | **Experimental**: camera audio streams to the device with FFmpeg noise reduction; push-to-talk transcribes speech and speaks it at the door via TTS (full-duplex calls with on-device AEC planned) |
 
-**CI & Release Discipline:**
-- Every push to `dev` runs `tools/verify_core.py` (Tarjan SCC zero-cycle `L0`–`L4` DAG + UI/HAL/security gates), `tools/gen_protocol.py --check`, `tools/check_protocol_usage.py`, `tools/check_boards.py --release --check-docs`, `tools/new_board.py --bringup --check`, `tools/gen_sounds.py --check`, `tools/gen_mdi_pack.py --check`, 5-geometry ASan/UBSan C++20 RGB565 host binaries, `esphome config` across examples/probes/devices, and **full 6-variant firmware compilation** (including `desk-assistant` `rev1` + `rev3`) before CI fast-forwards `main`, alongside a weekly `esphome:dev` canary.
+- Every push to `dev` passes static architecture checks, 5-geometry ASan/UBSan C++20 host tests, and full 6-variant ESPHome firmware compilation before CI fast-forwards `main`, alongside a weekly `esphome:dev` canary (see [`CONTRIBUTING.md`](CONTRIBUTING.md) for the local and CI verification checklist).
 - Bugs and feature requests: [GitHub Issues](https://github.com/slampton/esphome-latter-core/issues).
 
 ## Documentation
@@ -123,7 +122,7 @@ Version **3.0.0** — built, bench-validated, and maintained across all five fla
 
 Built on [ESPHome](https://esphome.io), [microWakeWord](https://github.com/kahrendt/microWakeWord), [Music Assistant](https://music-assistant.io) & Sendspin, [Pictogrammers Material Design Icons](https://pictogrammers.com/library/mdi/), and [ESP Web Tools](https://esphome.github.io/esp-web-tools/). The *Hey Luna* wake word model is by [Daniel Reimer](https://github.com/dreimer1986/micro-wake-word-models) ([`models/`](models/)).
 
-Latter is free and open source ([Apache License 2.0](LICENSE)), designed, brought up on physical hardware, and maintained by Sean Lampton (AI coding assistants are used for drafting code and docs; architecture, schematic verification, and hardware testing are done by hand). Hardware bring-up costs real money—if Latter is useful to you:
+Latter is free and open source ([Apache License 2.0](LICENSE)), maintained by Sean Lampton (AI coding assistants are used for drafting code and docs; design direction, hardware bring-up, and bench testing are done by hand). Hardware bring-up costs real money—if Latter is useful to you:
 - [GitHub Sponsors](https://github.com/sponsors/slampton) · [Buy Me a Coffee](https://www.buymeacoffee.com/slampton)
 
 [ws-175c]: https://www.waveshare.com/esp32-s3-touch-amoled-1.75c.htm?&aff_id=140049

@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Multi-Geometry Scaling, Physical Kinematics & Safe-Canvas Metrics
 // (include/ui_panel_metrics.h)
-// Pure C++20 L0 leaf (320x480 .. 720x720) — zero ESPHome, HAL, or state includes.
+// Pure C++20 UI leaf (320x480 .. 720x720) — zero ESPHome, HAL, or state includes.
 // ==============================================================================
 
 #include "ui_panel_traits.h"
