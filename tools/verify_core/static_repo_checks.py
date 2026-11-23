@@ -13,6 +13,7 @@ from .common import (
     DEVICE_SLUG_RE,
     ROOT,
     TEXT_EXTS,
+    extract_substitutions,
     iter_repo_files,
     strip_cpp_comments,
     strip_yaml_comments,
@@ -263,12 +264,11 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
     else:
         core_ver = m_ver.group(1)
         for path in sorted((ROOT / "devices").glob("*.yaml")) + sorted((ROOT / "examples").glob("*.yaml")):
-            ptxt = path.read_text(encoding="utf-8")
-            pm = re.search(r'(?m)^\s*version:\s*"([^"]+)"', ptxt)
-            if not pm or pm.group(1) != core_ver:
+            psubs = extract_substitutions([path])
+            if "version" in psubs:
                 failures.append(
-                    f"[VERSION LOCKSTEP] {path.relative_to(ROOT).as_posix()} version "
-                    f"({pm.group(1) if pm else 'missing'}) != modules/base.yaml ({core_ver})"
+                    f"[VERSION LOCKSTEP] {path.relative_to(ROOT).as_posix()} duplicates version "
+                    f"substitution ({psubs['version']!r}); single-source in modules/base.yaml"
                 )
         idx_txt = (ROOT / "index.html").read_text(encoding="utf-8")
         if f">v{core_ver}<" not in idx_txt:

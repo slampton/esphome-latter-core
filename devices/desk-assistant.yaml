@@ -13,7 +13,6 @@ substitutions:
   latter_ref: main
   name: "desk-assistant"
   friendly_name: "Desk Assistant"
-  version: "3.0.0"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/desk-assistant.yaml@main

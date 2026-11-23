@@ -14,7 +14,6 @@
 substitutions:
   name: "latter-panel-demo"
   friendly_name: "Latter Panel Demo"
-  version: "3.0.0"
   latter_asset_ref: "main"
   api_reboot_timeout: "15min"
   font_time_size: "77"

@@ -12,7 +12,6 @@ substitutions:
   latter_ref: main
   name: "remote-assistant"
   friendly_name: "Remote Assistant"
-  version: "3.0.0"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/remote-assistant.yaml@main

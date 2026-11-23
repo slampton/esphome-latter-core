@@ -7,7 +7,7 @@
 substitutions:
   name: "latter-device"
   friendly_name: "Latter Device"
-  version: "3.0.0"
+  version: "3.0.0"  # Single YAML source of truth (inherited by devices/*.yaml & examples/*.yaml)
   latter_asset_ref: "main"
   api_outgoing_delay: "10s"
   # api_reboot_timeout is supplied by each board HAL or standalone example ("15min" stationary, "0s" battery)

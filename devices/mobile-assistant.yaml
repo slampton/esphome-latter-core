@@ -11,7 +11,6 @@ substitutions:
   latter_ref: main
   name: "mobile-assistant"
   friendly_name: "Mobile Assistant"
-  version: "3.0.0"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/mobile-assistant.yaml@main

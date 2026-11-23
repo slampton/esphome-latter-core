@@ -530,7 +530,6 @@ def render_device(facts: dict[str, Any]) -> str:
             "  latter_ref: main",
             f'  name: "{dev}"',
             f'  friendly_name: "{facts["latter_device"]}"',
-            '  version: "3.0.0"',
             "",
             "external_components:",
             "  - source:",

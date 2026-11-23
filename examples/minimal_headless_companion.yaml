@@ -7,7 +7,6 @@
 substitutions:
   name: "latter-headless-node"
   friendly_name: "Latter Headless Node"
-  version: "3.0.0"
   latter_asset_ref: "main"
   api_reboot_timeout: "15min"
 
