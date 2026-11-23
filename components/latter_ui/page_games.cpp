@@ -2304,7 +2304,9 @@ void render_game_blocks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   // Gravity & 350 ms lock delay
   if (!st.game_over && st.clearing_mask == 0U) {
     const uint32_t fall_ms =
-        (st.level <= 1) ? 750U : std::max(90U, 750U - static_cast<uint32_t>(std::min(11, st.level - 1)) * 60U);
+        (st.level <= 1)
+            ? uint32_t{750}
+            : std::max<uint32_t>(90U, uint32_t{750} - static_cast<uint32_t>(std::min(11, st.level - 1)) * uint32_t{60});
     const bool grounded = !blocks_can_place(st.board, st.cur_piece, st.cur_rot, st.cur_x, st.cur_y + 1);
     if (grounded) {
       if (st.lock_start_ms == 0U) {
@@ -2724,7 +2726,7 @@ void render_game_snake(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
 
   // Step snake simulation
   const uint32_t step_ms =
-      std::max(90U, 210U - static_cast<uint32_t>(std::min(24, st.apples_eaten)) * 5U);
+      std::max<uint32_t>(90U, uint32_t{210} - static_cast<uint32_t>(std::clamp(st.apples_eaten, 0, 24)) * uint32_t{5});
   if (!st.game_over && now_ms >= st.last_step_ms && (now_ms - st.last_step_ms >= step_ms)) {
     st.last_step_ms = now_ms;
     if (st.turn_q_len > 0) {

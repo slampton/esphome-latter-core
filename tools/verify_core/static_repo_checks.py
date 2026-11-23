@@ -160,6 +160,12 @@ def _check_cpp_hygiene_file(rel: str, txt: str, failures: list[str]) -> None:
                 f"[ESPHOME NAMESPACE] {rel} calls unqualified {m_unqual_hal.group(0).strip()!r} "
                 "outside namespace esphome (use esphome::millis() / esphome::micros())"
             )
+    m_u32_minmax = re.search(r"std::(?:min|max|clamp)\s*\([^;()]*?\b\d+[Uu]\b", clean_cpp)
+    if m_u32_minmax:
+        failures.append(
+            f"[ESP32 UINT32 DEDUCTION] {rel} passes unsigned int literal to untyped {m_u32_minmax.group(0).strip()!r} "
+            "(fails on 32-bit ESP-IDF where uint32_t is unsigned long; use std::min<uint32_t>/std::max<uint32_t>/std::clamp<uint32_t>)"
+        )
 
 
 def _check_yaml_hygiene_file(rel: str, txt: str, failures: list[str]) -> None:
