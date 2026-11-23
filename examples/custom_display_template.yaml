@@ -25,7 +25,7 @@ substitutions:
   font_games_size: "38"
   art_resize: "480x480"
   sendspin_art_resize: "480x480"
-  sendspin_buffer_size: "524288"  # PSRAM; 48 kHz holds 3x the bytes per second of 16 kHz
+  sendspin_buffer_size: "262144"  # PSRAM; 256 KB (~2.7 s 48 kHz mono PCM / >5 s FLAC) leaves headroom on 8 MB S3
   mww_internal_ram: "false"  # "true" only with internal-RAM headroom (P4-class boards)
   announcement_buffer_size: "131072"
   audio_out_rate: "48000"  # full-duplex I2S bus rate; latter_mic resamples to audio_in_rate

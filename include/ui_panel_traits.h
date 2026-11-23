@@ -78,7 +78,7 @@
 #endif
 #endif
 #ifndef LATTER_ART_CACHE_ENTRIES
-#define LATTER_ART_CACHE_ENTRIES (LATTER_CHIP_P4 ? 4 : 2)
+#define LATTER_ART_CACHE_ENTRIES (LATTER_CHIP_P4 ? 3 : 1)
 #endif
 
 namespace latter_ui {

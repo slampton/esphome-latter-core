@@ -66,6 +66,11 @@ voice_assistant:
             rs.showcase.reel_active = false;
           }
           latter_ui::log_audio_profile("VA_LISTEN_START");
+          #if !LATTER_CHIP_P4
+          latter_ui::art_canvas_drop_all();
+          latter_ui::sky_base_cache_drop();
+          latter_ui::weather_cloud_cache_drop();
+          #endif
           id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
           if (!latter_ui::cam_intercom_ptt_active()) {
             rs.voice.intercom_turn = false;
@@ -309,7 +314,13 @@ voice_assistant:
           condition:
             lambda: 'return !latter_ui::runtime_state().voice.intercom_turn;'
           then:
-            - lambda: 'latter_ui::log_audio_profile("VA_TTS_START");'
+            - lambda: |-
+                latter_ui::log_audio_profile("VA_TTS_START");
+                #if !LATTER_CHIP_P4
+                latter_ui::art_canvas_drop_all();
+                latter_ui::sky_base_cache_drop();
+                latter_ui::weather_cloud_cache_drop();
+                #endif
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
                 decibel_reduction: 50

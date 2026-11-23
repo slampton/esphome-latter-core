@@ -62,6 +62,16 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
     g.record_move(160 + full_px, 242, 4090U, ppi);
     LATTER_CHECK(g.axis_lock == GestureAxisLock::Horizontal);
     LATTER_CHECK(eval_kinematic_horiz_swipe(full_px, 2, 90U, false, ppi, g.axis_lock) == -1);
+
+    // Sticky early Vertical jitter lock near curved bezel / mode bar must recover to Horizontal
+    // once displacement reaches >= 2x swipe_live_px with >= 2:1 dominance, without ever breaking Slider locks.
+    g.begin(320, 395, 5000U, PageId::MUSIC, 139264);
+    g.record_move(318, 395 - km.axis_lock_px - 2, 5020U, ppi);
+    LATTER_CHECK(g.axis_lock == GestureAxisLock::Vertical);
+    g.record_move(320 - km.swipe_live_px * 3, 395, 5140U, ppi);
+    LATTER_CHECK(g.axis_lock == GestureAxisLock::Horizontal);
+    LATTER_CHECK(eval_kinematic_horiz_swipe(-km.swipe_live_px * 3, 0, 140U, true, ppi, GestureAxisLock::Vertical) == +1);
+    LATTER_CHECK(eval_kinematic_horiz_swipe(-km.swipe_live_px * 3, 0, 140U, true, ppi, GestureAxisLock::Slider) == 0);
   }
 
   {
@@ -455,6 +465,25 @@ void test_live_touch_engine_end_to_end_5geom() {
     eng.on_touch_down(blank_x, blank_y, 14300U);
     eng.on_touch_up(14330U);
     LATTER_CHECK(!rs.music.hud_active);
+
+    // 6. Mode-bar horizontal swipe with initial vertical thumb jitter on Music SPEAKERS -> advances to VOLUME
+    rs.nav.gui_page = PageId::MUSIC;
+    rs.music.view = MusicView::SPEAKERS;
+    rs.music.drilldown = MusicDrilldown::NONE;
+    rs.music.takeover = MusicTakeover::NONE;
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::MUSIC, compute_active_subpage_id(), 0U, true);
+    frame_hits().clear();
+    render_active_page(fix.surf, fix.ctx);
+
+    const KinematicMetrics km_cur = KinematicMetrics::for_ppi(LATTER_PANEL_PPI);
+    const int mb_y = std::min(layout().home_zone_y() - 6, layout().app_dock_y + layout().dock_r / 2);
+    const int start_x = std::min(SCREEN_W - 24, SCREEN_CX + km_cur.swipe_live_px * 2);
+    eng.on_touch_down(start_x, mb_y, 15000U);
+    eng.on_touch_move(start_x - 2, mb_y - km_cur.axis_lock_px - 2, 15025U);
+    eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), mb_y, 15110U);
+    eng.on_touch_up(15140U);
+    LATTER_CHECK(rs.music.view == MusicView::VOLUME);
 
     latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
   }

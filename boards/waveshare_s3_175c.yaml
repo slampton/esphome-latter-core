@@ -25,10 +25,10 @@ substitutions:
   sendspin_art_resize: "466x466"
   # Portable battery device: disable Native API watchdog reboot so off-site / HA-restart outages never reboot-loop.
   api_reboot_timeout: "0s"
-  # Music read-ahead (PSRAM). 512 KB (~5.5 s of 48 kHz mono PCM / longer FLAC) rides out multi-second
-  # handheld Wi-Fi stalls while keeping ~700 KB of PSRAM free alongside wallpaper, album art, and TTS
-  # announcements so a full-screen camera/doorbell snapshot (434 KB) decodes with comfortable headroom.
-  sendspin_buffer_size: "524288"
+  # Music read-ahead (PSRAM). 256 KB (~2.7 s of 48 kHz mono PCM / >5 s FLAC) rides out handheld
+  # Wi-Fi stalls while keeping comfortable PSRAM headroom alongside XIP-from-PSRAM, album art,
+  # TTS announcements, and full-screen camera/doorbell snapshots (434 KB).
+  sendspin_buffer_size: "262144"
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "false"
   # Reply and announcement read-ahead (PSRAM): most of a spoken reply, so a stall mid-reply is not heard.

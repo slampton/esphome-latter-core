@@ -421,7 +421,7 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
           }
         }
         bm.update(vbat_mv, !vbus, static_cast<ChargePhase>(chg_state), BattLoad::SCREEN,
-                  boot_ms == 0U ? 1U : boot_ms, hw_gauge, tel.icc_ma);
+                  boot_ms == 0U ? 1U : boot_ms, hw_gauge, kBattCapacityMah, tel.icc_ma);
         hal_battery_save_rtc_snapshot(bm);
         if (!std::isnan(bm.soc_display)) {
           rs.hw_batt_level = std::round(bm.soc_display);

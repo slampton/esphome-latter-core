@@ -414,7 +414,7 @@ def render_board(facts: dict[str, Any]) -> str:
         f'  art_resize: "{w_px}x{h_px}"',
         f'  sendspin_art_resize: "{art_sq}"',
         f'  api_reboot_timeout: "{"15min" if stationary else "0s"}"',
-        f'  sendspin_buffer_size: "{"1048576" if is_p4(facts) else "524288"}"',
+        f'  sendspin_buffer_size: "{"1048576" if is_p4(facts) else "262144"}"',
         # Safe PSRAM default; opt into "true" only after bench-verifying headroom.
         '  mww_internal_ram: "false"',
         '  announcement_buffer_size: "131072"',

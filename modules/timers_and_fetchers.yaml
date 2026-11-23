@@ -352,6 +352,7 @@ script:
               }
               #if !LATTER_CHIP_P4
               if (id(remote_album_art).get_width() == 0) {
+                latter_ui::art_canvas_drop_all();
                 latter_ui::sky_base_cache_drop();
               }
               #endif
@@ -381,6 +382,7 @@ script:
               }
               #if !LATTER_CHIP_P4
               if (id(home_wallpaper_art).get_width() == 0) {
+                latter_ui::art_canvas_drop_all();
                 latter_ui::sky_base_cache_drop();
               }
               #endif
@@ -413,6 +415,7 @@ script:
               }
               #if !LATTER_CHIP_P4
               if (id(screensaver_photo_art).get_width() == 0) {
+                latter_ui::art_canvas_drop_all();
                 latter_ui::sky_base_cache_drop();
               }
               #endif
@@ -477,7 +480,9 @@ script:
               if (!ab.active || ab.camera_url.empty()) return false;
               #if !LATTER_CHIP_P4
               if (id(camera_snapshot_art).get_width() == 0) {
+                latter_ui::art_canvas_drop_all();
                 latter_ui::sky_base_cache_drop();
+                latter_ui::weather_cloud_cache_drop();
               }
               #endif
               return latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0);
@@ -563,7 +568,9 @@ script:
             return;
           }
           #if !LATTER_CHIP_P4
+          latter_ui::art_canvas_drop_all();
           latter_ui::sky_base_cache_drop();
+          latter_ui::weather_cloud_cache_drop();
           #endif
           latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
           latter_ui::video_client().start(url, req_w, req_h);
@@ -586,7 +593,9 @@ script:
               }
               #if !LATTER_CHIP_P4
               if (id(camera_snapshot_art).get_width() == 0) {
+                latter_ui::art_canvas_drop_all();
                 latter_ui::sky_base_cache_drop();
+                latter_ui::weather_cloud_cache_drop();
               }
               #endif
               if (!latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0)) {

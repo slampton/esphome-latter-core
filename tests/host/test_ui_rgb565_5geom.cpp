@@ -761,12 +761,112 @@ void test_wcag_palette_and_surface_contrast_5geom() {
   LATTER_CHECK(contrast_ratio(quantize_rgb565(ctx.col_red), quantize_rgb565(kChromeDangerBg)) >= 4.5);
 }
 
+void test_art_canvas_lut_and_dual_sink_parity_5geom() {
+  using namespace latter_ui;
+
+  // Enforce exact ui_panel_traits.h <-> hal_manifest.h parity on ArtCanvasCache slot cap.
+#if LATTER_CHIP_P4
+  static_assert(kArtCacheEntries == 3, "P4 builds must configure 3 ArtCanvasCache entries");
+#else
+  static_assert(kArtCacheEntries == 1, "8 MB S3 builds must cap ArtCanvasCache to 1 entry");
+#endif
+
+  static constexpr uint8_t kRefBayer4[4][4] = {
+      {0, 8, 2, 10},
+      {12, 4, 14, 6},
+      {3, 11, 1, 9},
+      {15, 7, 13, 5},
+  };
+  auto ref_dim_px = [](uint16_t p, int mul_q8, int x, int y, int endian_mode) -> uint16_t {
+    uint16_t out = p;
+    if (mul_q8 < 256) {
+      const uint32_t m = static_cast<uint32_t>(mul_q8 < 0 ? 0 : mul_q8);
+      const uint32_t t = static_cast<uint32_t>(kRefBayer4[y & 3][x & 3]) * 16U + 8U;
+      const uint32_t r = (((static_cast<uint32_t>(p) >> 11) & 0x1FU) * m + t) >> 8;
+      const uint32_t g = (((static_cast<uint32_t>(p) >> 5) & 0x3FU) * m + t) >> 8;
+      const uint32_t b = ((static_cast<uint32_t>(p) & 0x1FU) * m + t) >> 8;
+      out = static_cast<uint16_t>((r << 11) | (g << 5) | b);
+    }
+    if (endian_mode == 2) {
+      out = static_cast<uint16_t>((out >> 8) | (out << 8));
+    }
+    return out;
+  };
+
+  std::vector<uint16_t> src(static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H));
+  for (int y = 0; y < SCREEN_H; ++y) {
+    for (int x = 0; x < SCREEN_W; ++x) {
+      const uint16_t r = static_cast<uint16_t>((x * 31) / std::max(1, SCREEN_W - 1));
+      const uint16_t g = static_cast<uint16_t>((y * 63) / std::max(1, SCREEN_H - 1));
+      const uint16_t b = static_cast<uint16_t>(((x + y) * 31) / std::max(1, SCREEN_W + SCREEN_H - 2));
+      src[static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x)] =
+          static_cast<uint16_t>((r << 11) | (g << 5) | b);
+    }
+  }
+  const ArtImageView art_view{src.data(), SCREEN_W, SCREEN_H};
+
+  struct Case {
+    bool scrim;
+    bool meta;
+    int dim;
+  };
+  const Case cases[] = {
+      {false, false, 0},
+      {true, true, 0},
+      {false, true, 0},
+      {true, true, kArtDimMenu},
+      {true, false, kArtDimLyrics},
+  };
+
+  HostSurfaceFixture fix{};
+  for (int endian_mode : {1, 2}) {
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, endian_mode);
+    art_canvas_drop_all();
+    for (const Case &c : cases) {
+      // Pass 0 = cache miss (dual-sink L1 mirror), Pass 1 = cache hit (span memcpy).
+      for (int pass = 0; pass < 2; ++pass) {
+        fix.fill(0U);
+        dirty_band() = DirtyBandTracker{};
+        (void)dirty_band().begin_frame(PageId::MUSIC, pass, 0U, true);
+        LATTER_CHECK(render_album_art_canvas_view(
+            fix.surf, art_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
+            c.scrim, c.meta, c.dim));
+        // Spot-check every 17th row and every 13th column inside active art span (including ramp rows & edges).
+        for (int y = 0; y < SCREEN_H; y += 17) {
+          const int mul_q8 = compute_art_row_scale_q8(y, c.scrim, c.meta, c.dim);
+          int x0 = 0;
+          int x1 = SCREEN_W - 1;
+#if LATTER_ROUND_DISPLAY
+          const int hw = circle_half_span(y, 0);
+          x0 = std::max(0, SCREEN_CX - hw);
+          x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+#endif
+          for (int x = x0; x <= x1; x += 13) {
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
+            const uint16_t want = ref_dim_px(src[idx], mul_q8, x, y, endian_mode);
+            LATTER_CHECK(fix.pixels[idx] == want);
+          }
+          // Always verify span endpoints too (catches tail loop bugs when span_w % 4 != 0).
+          for (int x : {x0, x1}) {
+            if (x < x0 || x > x1) continue;
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
+            const uint16_t want = ref_dim_px(src[idx], mul_q8, x, y, endian_mode);
+            LATTER_CHECK(fix.pixels[idx] == want);
+          }
+        }
+      }
+    }
+  }
+  art_canvas_drop_all();
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
   test_all_14_pages_and_system_takeovers_rgb565_5geom();
   test_home_hub_d048_button_only_glass_and_conditional_controls();
   test_wcag_palette_and_surface_contrast_5geom();
+  test_art_canvas_lut_and_dual_sink_parity_5geom();
 }
 
 }  // namespace latter_test

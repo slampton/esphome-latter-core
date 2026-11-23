@@ -334,7 +334,8 @@ script:
               }
               const bool cutoff = bm.update(
                   vbat_mv, !vbus, static_cast<latter_ui::ChargePhase>(chg_state),
-                  load, now_b, hw_gauge, latter_ui::pmu_telemetry().icc_ma);
+                  load, now_b, hw_gauge, latter_ui::kBattCapacityMah,
+                  latter_ui::pmu_telemetry().icc_ma);
               latter_ui::hal_battery_save_rtc_snapshot(bm);
               if (!std::isnan(bm.soc_display)) {
                 const float lvl = std::round(bm.soc_display);

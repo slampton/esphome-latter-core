@@ -216,6 +216,15 @@ struct TouchGestureState {
       } else if (is_axis_dominant(dy, dx)) {
         axis_lock = GestureAxisLock::Vertical;
       }
+    } else if (!swipe_committed && axis_lock != GestureAxisLock::Slider) {
+      // Recover from an early touch-down jitter lock (e.g. thumb roll near a curved bezel or mode bar)
+      // once displacement overwhelmingly dominates the orthogonal axis (>= 2x swipe_live_px at >= 2:1 ratio).
+      const int break_px = km.swipe_live_px * 2;
+      if (axis_lock == GestureAxisLock::Vertical && adx >= break_px && adx >= ady * 2) {
+        axis_lock = GestureAxisLock::Horizontal;
+      } else if (axis_lock == GestureAxisLock::Horizontal && ady >= break_px && ady >= adx * 2) {
+        axis_lock = GestureAxisLock::Vertical;
+      }
     }
   }
 };

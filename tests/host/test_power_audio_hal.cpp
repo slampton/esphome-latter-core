@@ -154,6 +154,20 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(bm.cutoff_tripped);
   LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 41000, -1, 500));
 
+  // BatteryModel::update() capacity_mah vs active_chg_ma parameter order regression:
+  // Passing capacity=500mAh and active_chg_ma=200mA must compute R=150mOhm (+19mV screen / +28mV audio),
+  // never R=330mOhm (+42mV / +62mV) from shifting icc_ma into capacity_mah, and thermal foldback (100mA)
+  // must keep R=150mOhm (-15mV CC) instead of R=630mOhm.
+  {
+    latter_ui::BatteryModel ir_bm;
+    ir_bm.update(3755, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, 59, 500, 200);
+    LATTER_CHECK(ir_bm.vrest_mv == 3755 + (130 * 150 / 1000));
+    ir_bm.update(3734, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::AUDIO, 11000, 58, 500, 200);
+    LATTER_CHECK(ir_bm.vrest_mv == 3734 + (190 * 150 / 1000));
+    ir_bm.update(4000, false, latter_ui::ChargePhase::CC, latter_ui::BattLoad::SCREEN, 21000, 58, 500, 100);
+    LATTER_CHECK(ir_bm.vrest_mv == 4000 - (100 * 150 / 1000));
+  }
+
   LATTER_CHECK(!latter_ui::can_wake_for_on_battery_alarm_policy(0, 1));
   LATTER_CHECK(latter_ui::can_wake_for_on_battery_alarm_policy(1, 1));
   LATTER_CHECK(latter_ui::can_wake_for_on_battery_alarm_policy(0, 0));
@@ -260,6 +274,12 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(batt_h.find("can_wake_for_on_battery_alarm()") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("step_thermal_foldback_policy") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("!can_wake_for_on_battery_alarm()") != std::string::npos);
+  LATTER_CHECK(pmu_cpp.find("kBattCapacityMah, tel.icc_ma") != std::string::npos);
+  const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+  LATTER_CHECK(axp_yaml.find("latter_ui::kBattCapacityMah") != std::string::npos);
+  const std::string va_yaml = read_repo_file("../../modules/voice_assistant.yaml");
+  LATTER_CHECK(va_yaml.find("art_canvas_drop_all()") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("art_canvas_drop_all()") != std::string::npos);
   LATTER_CHECK(latter_ui::kWeakLinkEnterDbm == -78);
   LATTER_CHECK(latter_ui::kWeakLinkClearDbm == -74);
   LATTER_CHECK(link_h.find("LATTER_WEAK_LINK_ENTER_DBM") != std::string::npos);

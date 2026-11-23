@@ -26,12 +26,17 @@ inline constexpr float compute_velocity_mm_per_s(int delta_px, uint32_t dt_ms, i
 inline constexpr int eval_kinematic_horiz_swipe(
     int dx, int dy, uint32_t duration_ms, bool is_release, int ppi,
     GestureAxisLock current_lock = GestureAxisLock::None) noexcept {
-  if (current_lock == GestureAxisLock::Vertical || current_lock == GestureAxisLock::Slider) {
+  if (current_lock == GestureAxisLock::Slider) {
+    return 0;
+  }
+  const KinematicMetrics m = KinematicMetrics::for_ppi(ppi);
+  const int adx = (dx < 0) ? -dx : dx;
+  const int ady = (dy < 0) ? -dy : dy;
+  if (current_lock == GestureAxisLock::Vertical &&
+      !(is_release && adx >= m.swipe_live_px * 2 && adx >= ady * 2)) {
     return 0;
   }
   if (!is_axis_dominant(dx, dy)) return 0;
-  const KinematicMetrics m = KinematicMetrics::for_ppi(ppi);
-  const int adx = (dx < 0) ? -dx : dx;
   if (adx >= m.swipe_live_px) {
     return (dx < 0) ? 1 : -1;
   }
@@ -48,12 +53,17 @@ inline constexpr int eval_kinematic_horiz_swipe(
 inline constexpr int eval_kinematic_vert_swipe(
     int dx, int dy, uint32_t duration_ms, bool is_release, int ppi,
     GestureAxisLock current_lock = GestureAxisLock::None) noexcept {
-  if (current_lock == GestureAxisLock::Horizontal || current_lock == GestureAxisLock::Slider) {
+  if (current_lock == GestureAxisLock::Slider) {
+    return 0;
+  }
+  const KinematicMetrics m = KinematicMetrics::for_ppi(ppi);
+  const int adx = (dx < 0) ? -dx : dx;
+  const int ady = (dy < 0) ? -dy : dy;
+  if (current_lock == GestureAxisLock::Horizontal &&
+      !(is_release && ady >= m.swipe_live_px * 2 && ady >= adx * 2)) {
     return 0;
   }
   if (!is_axis_dominant(dy, dx)) return 0;
-  const KinematicMetrics m = KinematicMetrics::for_ppi(ppi);
-  const int ady = (dy < 0) ? -dy : dy;
   if (ady >= m.swipe_live_px) {
     return (dy < 0) ? 1 : -1;
   }
