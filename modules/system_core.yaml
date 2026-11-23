@@ -474,6 +474,7 @@ text_sensor:
     ip_address:
       name: "IP Address"
       id: latter_ip_address
+      entity_category: diagnostic
 
 interval:
   - interval: 60s
