@@ -102,17 +102,22 @@ inline int emit_music_browse(std::string_view mode,
   const std::string_view eff_last_spk =
       !last_speaker.empty() ? last_speaker : std::string_view(latter_ui::media_state().last_speaker);
 
+  const bool send_last_spk = (mode == "speakers") && !eff_last_spk.empty() && (eff_last_spk != eff_spk);
+  const bool send_alb_sort = (mode == "album") && !album_sort.empty() && (album_sort != "name");
+  const bool send_art_sort = (mode == "artist_albums") && !artist_album_sort.empty() && (artist_album_sort != "year");
+  const bool send_pod_sort = (mode == "podcast_episodes") && !podcast_sort.empty() && (podcast_sort != "newest");
+
   latter_rpc::emit(outbox, "music_browse", {
     {"req_id", req_str},
     {"mode", mode},
     {"page", page_str},
     {"page_size", size_str},
-    {"search", search},
-    {"speaker", eff_spk},
-    {"last_speaker", eff_last_spk},
-    {"album_sort", album_sort},
-    {"artist_album_sort", artist_album_sort},
-    {"podcast_sort", podcast_sort},
+    {"search", search, !search.empty()},
+    {"speaker", eff_spk, !eff_spk.empty()},
+    {"last_speaker", eff_last_spk, send_last_spk},
+    {"album_sort", album_sort, send_alb_sort},
+    {"artist_album_sort", artist_album_sort, send_art_sort},
+    {"podcast_sort", podcast_sort, send_pod_sort},
   });
   return req_id;
 }
@@ -134,19 +139,14 @@ inline int emit_music_lyrics_fetch(std::string_view track_key = "",
   const std::string_view eff_key = !track_key.empty() ? track_key : std::string_view(fallback_key);
   const std::string_view eff_spk =
       !speaker.empty() ? speaker : std::string_view(rt.music.active_speaker_entity);
-  const std::string_view eff_last_spk(ms.last_speaker);
 
   latter_rpc::emit(outbox, "music_browse", {
     {"req_id", req_str},
     {"mode", "lyrics_fetch"},
     {"page", "1"},
     {"page_size", "128"},
-    {"search", eff_key},
-    {"speaker", eff_spk},
-    {"last_speaker", eff_last_spk},
-    {"album_sort", "name"},
-    {"artist_album_sort", "year"},
-    {"podcast_sort", "newest"},
+    {"search", eff_key, !eff_key.empty()},
+    {"speaker", eff_spk, !eff_spk.empty()},
   });
   return req_id;
 }

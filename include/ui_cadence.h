@@ -337,6 +337,7 @@ inline constexpr uint32_t kTimeoutFbClearId = 0x4C410002U;
 inline constexpr uint32_t kTimeoutWeatherStepId = 0x4C410003U;
 inline constexpr uint32_t kTimeoutActivityRotateId = 0x4C410004U;
 inline constexpr uint32_t kTimeoutTouchLongPressId = 0x4C410005U;
+inline constexpr uint32_t kTimeoutMusicPeerBrowseId = 0x4C410006U;
 
 // Shared cadence/dirty-band state hooks (implemented in page/fx TUs)
 static constexpr uint32_t kWakeGreetingHoldMs = 2800U;

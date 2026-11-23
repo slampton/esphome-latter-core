@@ -485,6 +485,87 @@ void test_live_touch_engine_end_to_end_5geom() {
     eng.on_touch_up(15140U);
     LATTER_CHECK(rs.music.view == MusicView::VOLUME);
 
+    // 7. Peer-tab browse debouncing: rapid tab traversal cancels intermediate RPCs and emits only
+    // the settled tab once the 220 ms debounce fires, without latching lyrics.track_key on pass-through.
+    {
+      struct DebounceSink {
+        uint32_t armed_id{0};
+        uint32_t armed_delay{0};
+        uint32_t cancels{0};
+        std::function<void()> pending{};
+      } d_sink{};
+      core_timeout_bridge().bind(
+          &d_sink,
+          +[](void *ctx, uint32_t id, uint32_t delay_ms, std::function<void()> &&fn) {
+            auto *s = static_cast<DebounceSink *>(ctx);
+            if (id == kTimeoutMusicPeerBrowseId) {
+              s->armed_id = id;
+              s->armed_delay = delay_ms;
+              s->pending = std::move(fn);
+            }
+          },
+          +[](void *ctx, uint32_t id) {
+            auto *s = static_cast<DebounceSink *>(ctx);
+            if (id == kTimeoutMusicPeerBrowseId) {
+              s->cancels++;
+              s->pending = nullptr;
+            }
+          });
+
+      MockRpcOutbox deb_box{};
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      latter_rpc::bind_sensor_sink(&deb_box);
+      rs.nav.gui_page = PageId::MUSIC;
+      rs.music.drilldown = MusicDrilldown::NONE;
+      rs.music.takeover = MusicTakeover::NONE;
+      rs.music.lyrics = MusicLyricsState{};
+      media_state().title = "Waiting Room";
+      media_state().artist = "Fugazi";
+      media_state().album = "13 Songs";
+      media_state().active_speaker = "media_player.pocket_assistant_music";
+
+      activate_music_peer_tab(MusicView::SPEAKERS, 16000U);
+      activate_music_peer_tab(MusicView::QUEUE, 16050U);
+      activate_music_peer_tab(MusicView::LYRICS, 16100U);
+      activate_music_peer_tab(MusicView::ALBUM_TRACKS, 16150U);
+
+      // Zero RPCs emitted during rapid traversal; lyrics.track_key stayed empty on pass-through.
+      uint32_t pump_t = 16200U;
+      while (latter_rpc::has_pending_frames()) {
+        latter_rpc::step_outbox_loop(pump_t += 40U);
+      }
+      LATTER_CHECK(deb_box.published.empty());
+      LATTER_CHECK(rs.music.lyrics.track_key.empty());
+      LATTER_CHECK(d_sink.armed_id == kTimeoutMusicPeerBrowseId && d_sink.armed_delay == 220U && d_sink.pending);
+
+      // Settle on ALBUM_TRACKS -> fires single-chunk current_album_tracks RPC only.
+      auto cb = std::move(d_sink.pending);
+      cb();
+      while (latter_rpc::has_pending_frames()) {
+        latter_rpc::step_outbox_loop(pump_t += 40U);
+      }
+      LATTER_CHECK(deb_box.published.size() == 1U);
+      LATTER_CHECK(deb_box.published[0].find(":1/1|") != std::string::npos);
+      LATTER_CHECK(deb_box.published[0].find("\"mode\":\"current_album_tracks\"") != std::string::npos);
+
+      // Returning to LYRICS and settling must still fetch lyrics cleanly (not stuck from pass-through).
+      deb_box.published.clear();
+      activate_music_peer_tab(MusicView::LYRICS, 16600U);
+      LATTER_CHECK(d_sink.pending);
+      cb = std::move(d_sink.pending);
+      cb();
+      while (latter_rpc::has_pending_frames()) {
+        latter_rpc::step_outbox_loop(pump_t += 40U);
+      }
+      LATTER_CHECK(deb_box.published.size() == 1U);
+      LATTER_CHECK(deb_box.published[0].find(":1/1|") != std::string::npos);
+      LATTER_CHECK(deb_box.published[0].find("\"mode\":\"lyrics_fetch\"") != std::string::npos);
+      LATTER_CHECK(rs.music.lyrics.track_key == "Waiting Room|Fugazi");
+
+      core_timeout_bridge().reset();
+      latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
+    }
+
     latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
   }
   eng.runtime().exec_cmd = nullptr;

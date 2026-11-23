@@ -507,9 +507,18 @@ inline void append_json_escaped(std::string &out, std::string_view sv) {
   out.push_back('"');
 }
 
+struct RpcField {
+  const char *key = nullptr;
+  std::string_view value{};
+  bool include = true;
+
+  constexpr RpcField(const char *k, std::string_view v, bool inc = true) noexcept
+      : key(k), value(v), include(inc) {}
+};
+
 inline std::string build_rpc_json(
     std::string_view service,
-    std::initializer_list<std::pair<const char *, std::string_view>> fields) {
+    std::initializer_list<RpcField> fields) {
   std::string out;
   out.reserve(160);
   out += "{\"s\":";
@@ -517,12 +526,12 @@ inline std::string build_rpc_json(
   out += ",\"d\":{";
   bool first = true;
   for (const auto &kv : fields) {
-    if (kv.first == nullptr) continue;
+    if (!kv.include || kv.key == nullptr) continue;
     if (!first) out.push_back(',');
     first = false;
-    append_json_escaped(out, kv.first);
+    append_json_escaped(out, kv.key);
     out.push_back(':');
-    append_json_escaped(out, kv.second);
+    append_json_escaped(out, kv.value);
   }
   out += "}}";
   return out;
@@ -706,7 +715,7 @@ inline void flush_first_frame_if_idle() {
 inline void emit(
     std::nullptr_t,
     std::string_view service,
-    std::initializer_list<std::pair<const char *, std::string_view>> fields = {}) {
+    std::initializer_list<RpcField> fields = {}) {
   std::string body = build_rpc_json(service, fields);
   const bool queued = enqueue_chunked_json(body);
   secure_zero_string(body);
@@ -718,7 +727,7 @@ template <typename SensorT>
 inline void emit(
     SensorT *sensor,
     std::string_view service,
-    std::initializer_list<std::pair<const char *, std::string_view>> fields = {}) {
+    std::initializer_list<RpcField> fields = {}) {
   bind_sensor_sink(sensor);
   std::string body = build_rpc_json(service, fields);
   const bool queued = enqueue_chunked_json(body);
@@ -730,7 +739,7 @@ template <typename SensorT>
 inline void emit(
     SensorT *const *sensor_ptr,
     std::string_view service,
-    std::initializer_list<std::pair<const char *, std::string_view>> fields = {}) {
+    std::initializer_list<RpcField> fields = {}) {
   if (sensor_ptr != nullptr) emit(*sensor_ptr, service, fields);
 }
 

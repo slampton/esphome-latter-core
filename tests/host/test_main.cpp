@@ -216,6 +216,63 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(all_rpc.find("\"enqueue\":\"next\"") != std::string::npos);
     LATTER_CHECK(all_rpc.find("\"command\":\"queue_play\"") != std::string::npos);
     LATTER_CHECK(all_rpc.find("\"seek_position\":\"20\"") != std::string::npos);
+
+    // Slim music_browse / lyrics_fetch payloads must omit empty/default/irrelevant keys so typical
+    // requests fit in a single 1/1 RPC outbox frame while preserving non-default mode-relevant sorts.
+    auto check_single_chunk = [](auto fn, const char *must_have, const char *must_omit) {
+      MockRpcOutbox box{};
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      fn(&box);
+      uint32_t t = 2000U;
+      while (latter_rpc::has_pending_frames()) {
+        latter_rpc::step_outbox_loop(t += 40U);
+      }
+      LATTER_CHECK(box.published.size() == 1U);
+      LATTER_CHECK(box.published[0].find(":1/1|") != std::string::npos);
+      if (must_have != nullptr) LATTER_CHECK(box.published[0].find(must_have) != std::string::npos);
+      if (must_omit != nullptr) LATTER_CHECK(box.published[0].find(must_omit) == std::string::npos);
+    };
+    check_single_chunk(
+        [](MockRpcOutbox *b) {
+          (void)latter_actions::emit_music_browse(
+              "speakers", 1, "", "media_player.pocket_assistant_music", "media_player.garage_hifi",
+              "name", "year", "newest", 4, 2000U, b);
+        },
+        "\"last_speaker\":\"media_player.garage_hifi\"", "\"album_sort\"");
+    check_single_chunk(
+        [](MockRpcOutbox *b) {
+          (void)latter_actions::emit_music_browse(
+              "active_queue", 1, "", "media_player.pocket_assistant_music", "media_player.garage_hifi",
+              "name", "year", "newest", 4, 2000U, b);
+        },
+        "\"mode\":\"active_queue\"", "\"last_speaker\"");
+    check_single_chunk(
+        [](MockRpcOutbox *b) {
+          (void)latter_actions::emit_music_browse(
+              "album", 1, "", "media_player.pocket_assistant_music", "media_player.garage_hifi",
+              "year_desc", "year", "newest", 5, 2000U, b);
+        },
+        "\"album_sort\":\"year_desc\"", "\"podcast_sort\"");
+    check_single_chunk(
+        [](MockRpcOutbox *b) {
+          (void)latter_actions::emit_music_browse(
+              "artist_albums", 1, "Fugazi", "media_player.pocket_assistant_music", "",
+              "name", "name", "newest", 5, 2000U, b);
+        },
+        "\"artist_album_sort\":\"name\"", "\"album_sort\"");
+    check_single_chunk(
+        [](MockRpcOutbox *b) {
+          (void)latter_actions::emit_music_browse(
+              "podcast_episodes", 1, "library://podcast/9", "media_player.pocket_assistant_music", "",
+              "name", "year", "oldest", 5, 2000U, b);
+        },
+        "\"podcast_sort\":\"oldest\"", "\"artist_album_sort\"");
+    check_single_chunk(
+        [](MockRpcOutbox *b) {
+          (void)latter_actions::emit_music_lyrics_fetch(
+              "Waiting Room|Fugazi", "media_player.pocket_assistant_music", 2000U, b);
+        },
+        "\"search\":\"Waiting Room|Fugazi\"", "\"album_sort\"");
   }
 
   // Zero-legacy & D-043 / D-048 / D-059 / D-060 source-level invariants across Music & UI TUs

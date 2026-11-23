@@ -708,6 +708,9 @@ void test_panel_dcs_timeout_isolation_and_wake_grace() {
   static_assert(kTimeoutPanelDcsId != kTimeoutFbClearId);
   static_assert(kTimeoutPanelDcsId != kTimeoutWeatherStepId);
   static_assert(kTimeoutPanelDcsId != kTimeoutActivityRotateId);
+  static_assert(kTimeoutPanelDcsId != kTimeoutTouchLongPressId);
+  static_assert(kTimeoutPanelDcsId != kTimeoutMusicPeerBrowseId);
+  static_assert(kTimeoutMusicPeerBrowseId != kTimeoutTouchLongPressId);
 
   PanelDcsState dcs{};
   dcs.want_bri = 0U;

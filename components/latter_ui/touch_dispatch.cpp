@@ -181,6 +181,7 @@ void resolve_music_track_strings(const DeviceRuntimeState &rs, const UiTouchRunt
   out_speech = (mt == "podcast" || mt == "podcast_episode" || mt == "audiobook");
 }
 void reset_music_to_now_playing(DeviceRuntimeState &rs, uint32_t now_ms, bool show_hud) {
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   rs.music.reset_overlays();
   rs.music.clear_lyrics_auto_state();
   rs.music.view = MusicView::NOW_PLAYING;
@@ -871,6 +872,7 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
     intercom_session().stop_call_with_hw(now_ms);
   }
   const bool was_cam_page = is_camera_view_active(rs);
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   stop_calendar_dictation_if_active(rs, rt_, now_ms);
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   TouchGestureEngine::scrub_pin_and_pending_(*this, rs, false);
@@ -916,6 +918,7 @@ void TouchGestureEngine::teardown_before_remote_nav_(DeviceRuntimeState &rs,
     intercom_session().stop_call_with_hw(now_ms);
   }
   const bool was_cam_page = is_camera_view_active(rs);
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   stop_calendar_dictation_if_active(rs, rt_, now_ms);
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   TouchGestureEngine::scrub_pin_and_pending_(*this, rs, false);
@@ -948,6 +951,7 @@ void TouchGestureEngine::navigate_home(uint32_t now_ms) {
     intercom_session().stop_call_with_hw(now_ms);
   }
   const bool was_cam_page = is_camera_view_active(rs);
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   stop_calendar_dictation_if_active(rs, rt_, now_ms);
   stop_broadcast_dictation_if_active(rs, rt_, now_ms);
   TouchGestureEngine::scrub_pin_and_pending_(*this, rs, false);
@@ -2067,6 +2071,7 @@ std::string TouchGestureEngine::resolve_music_speaker_entity_(const DeviceRuntim
   return ms.local_speaker;
 }
 int TouchGestureEngine::fetch_music_browse_for_current_view_(const DeviceRuntimeState &rs, uint32_t now_ms) {
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   const std::string &mode_s = rs.music.selected_category_mode;
   const int page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
   std::string_view search_sv{};
@@ -2187,10 +2192,13 @@ bool TouchGestureEngine::handle_music_back_step_(DeviceRuntimeState &rs, const U
 
 void request_music_lyrics_refresh(const std::string &track_key, const std::string &speaker_entity,
                                   uint32_t now_ms) {
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   latter_actions::emit_music_lyrics_fetch(track_key, speaker_entity, now_ms);
 }
 
 void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
+  static constexpr uint32_t kMusicPeerBrowseDebounceMs = 220U;
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   auto &rs = runtime_state();
   const auto &rt = touch_engine().runtime();
   auto &m = rs.music;
@@ -2216,7 +2224,22 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
     rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
     rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
     reset_music_loading_slots(rs, loading_msg);
-    TouchGestureEngine::fetch_music_browse_for_current_view_(rs, now_ms);
+    if (core_timeout_bridge().schedule_fn != nullptr) {
+      const MusicView expected_view = target;
+      schedule_core_timeout(kTimeoutMusicPeerBrowseId, kMusicPeerBrowseDebounceMs, [expected_view]() {
+        const auto &rs_now = runtime_state();
+        if (rs_now.nav.gui_page != PageId::MUSIC ||
+            rs_now.music.view != expected_view ||
+            rs_now.music.drilldown != MusicDrilldown::NONE ||
+            rs_now.music.takeover != MusicTakeover::NONE) {
+          return;
+        }
+        TouchGestureEngine::fetch_music_browse_for_current_view_(
+            rs_now, TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms()));
+      });
+    } else {
+      TouchGestureEngine::fetch_music_browse_for_current_view_(rs, now_ms);
+    }
   };
 
   switch (target) {
@@ -2242,14 +2265,31 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
       lyr.manual_override_until_ms = 0U;
       const std::string key = build_music_track_key(t_title, t_artist);
       if (!key.empty() && lyr.track_key != key) {
-        lyr.track_key = key;
+        lyr.track_key.clear();
         lyr.loading = true;
         lyr.lines.clear();
         lyr.active_line_idx = -1;
         lyr.scroll_px = 0;
         lyr.target_scroll_px = 0;
         lyr.scroll_anim_start_ms = 0U;
-        request_music_lyrics_refresh(key, TouchGestureEngine::resolve_music_speaker_entity_(rs), now_ms);
+        if (core_timeout_bridge().schedule_fn != nullptr) {
+          schedule_core_timeout(kTimeoutMusicPeerBrowseId, kMusicPeerBrowseDebounceMs, [key]() {
+            auto &rs_now = runtime_state();
+            if (rs_now.nav.gui_page != PageId::MUSIC ||
+                rs_now.music.view != MusicView::LYRICS ||
+                rs_now.music.drilldown != MusicDrilldown::NONE ||
+                rs_now.music.takeover != MusicTakeover::NONE) {
+              return;
+            }
+            rs_now.music.lyrics.track_key = key;
+            request_music_lyrics_refresh(
+                key, TouchGestureEngine::resolve_music_speaker_entity_(rs_now),
+                TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms()));
+          });
+        } else {
+          lyr.track_key = key;
+          request_music_lyrics_refresh(key, TouchGestureEngine::resolve_music_speaker_entity_(rs), now_ms);
+        }
       }
       break;
     }

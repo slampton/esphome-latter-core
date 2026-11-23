@@ -69,7 +69,7 @@ speaker:
     source_speakers:
       - id: announcement_mixing_input
         buffer_duration: ${announcement_buffer_s}s
-        timeout: 500ms
+        timeout: 200ms
       - id: media_mixing_input
         timeout: 1500ms
       # Chimes, alarms and game sounds (latter_sound_player): their own input, so they duck and drain
