@@ -86,6 +86,7 @@ struct DisplaySupervisorInputs {
   bool active_tool_awake{false};
   bool active_game_running{false};
   bool hibernate_blocked{false};
+  bool showcase_active{false};
 };
 
 struct DisplaySupervisorActions {

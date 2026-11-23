@@ -39,9 +39,14 @@ script:
           rs.nav.quick_actions_open = false;
           const uint32_t now_ss_ms = millis();
           const auto &prefs = latter_ui::persisted_prefs();
-          const std::string_view s_style = prefs.bedtime_active
-                                               ? std::string_view(latter_ui::pref_bedtime_display_cstr(prefs))
-                                               : std::string_view(latter_ui::pref_screensaver_style_cstr(prefs));
+          const bool sc_ss_override =
+              rs.showcase.is_active(now_ss_ms) && rs.showcase.screensaver_style_override >= 0;
+          const std::string_view s_style =
+              sc_ss_override
+                  ? std::string_view(latter_ui::effective_screensaver_style_cstr(prefs, rs, now_ss_ms))
+                  : (prefs.bedtime_active
+                         ? std::string_view(latter_ui::pref_bedtime_display_cstr(prefs))
+                         : std::string_view(latter_ui::pref_screensaver_style_cstr(prefs)));
           if (s_style == "Screen Off") {
             id(turn_screen_off).execute();
             return;

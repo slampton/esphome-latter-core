@@ -228,6 +228,117 @@ struct HelloSyncState {
 };
 
 
+enum class ShowcaseVaStage : uint8_t {
+  OFF = 0,
+  LISTENING = 1,
+  VAD = 2,
+  THINKING = 3,
+  SPEAKING = 4,
+  CYCLE = 5,
+};
+
+enum class ShowcaseThemeMode : uint8_t {
+  NONE = 0,
+  STEEL_BLUE = 1,
+  PINK = 2,
+  BLUE = 3,
+  GREEN = 4,
+  CUSTOM_RGB = 5,
+};
+
+// Volatile RAM-only Showcase / Filming Engine state (D-077).
+// Never persisted to NVS (PersistedDevicePrefs) and never emitted via set_device_prefs.
+struct ShowcaseState {
+  static constexpr uint32_t kDefaultKeepAwakeSec = 900U;
+  static constexpr uint32_t kMinKeepAwakeSec = 30U;
+  static constexpr uint32_t kMaxKeepAwakeSec = 3600U;
+  static constexpr uint32_t kVaCycleTotalMs = 8400U;
+  static constexpr uint8_t kDefaultReelDwellSec = 5U;
+  static constexpr uint8_t kMinReelDwellSec = 3U;
+  static constexpr uint8_t kMaxReelDwellSec = 30U;
+
+  bool active = false;
+  uint32_t expires_at_ms = 0U;
+  uint32_t keep_awake_dur_sec = kDefaultKeepAwakeSec;
+
+  // Voice Assistant visual preview (rendered via SystemTakeoverState; never mutates rs.voice.active)
+  uint8_t va_stage = 0U;              // ShowcaseVaStage (0=off..5=cycle)
+  int8_t va_profile_override = -1;    // -1=none, 0..4 (kVaVisualProfileOpts)
+  uint32_t va_stage_start_ms = 0U;
+
+  // Volatile visual overrides (cleared atomically on showcase:off / expiry)
+  int8_t screensaver_style_override = -1;  // -1=none, 0..5 (kScreensaverStyleOpts)
+  int8_t clock_face_override = -1;         // -1=none, 0..2 (kClockFaceOpts)
+  int8_t weather_sim_override = -1;        // -1=none, 0..16 (kWeatherSimOpts)
+  uint8_t theme_override_mode = 0U;        // ShowcaseThemeMode (0=none..5=Custom RGB)
+  uint32_t theme_override_rgb = 0x3898FFU;
+  uint8_t brightness_override_pct = 0U;    // 0=none, 1..100 verbatim across active & screensaver
+
+  // Ownership / lock flags for clean atomic teardown
+  bool timer_owned = false;
+  bool stopwatch_owned = false;
+  bool music_hud_lock = false;
+
+  // Silent takeover previews (zero audio)
+  bool silent_find_my = false;
+  bool silent_alarm = false;
+
+  // Standalone firmware highlight reel
+  bool reel_active = false;
+  uint8_t reel_dwell_sec = kDefaultReelDwellSec;
+  uint8_t reel_step_idx = 0U;
+  uint32_t reel_last_step_ms = 0U;
+
+  constexpr bool is_active(uint32_t now_ms) const noexcept {
+    if (!active) return false;
+    if (expires_at_ms == 0U) return true;
+    return static_cast<int32_t>(expires_at_ms - now_ms) > 0;
+  }
+
+  constexpr bool is_expired(uint32_t now_ms) const noexcept {
+    return active && expires_at_ms != 0U && static_cast<int32_t>(expires_at_ms - now_ms) <= 0;
+  }
+
+  void arm(uint32_t now_ms, uint32_t dur_sec = kDefaultKeepAwakeSec) noexcept {
+    const uint32_t clamped = std::clamp<uint32_t>(dur_sec, kMinKeepAwakeSec, kMaxKeepAwakeSec);
+    keep_awake_dur_sec = clamped;
+    active = true;
+    const uint32_t exp = now_ms + clamped * 1000U;
+    expires_at_ms = (exp == 0U) ? 1U : exp;
+  }
+
+  void touch_keep_awake(uint32_t now_ms) noexcept {
+    const uint32_t dur = is_active(now_ms) ? keep_awake_dur_sec : kDefaultKeepAwakeSec;
+    arm(now_ms, dur);
+  }
+
+  void clear_all() noexcept { *this = ShowcaseState{}; }
+
+  // Resolves va_stage (including deterministic 8400 ms cycle) into concrete stage 0..4:
+  // 0=off, 1=listening, 2=vad, 3=thinking, 4=speaking.
+  constexpr uint8_t effective_va_phase(uint32_t now_ms) const noexcept {
+    if (!is_active(now_ms) || va_stage == 0U) return 0U;
+    if (va_stage <= 4U) return va_stage;
+    const uint32_t dt = static_cast<uint32_t>(now_ms - va_stage_start_ms) % kVaCycleTotalMs;
+    if (dt < 1800U) return 1U;
+    if (dt < 3800U) return 2U;
+    if (dt < 5600U) return 3U;
+    return 4U;
+  }
+
+  constexpr bool has_va_preview(uint32_t now_ms) const noexcept {
+    return effective_va_phase(now_ms) != 0U;
+  }
+
+  constexpr bool has_silent_alert(uint32_t now_ms) const noexcept {
+    return is_active(now_ms) && (silent_find_my || silent_alarm);
+  }
+};
+static_assert(std::is_trivially_copyable_v<ShowcaseState> &&
+                  std::is_standard_layout_v<ShowcaseState>,
+              "ShowcaseState must remain a pure volatile POD struct.");
+
+
 inline constexpr uint32_t kStandbyGreetingIdleMs = 1800000U;
 
 inline bool is_cameras_start_screen(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {

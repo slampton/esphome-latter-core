@@ -140,7 +140,7 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
     if (!out.turn_screen_off_now) {
       if (idle_timeout_ms == 0U) {
         disarm_idle();
-      } else if (idle_anchor_ms == 0U || in.voice_or_announce_busy) {
+      } else if (idle_anchor_ms == 0U || in.voice_or_announce_busy || in.showcase_active) {
         note_activity(now_ms);
       } else if (static_cast<uint32_t>(now_ms - idle_anchor_ms) >= idle_timeout_ms) {
         const bool retry_ready = (idle_retry_after_ms == 0U) ||
@@ -163,7 +163,7 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
   if (in.has_battery) {
     const uint32_t hib_timeout_ms = resolve_battery_hibernate_timeout_ms(in.hibernate_timeout_opt);
     const bool in_standby = (nav_power_state == 2) || (nav_power_state == 1) || !in.panel_brightness_on;
-    if (in_standby && !in.hibernate_blocked) {
+    if (in_standby && !in.hibernate_blocked && !in.showcase_active) {
       if (sleep_start_time == 0U) {
         sleep_start_time = (now_ms != 0U) ? now_ms : 1U;
       } else if (hib_timeout_ms > 0U &&

@@ -19,12 +19,16 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int cx = ctx.cx;
   const int cy = ctx.cy;
   const bool is_24h_format = prefs.is_24h_format;
-  const UiStrView clock_face_opt = ctx.clock_face_style_opt;
+  const uint8_t eff_clock_face = effective_clock_face(prefs, rs, ctx.now_ms);
+  const UiStrView clock_face_opt =
+      (rs.showcase.is_active(ctx.now_ms) && rs.showcase.clock_face_override >= 0)
+          ? UiStrView(effective_clock_face_cstr(prefs, rs, ctx.now_ms))
+          : ctx.clock_face_style_opt;
 
   const bool is_minimal_digital = (clock_face_opt == "Minimal Digital") ||
-                                  (clock_face_opt.empty() && prefs.clock_face == 0U);
+                                  (clock_face_opt.empty() && eff_clock_face == 0U);
   const bool is_ring_digital    = (clock_face_opt == "Hybrid Digital") ||
-                                  (clock_face_opt.empty() && prefs.clock_face == 2U);
+                                  (clock_face_opt.empty() && eff_clock_face == 2U);
 
   frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::HOME_TIME_READOUT, kHitTap);
 
@@ -79,7 +83,8 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int sec = ctx.now.second;
   const uint32_t latest_in = std::max(last_user_touch_ms(), last_screen_wake_ms());
   const bool smooth_on =
-      clock_smooth_sweep_active(rs.hw_usb_connected, ctx.now_ms, latest_in, prefs.clock_face);
+      clock_smooth_sweep_active(rs.hw_usb_connected || rs.showcase.is_active(ctx.now_ms),
+                                ctx.now_ms, latest_in, eff_clock_face);
   const float sec_f = smooth_second_with_frac(sec, ctx.now_ms, smooth_on);
   const float s_angle = (sec_f / 60.0f) * (2.0f * PI_F);
 

@@ -1660,6 +1660,22 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
 
   if (rs.nav.ota_in_progress) return;
 
+  if (rs.showcase.reel_active) {
+    const bool was_dark = (rs.nav.display_power_state != 0 || !rt_.panel_is_on);
+    (void)clear_showcase(now_in);
+    rt_.cmd(UiHostCmd::APPLY_THEME_PRESET);
+    rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+    rt_.apply_power_policy();
+    if (was_dark) {
+      note_wake_reason(WakeReason::TOUCH);
+      rt_.cmd(UiHostCmd::WAKE_TO_ACTIVE);
+    } else {
+      mark_dirty_full();
+      rt_.schedule_disp();
+    }
+    return;
+  }
+
   if (rs.nav.display_power_state != 0 || !rt_.panel_is_on) {
     note_wake_reason(WakeReason::TOUCH);
     rt_.cmd(UiHostCmd::WAKE_TO_ACTIVE);
@@ -1674,6 +1690,13 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
   if (!rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active &&
       (rs.voice.active || !rs.voice.status_text.empty())) {
     rt_.cmd(UiHostCmd::CANCEL_VOICE_ASSISTANT);
+    return;
+  }
+  if (rs.showcase.has_va_preview(now_in)) {
+    rs.showcase.va_stage = 0U;
+    rt_.apply_power_policy();
+    mark_dirty_full();
+    rt_.schedule_disp();
     return;
   }
 
@@ -1860,6 +1883,24 @@ bool TouchGestureEngine::allow_active_touch_down_(TouchGestureEngine &eng, int t
       rs.nav.hibernate_countdown_val = 0;
       note_wake_reason(WakeReason::TOUCH);
       rt.cmd(UiHostCmd::WAKE_TO_ACTIVE);
+    }
+    return false;
+  }
+
+  // Standalone Showcase Reel: first physical touch immediately exits the reel and clears
+  // volatile showcase overrides while keeping the user on the current screen (D-077).
+  if (rs.showcase.reel_active) {
+    const bool was_dark = (rs.nav.display_power_state != 0 || !rt.panel_is_on);
+    (void)eng.clear_showcase(now_ms);
+    rt.cmd(UiHostCmd::APPLY_THEME_PRESET);
+    rt.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
+    rt.apply_power_policy();
+    if (was_dark) {
+      note_wake_reason(WakeReason::TOUCH);
+      rt.cmd(UiHostCmd::WAKE_TO_ACTIVE);
+    } else {
+      mark_dirty_full();
+      rt.schedule_disp();
     }
     return false;
   }

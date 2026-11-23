@@ -586,7 +586,7 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112007L, "LATTER_SDK_REV must match 2026112007L");
+  static_assert(LATTER_SDK_REV == 2026112201L, "LATTER_SDK_REV must match 2026112201L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);

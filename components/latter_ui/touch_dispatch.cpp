@@ -882,6 +882,35 @@ void TouchGestureEngine::navigate_to_start_screen(uint32_t now_ms) {
   TouchGestureEngine::launch_dock_app_(anchor, rs, rt_, now_ms);
 }
 
+void TouchGestureEngine::teardown_before_remote_nav_(DeviceRuntimeState &rs,
+                                                     uint32_t now_ms,
+                                                     bool target_is_camera) {
+  if (rs.nav.active_game > 0) rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
+  if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
+    intercom_session().stop_call_with_hw(now_ms);
+  }
+  const bool was_cam_page = is_camera_view_active(rs);
+  stop_calendar_dictation_if_active(rs, rt_, now_ms);
+  stop_broadcast_dictation_if_active(rs, rt_, now_ms);
+  TouchGestureEngine::scrub_pin_and_pending_(*this, rs, false);
+  rs.showcase.va_stage = 0U;
+  rs.showcase.silent_find_my = false;
+  rs.showcase.silent_alarm = false;
+  rs.showcase.music_hud_lock = false;
+  if (rs.alert.active) {
+    rs.alert.active = false;
+    rt_.cmd(UiHostCmd::DISMISS_NOTIFICATION);
+  }
+  reset_common_nav_fields(rs, now_ms);
+  if (was_cam_page && !target_is_camera) {
+    rs.cameras.doorbell_live_popup_active = false;
+    rt_.cmd(UiHostCmd::STOP_CAMERA_STREAM);
+    rt_.cmd(UiHostCmd::RELEASE_CAMERA_ART);
+    rs.alert.loaded_camera_url.clear();
+    rt_.cmd(UiHostCmd::SYNC_WAKE_WORD_STATE);
+  }
+}
+
 void TouchGestureEngine::navigate_home(uint32_t now_ms) {
   if (!persisted_prefs().home_screen_enabled) {
     navigate_to_start_screen(now_ms);
@@ -977,6 +1006,35 @@ bool TouchGestureEngine::handle_down_takeovers_(TouchGestureEngine &eng, int tx,
     return true;
   }
 
+  // Priority 1b: Showcase Silent Find My / Alarm Previews (zero audio; keep-awake stays armed)
+  const bool sc_on = rs.showcase.is_active(now_ms);
+  if (sc_on && (rs.showcase.silent_find_my || rs.showcase.silent_alarm)) {
+    gest.active = false;
+    const HitRegion *t_hit = frame_hits().hit_test(tx, ty, kHitTap);
+    if (rs.showcase.silent_find_my) {
+      if (t_hit != nullptr && t_hit->widget_id == WidgetId::ALERT_DISMISS_BTN) {
+        rs.showcase.silent_find_my = false;
+        last_screen_wake_ms() = now_ms;
+        rt.apply_power_policy();
+        mark_dirty_full();
+        rt.schedule_disp();
+      }
+      return true;
+    }
+    if (rs.showcase.silent_alarm) {
+      if (t_hit != nullptr &&
+          (t_hit->widget_id == WidgetId::ALERT_DISMISS_BTN ||
+           t_hit->widget_id == WidgetId::ALERT_SNOOZE_BTN)) {
+        rs.showcase.silent_alarm = false;
+        last_screen_wake_ms() = now_ms;
+        rt.apply_power_policy();
+        mark_dirty_full();
+        rt.schedule_disp();
+      }
+      return true;
+    }
+  }
+
   // Priority 2: Voice Assistant Takeover (exempt during live doorbell PTT reply — D-066!)
   if (should_va_takeover_preempt(rs.voice.active, !rs.voice.status_text.empty(),
                                  rs.voice.intercom_turn, rs.nav.gui_page,
@@ -984,6 +1042,20 @@ bool TouchGestureEngine::handle_down_takeovers_(TouchGestureEngine &eng, int tx,
     gest.active = false;
     last_screen_wake_ms() = now_ms;
     rt.cmd(UiHostCmd::CANCEL_VOICE_ASSISTANT);
+    return true;
+  }
+
+  // Priority 2b: Showcase Voice Assistant Visual Preview (clears ONLY va_stage; never invokes real VA cancel)
+  if (sc_on && rs.showcase.has_va_preview(now_ms)) {
+    gest.active = false;
+    const HitRegion *v_hit = frame_hits().hit_test(tx, ty, kHitTap);
+    if (v_hit == nullptr || v_hit->widget_id == WidgetId::VA_CANCEL_BTN) {
+      rs.showcase.va_stage = 0U;
+      last_screen_wake_ms() = now_ms;
+      rt.apply_power_policy();
+      mark_dirty_full();
+      rt.schedule_disp();
+    }
     return true;
   }
 

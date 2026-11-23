@@ -1742,7 +1742,7 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
   ProfLap lap;
   const auto &rs = runtime_state();
   const uint32_t latest_input_ms = std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
-  step_weather_battery_fade(rs.hw_usb_connected, now_ms, latest_input_ms);
+  step_weather_battery_fade(rs.hw_usb_connected || rs.showcase.is_active(now_ms), now_ms, latest_input_ms);
   float precip_alpha = sky_fade_state().precip_alpha_scale;
   if (precip_alpha <= 0.001f) {
     precip_alpha = 0.0f;

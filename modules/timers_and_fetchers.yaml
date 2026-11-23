@@ -255,8 +255,15 @@ interval:
             }
           }
 
-          // Periodic display refresh during active alarm, timer, or Find My Device ringing
-          if ((rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active) && rs.nav.display_power_state == 0) {
+          // Showcase keep-awake expiry & standalone highlight reel progression (D-077)
+          if (rs.showcase.active) {
+            id(tick_showcase_engine).execute();
+          }
+
+          // Periodic display refresh during active alarm, timer, Find My Device, or silent showcase alert preview
+          if ((rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+               rs.showcase.has_silent_alert(millis())) &&
+              rs.nav.display_power_state == 0) {
             if (!rs.voice.active && rs.voice.status_text.empty()) {
               latter_ui::schedule_disp_update(&id(disp1));
             }
@@ -394,7 +401,8 @@ script:
               if ((rs.nav.display_power_state != 1) ||
                   rs.nav.is_hibernating || rs.nav.ota_in_progress ||
                   rs.voice.active || !rs.voice.status_text.empty() ||
-                  (std::string_view(latter_ui::effective_screensaver_style_cstr()) != "Photo Frame") ||
+                  (std::string_view(latter_ui::effective_screensaver_style_cstr(
+                       latter_ui::persisted_prefs(), rs, millis())) != "Photo Frame") ||
                   ac.screensaver_photo_url.empty() ||
                   (ac.screensaver_photo_url == rs.music.loaded_screensaver_photo_url &&
                    id(screensaver_photo_art).get_width() > 0) ||
@@ -431,7 +439,8 @@ script:
                     !latter_ui::can_reuse_wallpaper_for_photo_frame(
                         ac.screensaver_photo_url, rs.music.loaded_wallpaper_url,
                         id(home_wallpaper_art).get_width() > 0) &&
-                    std::string_view(latter_ui::effective_screensaver_style_cstr()) == "Photo Frame") {
+                    std::string_view(latter_ui::effective_screensaver_style_cstr(
+                        latter_ui::persisted_prefs(), rs, millis())) == "Photo Frame") {
                   rs.music.screensaver_photo_failed = true;
                   id(sync_display_brightness).execute();
                   latter_ui::mark_dirty_full();
@@ -572,7 +581,7 @@ script:
           condition:
             lambda: |-
               const auto &rs = latter_ui::runtime_state();
-              if (rs.alert.camera_url.empty() || !latter_ui::is_camera_view_active(rs)) {
+              if (rs.nav.display_power_state != 0 || rs.alert.camera_url.empty() || !latter_ui::is_camera_view_active(rs)) {
                 return false;
               }
               #if !LATTER_CHIP_P4

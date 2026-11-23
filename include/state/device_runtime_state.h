@@ -42,6 +42,7 @@ struct DeviceRuntimeState {
   IntercomRuntimeState intercom{};
   CamerasRuntimeState cameras{};
   HelloSyncState hello_sync{};
+  ShowcaseState showcase{};
 
   // Live hardware telemetry & optional peripheral hooks (populated by modules/hal/pmu_axp2101.yaml and
   // modules/hal/imu_qmi8658.yaml when included; safe mains-powered / no-IMU defaults otherwise so
@@ -446,11 +447,126 @@ inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local
 }
 
 
+inline const char *effective_screensaver_style_cstr(const PersistedDevicePrefs &p,
+                                                    const DeviceRuntimeState &rs,
+                                                    uint32_t now_ms) noexcept {
+  if (rs.showcase.is_active(now_ms) &&
+      rs.showcase.screensaver_style_override >= 0 &&
+      rs.showcase.screensaver_style_override < 6) {
+    return kScreensaverStyleOpts[rs.showcase.screensaver_style_override];
+  }
+  return effective_screensaver_style_cstr(p);
+}
+
+inline uint8_t effective_clock_face(const PersistedDevicePrefs &p,
+                                    const DeviceRuntimeState &rs,
+                                    uint32_t now_ms) noexcept {
+  if (rs.showcase.is_active(now_ms) &&
+      rs.showcase.clock_face_override >= 0 &&
+      rs.showcase.clock_face_override < 3) {
+    return static_cast<uint8_t>(rs.showcase.clock_face_override);
+  }
+  return (p.clock_face < 3U) ? p.clock_face : 0U;
+}
+
+inline const char *effective_clock_face_cstr(const PersistedDevicePrefs &p,
+                                             const DeviceRuntimeState &rs,
+                                             uint32_t now_ms) noexcept {
+  return opt_at_clamped(kClockFaceOpts, effective_clock_face(p, rs, now_ms));
+}
+
+inline const char *effective_va_visual_profile_cstr(const PersistedDevicePrefs &p,
+                                                    const DeviceRuntimeState &rs,
+                                                    uint32_t now_ms) noexcept {
+  if (rs.showcase.is_active(now_ms) &&
+      rs.showcase.va_profile_override >= 0 &&
+      rs.showcase.va_profile_override < 5) {
+    return kVaVisualProfileOpts[rs.showcase.va_profile_override];
+  }
+  return pref_va_visual_profile_cstr(p);
+}
+
+inline const char *effective_weather_sim_cstr(const DevicePrefsState &st,
+                                              const DeviceRuntimeState &rs,
+                                              uint32_t now_ms) noexcept {
+  if (rs.showcase.is_active(now_ms) &&
+      rs.showcase.weather_sim_override >= 0 &&
+      rs.showcase.weather_sim_override < 17) {
+    return kWeatherSimOpts[rs.showcase.weather_sim_override];
+  }
+  return pref_weather_sim_cstr(st);
+}
+
+enum class ScreensaverExitAction : uint8_t {
+  KEEP_SCREENSAVER = 0,
+  TURN_SCREEN_OFF = 1,
+  WAKE_TO_ACTIVE = 2,
+};
+
+inline ScreensaverExitAction evaluate_persisted_screensaver_exit_action(
+    const PersistedDevicePrefs &prefs,
+    bool is_stationary,
+    bool usb_connected) noexcept {
+  if (prefs.bedtime_active) {
+    const bool bt_clock =
+        (is_stationary || usb_connected) &&
+        (std::string_view(pref_bedtime_display_cstr(prefs)) == "Ambient Clock");
+    return bt_clock ? ScreensaverExitAction::KEEP_SCREENSAVER
+                    : ScreensaverExitAction::TURN_SCREEN_OFF;
+  }
+  const std::string_view s_style(pref_screensaver_style_cstr(prefs));
+  if (s_style == "Screen Off") {
+    return ScreensaverExitAction::TURN_SCREEN_OFF;
+  }
+  const bool mode_allowed =
+      (prefs.screensaver_mode == 1U) ||
+      (prefs.screensaver_mode == 0U && (is_stationary || usb_connected));
+  if (mode_allowed) {
+    return ScreensaverExitAction::KEEP_SCREENSAVER;
+  }
+  return is_stationary ? ScreensaverExitAction::WAKE_TO_ACTIVE
+                       : ScreensaverExitAction::TURN_SCREEN_OFF;
+}
+
+inline float resolve_effective_panel_brightness(const DeviceRuntimeState &rs,
+                                                const PersistedDevicePrefs &prefs,
+                                                float active_bri,
+                                                bool photo_frame_art_active,
+                                                uint32_t now_ms) noexcept {
+  if (rs.showcase.is_active(now_ms) && rs.showcase.brightness_override_pct > 0U) {
+    return static_cast<float>(std::clamp<int>(rs.showcase.brightness_override_pct, 1, 100)) * 0.01f;
+  }
+  if (rs.nav.display_power_state == 0) {
+    return active_bri;
+  }
+  const std::string_view ss_style(effective_screensaver_style_cstr(prefs, rs, now_ms));
+  const bool sc_ss_override =
+      rs.showcase.is_active(now_ms) && rs.showcase.screensaver_style_override >= 0;
+  const bool use_bedtime_dim = prefs.bedtime_active && !sc_ss_override;
+  const bool is_photo_frame = !use_bedtime_dim && (ss_style == "Photo Frame") && photo_frame_art_active;
+  return use_bedtime_dim
+             ? resolve_bedtime_ambient_brightness(active_bri)
+             : resolve_screensaver_brightness(active_bri, is_photo_frame);
+}
+
+inline bool should_wake_for_nav(bool silent,
+                                const DeviceRuntimeState &rs,
+                                const PersistedDevicePrefs &prefs,
+                                uint32_t now_ms,
+                                bool panel_is_on = true) noexcept {
+  if (silent) return false;
+  if (rs.nav.display_power_state == 0 && panel_is_on) return false;
+  if (prefs.bedtime_active && !rs.showcase.is_active(now_ms)) return false;
+  return true;
+}
+
 inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
                                           const PersistedDevicePrefs &p,
                                           bool media_playing,
                                           bool cam_session_active = false,
-                                          bool is_stationary = (LATTER_IS_STATIONARY != 0)) {
+                                          bool is_stationary = (LATTER_IS_STATIONARY != 0),
+                                          uint32_t now_ms = 0U) {
+  if (rt.showcase.active && (now_ms == 0U || rt.showcase.is_active(now_ms))) return false;
   if (!p.home_screen_enabled) return false;
   if (return_to_home_timeout_ms(p) == 0U) return false;
   if (rt.nav.gui_page == 1 && rt.nav.home_subpage == 0) return false;

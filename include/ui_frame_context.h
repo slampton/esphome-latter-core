@@ -488,20 +488,39 @@ struct SystemTakeoverState {
     st.hibernate_countdown_val = rs.nav.hibernate_countdown_val;
     st.panel_is_on = ctx.panel_is_on;
     st.display_power_state = rs.nav.display_power_state;
-    st.alarm_ringing = rs.alarms.ringing;
+    const bool sc_on = rs.showcase.is_active(ctx.now_ms);
+    st.alarm_ringing = rs.alarms.ringing || (sc_on && rs.showcase.silent_alarm);
     st.alarm_ringing_idx = rs.alarms.ringing_idx;
     st.alarm1_recurrence = prefs.alarms[0].recurrence;
     st.alarm2_recurrence = prefs.alarms[1].recurrence;
     st.alarm3_recurrence = prefs.alarms[2].recurrence;
     st.timer_ringing = rs.timers.ringing;
-    st.find_my_active = rs.alarms.find_my_active;
+    st.find_my_active = rs.alarms.find_my_active || (sc_on && rs.showcase.silent_find_my);
     st.va_timer_name = rs.timers.va_timer_name;
     st.va_active = rs.voice.active;
     st.va_status_text = rs.voice.status_text;
     st.va_tts_received = rs.voice.tts_received;
     st.va_vad_active = rs.voice.vad_active;
     st.va_intercom_turn = rs.voice.intercom_turn;
-    st.va_visual_profile_opt = ctx.va_visual_profile_opt;
+    if (!rs.voice.active && rs.voice.status_text.empty()) {
+      const uint8_t sc_va = rs.showcase.effective_va_phase(ctx.now_ms);
+      if (sc_va != 0U) {
+        st.va_active = true;
+        st.va_vad_active = (sc_va == static_cast<uint8_t>(ShowcaseVaStage::VAD));
+        st.va_tts_received = (sc_va == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING));
+        if (sc_va == static_cast<uint8_t>(ShowcaseVaStage::THINKING)) {
+          st.va_status_text = UiStrView("Thinking...");
+        } else if (sc_va == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING)) {
+          st.va_status_text = UiStrView("Responding...");
+        } else {
+          st.va_status_text = UiStrView("Listening...");
+        }
+      }
+    }
+    st.va_visual_profile_opt =
+        (sc_on && rs.showcase.va_profile_override >= 0 && rs.showcase.va_profile_override < 5)
+            ? UiStrView(kVaVisualProfileOpts[rs.showcase.va_profile_override])
+            : ctx.va_visual_profile_opt;
     st.notif_active = rs.alert.active;
     st.notif_title = rs.alert.title;
     st.notif_message = rs.alert.message;
@@ -509,9 +528,12 @@ struct SystemTakeoverState {
     st.notif_camera_url = rs.alert.camera_url;
     st.notif_camera_entity = rs.alert.camera_entity;
     st.current_loaded_camera_url = rs.alert.loaded_camera_url;
-    st.screensaver_style_opt =
-        prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt;
-    st.screensaver_photo_clock = !prefs.bedtime_active && prefs.screensaver_photo_clock;
+    const bool sc_ss_override =
+        sc_on && rs.showcase.screensaver_style_override >= 0 && rs.showcase.screensaver_style_override < 6;
+    st.screensaver_style_opt = sc_ss_override
+                                   ? UiStrView(kScreensaverStyleOpts[rs.showcase.screensaver_style_override])
+                                   : (prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt);
+    st.screensaver_photo_clock = (!prefs.bedtime_active || sc_ss_override) && prefs.screensaver_photo_clock;
     st.quick_actions_open = rs.nav.quick_actions_open;
     st.theme_primary = ctx.theme_primary;
     st.theme_secondary = ctx.theme_secondary;

@@ -230,7 +230,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         }
       }
     } else if (r.nav.display_power_state == 1 && !r.nav.is_hibernating &&
-               std::string_view(effective_screensaver_style_cstr(prefs)) == "Photo Frame" &&
+               std::string_view(effective_screensaver_style_cstr(prefs, r, ctx.now_ms)) == "Photo Frame" &&
                st.screensaver_photo_url != r.music.loaded_screensaver_photo_url) {
       eff.fetch_screensaver_photo = true;
     }
@@ -501,11 +501,19 @@ TimerTickEffects TimerAlarmController::tick_timers_250ms(uint32_t now_ms) {
     for (int i = 0; i < 3; i++) {
       if (!slots[i].running) continue;
       if (now_ms >= slots[i].target_ms) {
-        slots[i].running = false;
-        slots[i].paused = false;
-        slots[i].remaining_sec = slots[i].duration_sec;  // Preserve duration for 1-tap reuse!
-        exp_name = slots[i].name;
-        any_expired = true;
+        if (i == 0 && rs.showcase.is_active(now_ms) && rs.showcase.timer_owned) {
+          const int dur_s = std::clamp(slots[0].duration_sec, 5, 3600);
+          slots[0].duration_sec = dur_s;
+          slots[0].remaining_sec = dur_s;
+          slots[0].target_ms = now_ms + static_cast<uint32_t>(dur_s) * 1000U;
+          sec_changed = true;
+        } else {
+          slots[i].running = false;
+          slots[i].paused = false;
+          slots[i].remaining_sec = slots[i].duration_sec;  // Preserve duration for 1-tap reuse!
+          exp_name = slots[i].name;
+          any_expired = true;
+        }
       } else {
         const int rem = static_cast<int>((slots[i].target_ms - now_ms + 999U) / 1000U);
         if (rem != slots[i].remaining_sec) {

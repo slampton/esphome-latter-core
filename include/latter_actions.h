@@ -701,12 +701,42 @@ template <typename OutboxT = std::nullptr_t>
 inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_active = false,
                                              OutboxT outbox = nullptr, bool force_emit = false) {
   const auto &rs = latter_ui::runtime_state();
-  const bool cur_run = rs.timers.running;
-  const bool cur_pau = !cur_run && rs.timers.paused;
-  const int cur_rem = (cur_run || cur_pau) ? std::max(0, rs.timers.remaining_sec) : 0;
+  const bool sc_active = rs.showcase.active;
+  const bool hide_slot0 = sc_active && rs.showcase.timer_owned;
+  const bool hide_sw = sc_active && rs.showcase.stopwatch_owned;
+
+  bool cur_run = false;
+  bool cur_pau = false;
+  int cur_rem = 0;
+  if (!hide_slot0) {
+    cur_run = rs.timers.running;
+    cur_pau = !cur_run && rs.timers.paused;
+    cur_rem = (cur_run || cur_pau) ? std::max(0, rs.timers.remaining_sec) : 0;
+  } else {
+    int min_run_rem = 0;
+    int min_pau_rem = 0;
+    for (int i = 1; i < 3; ++i) {
+      const auto &sl = rs.timers.slots[i];
+      if (sl.running) {
+        const int r = std::max(0, sl.remaining_sec);
+        if (!cur_run || r < min_run_rem) min_run_rem = r;
+        cur_run = true;
+      } else if (sl.paused) {
+        const int r = std::max(0, sl.remaining_sec);
+        if (!cur_pau || r < min_pau_rem) min_pau_rem = r;
+        cur_pau = true;
+      }
+    }
+    if (cur_run) {
+      cur_pau = false;
+      cur_rem = min_run_rem;
+    } else if (cur_pau) {
+      cur_rem = min_pau_rem;
+    }
+  }
   const bool cur_ring = (rs.alarms.ringing || rs.timers.ringing);
-  const bool cur_sw_run = rs.stopwatch.running;
-  const bool cur_sw_pau = !cur_sw_run && (rs.stopwatch.elapsed_ms > 0U);
+  const bool cur_sw_run = !hide_sw && rs.stopwatch.running;
+  const bool cur_sw_pau = !hide_sw && !cur_sw_run && (rs.stopwatch.elapsed_ms > 0U);
   const uint32_t raw_sw_ms =
       cur_sw_run
           ? ((now_ms >= rs.stopwatch.start_time_ms) ? (now_ms - rs.stopwatch.start_time_ms)

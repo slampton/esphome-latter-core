@@ -237,5 +237,6 @@ void run_ui_layout_compositor_tests();
 void run_ui_rgb565_5geom_tests();
 void run_touch_engine_tests();
 void run_pages_apps_tests();
+void run_showcase_nav_tests();
 
 }  // namespace latter_test

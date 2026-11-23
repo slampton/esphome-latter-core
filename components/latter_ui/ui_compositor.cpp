@@ -190,10 +190,12 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   if (rs.nav.display_power_state == 1) {
-    const std::string_view ss_style(effective_screensaver_style_cstr(prefs));
+    const std::string_view ss_style(effective_screensaver_style_cstr(prefs, rs, ctx.now_ms));
     if (ss_style == "Photo Frame" || ss_style == "Ambient Clock") {
       uint32_t ss_sig = (ss_style == "Photo Frame") ? 2U : 1U;
-      if (!prefs.bedtime_active && prefs.screensaver_photo_clock) ss_sig |= (1U << 2);
+      const bool sc_ss_override =
+          rs.showcase.is_active(ctx.now_ms) && rs.showcase.screensaver_style_override >= 0;
+      if ((!prefs.bedtime_active || sc_ss_override) && prefs.screensaver_photo_clock) ss_sig |= (1U << 2);
       if (ctx.screensaver_photo_art.valid()) ss_sig |= (1U << 3);
       if (prefs.is_24h_format) ss_sig |= (1U << 4);
       const auto &ac = area_ctx_state();
@@ -982,7 +984,10 @@ Cadence20msActions FrameCadenceController::step_20ms(
     bool speaker_audio_busy, uint32_t rotate_period_ms) {
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
-  const bool va_visible = rs.voice.active || !rs.voice.status_text.empty();
+  const bool sc_on = rs.showcase.is_active(now_ms);
+  const uint8_t sc_va_phase = rs.showcase.effective_va_phase(now_ms);
+  const bool va_visible = rs.voice.active || !rs.voice.status_text.empty() || (sc_va_phase != 0U);
+  const bool motion_power = rs.hw_usb_connected || sc_on;
 
   Cadence20msInputs in{};
   in.now_ms = now_ms;
@@ -1004,20 +1009,22 @@ Cadence20msActions FrameCadenceController::step_20ms(
       std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
   in.clock_smooth_sweep =
       (rs.nav.gui_page == PageId::CLOCK) &&
-      clock_smooth_sweep_active(rs.hw_usb_connected, now_ms, latest_in_20ms, prefs.clock_face);
+      clock_smooth_sweep_active(motion_power, now_ms, latest_in_20ms,
+                                effective_clock_face(prefs, rs, now_ms));
   in.interactive_slide =
       rs.nav.menu_scroll_active || any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
       is_music_lyrics_anim_active(now_ms, speaker_audio_busy);
   in.dock_anim_active = any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms);
   in.dock_y0 = dock_dirty_band_y0();
   in.dock_y1 = SCREEN_H - 1;
-  in.find_my_active = rs.alarms.find_my_active;
+  in.find_my_active = rs.alarms.find_my_active || (sc_on && rs.showcase.silent_find_my);
   in.ringing_or_critical =
       rs.alarms.find_my_active || rs.alarms.ringing || rs.timers.ringing ||
+      (sc_on && (rs.showcase.silent_find_my || rs.showcase.silent_alarm)) ||
       (rs.alert.active && rs.alert.is_critical());
   in.va_visible = va_visible;
   in.va_running = va_running;
-  in.tts_received = rs.voice.tts_received;
+  in.tts_received = rs.voice.tts_received || (sc_va_phase == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING));
   in.tts_audio_active = tts_audio_active;
   in.touch_active = touch_gesture().active;
   in.menu_scroll_active = rs.nav.menu_scroll_active;
@@ -1029,7 +1036,7 @@ Cadence20msActions FrameCadenceController::step_20ms(
   in.last_disp_end_ms = last_disp_update_end_ms();
   in.weather_step_pending = is_weather_step_pending(now_ms);
 
-  const std::string_view sim_opt(pref_weather_sim_cstr());
+  const std::string_view sim_opt(effective_weather_sim_cstr(device_prefs_state(), rs, now_ms));
   const bool weather_sim_active = (sim_opt != "Live (Home Assistant)");
   const auto &ac = area_ctx_state();
   const bool custom_wall = !ac.wallpaper_url.empty() &&
@@ -1074,7 +1081,7 @@ Cadence20msActions FrameCadenceController::step_20ms(
         std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
     in.sky_stepping =
         in.sky_enabled &&
-        weather_sky_motion_stepping(rs.hw_usb_connected, now_ms, latest_input_ms, cached_has_motion_);
+        weather_sky_motion_stepping(motion_power, now_ms, latest_input_ms, cached_has_motion_);
   }
 
   const auto out = evaluate_20ms(in);
@@ -1114,7 +1121,7 @@ Cadence250msActions FrameCadenceController::step_250ms(
       on_home_main ? audio_session().paused_music_expiry_due_ms(now_ms) : 0U;
   in.has_act_band = home_activity_band(in.act_y0, in.act_y1);
 
-  const std::string_view sim_opt(pref_weather_sim_cstr());
+  const std::string_view sim_opt(effective_weather_sim_cstr(device_prefs_state(), rs, now_ms));
   const bool weather_sim_active = (sim_opt != "Live (Home Assistant)");
   const auto &ac = area_ctx_state();
   const bool custom_wall = !ac.wallpaper_url.empty() &&
@@ -1125,7 +1132,9 @@ Cadence250msActions FrameCadenceController::step_250ms(
   const BackdropMode bd_mode = resolve_backdrop_mode(
       rs.nav.gui_page, rs.nav.home_subpage, prefs.weather_background,
       prefs.weather_app_background, weather_sim_active, custom_wall, day_night_sky);
-  const bool va_visible = rs.voice.active || !rs.voice.status_text.empty();
+  const bool sc_on = rs.showcase.is_active(now_ms);
+  const bool motion_power = rs.hw_usb_connected || sc_on;
+  const bool va_visible = rs.voice.active || !rs.voice.status_text.empty() || rs.showcase.has_va_preview(now_ms);
   bool music_hud_changed = false;
   if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating && !va_visible &&
       rs.nav.gui_page == PageId::MUSIC) {
@@ -1135,13 +1144,15 @@ Cadence250msActions FrameCadenceController::step_250ms(
         touch_gesture().last_touch_ms > rs.music.hud_timer) {
       rs.music.hud_timer = touch_gesture().last_touch_ms;
     }
-    const std::string_view ov_opt(pref_music_overlay_style_cstr(prefs));
-    const auto fade_res = step_music_hud_auto_fade(
-        rs.music, now_ms, ov_opt, touch_gesture().active);
-    if (fade_res.sprung_back_to_now_playing) {
-      mode_bar_anim().snap(0);
+    if (!(sc_on && rs.showcase.music_hud_lock)) {
+      const std::string_view ov_opt(pref_music_overlay_style_cstr(prefs));
+      const auto fade_res = step_music_hud_auto_fade(
+          rs.music, now_ms, ov_opt, touch_gesture().active);
+      if (fade_res.sprung_back_to_now_playing) {
+        mode_bar_anim().snap(0);
+      }
+      music_hud_changed = fade_res.changed;
     }
-    music_hud_changed = fade_res.changed;
   }
   in.sky_canvas_active = !va_visible && (bd_mode == BackdropMode::LiveWeatherSky);
   in.motion_mag = rs.hw_motion_mag;
@@ -1155,7 +1166,7 @@ Cadence250msActions FrameCadenceController::step_250ms(
           evaluate_sky_has_motion(sim_opt, weather_state().condition,
                                   weather_state().sun_state, now_ms);
       in.sky_motion_due =
-          weather_sky_motion_stepping(rs.hw_usb_connected, now_ms, latest_in, has_motion);
+          weather_sky_motion_stepping(motion_power, now_ms, latest_in, has_motion);
     }
     const uint32_t greet_age_ms = now_ms - wake_greeting_start_ms();
     in.greet_fade_due =
@@ -1175,7 +1186,8 @@ Cadence250msActions FrameCadenceController::step_250ms(
         std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
     in.clock_sweep_due =
         (rs.nav.gui_page == PageId::CLOCK) &&
-        clock_smooth_sweep_active(rs.hw_usb_connected, now_ms, latest_in_clock, prefs.clock_face);
+        clock_smooth_sweep_active(motion_power, now_ms, latest_in_clock,
+                                  effective_clock_face(prefs, rs, now_ms));
     in.home_overlay_motion_due =
         home_activity_slide_active(now_ms) ||
         has_pending_home_activity_fade_settle(now_ms) ||
@@ -1191,6 +1203,7 @@ Cadence250msActions FrameCadenceController::step_250ms(
   in.va_busy = va_visible || va_running || rs.voice.tts_received;
   in.alert_or_critical_busy =
       rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+      (sc_on && (rs.showcase.silent_find_my || rs.showcase.silent_alarm)) ||
       (rs.alert.active && rs.alert.is_critical());
   in.pending_wallpaper_fetch =
       !ac.wallpaper_url.empty() &&
@@ -1215,14 +1228,16 @@ Cadence250msActions FrameCadenceController::step_250ms(
 CadenceScreensaverActions FrameCadenceController::step_screensaver_20ms(
     uint32_t now_ms, bool speaker_audio_busy, bool mww_running) const {
   const auto &rs = runtime_state();
+  const bool sc_on = rs.showcase.is_active(now_ms);
   CadenceScreensaverInputs in{};
   in.now_ms = now_ms;
   in.display_power_state = rs.nav.display_power_state;
   in.is_hibernating = rs.nav.is_hibernating;
-  in.va_visible = rs.voice.active || !rs.voice.status_text.empty();
-  in.screensaver_style = effective_screensaver_style_cstr();
+  in.va_visible = rs.voice.active || !rs.voice.status_text.empty() || rs.showcase.has_va_preview(now_ms);
+  in.screensaver_style = effective_screensaver_style_cstr(persisted_prefs(), rs, now_ms);
   in.speaker_audio_busy = speaker_audio_busy;
-  in.alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
+  in.alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+                     (sc_on && (rs.showcase.silent_find_my || rs.showcase.silent_alarm));
   in.mww_running = mww_running;
   in.is_chip_p4 = (LATTER_CHIP_P4 != 0);
   in.render_in_flight = disp_render_in_flight(now_ms);

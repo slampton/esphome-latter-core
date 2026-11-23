@@ -226,10 +226,14 @@ interval:
             }
           }
           const auto &prefs = latter_ui::persisted_prefs();
+          if (rs.showcase.active) {
+            id(tick_showcase_engine).execute();
+          }
+          const bool showcase_active_1s = rs.showcase.is_active(now_1s_ms);
           uint32_t last_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
                                                 latter_ui::touch_gesture().last_touch_ms,
                                                 latter_ui::ui_focus_last_ms()});
-          if (rs.nav.display_power_state == 0 && (now_1s_ms > last_user_act_ms)) {
+          if (rs.nav.display_power_state == 0 && !showcase_active_1s && (now_1s_ms > last_user_act_ms)) {
             uint32_t touch_idle_ms = now_1s_ms - last_user_act_ms;
             if (rs.nav.active_game > 0 && touch_idle_ms >= 180000U) {
               ESP_LOGI("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
@@ -297,6 +301,7 @@ interval:
               rs.alarms.find_my_active || rs.alert.active;
           const bool hibernate_blocked =
               rs.nav.is_hibernating || rs.hw_usb_connected || rs.nav.ota_in_progress ||
+              showcase_active_1s ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
               rs.stopwatch.running || rs.timers.running || rs.timers.ringing ||
               rs.alarms.ringing || rs.alarms.find_my_active || voice_or_announce_busy ||
@@ -321,6 +326,7 @@ interval:
           dl_in.active_tool_awake = active_tool_awake;
           dl_in.active_game_running = (rs.nav.active_game != 0);
           dl_in.hibernate_blocked = hibernate_blocked;
+          dl_in.showcase_active = showcase_active_1s;
 
           const auto dl_act = latter_ui::display_lifecycle().evaluate_1s(
               now_1s_ms, dl_in, rs.nav.display_power_state, rs.nav.sleep_start_time,
@@ -371,11 +377,13 @@ script:
           const uint32_t last_interact_ms = std::max({latter_ui::last_screen_wake_ms(),
                                                       latter_ui::touch_gesture().last_touch_ms,
                                                       latter_ui::ui_focus_last_ms()});
+          const bool sc_active_p = rs.showcase.is_active(now_p);
           const bool va_radio_priority =
               latter_ui::radio_boost_active(now_p) ||
               rs.voice.active || id(va).is_running() || rs.voice.tts_received;
           const bool high_tput_needed =
               rs.hw_usb_connected ||
+              sc_active_p ||
               va_radio_priority ||
               id(announcement_mixing_input).is_running() ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -427,8 +435,10 @@ script:
           #endif
 
           // Tick gating: with the screen off and nothing time-critical pending, nothing ticks faster than 1 s.
+          const bool sc_silent_alert_p = rs.showcase.has_silent_alert(now_p);
+          const bool sc_va_preview_p = rs.showcase.has_va_preview(now_p);
           const bool alerts_pending = rs.timers.running || rs.stopwatch.running || rs.alarms.find_my_active ||
-                                      rs.alert.active || rs.alarms.ringing || rs.timers.ringing;
+                                      rs.alert.active || rs.alarms.ringing || rs.timers.ringing || sc_silent_alert_p;
           const bool va_busy = rs.voice.active || !rs.voice.status_text.empty() ||
                                id(va).is_running() || rs.voice.tts_received;
           auto gate = [](auto *tick, bool want, int8_t &state) {
@@ -441,29 +451,37 @@ script:
             }
           };
           static int8_t ss_anim_on = -1;
-          const std::string_view eff_ss_style = latter_ui::effective_screensaver_style_cstr(prefs);
+          const std::string_view eff_ss_style = latter_ui::effective_screensaver_style_cstr(prefs, rs, now_p);
           const bool want_ss_anim = (rs.nav.display_power_state == 1) &&
                                     !eff_ss_style.empty() &&
                                     (eff_ss_style != "Ambient Clock") &&
                                     (eff_ss_style != "Photo Frame") &&
                                     (eff_ss_style != "Screen Off");
           gate(id(screensaver_anim_tick), want_ss_anim, ss_anim_on);
+          if (!want_ss_anim && rs.nav.display_power_state == 1) {
+            latter_ui::sync_disp_poller_for_anim(&id(disp1), false);
+            id(disp1).start_poller();
+          }
           // ui_anim_tick (20 ms) self-stops when no active animation is running; stop immediately when
           // leaving active display (unless VA is busy) and start whenever VA or active-screen animation needs it.
-          if (va_busy) {
+          if (va_busy || sc_va_preview_p) {
             latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
           } else if (rs.nav.display_power_state != 0) {
             latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
           } else if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active ||
+                     sc_silent_alert_p ||
                      rs.nav.active_game > 0 ||
+                     (rs.stopwatch.running &&
+                      ((rs.nav.gui_page == 10 && rs.nav.time_subpage == 3) ||
+                       (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3))) ||
                      latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
                      rs.nav.menu_scroll_active) {
             latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
           }
-          // ui_fast_tick: 250 ms with the screen on or a voice turn; 1 s with the screen off while a timer,
-          // stopwatch or alert is pending (a countdown still expires within a second); stopped otherwise.
+          // ui_fast_tick: 250 ms with the screen on, a voice turn, or showcase active; 1 s with the screen off while
+          // a timer, stopwatch or alert is pending (a countdown still expires within a second); stopped otherwise.
           static uint32_t ui_fast_ms = UINT32_MAX;
-          const uint32_t want_fast_ms = (rs.nav.display_power_state != 2 || va_busy) ? 250U : (alerts_pending ? 1000U : 0U);
+          const uint32_t want_fast_ms = (rs.nav.display_power_state != 2 || va_busy || sc_active_p) ? 250U : (alerts_pending ? 1000U : 0U);
           if (want_fast_ms != ui_fast_ms) {
             ui_fast_ms = want_fast_ms;
             if (want_fast_ms == 0U) {
@@ -511,7 +529,7 @@ script:
           const bool weak_link = false;
           #endif
           const bool stay_awake =
-              ha_link_settling || weak_link ||
+              ha_link_settling || weak_link || sc_active_p ||
               latter_ui::imu_wom_qualifying(now_p) ||
               rs.nav.display_power_state != 2 || rs.hw_usb_connected || rs.nav.is_hibernating ||
               rs.nav.ota_in_progress || audio_busy || va_busy || id(va).is_running() || rs.voice.tts_received ||

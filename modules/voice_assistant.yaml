@@ -61,6 +61,10 @@ voice_assistant:
     then:
       - lambda: |-
           auto &rs = latter_ui::runtime_state();
+          if (rs.showcase.va_stage != 0U || rs.showcase.reel_active) {
+            rs.showcase.va_stage = 0U;
+            rs.showcase.reel_active = false;
+          }
           latter_ui::log_audio_profile("VA_LISTEN_START");
           id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
           if (!latter_ui::cam_intercom_ptt_active()) {

@@ -21,7 +21,7 @@ from .common import (
 
 NOISE_KEY_BYTES: Final[int] = 32
 AGENTS_MD_MAX_BYTES: Final[int] = 12000
-MIN_SDK_REV: Final[int] = 2026112007
+MIN_SDK_REV: Final[int] = 2026112201
 REQUIRED_PRODUCT_OPTIONS: Final[tuple[str, ...]] = (
     "Minimal Digital",
     "Modern Analog",

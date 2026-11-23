@@ -459,6 +459,7 @@ enum class UiHostCmd : uint8_t {
   APPLY_DEVICE_PREFS_EFFECTS,
   NOTIFY_WEATHER_SIM_CHANGED,
   SET_LOCAL_SPEAKER_VOL_PCT,
+  ENSURE_UI_ANIM_POLLER,
 };
 
 enum class UiSelectId : uint8_t {
@@ -564,6 +565,75 @@ struct UiTouchRuntime {
   void set_num_val(UiNumberId id, float v) const;
 };
 
+template <typename ColorT>
+inline void apply_effective_theme_preset(const DeviceRuntimeState &rs,
+                                         const PersistedDevicePrefs &prefs,
+                                         uint32_t now_ms,
+                                         ColorT &out_primary,
+                                         ColorT &out_secondary) noexcept {
+  out_secondary = ColorT{192, 192, 192};
+  if (rs.showcase.is_active(now_ms) && rs.showcase.theme_override_mode != 0U) {
+    switch (static_cast<ShowcaseThemeMode>(rs.showcase.theme_override_mode)) {
+      case ShowcaseThemeMode::CUSTOM_RGB:
+        apply_custom_rgb_harmony(rs.showcase.theme_override_rgb, out_primary, out_secondary);
+        return;
+      case ShowcaseThemeMode::PINK:
+        out_primary = ColorT{168, 120, 132};
+        return;
+      case ShowcaseThemeMode::GREEN:
+        out_primary = ColorT{66, 116, 83};
+        return;
+      case ShowcaseThemeMode::BLUE:
+        out_primary = ColorT{69, 110, 138};
+        return;
+      case ShowcaseThemeMode::STEEL_BLUE:
+      default:
+        out_primary = ColorT{107, 142, 158};
+        return;
+    }
+  }
+  const std::string_view p(pref_color_profile_cstr(prefs));
+  if (p == "Custom") {
+    apply_custom_rgb_harmony(prefs.custom_theme_rgb, out_primary, out_secondary);
+  } else if (p == "Pink") {
+    out_primary = ColorT{168, 120, 132};
+  } else if (p == "Green") {
+    out_primary = ColorT{66, 116, 83};
+  } else if (p == "Blue") {
+    out_primary = ColorT{69, 110, 138};
+  } else {
+    out_primary = ColorT{107, 142, 158};
+  }
+}
+
+inline void apply_effective_theme_slots(const DeviceRuntimeState &rs,
+                                        const PersistedDevicePrefs &prefs,
+                                        uint32_t now_ms,
+                                        UiThemeSlot out_primary,
+                                        UiThemeSlot out_secondary) noexcept {
+  UiColor p{};
+  UiColor s{};
+  apply_effective_theme_preset(rs, prefs, now_ms, p, s);
+  out_primary.assign(p);
+  out_secondary.assign(s);
+}
+
+struct DeviceUiCommandEffects {
+  bool handled{false};
+  bool wake_display{false};
+  bool turn_screen_off{false};
+  bool apply_theme{false};
+  bool sync_brightness{false};
+  bool apply_power{false};
+  bool enter_screensaver{false};
+  bool refresh_screensaver_in_place{false};
+  bool fetch_screensaver_photo{false};
+  bool dismiss_notification{false};
+  bool ensure_anim_poller{false};
+  bool schedule_disp{false};
+  bool mark_dirty_full{false};
+};
+
 void activate_music_peer_tab(MusicView target, uint32_t now_ms);
 
 class TouchGestureEngine {
@@ -581,8 +651,14 @@ class TouchGestureEngine {
   void on_input_event(const std::string &action, int delta, uint32_t now_ms);
   void navigate_home(uint32_t now_ms);
   void navigate_to_start_screen(uint32_t now_ms);
+  bool navigate_route(std::string_view token, uint32_t now_ms);
+  DeviceUiCommandEffects execute_device_ui_command(std::string_view cmd, uint32_t now_ms);
+  DeviceUiCommandEffects clear_showcase(uint32_t now_ms);
+  DeviceUiCommandEffects tick_showcase(uint32_t now_ms);
 
-  // Internal cross-TU helpers (implemented in touch_engine.cpp / touch_dispatch.cpp)
+  // Internal cross-TU helpers (implemented in touch_engine.cpp / touch_dispatch.cpp / showcase_engine.cpp)
+  void teardown_before_remote_nav_(DeviceRuntimeState &rs, uint32_t now_ms, bool target_is_camera);
+  DeviceUiCommandEffects execute_device_ui_command_impl_(std::string_view cmd, uint32_t now_ms, bool from_reel);
   bool try_commit_long_press_(uint32_t now_ms);
   bool try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms);
   bool handle_pin_pad_tap(int tx, int ty, uint32_t now_ms);

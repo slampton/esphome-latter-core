@@ -161,8 +161,8 @@ display:
       ctx.fw_release_summary = sys_fw_sum;
       ctx.primary_wake_word = sys_wake_word;
 
-      ctx.clock_face_style_opt = latter_ui::pref_clock_face_cstr(prefs);
-      ctx.weather_sim_opt = latter_ui::pref_weather_sim_cstr();
+      ctx.clock_face_style_opt = latter_ui::effective_clock_face_cstr(prefs, rs, ctx.now_ms);
+      ctx.weather_sim_opt = latter_ui::effective_weather_sim_cstr(latter_ui::device_prefs_state(), rs, ctx.now_ms);
       ctx.music_overlay_style_opt = latter_ui::pref_music_overlay_style_cstr(prefs);
       ctx.music_fullscreen_art_opt = latter_ui::pref_album_art_style_cstr(prefs);
       ctx.music_album_sort_opt = latter_ui::pref_album_sort_order_cstr(prefs);
@@ -173,7 +173,7 @@ display:
       ctx.pickup_wake_opt = latter_ui::pref_pickup_to_wake_cstr(prefs);
       ctx.display_off_timeout_opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
       ctx.screensaver_mode_opt = latter_ui::pref_screensaver_mode_cstr(prefs);
-      ctx.screensaver_style_opt = latter_ui::pref_screensaver_style_cstr(prefs);
+      ctx.screensaver_style_opt = latter_ui::effective_screensaver_style_cstr(prefs, rs, ctx.now_ms);
       ctx.screensaver_docked_timeout_opt = latter_ui::pref_docked_idle_timeout_cstr(prefs);
       ctx.hibernate_timeout_opt = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
       ctx.bedtime_display_opt = latter_ui::pref_bedtime_display_cstr(prefs);
@@ -183,7 +183,7 @@ display:
       ctx.day_brightness_pct = static_cast<int>(prefs.day_brightness_pct());
       ctx.night_brightness_pct = static_cast<int>(prefs.night_brightness_pct());
       ctx.va_wake_word_mode_opt = latter_ui::pref_wake_word_mode_cstr(prefs);
-      ctx.va_visual_profile_opt = latter_ui::pref_va_visual_profile_cstr(prefs);
+      ctx.va_visual_profile_opt = latter_ui::effective_va_visual_profile_cstr(prefs, rs, ctx.now_ms);
       ctx.ww_sens_okay_nabu_opt = latter_ui::pref_ww_sens_cstr(prefs.ww_sens_okay_nabu);
       ctx.ww_sens_hey_luna_opt = latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_luna);
       ctx.ww_sens_hey_jarvis_opt = latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis);
@@ -225,13 +225,16 @@ display:
       const bool weather_sky_active = (bd_mode == latter_ui::BackdropMode::LiveWeatherSky);
       const uint32_t latest_input_ms = std::max(
           latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
+      const bool motion_power_gui = rs.hw_usb_connected || rs.showcase.is_active(ctx.now_ms);
       const bool weather_sky_stepping_hint =
           weather_sky_active &&
-          latter_ui::weather_sky_motion_stepping(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, true);
+          latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, true);
 
       const bool clock_sweep_hint =
           (rs.nav.gui_page == latter_ui::PageId::CLOCK) &&
-          latter_ui::clock_smooth_sweep_active(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, prefs.clock_face);
+          latter_ui::clock_smooth_sweep_active(
+              motion_power_gui, ctx.now_ms, latest_input_ms,
+              latter_ui::effective_clock_face(prefs, rs, ctx.now_ms));
       const bool time_sw_hint =
           ((rs.nav.gui_page == latter_ui::PageId::TIME &&
             rs.nav.time_subpage == latter_ui::TimeSubpage::STOPWATCH) ||
@@ -328,10 +331,12 @@ display:
 
       latter_ui::render_active_page(it, ctx);
 
-      const bool alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
+      const bool alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+                                 rs.showcase.has_silent_alert(ctx.now_ms);
       const bool va_visible = latter_ui::should_va_takeover_preempt(
           rs.voice.active, !rs.voice.status_text.empty(), rs.voice.intercom_turn,
-          rs.nav.gui_page, rs.cameras.doorbell_live_popup_active);
+          rs.nav.gui_page, rs.cameras.doorbell_live_popup_active) ||
+          rs.showcase.has_va_preview(ctx.now_ms);
       const bool cam_hud_hidden =
           (rs.nav.gui_page == latter_ui::PageId::CAMERAS &&
            (rs.cameras.tab == latter_ui::CamerasTab::SINGLE ||
@@ -381,7 +386,7 @@ display:
             latter_ui::weather_state().sun_state, ctx.now_ms);
         if (act_sliding_now) {
           latter_ui::schedule_anim_disp_update(&id(disp1));
-        } else if (latter_ui::weather_sky_motion_stepping(rs.hw_usb_connected, ctx.now_ms, latest_input_ms, w_has_motion)) {
+        } else if (latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion)) {
           const bool spk_busy =
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
               (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||

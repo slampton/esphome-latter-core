@@ -877,6 +877,7 @@ int main(int argc, char **argv) {
   latter_test::run_ui_rgb565_5geom_tests();
   latter_test::run_touch_engine_tests();
   latter_test::run_pages_apps_tests();
+  latter_test::run_showcase_nav_tests();
   latter_test::test_music_app_v3_d059();
 
   std::printf(
