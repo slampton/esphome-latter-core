@@ -410,10 +410,10 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
   rs.music.takeover = MusicTakeover::NONE;
   verify_scissor_band_isolation(fix, PageId::MUSIC, 100, 259);
 
-  // 3. PageId::GAMES (Launcher + all 6 active games + game_arena_drop)
+  // 3. PageId::GAMES (Launcher + all 7 game IDs + graceful unsupported fallback + game_arena_drop)
   rs.nav.active_game = 0;
   render_page_full_and_check(fix, PageId::GAMES, "PageId::GAMES launcher");
-  for (int gid : {1, 2, 3, 4, 5, 6}) {
+  for (int gid : {1, 2, 3, 4, 5, 6, 7}) {
     rs.nav.active_game = gid;
     render_page_full_and_check(fix, PageId::GAMES, "PageId::GAMES active");
   }
@@ -594,7 +594,7 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112301L, "LATTER_SDK_REV must match 2026112301L");
+  static_assert(LATTER_SDK_REV == 2026112302L, "LATTER_SDK_REV must match 2026112302L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);

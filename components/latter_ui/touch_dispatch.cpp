@@ -97,6 +97,7 @@ inline void reset_common_nav_fields(DeviceRuntimeState &rs, uint32_t now_ms) {
   reset_music_to_now_playing(rs, now_ms, false);
   rs.nav.system_menu_mode = 0;
   rs.nav.active_game = 0;
+  game_input().clear();
   rs.music.direct_nav = false;
   rs.music.clear_lyrics_auto_state();
   rs.nav.sleep_menu_page = 1;
@@ -789,8 +790,23 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
 
     case RouteId::GAMES_MARBLES: case RouteId::GAMES_ARCHERY:
     case RouteId::GAMES_BRICKS: case RouteId::GAMES_CHOMP:
-    case RouteId::GAMES_2048: case RouteId::GAMES_MEMORY: {
-      const int g_id = 1 + (static_cast<int>(route_id) - static_cast<int>(RouteId::GAMES_MARBLES));
+    case RouteId::GAMES_BLOCKS: case RouteId::GAMES_SNAKE:
+    case RouteId::GAMES_DROP_FOUR: {
+      int g_id = 1;
+      switch (route_id) {
+        case RouteId::GAMES_MARBLES:   g_id = 1; break;
+        case RouteId::GAMES_ARCHERY:   g_id = 2; break;
+        case RouteId::GAMES_BRICKS:    g_id = 3; break;
+        case RouteId::GAMES_CHOMP:     g_id = 4; break;
+        case RouteId::GAMES_BLOCKS:    g_id = 5; break;
+        case RouteId::GAMES_SNAKE:     g_id = 6; break;
+        case RouteId::GAMES_DROP_FOUR: g_id = 7; break;
+        default: break;
+      }
+      if (!is_route_supported_on_board(route_id) ||
+          !game_supported_for_imu(g_id, LATTER_HAS_IMU != 0)) {
+        return;
+      }
       TouchGestureEngine::launch_dock_app_(PageId::GAMES, rs, rt, now_ms);
       save_origin();
       int enabled_ids[kMaxGamesLauncherItems]{};
@@ -801,6 +817,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       }
       rs.nav.game_carousel_idx = matched_slot;
       rs.nav.active_game = g_id;
+      game_input().clear();
       audio_arbitrator().cancel_media_idle_debounce();
       if (rt.local_mp_playing) {
         rt.cmd(UiHostCmd::PAUSE_LOCAL_MEDIA_PLAYER);
@@ -3386,6 +3403,8 @@ bool TouchGestureEngine::handle_down_cameras_games_(TouchGestureEngine &eng, int
         if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
           rs.nav.active_game = 0;
           rs.nav.game_btn_pressed = false;
+          game_input().clear();
+          eng.snake_drag_active_ = false;
           rt.cmd(UiHostCmd::STOP_ALARM_SOUND);
           if (TouchGestureEngine::return_from_shortcut_origin_(rs, rt, now_ms)) {
             return true;
@@ -3395,7 +3414,70 @@ bool TouchGestureEngine::handle_down_cameras_games_(TouchGestureEngine &eng, int
         }
         return true;
       }
-      if (rs.nav.active_game != 5) {
+      if (rs.nav.active_game == 5) {
+        if (wid == WidgetId::GAME_CTRL_LEFT) {
+          game_input().push(GameInputCmd::LEFT);
+          game_input().set_held(GameInputCmd::LEFT, now_ms);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_CTRL_RIGHT) {
+          game_input().push(GameInputCmd::RIGHT);
+          game_input().set_held(GameInputCmd::RIGHT, now_ms);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_CTRL_ROTATE) {
+          game_input().push(GameInputCmd::ROTATE);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_CTRL_DROP) {
+          game_input().push(GameInputCmd::HARD_DROP);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_CTRL_HOLD) {
+          game_input().push(GameInputCmd::HOLD);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_OVER_CTA) {
+          game_input().push(GameInputCmd::PLAY_AGAIN);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        }
+        return true;
+      }
+      if (rs.nav.active_game == 6) {
+        if (wid == WidgetId::GAME_OVER_CTA) {
+          game_input().push(GameInputCmd::PLAY_AGAIN);
+          gest.tap_cancelled = true;
+          eng.snake_drag_active_ = false;
+          rt.schedule_disp();
+        } else {
+          eng.snake_drag_x_ = tx;
+          eng.snake_drag_y_ = ty;
+          eng.snake_drag_active_ = true;
+        }
+        return true;
+      }
+      if (rs.nav.active_game == 7) {
+        if (wid == WidgetId::GAME_MODE_AI) {
+          game_input().push(GameInputCmd::MODE_AI);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_MODE_2P) {
+          game_input().push(GameInputCmd::MODE_2P);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid >= WidgetId::GAME_COL_BASE && wid < WidgetId::GAME_COL_BASE + 7) {
+          game_input().push(GameInputCmd::COL_TAP, static_cast<int8_t>(wid - WidgetId::GAME_COL_BASE));
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        } else if (wid == WidgetId::GAME_OVER_CTA) {
+          game_input().push(GameInputCmd::PLAY_AGAIN);
+          gest.tap_cancelled = true;
+          rt.schedule_disp();
+        }
+        return true;
+      }
+      if (rs.nav.active_game >= 1 && rs.nav.active_game <= 4) {
         rs.nav.marble_touch_x = static_cast<float>(tx);
         rs.nav.marble_touch_y = static_cast<float>(ty);
         rs.nav.game_btn_pressed = true;
@@ -3437,16 +3519,26 @@ bool TouchGestureEngine::handle_down_cameras_games_(TouchGestureEngine &eng, int
 
 bool TouchGestureEngine::handle_tap_cameras_games_(
     int tx, int ty, uint32_t now_rel, const HitRegion *hit, uint16_t wid) {
+  (void)tx;
+  (void)ty;
   auto &rs = runtime_state();
   const auto &prefs = persisted_prefs();
   const uint32_t tkey = make_tap_target_key(rs.nav.gui_page, wid, (hit != nullptr) ? hit->param : 0);
 
   if (rs.nav.gui_page == PageId::GAMES) {
     if (rs.nav.active_game == 5) {
-      rs.nav.marble_touch_x = static_cast<float>(tx);
-      rs.nav.marble_touch_y = static_cast<float>(ty);
-      rs.nav.game_btn_pressed = true;
-      rt_.schedule_disp();
+      if (wid == WidgetId::GAME_BOARD_TAP) {
+        game_input().push(GameInputCmd::ROTATE);
+        rt_.schedule_disp();
+      } else if (wid == WidgetId::GAME_OVER_CTA) {
+        game_input().push(GameInputCmd::PLAY_AGAIN);
+        rt_.schedule_disp();
+      }
+    } else if (rs.nav.active_game == 6) {
+      if (wid == WidgetId::GAME_OVER_CTA) {
+        game_input().push(GameInputCmd::PLAY_AGAIN);
+        rt_.schedule_disp();
+      }
     } else if (rs.nav.active_game == 0 && !rs.nav.menu_scroll_active) {
       if (wid == WidgetId::GAMES_SOUND_BTN &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -3460,10 +3552,12 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
           const int slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
           rs.nav.game_carousel_idx = slot;
           const int resolved_game =
-              (hit != nullptr && hit->param >= 1 && hit->param <= 6)
+              (hit != nullptr && hit->param >= 1 && hit->param <= 7 &&
+               game_supported_for_imu(static_cast<int>(hit->param), LATTER_HAS_IMU != 0))
                   ? static_cast<int>(hit->param)
                   : enabled_ids[slot];
           rs.nav.active_game = resolved_game;
+          game_input().clear();
           audio_arbitrator().cancel_media_idle_debounce();
           if (rt_.local_mp_playing) {
             rt_.cmd(UiHostCmd::PAUSE_LOCAL_MEDIA_PLAYER);

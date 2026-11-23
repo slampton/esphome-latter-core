@@ -137,6 +137,7 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
         lines.append("  NONE = 0,")
         lines.append("  ROUND = 1,")
         lines.append("  IMU = 2,")
+        lines.append("  NO_IMU = 3,")
         lines.append("};")
         lines.append("")
         lines.append("enum class RouteId : uint8_t {")
@@ -166,7 +167,11 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
         for ident, r in zip(route_idents, shortcut_routes, strict=True):
             dock_only = "true" if r.get("dock_only") else "false"
             cap_raw = str(r.get("capability") or "").lower()
-            cap_enum = "ROUND" if cap_raw == "round" else ("IMU" if cap_raw == "imu" else "NONE")
+            cap_enum = (
+                "ROUND"
+                if cap_raw == "round"
+                else ("IMU" if cap_raw == "imu" else ("NO_IMU" if cap_raw == "no_imu" else "NONE"))
+            )
             lines.append(
                 f"    {{RouteId::{ident}, {_cpp_str(r['token'])}, {_cpp_str(r['label'])}, "
                 f"{dock_only}, ShortcutRouteCap::{cap_enum}}},"

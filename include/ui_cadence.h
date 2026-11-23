@@ -384,7 +384,77 @@ struct CoinFlipState {
 CoinFlipState &coin_state();
 void trigger_coin_flip(uint32_t now_ms, uint32_t rand_val);
 
+enum class GameInputCmd : uint8_t {
+  NONE = 0,
+  LEFT = 1,
+  RIGHT = 2,
+  UP = 3,
+  DOWN = 4,
+  ROTATE = 5,
+  HARD_DROP = 6,
+  HOLD = 7,
+  COL_TAP = 8,    // param = col 0..6
+  MODE_AI = 9,
+  MODE_2P = 10,
+  PLAY_AGAIN = 11,
+};
+
+struct GameInputEvent {
+  GameInputCmd cmd = GameInputCmd::NONE;
+  int8_t param = 0;
+};
+
+struct GameInputQueue {
+  static constexpr uint8_t kCap = 8U;
+  GameInputEvent ring[kCap]{};
+  uint8_t head = 0U;
+  uint8_t tail = 0U;
+  uint8_t count = 0U;
+  GameInputCmd held_cmd = GameInputCmd::NONE;
+  uint32_t held_since_ms = 0U;
+  uint32_t held_last_rep_ms = 0U;
+
+  void clear() noexcept {
+    head = 0U;
+    tail = 0U;
+    count = 0U;
+    held_cmd = GameInputCmd::NONE;
+    held_since_ms = 0U;
+    held_last_rep_ms = 0U;
+  }
+
+  bool push(GameInputCmd cmd, int8_t param = 0) noexcept {
+    if (cmd == GameInputCmd::NONE) return false;
+    if (count >= kCap) {
+      head = static_cast<uint8_t>((head + 1U) % kCap);
+      --count;
+    }
+    ring[tail] = {cmd, param};
+    tail = static_cast<uint8_t>((tail + 1U) % kCap);
+    ++count;
+    return true;
+  }
+
+  bool pop(GameInputEvent &out) noexcept {
+    if (count == 0U) return false;
+    out = ring[head];
+    head = static_cast<uint8_t>((head + 1U) % kCap);
+    --count;
+    return true;
+  }
+
+  void set_held(GameInputCmd cmd, uint32_t now_ms) noexcept {
+    held_cmd = cmd;
+    held_since_ms = now_ms;
+    held_last_rep_ms = now_ms;
+  }
+
+  void release_held() noexcept {
+    held_cmd = GameInputCmd::NONE;
+  }
+};
+
 int &pending_game_sfx();
-int &game_2048_pending_dir();
+GameInputQueue &game_input();
 
 }  // namespace latter_ui

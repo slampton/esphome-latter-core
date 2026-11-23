@@ -106,4 +106,14 @@ void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
                           bool game_just_entered,
                           float &out_roll_delta, float &out_pitch_delta);
 
+#if !LATTER_HAS_IMU
+bool blocks_can_place(const int8_t board[20][10], int kind, int rot, int px, int py) noexcept;
+bool blocks_try_srs_rotate(const int8_t board[20][10], int kind, int &rot, int &px, int &py) noexcept;
+int blocks_clear_full_rows(int8_t board[20][10], uint32_t &out_mask) noexcept;
+int blocks_guideline_clear_score(int lines_cleared, int level) noexcept;
+bool snake_enqueue_turn(int8_t turn_q[2], int &turn_q_len, int8_t cur_dir, int8_t new_dir) noexcept;
+int drop4_find_winner(const uint8_t board[6][7], int out_cells[4][2] = nullptr) noexcept;
+int drop4_choose_ai_col(const uint8_t board[6][7], int streak, uint32_t &rng_state) noexcept;
+#endif
+
 }  // namespace latter_ui

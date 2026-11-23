@@ -63,10 +63,10 @@ std::string normalize_tools_items_csv(std::string_view sv) {
 }
 
 std::string normalize_games_items_csv(std::string_view sv) {
-  std::string_view seen[6]{};
+  std::string_view seen[7]{};
   int count = 0;
   size_t start = 0;
-  while (start <= sv.size() && count < 6) {
+  while (start <= sv.size() && count < 7) {
     const size_t pos = sv.find(',', start);
     const std::string_view tok = trim_ascii_ws(
         (pos == std::string_view::npos) ? sv.substr(start) : sv.substr(start, pos - start));
@@ -85,7 +85,7 @@ std::string normalize_games_items_csv(std::string_view sv) {
   }
   if (count <= 0) return std::string(kDefaultGamesItems);
   std::string out;
-  out.reserve(48);
+  out.reserve(64);
   for (int i = 0; i < count; ++i) {
     if (i > 0) out.push_back(',');
     out.append(seen[i]);

@@ -355,7 +355,7 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
   LATTER_CHECK(std::string_view(kDefaultGamesItems) ==
-               "marbles,archery,bricks,chomp,2048,memory");
+               "blocks,snake,drop_four,marbles,archery,bricks,chomp");
   LATTER_CHECK(device_prefs_state().tools_items == kDefaultToolsItems);
   LATTER_CHECK(device_prefs_state().games_items == kDefaultGamesItems);
   LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
@@ -368,10 +368,29 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(normalize_tools_items_csv("") == kDefaultToolsItems);
   LATTER_CHECK(normalize_tools_items_csv("calendar,unknown") == kDefaultToolsItems);
 
-  LATTER_CHECK(normalize_games_items_csv(" memory , 2048 , chomp , memory , invalid ") ==
-               "memory,2048,chomp");
+  LATTER_CHECK(normalize_games_items_csv(" drop_four , blocks , snake , chomp , drop_four , 2048 , memory ") ==
+               "drop_four,blocks,snake,chomp");
   LATTER_CHECK(normalize_games_items_csv("") == kDefaultGamesItems);
-  LATTER_CHECK(normalize_games_items_csv("chess,checkers") == kDefaultGamesItems);
+  LATTER_CHECK(normalize_games_items_csv("2048,memory,chess") == kDefaultGamesItems);
+
+  // ShortcutRouteCap::NO_IMU vs IMU route capability gating
+  const ShortcutRouteSpec *r_blocks = find_shortcut_route("games:blocks");
+  const ShortcutRouteSpec *r_snake = find_shortcut_route("games:snake");
+  const ShortcutRouteSpec *r_drop4 = find_shortcut_route("games:drop_four");
+  const ShortcutRouteSpec *r_archery = find_shortcut_route("games:archery");
+  const ShortcutRouteSpec *r_marbles = find_shortcut_route("games:marbles");
+  LATTER_CHECK(r_blocks != nullptr && r_blocks->cap == ShortcutRouteCap::NO_IMU);
+  LATTER_CHECK(r_snake != nullptr && r_snake->cap == ShortcutRouteCap::NO_IMU);
+  LATTER_CHECK(r_drop4 != nullptr && r_drop4->cap == ShortcutRouteCap::NO_IMU);
+  LATTER_CHECK(r_archery != nullptr && r_archery->cap == ShortcutRouteCap::IMU);
+  LATTER_CHECK(r_marbles != nullptr && r_marbles->cap == ShortcutRouteCap::NONE);
+  LATTER_CHECK(find_shortcut_route("games:2048") == nullptr);
+  LATTER_CHECK(find_shortcut_route("games:memory") == nullptr);
+  LATTER_CHECK(is_route_supported_on_board(RouteId::GAMES_BLOCKS) == (LATTER_HAS_IMU == 0));
+  LATTER_CHECK(is_route_supported_on_board(RouteId::GAMES_SNAKE) == (LATTER_HAS_IMU == 0));
+  LATTER_CHECK(is_route_supported_on_board(RouteId::GAMES_DROP_FOUR) == (LATTER_HAS_IMU == 0));
+  LATTER_CHECK(is_route_supported_on_board(RouteId::GAMES_ARCHERY) == (LATTER_HAS_IMU != 0));
+  LATTER_CHECK(is_route_supported_on_board(RouteId::GAMES_MARBLES));
 
   {
     PersistedDevicePrefs cold{};
@@ -389,22 +408,33 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
   dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "21";
   dp_tok[static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS)] = "dice,flashlight";
-  dp_tok[static_cast<size_t>(DevicePrefsField::GAMES_ITEMS)] = "2048,marbles";
+  dp_tok[static_cast<size_t>(DevicePrefsField::GAMES_ITEMS)] = "blocks,snake,marbles,chomp";
   uint32_t eff = 0U;
   LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(90, 1, dp_tok), eff, 1200U));
   LATTER_CHECK((eff & kPrefEffectNavPolicy) != 0U && (eff & kPrefEffectRedraw) != 0U);
   LATTER_CHECK(std::string_view(persisted_prefs().tools_items) == "dice,flashlight");
-  LATTER_CHECK(std::string_view(persisted_prefs().games_items) == "2048,marbles");
+  LATTER_CHECK(std::string_view(persisted_prefs().games_items) == "blocks,snake,marbles,chomp");
   LATTER_CHECK(device_prefs_state().tools_items == "dice,flashlight");
-  LATTER_CHECK(device_prefs_state().games_items == "2048,marbles");
+  LATTER_CHECK(device_prefs_state().games_items == "blocks,snake,marbles,chomp");
   LATTER_CHECK(device_prefs_state().nvs_save_pending);
 
   V3ReduceContext rctx{};
   rctx.now_ms = 1200U;
   const auto red_eff = v3_domain_reducer().reduce("device_prefs", rctx);
   LATTER_CHECK(red_eff.apply_device_prefs_effects);
-  LATTER_CHECK(rt.nav.game_carousel_idx == 1);
+  LATTER_CHECK(rt.nav.game_carousel_idx == (LATTER_HAS_IMU ? 1 : 2));
   LATTER_CHECK(rt.nav.tools_menu_page == 0);
+
+  // High score fields + append-only NVS prefix compatibility (high_score_drop_four at struct tail)
+  persisted_prefs().high_score_blocks = 12400;
+  persisted_prefs().high_score_snake = 320;
+  persisted_prefs().high_score_drop_four = 740;
+  LATTER_CHECK(get_game_high_score(5) == 12400);
+  LATTER_CHECK(get_game_high_score(6) == 320);
+  LATTER_CHECK(get_game_high_score(7) == 740);
+  LATTER_CHECK(update_game_high_score(7, 890));
+  LATTER_CHECK(persisted_prefs().high_score_drop_four == 890);
+  LATTER_CHECK(!update_game_high_score(7, 500));
 
   LATTER_CHECK(save_persisted_prefs());
   alignas(PersistedDevicePrefs) uint8_t raw_nvs[sizeof(PersistedDevicePrefs)]{};
@@ -414,7 +444,19 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(restored.magic == kPersistedPrefsMagic && restored.version == kPersistedPrefsVersion);
   clamp_prefs_to_capabilities(restored);
   LATTER_CHECK(std::string_view(restored.tools_items) == "dice,flashlight");
-  LATTER_CHECK(std::string_view(restored.games_items) == "2048,marbles");
+  LATTER_CHECK(std::string_view(restored.games_items) == "blocks,snake,marbles,chomp");
+  LATTER_CHECK(restored.high_score_blocks == 12400);
+  LATTER_CHECK(restored.high_score_snake == 320);
+  LATTER_CHECK(restored.high_score_drop_four == 890);
+
+  // Prefix load simulating older NVS blob written before high_score_drop_four was appended
+  PersistedDevicePrefs prefix_dst{};
+  prefix_dst.high_score_drop_four = 999;
+  const size_t old_prefix_len = offsetof(PersistedDevicePrefs, high_score_drop_four);
+  LATTER_CHECK(load_persisted_prefs_from_buffer(raw_nvs, old_prefix_len, prefix_dst));
+  LATTER_CHECK(prefix_dst.high_score_blocks == 12400);
+  LATTER_CHECK(prefix_dst.high_score_snake == 320);
+  LATTER_CHECK(prefix_dst.high_score_drop_four == 0);
 
   PersistedDevicePrefs empty_nvs{};
   empty_nvs.tools_items[0] = '\0';
@@ -448,9 +490,13 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
     LATTER_CHECK(n == 4 && tools_launcher_page_count(n) == 1);
 
     int g_ids[kMaxGamesLauncherItems]{};
-    const int gc = collect_enabled_games_for("memory,bricks,chomp", g_ids);
-    LATTER_CHECK(gc == 3 && g_ids[0] == 6 && g_ids[1] == 3 && g_ids[2] == 4);
-    LATTER_CHECK(collect_enabled_games_for("unknown", g_ids) == 0);
+    const int gc_no_imu = collect_enabled_games_for(kDefaultGamesItems, false, g_ids);
+    LATTER_CHECK(gc_no_imu == 4 && g_ids[0] == 5 && g_ids[1] == 6 && g_ids[2] == 7 && g_ids[3] == 1);
+    const int gc_imu = collect_enabled_games_for(kDefaultGamesItems, true, g_ids);
+    LATTER_CHECK(gc_imu == 4 && g_ids[0] == 1 && g_ids[1] == 2 && g_ids[2] == 3 && g_ids[3] == 4);
+    const int gc_custom = collect_enabled_games_for("drop_four,bricks,chomp,marbles", true, g_ids);
+    LATTER_CHECK(gc_custom == 3 && g_ids[0] == 3 && g_ids[1] == 4 && g_ids[2] == 1);
+    LATTER_CHECK(collect_enabled_games_for("unknown,2048,memory", false, g_ids) == 0);
   }
 
   reset_runtime_state();

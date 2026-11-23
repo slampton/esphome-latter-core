@@ -668,6 +668,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 }
 
 void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
+  game_input().release_held();
+  snake_drag_active_ = false;
   auto &gest = touch_gesture();
   if (!gest.active) return;
 
@@ -1036,7 +1038,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 4. Page 3: Games Carousel & 2048 Board Flicks
+  // 4. Page 3: Games Carousel & Blocks Board Swipes
   if (rs.nav.gui_page == PageId::GAMES) {
     if (rs.nav.active_game == 0 && !rs.nav.menu_scroll_active && h_dir != 0) {
       commit_swipe();
@@ -1055,13 +1057,25 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       }
       return true;
     }
-    if (rs.nav.active_game == 5 && is_release &&
-        (std::abs(dx) >= ly.flick_min() || std::abs(dy) >= ly.flick_min())) {
-      commit_swipe();
-      if (std::abs(dx) > std::abs(dy)) game_2048_pending_dir() = (dx > 0) ? 2 : 4;
-      else game_2048_pending_dir() = (dy > 0) ? 3 : 1;
-      rt_.schedule_disp();
-      return true;
+    if (rs.nav.active_game == 5 &&
+        game_input().held_cmd == GameInputCmd::NONE) {
+      const HitRegion *start_hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitTap);
+      const bool on_board = (start_hit == nullptr || start_hit->widget_id == WidgetId::GAME_BOARD_TAP);
+      const int thr = is_release ? ly.flick_min() : ly.swipe_min();
+      if (on_board && (std::abs(dx) >= thr || dy >= thr)) {
+        if (std::abs(dx) > std::abs(dy) && std::abs(dx) >= thr) {
+          commit_swipe();
+          game_input().push((dx > 0) ? GameInputCmd::RIGHT : GameInputCmd::LEFT);
+          rt_.schedule_disp();
+          return true;
+        }
+        if (dy > 0 && dy > std::abs(dx) && dy >= thr) {
+          commit_swipe();
+          game_input().push(GameInputCmd::HARD_DROP);
+          rt_.schedule_disp();
+          return true;
+        }
+      }
     }
     return false;
   }
@@ -1380,12 +1394,32 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
 
   gest.record_move(tx, ty, now_u, LATTER_PANEL_PPI);
 
-  if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game > 0 && rs.nav.active_game != 5) {
-    if (ty < layout().back_y - scale_y(30)) {
-      rs.nav.marble_touch_x = static_cast<float>(tx);
-      rs.nav.marble_touch_y = static_cast<float>(ty);
+  if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game > 0) {
+    if (rs.nav.active_game >= 1 && rs.nav.active_game <= 4) {
+      return;
     }
-    return;
+    if (rs.nav.active_game == 6) {
+      if (snake_drag_active_) {
+        const int sdx = tx - snake_drag_x_;
+        const int sdy = ty - snake_drag_y_;
+        const int thr = layout().flick_min();
+        if (std::abs(sdx) >= thr || std::abs(sdy) >= thr) {
+          if (std::abs(sdx) >= std::abs(sdy)) {
+            game_input().push((sdx > 0) ? GameInputCmd::RIGHT : GameInputCmd::LEFT);
+          } else {
+            game_input().push((sdy > 0) ? GameInputCmd::DOWN : GameInputCmd::UP);
+          }
+          snake_drag_x_ = tx;
+          snake_drag_y_ = ty;
+          gest.tap_cancelled = true;
+          rt_.schedule_disp();
+        }
+      }
+      return;
+    }
+    if (rs.nav.active_game == 7) {
+      return;
+    }
   }
 
   if (compute_touch_context(rs) != gest.start_context) return;

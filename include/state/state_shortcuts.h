@@ -114,6 +114,7 @@ inline constexpr bool is_route_supported_on_board(RouteId id) noexcept {
   if (spec == nullptr) return false;
   if (spec->cap == ShortcutRouteCap::ROUND && !LATTER_ROUND_DISPLAY) return false;
   if (spec->cap == ShortcutRouteCap::IMU && !LATTER_HAS_IMU) return false;
+  if (spec->cap == ShortcutRouteCap::NO_IMU && LATTER_HAS_IMU) return false;
   return true;
 }
 

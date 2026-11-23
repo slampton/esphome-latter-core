@@ -36,7 +36,7 @@ Used by both the firmware (`latter_protocol.h`) and Home Assistant until a value
 | `area_categories` | `scene,light,cover,fan,switch,climate,media` |
 | `home_categories` | `alarm,intercom,thermostat,entry,vacuum` |
 | `tools_items` | `stopwatch,level,flashlight,calculator,dice,coin_flip` |
-| `games_items` | `marbles,archery,bricks,chomp,2048,memory` |
+| `games_items` | `blocks,snake,drop_four,marbles,archery,bricks,chomp` |
 
 ## 2. Domain Payloads
 
@@ -214,7 +214,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `50` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
 | `51` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
 | `52` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip) |
-| `53` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (marbles,archery,bricks,chomp,2048,memory) |
+| `53` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (blocks,snake,drop_four,marbles,archery,bricks,chomp) |
 | `54` | `home_date_tap_action` | `DevicePrefsField::HOME_DATE_TAP_ACTION` | `string` | Action when tapping the date readout on the Home Screen (Day View|Overview) |
 | `55` | `calendar_lookahead_days` | `DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS` | `u16` | Calendar Overview upcoming lookahead horizon in days (7|14|30|60) |
 | `56` | `calendar_week_start` | `DevicePrefsField::CALENDAR_WEEK_START` | `string` | First day of week in Calendar Week and Month views (Sunday|Monday) |
@@ -298,7 +298,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `46`
+- **Studio Wire Revision (`studio_rev`)**: `47`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `deactivate_screensaver`, `wake_screen`, `screen_off`, `set_profiler_on`, `set_profiler_off`, `request_telemetry`, `trigger_va`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
 - **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`

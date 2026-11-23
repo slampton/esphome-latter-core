@@ -498,8 +498,9 @@ const char *route_icon_slug(RouteId route) noexcept {
     case RouteId::GAMES_ARCHERY:       return "mdi:bullseye-arrow";
     case RouteId::GAMES_BRICKS:        return "mdi:wall";
     case RouteId::GAMES_CHOMP:         return "mdi:pac-man";
-    case RouteId::GAMES_2048:          return "mdi:numeric-2-box-multiple";
-    case RouteId::GAMES_MEMORY:        return "mdi:cards";
+    case RouteId::GAMES_BLOCKS:        return "mdi:toy-brick";
+    case RouteId::GAMES_SNAKE:         return "mdi:snake";
+    case RouteId::GAMES_DROP_FOUR:     return "mdi:dots-grid";
     case RouteId::SETTINGS_DISPLAY:    return "mdi:brightness-6";
     case RouteId::SETTINGS_SLEEP:      return "mdi:power-sleep";
     case RouteId::SETTINGS_SOUND:      return "mdi:volume-high";
@@ -556,8 +557,7 @@ void draw_route_icon(Rgb565Surface &it, RouteId route, int cx, int cy, int r,
     case RouteId::AREA_SWITCH:         fb = "mdi:sofa"; break;
     case RouteId::AREA_MEDIA:          fb = "mdi:speaker"; break;
     case RouteId::AREA_ALL:
-    case RouteId::APP_TOOLS:
-    case RouteId::GAMES_MEMORY:        fb = "mdi:apps"; break;
+    case RouteId::APP_TOOLS:           fb = "mdi:apps"; break;
     case RouteId::APP_REMOTE:          fb = "mdi:remote"; break;
     case RouteId::REMOTE_DEVICES:      fb = "mdi:remote-tv"; break;
     case RouteId::APP_WEATHER:
@@ -587,7 +587,9 @@ void draw_route_icon(Rgb565Surface &it, RouteId route, int cx, int cy, int r,
     case RouteId::GAMES_ARCHERY:       fb = "mdi:target"; break;
     case RouteId::GAMES_BRICKS:        fb = "mdi:view-grid"; break;
     case RouteId::GAMES_CHOMP:         fb = "mdi:ghost"; break;
-    case RouteId::GAMES_2048:          fb = "mdi:grid"; break;
+    case RouteId::GAMES_BLOCKS:        fb = "mdi:view-grid"; break;
+    case RouteId::GAMES_SNAKE:         fb = "mdi:gamepad-variant"; break;
+    case RouteId::GAMES_DROP_FOUR:     fb = "mdi:circle-multiple"; break;
     default:                           fb = "mdi:cog"; break;
   }
   render_mdi_icon(it, slug, cx, cy, mdi_px, col, shadow, fb);

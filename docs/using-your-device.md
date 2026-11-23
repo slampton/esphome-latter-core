@@ -30,7 +30,7 @@
 | **Sky & Weather** | Current conditions, 5-day forecast, solar arc, and 3D lunar phase over animated clouds, fog, rain, snow, plasma-bolt storms, tumbling leaves, and night shooting stars |
 | **Calendar** | 4-tab agenda app (**Overview**, **Day**, **Week**, **Month**) with event detail, deletion, and `+ Add Event` composer (including voice dictation and Home Assistant `zone.*` location picker) |
 | **Tools & Pinned** | Calculator, Dice, Coin Flip, and Flashlight on all boards, plus Bubble Level (IMU boards), classic Analog Chronograph (round displays), and multi-page 2×3 **Pinned** shortcut grids |
-| **Games** | Marbles, Archery, Bricks, Chomp, 2048, and Memory Match (tilt-steered with touch fallback on IMU boards; touch-steered elsewhere) |
+| **Games** | Marbles (universal), Archery, Bricks, and Chomp on IMU displays; Blocks, Snake, and Drop Four (1P AI & 2P) on non-IMU touch displays |
 | **Settings** | On-device status, Home quick toggles, sleep & wake (including Bedtime Mode and Do Not Disturb), display/theme (including Area **Ambient Light** brightness), audio, voice, and firmware update—synced 2-way with Latter Studio |
 
 ---

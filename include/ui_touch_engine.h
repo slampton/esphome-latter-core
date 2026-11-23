@@ -859,6 +859,9 @@ class TouchGestureEngine {
   bool wheel_drag_dirty_{false};
   bool pending_doorbell_unlock_{false};
   int music_scroll_last_y_{0};
+  int snake_drag_x_{0};
+  int snake_drag_y_{0};
+  bool snake_drag_active_{false};
   std::string pending_pin_feedback_{};
 };
 

@@ -239,5 +239,6 @@ void run_touch_engine_tests();
 void run_pages_apps_tests();
 void run_showcase_nav_tests();
 void run_mdi_plus_tests();
+void run_games_tests();
 
 }  // namespace latter_test

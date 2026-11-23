@@ -914,6 +914,7 @@ int main(int argc, char **argv) {
   latter_test::run_pages_apps_tests();
   latter_test::run_showcase_nav_tests();
   latter_test::run_mdi_plus_tests();
+  latter_test::run_games_tests();
   latter_test::test_music_app_v3_d059();
 
   std::printf(

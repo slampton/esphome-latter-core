@@ -28,7 +28,7 @@ Turnkey firmware and a compiled C++20 UI/OS for five off-the-shelf Waveshare ESP
 | **Sky & Weather** | Current conditions, 5-day forecast, solar arc, and real-albedo 3D lunar phase over animated clouds, fog, rain, snow, plasma-bolt storms, tumbling leaves, and night meteors |
 | **Calendar & Tools** | Dedicated **Calendar** app (`Overview`, `Day`, `Week`, `Month` + `+ Add Event` composer & `zone.*` location picker), plus **Tools** (Calculator, Dice, Coin Flip, Flashlight, Bubble Level on IMU boards, and Analog Chronograph on round displays) |
 | **Voice** | On-device [microWakeWord](https://github.com/kahrendt/microWakeWord) (*Okay Nabu*, *Hey Jarvis*, *Hey Mycroft*, *Alexa*, *Hey Luna*) into Home Assistant Assist with 5 reactive visual overlays |
-| **Games** | Optional IMU/touch mini-games: Marbles, Archery, Bricks, Chomp, 2048, and Memory Match (tilt-steered with touch fallback on IMU boards; touch-steered elsewhere) |
+| **Games** | Optional hardware-matched mini-games: Marbles (all displays), Archery, Bricks, and Chomp (IMU displays), plus touch-native Blocks, Snake, and Drop Four with 1P AI & 2P (non-IMU displays) |
 
 → [Using your device](docs/using-your-device.md)
 

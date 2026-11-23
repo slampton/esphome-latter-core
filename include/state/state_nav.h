@@ -17,7 +17,7 @@ struct ToolsLauncherItemSpec {
 };
 
 inline constexpr int kMaxToolsLauncherItems = 6;
-inline constexpr int kMaxGamesLauncherItems = 6;
+inline constexpr int kMaxGamesLauncherItems = 7;
 
 inline int collect_tools_launcher_items_for(std::string_view csv,
                                             bool round_display,
@@ -75,6 +75,7 @@ inline int active_tools_launcher_page_count(const PersistedDevicePrefs &p = pers
 }
 
 inline int collect_enabled_games_for(std::string_view csv,
+                                     bool has_imu,
                                      int *out_game_ids,
                                      int max_games = kMaxGamesLauncherItems) noexcept {
   if (out_game_ids == nullptr || max_games <= 0 || csv.empty()) return 0;
@@ -86,7 +87,7 @@ inline int collect_enabled_games_for(std::string_view csv,
     const std::string_view tok = trim_ascii_ws(
         (pos == std::string_view::npos) ? csv.substr(start) : csv.substr(start, pos - start));
     const int gid = game_id_for_token(tok);
-    if (gid > 0) {
+    if (gid > 0 && game_supported_for_imu(gid, has_imu)) {
       bool dup = false;
       for (int i = 0; i < count; ++i) {
         if (out_game_ids[i] == gid) {
@@ -105,7 +106,8 @@ inline int collect_enabled_games_for(std::string_view csv,
 inline int collect_enabled_games(int *out_game_ids,
                                  const PersistedDevicePrefs &p = persisted_prefs(),
                                  int max_games = kMaxGamesLauncherItems) noexcept {
-  return collect_enabled_games_for(effective_games_items_sv(p), out_game_ids, max_games);
+  return collect_enabled_games_for(
+      effective_games_items_sv(p), LATTER_HAS_IMU != 0, out_game_ids, max_games);
 }
 
 inline int active_games_launcher_count(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
@@ -114,7 +116,9 @@ inline int active_games_launcher_count(const PersistedDevicePrefs &p = persisted
 }
 
 
-// Unified 6-game high-score accessors (1=Marbles, 2=Archery, 3=Bricks, 4=Chomp, 5=2048, 6=Memory Match)
+// Unified 7-game high-score accessors:
+// 1=Marbles (universal), 2=Archery (IMU), 3=Bricks (IMU), 4=Chomp (IMU),
+// 5=Blocks (non-IMU), 6=Snake (non-IMU), 7=Drop Four (non-IMU).
 inline int get_game_high_score(int game_id) {
   const auto &p = persisted_prefs();
   switch (game_id) {
@@ -122,8 +126,9 @@ inline int get_game_high_score(int game_id) {
     case 2: return p.high_score_archery;
     case 3: return p.high_score_bricks;
     case 4: return p.high_score_chomp;
-    case 5: return p.high_score_2048;
-    case 6: return p.high_score_memory;
+    case 5: return p.high_score_blocks;
+    case 6: return p.high_score_snake;
+    case 7: return p.high_score_drop_four;
     default: return 0;
   }
 }
@@ -137,8 +142,9 @@ inline bool update_game_high_score(int game_id, int score) {
     case 2: slot = &p.high_score_archery; break;
     case 3: slot = &p.high_score_bricks; break;
     case 4: slot = &p.high_score_chomp; break;
-    case 5: slot = &p.high_score_2048; break;
-    case 6: slot = &p.high_score_memory; break;
+    case 5: slot = &p.high_score_blocks; break;
+    case 6: slot = &p.high_score_snake; break;
+    case 7: slot = &p.high_score_drop_four; break;
     default: return false;
   }
   if (score <= *slot) return false;

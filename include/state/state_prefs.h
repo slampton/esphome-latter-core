@@ -233,8 +233,8 @@ struct PersistedDevicePrefs {
   int32_t high_score_archery = 0;
   int32_t high_score_bricks = 0;
   int32_t high_score_chomp = 0;
-  int32_t high_score_2048 = 0;
-  int32_t high_score_memory = 0;
+  int32_t high_score_blocks = 0;
+  int32_t high_score_snake = 0;
   PersistedAlarmPref alarms[3] = {
       {7, 0, false, 1},
       {8, 30, false, 2},
@@ -255,6 +255,7 @@ struct PersistedDevicePrefs {
   uint8_t camera_doorbell_popup = 0;       // 0..1 ("Snapshot", "Live Video"; P4-only for Live Video)
   bool do_not_disturb = false;             // Appended v3.0+ tail field: Do Not Disturb mode
   uint8_t music_auto_open = 0;             // Appended v3.0+ tail field: 0..2 ("Now Playing", "Lyrics", "Off")
+  int32_t high_score_drop_four = 0;        // Appended v3.0+ tail field: Drop Four AI streak high score
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr MusicAutoOpenMode music_auto_open_enum() const noexcept {
@@ -679,8 +680,8 @@ inline const char *pref_camera_doorbell_popup_cstr(const PersistedDevicePrefs &p
 
 inline constexpr const char *const kCanonicalToolsItemTokens[6] = {
     "stopwatch", "level", "flashlight", "calculator", "dice", "coin_flip"};
-inline constexpr const char *const kCanonicalGamesItemTokens[6] = {
-    "marbles", "archery", "bricks", "chomp", "2048", "memory"};
+inline constexpr const char *const kCanonicalGamesItemTokens[7] = {
+    "blocks", "snake", "drop_four", "marbles", "archery", "bricks", "chomp"};
 
 inline constexpr int tools_subpage_for_token(std::string_view tok) noexcept {
   if (tok == "stopwatch") return ToolsSubpage::STOPWATCH;
@@ -704,15 +705,25 @@ inline constexpr const char *tools_launcher_label_for_subpage(int subpage_id) no
   }
 }
 
-// 1-based game IDs matching NavRuntimeState::active_game (1=Marbles .. 6=Memory Match).
+// 1-based game IDs matching NavRuntimeState::active_game:
+// 1=Marbles (universal), 2=Archery (IMU), 3=Bricks (IMU), 4=Chomp (IMU),
+// 5=Blocks (non-IMU), 6=Snake (non-IMU), 7=Drop Four (non-IMU).
 inline constexpr int game_id_for_token(std::string_view tok) noexcept {
   if (tok == "marbles") return 1;
   if (tok == "archery") return 2;
   if (tok == "bricks") return 3;
   if (tok == "chomp") return 4;
-  if (tok == "2048") return 5;
-  if (tok == "memory") return 6;
+  if (tok == "blocks") return 5;
+  if (tok == "snake") return 6;
+  if (tok == "drop_four") return 7;
   return 0;
+}
+
+inline constexpr bool game_supported_for_imu(int game_id, bool has_imu) noexcept {
+  if (game_id == 1) return true;                    // Marbles: universal
+  if (game_id >= 2 && game_id <= 4) return has_imu; // Archery, Bricks, Chomp: IMU-only
+  if (game_id >= 5 && game_id <= 7) return !has_imu; // Blocks, Snake, Drop Four: non-IMU touch-only
+  return false;
 }
 
 

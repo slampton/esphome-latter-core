@@ -17,12 +17,13 @@ static constexpr const char *kDefaultActivitySources = "calendar,music_queue,sto
 static constexpr const char *kDefaultAreaCategories = "scene,light,cover,fan,switch,climate,media";  // defaults.area_categories
 static constexpr const char *kDefaultHomeCategories = "alarm,intercom,thermostat,entry,vacuum";  // defaults.home_categories
 static constexpr const char *kDefaultToolsItems = "stopwatch,level,flashlight,calculator,dice,coin_flip";  // defaults.tools_items
-static constexpr const char *kDefaultGamesItems = "marbles,archery,bricks,chomp,2048,memory";  // defaults.games_items
+static constexpr const char *kDefaultGamesItems = "blocks,snake,drop_four,marbles,archery,bricks,chomp";  // defaults.games_items
 
 enum class ShortcutRouteCap : uint8_t {
   NONE = 0,
   ROUND = 1,
   IMU = 2,
+  NO_IMU = 3,
 };
 
 enum class RouteId : uint8_t {
@@ -88,17 +89,18 @@ enum class RouteId : uint8_t {
   GAMES_ARCHERY = 59,
   GAMES_BRICKS = 60,
   GAMES_CHOMP = 61,
-  GAMES_2048 = 62,
-  GAMES_MEMORY = 63,
-  SETTINGS_DISPLAY = 64,
-  SETTINGS_SLEEP = 65,
-  SETTINGS_SOUND = 66,
-  SETTINGS_VOICE = 67,
-  SETTINGS_MUSIC = 68,
-  SETTINGS_HOME = 69,
-  SETTINGS_ACTIONS = 70,
-  SETTINGS_UPDATE = 71,
-  SETTINGS_INFO = 72,
+  GAMES_BLOCKS = 62,
+  GAMES_SNAKE = 63,
+  GAMES_DROP_FOUR = 64,
+  SETTINGS_DISPLAY = 65,
+  SETTINGS_SLEEP = 66,
+  SETTINGS_SOUND = 67,
+  SETTINGS_VOICE = 68,
+  SETTINGS_MUSIC = 69,
+  SETTINGS_HOME = 70,
+  SETTINGS_ACTIONS = 71,
+  SETTINGS_UPDATE = 72,
+  SETTINGS_INFO = 73,
   SETTINGS_ROOT = 250,
 };
 
@@ -169,11 +171,12 @@ inline constexpr ShortcutRouteSpec kShortcutRoutes[] = {
     {RouteId::TOOLS_DICE, "tools:dice", "Dice Roll", false, ShortcutRouteCap::NONE},
     {RouteId::TOOLS_COIN_FLIP, "tools:coin_flip", "Coin Flip", false, ShortcutRouteCap::NONE},
     {RouteId::GAMES_MARBLES, "games:marbles", "Marbles", false, ShortcutRouteCap::NONE},
-    {RouteId::GAMES_ARCHERY, "games:archery", "Archery", false, ShortcutRouteCap::NONE},
-    {RouteId::GAMES_BRICKS, "games:bricks", "Bricks", false, ShortcutRouteCap::NONE},
-    {RouteId::GAMES_CHOMP, "games:chomp", "Chomp", false, ShortcutRouteCap::NONE},
-    {RouteId::GAMES_2048, "games:2048", "2048", false, ShortcutRouteCap::NONE},
-    {RouteId::GAMES_MEMORY, "games:memory", "Memory Match", false, ShortcutRouteCap::NONE},
+    {RouteId::GAMES_ARCHERY, "games:archery", "Archery", false, ShortcutRouteCap::IMU},
+    {RouteId::GAMES_BRICKS, "games:bricks", "Bricks", false, ShortcutRouteCap::IMU},
+    {RouteId::GAMES_CHOMP, "games:chomp", "Chomp", false, ShortcutRouteCap::IMU},
+    {RouteId::GAMES_BLOCKS, "games:blocks", "Blocks", false, ShortcutRouteCap::NO_IMU},
+    {RouteId::GAMES_SNAKE, "games:snake", "Snake", false, ShortcutRouteCap::NO_IMU},
+    {RouteId::GAMES_DROP_FOUR, "games:drop_four", "Drop Four", false, ShortcutRouteCap::NO_IMU},
     {RouteId::SETTINGS_DISPLAY, "settings:display", "Display Settings", false, ShortcutRouteCap::NONE},
     {RouteId::SETTINGS_SLEEP, "settings:sleep", "Sleep & Wake", false, ShortcutRouteCap::NONE},
     {RouteId::SETTINGS_SOUND, "settings:sound", "Sound Settings", false, ShortcutRouteCap::NONE},

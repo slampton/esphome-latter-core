@@ -233,6 +233,17 @@ namespace WidgetId {
   static constexpr uint16_t CAM_CAROUSEL_PAUSE_BTN     = 997;
   static constexpr uint16_t CAM_VIDEO_TAP              = 998;
   static constexpr uint16_t CAM_SETTINGS_ROW_BASE      = 1000; // 1000..1004 (param = setting index)
+
+  // Non-IMU touch arcade controls (Blocks, Snake, Drop Four — D-081)
+  static constexpr uint16_t GAME_CTRL_LEFT             = 1010;
+  static constexpr uint16_t GAME_CTRL_RIGHT            = 1011;
+  static constexpr uint16_t GAME_CTRL_ROTATE           = 1012;
+  static constexpr uint16_t GAME_CTRL_DROP             = 1013;
+  static constexpr uint16_t GAME_CTRL_HOLD             = 1014;
+  static constexpr uint16_t GAME_BOARD_TAP             = 1015;
+  static constexpr uint16_t GAME_MODE_AI               = 1016;
+  static constexpr uint16_t GAME_MODE_2P               = 1017;
+  static constexpr uint16_t GAME_COL_BASE              = 1020; // 1020..1026 (param = col 0..6)
 }  // namespace WidgetId
 
 }  // namespace latter_ui
