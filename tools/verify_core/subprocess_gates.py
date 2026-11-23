@@ -7,7 +7,7 @@ import re
 import shutil
 import sys
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -405,7 +405,7 @@ def _compile_and_run_single_gpp_geom(
     cmd = [
         ctx.gpp,
         "-std=c++20",
-        "-O2",
+        "-O1",
         "-Wall",
         "-Wextra",
         "-Werror",
@@ -429,65 +429,74 @@ def _compile_and_run_single_gpp_geom(
     return None
 
 
-def _run_gpp_gates(gpp: str, *, host_tests_only: bool, failures: list[str]) -> None:
-    test_cpps, host_core_cpps, geom_ui_cpps, ui_mdi_cpp = _collect_and_validate_host_sources(failures)
-    if not test_cpps:
-        return
-    with tempfile.TemporaryDirectory() as td:
-        td_path = Path(td)
-        san_flags = _probe_gpp_sanitizers(gpp, td_path)
-        mdi_obj: Path | None = None
-        if ui_mdi_cpp is not None:
-            mdi_obj = td_path / "ui_mdi.o"
-            mcomp = run_trusted_cmd(
-                [
-                    gpp,
-                    "-std=c++20",
-                    "-O2",
-                    "-Wall",
-                    "-Wextra",
-                    "-Werror",
-                    *san_flags,
-                    f"-I{ROOT / 'include'}",
-                    "-c",
-                    str(ui_mdi_cpp),
-                    "-o",
-                    str(mdi_obj),
-                ]
-            )
-            if mcomp.returncode != 0:
-                failures.append(f"[UI MDI COMPILE] {(mcomp.stderr or mcomp.stdout).strip()}")
-                return
-
-        build_ctx = _GppGeomBuildCtx(
-            gpp=gpp,
-            san_flags=san_flags,
-            td_path=td_path,
-            mdi_obj=mdi_obj,
-            sources=[*host_core_cpps, *geom_ui_cpps, *test_cpps],
-        )
-        with ThreadPoolExecutor(max_workers=min(5, len(FIVE_GEOM_CONFIGS))) as pool:
-            futs = [
-                pool.submit(_compile_and_run_single_gpp_geom, build_ctx, lbl, defs)
-                for lbl, defs in FIVE_GEOM_CONFIGS
-            ]
-            for fut in futs:
-                err = fut.result()
-                if err:
-                    failures.append(err)
-
-        if not host_tests_only:
-            _run_gpp_syntax_and_beacon_matrices(gpp, td_path, failures)
+def _compile_gpp_mdi_obj(
+    gpp: str,
+    san_flags: list[str],
+    ui_mdi_cpp: Path,
+    mdi_obj: Path,
+) -> str | None:
+    mcomp = run_trusted_cmd(
+        [
+            gpp,
+            "-std=c++20",
+            "-O1",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            *san_flags,
+            f"-I{ROOT / 'include'}",
+            "-c",
+            str(ui_mdi_cpp),
+            "-o",
+            str(mdi_obj),
+        ]
+    )
+    if mcomp.returncode != 0:
+        return f"[UI MDI COMPILE] {(mcomp.stderr or mcomp.stdout).strip()}"
+    return None
 
 
-def _run_gpp_syntax_and_beacon_matrices(gpp: str, td_path: Path, failures: list[str]) -> None:
+def _run_gpp_cmd_gate(tag: str, cmd: list[str]) -> str | None:
+    res = run_trusted_cmd(cmd)
+    if res.returncode != 0:
+        return f"[{tag}] {(res.stderr or res.stdout).strip()}"
+    return None
+
+
+def _run_gpp_beacon_vhci(gpp: str, beacon_inc: Path, stub_dir: Path, td_path: Path) -> str | None:
+    beacon_cpp = beacon_inc / "latter_beacon.cpp"
+    beacon_test_cpp = td_path / "beacon_host_test.cpp"
+    write_beacon_host_test(beacon_test_cpp)
+    beacon_bin = td_path / ("beacon_host_test.exe" if os.name == "nt" else "beacon_host_test")
+    bcomp = run_trusted_cmd(
+        [
+            gpp, "-std=c++20", "-O1", "-Wall", "-Wextra", "-Werror", "-DUSE_ESP32",
+            f"-I{beacon_inc}", f"-I{stub_dir}", str(beacon_cpp), str(beacon_test_cpp), "-o", str(beacon_bin),
+        ]
+    )
+    if bcomp.returncode != 0:
+        return f"[BEACON VHCI COMPILE] {(bcomp.stderr or bcomp.stdout).strip()}"
+    brun = run_trusted_cmd([str(beacon_bin)])
+    if brun.returncode != 0:
+        return f"[BEACON VHCI RUN] {(brun.stderr or brun.stdout).strip()}"
+    return None
+
+
+def _submit_gpp_syntax_and_beacon_tasks(
+    pool: ThreadPoolExecutor,
+    gpp: str,
+    td_path: Path,
+) -> list[Future[str | None]]:
+    futs: list[Future[str | None]] = []
     lam_cpp = td_path / "yaml_lambdas_check.cpp"
     if write_yaml_lambdas_syntax_harness(lam_cpp) > 0:
-        lam_comp = run_trusted_cmd(
-            [gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", f"-I{ROOT / 'include'}", str(lam_cpp)]
+        futs.append(
+            pool.submit(
+                _run_gpp_cmd_gate,
+                "YAML LAMBDA COMPILE",
+                [gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror", f"-I{ROOT / 'include'}", str(lam_cpp)],
+            )
         )
-        if lam_comp.returncode != 0:
-            failures.append(f"[YAML LAMBDA COMPILE] {(lam_comp.stderr or lam_comp.stdout).strip()}")
 
     stub_dir = td_path / "ui_stubs"
     write_host_ui_stubs(stub_dir)
@@ -497,58 +506,94 @@ def _run_gpp_syntax_and_beacon_matrices(gpp: str, td_path: Path, failures: list[
     ui_inc = ROOT / "components" / "latter_ui"
 
     if beacon_cpp.is_file():
-        beacon_test_cpp = td_path / "beacon_host_test.cpp"
-        write_beacon_host_test(beacon_test_cpp)
-        beacon_bin = td_path / ("beacon_host_test.exe" if os.name == "nt" else "beacon_host_test")
-        bcomp = run_trusted_cmd(
-            [
-                gpp, "-std=c++20", "-O2", "-Wall", "-Wextra", "-Werror", "-DUSE_ESP32",
-                f"-I{beacon_inc}", f"-I{stub_dir}", str(beacon_cpp), str(beacon_test_cpp), "-o", str(beacon_bin),
-            ]
+        futs.append(pool.submit(_run_gpp_beacon_vhci, gpp, beacon_inc, stub_dir, td_path))
+        futs.append(
+            pool.submit(
+                _run_gpp_cmd_gate,
+                "BEACON HOSTED COMPILE",
+                [
+                    gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror",
+                    "-DUSE_ESP32", "-DUSE_LATTER_BEACON_HOSTED", f"-I{beacon_inc}", f"-I{stub_dir}", str(beacon_cpp),
+                ],
+            )
         )
-        if bcomp.returncode != 0:
-            failures.append(f"[BEACON VHCI COMPILE] {(bcomp.stderr or bcomp.stdout).strip()}")
-        else:
-            brun = run_trusted_cmd([str(beacon_bin)])
-            if brun.returncode != 0:
-                failures.append(f"[BEACON VHCI RUN] {(brun.stderr or brun.stdout).strip()}")
-        bhcomp = run_trusted_cmd(
-            [
-                gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror",
-                "-DUSE_ESP32", "-DUSE_LATTER_BEACON_HOSTED", f"-I{beacon_inc}", f"-I{stub_dir}", str(beacon_cpp),
-            ]
-        )
-        if bhcomp.returncode != 0:
-            failures.append(f"[BEACON HOSTED COMPILE] {(bhcomp.stderr or bhcomp.stdout).strip()}")
 
     core_cpps = sorted(core_inc.glob("*.cpp"))
     for cfg_lbl, defs in CORE_TRAIT_MATRICES:
-        ccomp = run_trusted_cmd(
-            [
-                gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror",
-                f"-I{ROOT / 'include'}", f"-I{core_inc}", f"-I{stub_dir}",
-                *[f"-D{d}" for d in defs], *[str(p) for p in core_cpps],
-            ]
+        futs.append(
+            pool.submit(
+                _run_gpp_cmd_gate,
+                f"CORE CPP SYNTAX ({cfg_lbl})",
+                [
+                    gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror",
+                    f"-I{ROOT / 'include'}", f"-I{core_inc}", f"-I{stub_dir}",
+                    *[f"-D{d}" for d in defs], *[str(p) for p in core_cpps],
+                ],
+            )
         )
-        if ccomp.returncode != 0:
-            failures.append(f"[CORE CPP SYNTAX ({cfg_lbl})] {(ccomp.stderr or ccomp.stdout).strip()}")
 
-    ui_cpps = sorted(ui_inc.glob("*.cpp"))
+    all_ui_cpps = sorted(ui_inc.glob("*.cpp"))
+    geom_ui_cpps = [p for p in all_ui_cpps if p.name != "ui_mdi.cpp"]
     full_lam_host = td_path / "yaml_full_lambdas_host.cpp"
     full_lam_esp = td_path / "yaml_full_lambdas_esp32.cpp"
     has_host_lam = write_yaml_full_lambdas_syntax_harness(full_lam_host, include_hal_boards=False) > 0
     has_esp_lam = write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
     for cfg_lbl, defs in UI_TRAIT_MATRICES:
+        # ui_mdi.cpp only branches on USE_ESP32 (zero geometry #ifdefs); syntax-check it once on S3_ESP32.
+        matrix_ui_cpps = all_ui_cpps if cfg_lbl == "S3_ESP32" else geom_ui_cpps
         extra_tus = ([full_lam_esp] if has_esp_lam else []) if "USE_ESP32" in defs else ([full_lam_host] if has_host_lam else [])
-        ui_comp = run_trusted_cmd(
-            [
-                gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Werror",
-                f"-I{ROOT / 'include'}", f"-I{core_inc}", f"-I{ui_inc}", f"-I{beacon_inc}", f"-I{stub_dir}",
-                *[f"-D{d}" for d in defs], *[str(p) for p in (*ui_cpps, *extra_tus)],
-            ]
+        futs.append(
+            pool.submit(
+                _run_gpp_cmd_gate,
+                f"UI/YAML CPP SYNTAX ({cfg_lbl})",
+                [
+                    gpp, "-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Werror",
+                    f"-I{ROOT / 'include'}", f"-I{core_inc}", f"-I{ui_inc}", f"-I{beacon_inc}", f"-I{stub_dir}",
+                    *[f"-D{d}" for d in defs], *[str(p) for p in (*matrix_ui_cpps, *extra_tus)],
+                ],
+            )
         )
-        if ui_comp.returncode != 0:
-            failures.append(f"[UI/YAML CPP SYNTAX ({cfg_lbl})] {(ui_comp.stderr or ui_comp.stdout).strip()}")
+    return futs
+
+
+def _run_gpp_gates(gpp: str, *, host_tests_only: bool, failures: list[str]) -> None:
+    test_cpps, host_core_cpps, geom_ui_cpps, ui_mdi_cpp = _collect_and_validate_host_sources(failures)
+    if not test_cpps:
+        return
+    workers = min(max(os.cpu_count() or 4, 2), 8)
+    with tempfile.TemporaryDirectory() as td, ThreadPoolExecutor(max_workers=workers) as pool:
+        td_path = Path(td)
+        san_flags = _probe_gpp_sanitizers(gpp, td_path)
+        mdi_obj: Path | None = (td_path / "ui_mdi.o") if ui_mdi_cpp is not None else None
+        mdi_fut: Future[str | None] | None = (
+            pool.submit(_compile_gpp_mdi_obj, gpp, san_flags, ui_mdi_cpp, mdi_obj)
+            if ui_mdi_cpp is not None and mdi_obj is not None
+            else None
+        )
+        # Overlap independent syntax/beacon checks with ui_mdi.o and the 5-geometry host builds.
+        extra_futs = [] if host_tests_only else _submit_gpp_syntax_and_beacon_tasks(pool, gpp, td_path)
+
+        mdi_err = mdi_fut.result() if mdi_fut is not None else None
+        if mdi_err:
+            failures.append(mdi_err)
+            geom_futs: list[Future[str | None]] = []
+        else:
+            build_ctx = _GppGeomBuildCtx(
+                gpp=gpp,
+                san_flags=san_flags,
+                td_path=td_path,
+                mdi_obj=mdi_obj,
+                sources=[*host_core_cpps, *geom_ui_cpps, *test_cpps],
+            )
+            geom_futs = [
+                pool.submit(_compile_and_run_single_gpp_geom, build_ctx, lbl, defs)
+                for lbl, defs in FIVE_GEOM_CONFIGS
+            ]
+
+        for fut in (*geom_futs, *extra_futs):
+            err = fut.result()
+            if err:
+                failures.append(err)
 
 
 def _find_msvc_vcvars() -> Path | None:
@@ -577,7 +622,7 @@ def _run_msvc_gates(vcvars: Path, *, host_tests_only: bool, failures: list[str])
             bat_lines.extend(
                 [
                     (
-                        f"cl /nologo /utf-8 /std:c++20 /O2 /W4 /WX /EHsc /D_CRT_SECURE_NO_WARNINGS "
+                        f"cl /nologo /utf-8 /std:c++20 /O1 /W4 /WX /EHsc /D_CRT_SECURE_NO_WARNINGS "
                         f'/I"{ROOT / "include"}" /c "{ui_mdi_cpp}" "/Fo:{mdi_obj}"'
                     ),
                     "if errorlevel 1 exit /b 1",
@@ -598,7 +643,7 @@ def _run_msvc_gates(vcvars: Path, *, host_tests_only: bool, failures: list[str])
             bat_lines.extend(
                 [
                     (
-                        f"cl /nologo /utf-8 /std:c++20 /O2 /W4 /WX /MP /EHsc /D_CRT_SECURE_NO_WARNINGS "
+                        f"cl /nologo /utf-8 /std:c++20 /O1 /W4 /WX /MP /EHsc /D_CRT_SECURE_NO_WARNINGS "
                         f'{inc_args} {def_args} {src_args} {mdi_obj_arg} "/Fe:{exe_path}" "/Fo:{obj_dir}\\\\"'
                     ),
                     "if errorlevel 1 exit /b 1",
@@ -672,15 +717,18 @@ def _append_msvc_syntax_and_beacon_lines(td_path: Path, bat_lines: list[str]) ->
                     "if errorlevel 1 exit /b 1",
                 ]
             )
-    ui_cpps = sorted(ui_inc.glob("*.cpp"))
-    if ui_cpps:
+    all_ui_cpps = sorted(ui_inc.glob("*.cpp"))
+    geom_ui_cpps = [p for p in all_ui_cpps if p.name != "ui_mdi.cpp"]
+    if all_ui_cpps:
         full_lam_host = td_path / "yaml_full_lambdas_host.cpp"
         full_lam_esp = td_path / "yaml_full_lambdas_esp32.cpp"
         has_host_lam = write_yaml_full_lambdas_syntax_harness(full_lam_host, include_hal_boards=False) > 0
         has_esp_lam = write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
-        for _, defs in UI_TRAIT_MATRICES:
+        for cfg_lbl, defs in UI_TRAIT_MATRICES:
+            # ui_mdi.cpp only branches on USE_ESP32 (zero geometry #ifdefs); syntax-check it once on S3_ESP32.
+            matrix_ui_cpps = all_ui_cpps if cfg_lbl == "S3_ESP32" else geom_ui_cpps
             extra_tus = ([full_lam_esp] if has_esp_lam else []) if "USE_ESP32" in defs else ([full_lam_host] if has_host_lam else [])
-            ui_cpp_args = " ".join(f'"{p}"' for p in (*ui_cpps, *extra_tus))
+            ui_cpp_args = " ".join(f'"{p}"' for p in (*matrix_ui_cpps, *extra_tus))
             def_args = " ".join(f"/D{d}" for d in defs)
             # Enforce full /W4 /WX narrowing checks (no /wd4244 or /wd4267 suppressions).
             bat_lines.extend(

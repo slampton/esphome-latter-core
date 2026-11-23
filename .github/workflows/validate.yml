@@ -50,26 +50,11 @@ jobs:
           restore-keys: |
             external-files-esphome-2026.11.0-
 
-      - name: Verify static architecture, HAL, UI, and security guardrails
+      - name: Verify static architecture, DAG, protocol, sounds, trait matrices, and 5-geometry C++20 host tests
         run: python tools/verify_core.py
 
-      - name: Verify Protocol v3 codegen parity
-        run: python tools/gen_protocol.py --check
-
-      - name: Check firmware service calls and device actions against the protocol
-        run: python tools/check_protocol_usage.py
-
-      - name: Check board facts release ledger and generated pin maps
+      - name: Check board facts release ledger (zero L-confidence nets)
         run: python tools/check_boards.py --release --check-docs
-
-      - name: Check generated bring-up probes
-        run: python tools/new_board.py --bringup --check
-
-      - name: Check rendered sounds match their melodies
-        run: python tools/gen_sounds.py --check
-
-      - name: Compile and run C++20 5-geometry host unit tests
-        run: python tools/verify_core.py --host-tests-only
 
       - name: Validate Example 1 (Minimal Headless Companion)
         run: ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config example 1" config examples/minimal_headless_companion.yaml
