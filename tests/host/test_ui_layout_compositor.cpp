@@ -523,9 +523,9 @@ void test_gui_standardization_d070() {
   for (std::string_view slug : {
            "mdi:pin", "mdi:music", "mdi:speaker-multiple", "mdi:home", "mdi:shield-home",
            "mdi:bullhorn", "mdi:thermostat", "mdi:lock", "mdi:garage", "mdi:robot-vacuum",
-           "mdi:cctv", "mdi:view-grid", "mdi:video", "mdi:view-carousel", "mdi:cog-outline",
+           "mdi:cctv", "mdi:view-grid", "mdi:video", "mdi:view-carousel", "mdi:cog",
            "mdi:sofa", "mdi:lightbulb", "mdi:remote-tv", "mdi:weather-partly-cloudy",
-           "mdi:clock-outline", "mdi:calendar", "mdi:controller", "mdi:play-pause", "mdi:menu"}) {
+           "mdi:clock", "mdi:calendar", "mdi:controller", "mdi:play-pause", "mdi:menu"}) {
     LATTER_CHECK(has_mdi_icon(slug));
   }
 

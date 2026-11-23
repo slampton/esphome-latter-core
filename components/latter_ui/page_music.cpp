@@ -127,7 +127,7 @@ inline void draw_music_mode_icon(Rgb565Surface &it, int g_idx, int bx, int by, i
     case 4: render_mdi_icon(it, "mdi:playlist-play", bx, by, mdi_sz, fg_c, sh); break;
     case 5: render_mdi_icon(it, "mdi:script-text", bx, by, mdi_sz, fg_c, sh); break;
     case 6: render_mdi_icon(it, is_speech ? "mdi:podcast" : "mdi:album", bx, by, mdi_sz, fg_c, sh); break;
-    case 7: render_mdi_icon(it, "mdi:information-outline", bx, by, mdi_sz, fg_c, sh); break;
+    case 7: render_mdi_icon(it, "mdi:information", bx, by, mdi_sz, fg_c, sh); break;
     case 8:
     default: ui::draw_icon_gear(it, bx, by, ir, fg_c, sh); break;
   }
@@ -601,7 +601,7 @@ void render_music_action_sheet_takeover(Rgb565Surface &it, const UiFrameContext 
   static constexpr const char *kQueueLabels[5] = {
       "Play Now", "Play Next", "Move Up", "Move Down", "Remove"};
   static constexpr const char *kQueueIcons[5] = {
-      "mdi:play", "mdi:skip-next-circle-outline", "mdi:arrow-up", "mdi:arrow-down", "mdi:playlist-remove"};
+      "mdi:play", "mdi:skip-next-circle", "mdi:arrow-up", "mdi:arrow-down", "mdi:playlist-remove"};
 
   const bool is_q = m.action_sheet_is_queue;
   const uint16_t *wids = is_q ? kQueueWids : kLibWids;

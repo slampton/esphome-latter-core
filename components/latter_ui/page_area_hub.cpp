@@ -383,7 +383,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                  const std::string &name, const std::string &id_str,
                                  bool is_on, Color fg_c) {
     if (dtype == "light") {
-      ui::draw_icon_lightbulb(it, gx, gy, card_ir, is_on ? col_gold : fg_c, true);
+      ui::draw_icon_lightbulb(it, gx, gy, card_ir, is_on ? col_gold : fg_c, true, is_on);
     } else if (dtype == "cover") {
       const Color cov_c = is_on ? theme_primary : fg_c;
       if (is_curtain_entity(name, id_str)) {

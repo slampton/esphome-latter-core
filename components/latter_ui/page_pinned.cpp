@@ -13,7 +13,7 @@ void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
                            UiColor icon_c, bool shadow, void *user_ctx) {
   const auto *item = static_cast<const ShortcutItem *>(user_ctx);
   if (item == nullptr) return;
-  const int mdi_px = std::max(18, 2 * ir);
+  const int mdi_px = std::max(14, 2 * ir);
   if (item->kind == ShortcutKind::ROUTE) {
     if (!item->icon.empty()) {
       render_mdi_icon(it, item->icon, ix, iy, mdi_px, icon_c, shadow, "mdi:apps");
@@ -21,7 +21,10 @@ void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
       ui::draw_route_icon(it, item->route_id, ix, iy, ir, icon_c, kChromeGlassTint, shadow);
     }
   } else {
-    render_mdi_icon(it, item->icon, ix, iy, mdi_px, icon_c, shadow, "mdi:gesture-tap-button");
+    char state_slug_buf[96];
+    const std::string_view eff_slug =
+        resolve_state_mdi_slug(item->icon, item->state, state_slug_buf, sizeof(state_slug_buf));
+    render_mdi_icon(it, eff_slug, ix, iy, mdi_px, icon_c, shadow, "mdi:gesture-tap-button");
   }
 }
 
@@ -61,14 +64,18 @@ void render_pinned_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         const auto &item = sc.pinned_items[static_cast<size_t>(item_idx)];
         const bool is_active = (item.kind == ShortcutKind::ENTITY && item.state == 1);
         const bool is_unavail = (item.kind == ShortcutKind::ENTITY && item.state == 2);
+        const bool is_inverted = (item.badge_style == ShortcutBadgeStyle::INVERTED);
+        const bool has_accent = (item.accent != ShortcutAccent::DEFAULT);
+        const UiColor accent_c = ui::resolve_shortcut_accent_color(item.accent, ctx, ctx.theme_primary);
         const uint16_t wid = register_hits
                                  ? static_cast<uint16_t>(WidgetId::PINNED_CARD_BASE + (r * 2 + c))
                                  : WidgetId::NONE;
         ui::grid_tile(it, cx_card, cy_card, eff_w, eff_h, item.label.c_str(),
-                      is_active, is_unavail, ctx.theme_primary,
+                      is_active, is_unavail, accent_c,
                       is_unavail ? ctx.col_gray : ctx.col_white, ctx.font_small,
                       draw_pinned_tile_icon, const_cast<ShortcutItem *>(&item),
-                      wid, static_cast<int16_t>(item_idx));
+                      wid, static_cast<int16_t>(item_idx),
+                      is_inverted, has_accent);
       }
     }
   };

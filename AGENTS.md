@@ -19,7 +19,7 @@ Every hand-authored header, translation unit, YAML package, and tool is organize
   - `modules/base.yaml`: Shared Native API (`batch_delay: 0ms`, Noise `encryption:`, `outgoing_connection:`), `time:`, `latter_ping`, `latter_push_v3`, `latter_device_command`, `send_device_hello`, and `System: RPC Outbox`.
   - `modules/latter_display_firmware.yaml`: Umbrella package pulling in `system_{core,ui_sync}.yaml`, `power_policy.yaml`, `sleep_lifecycle.yaml`, `audio_pipeline.yaml`, `voice_assistant.yaml`, `audio_scripts.yaml`, `display_pipeline.yaml`, `timers_and_fetchers.yaml`, and `guis/universal/gui.yaml`.
   - `modules/hal/`: Shared chip (`chip_esp32s3.yaml`, `chip_esp32p4.yaml`), full-duplex audio (`audio_es8311_duplex.yaml`, `audio_es8311_es7210_duplex.yaml`), `pmu_axp2101.yaml`, and `imu_qmi8658.yaml` packages.
-  - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_ui::runtime_state()`) and persisted preferences live in `PersistedDevicePrefs` v1 + `HibernateSnapshot` v3 (`LATTER_SDK_REV == LATTER_YAML_REV == 2026112007L`).
+  - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_ui::runtime_state()`) and persisted preferences live in `PersistedDevicePrefs` v1 + `HibernateSnapshot` v3 (`LATTER_SDK_REV == LATTER_YAML_REV == 2026112202L`).
 
 ## 2. Verification & Tooling Commands
 

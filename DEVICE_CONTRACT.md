@@ -240,9 +240,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | :---: | :--- | :--- | :---: | :--- |
 | `3` | `chunk_index` | `ShortcutsField::CHUNK_INDEX` | `u16` | 0-based chunk index (0 .. chunk_count - 1) |
 | `4` | `chunk_count` | `ShortcutsField::CHUNK_COUNT` | `u16` | Total chunks in this shortcuts snapshot (>= 1; commits atomically on chunk_index + 1 == chunk_count) |
-| `5` | `dock_items` | `ShortcutsField::DOCK_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state App Dock shortcut records (sent on chunk_index == 0, up to 24; empty until configured so device uses defaults.dock_routes; Settings is always appended last) |
+| `5` | `dock_items` | `ShortcutsField::DOCK_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state|badge_style|accent App Dock shortcut records (sent on chunk_index == 0, up to 24; badge_style is empty/glass or inverted; accent is empty/default or primary|gold|green|red|orange; empty until configured so device uses defaults.dock_routes; Settings is always appended last) |
 | `6` | `pinned_total` | `ShortcutsField::PINNED_TOTAL` | `u16` | Total configured Pinned App items across all chunks (0 auto-hides app:pinned on the App Dock) |
-| `7` | `pinned_items` | `ShortcutsField::PINNED_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state Pinned App shortcut records for this chunk (up to 24 per chunk, rendered 6 per page) |
+| `7` | `pinned_items` | `ShortcutsField::PINNED_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state|badge_style|accent Pinned App shortcut records for this chunk (up to 24 per chunk, rendered 6 per page; badge_style is empty/glass or inverted; accent is empty/default or primary|gold|green|red|orange) |
 
 ## 3. ESPHome Device Actions (`esphome.<node>_<action>`)
 
@@ -296,7 +296,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `44`
+- **Studio Wire Revision (`studio_rev`)**: `45`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `deactivate_screensaver`, `wake_screen`, `screen_off`, `set_profiler_on`, `set_profiler_off`, `request_telemetry`, `trigger_va`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
 - **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`

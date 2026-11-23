@@ -160,7 +160,8 @@ void draw_icon_clock_solid(Rgb565Surface &it, int cx, int cy, int r, UiColor col
 void draw_icon_hourglass(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_alarm_clock(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_stopwatch(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
-void draw_icon_shield_home(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
+void draw_icon_shield_home(Rgb565Surface &it, int cx, int cy, int r, UiColor col,
+                           bool shadow = false, bool is_armed = true);
 void draw_icon_camera(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_speaker(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool waves = true,
                        bool shadow = false, bool muted = false);
@@ -174,7 +175,8 @@ void draw_icon_cal_agenda(Rgb565Surface &it, int cx, int cy, int r, UiColor col,
 void draw_icon_cal_day(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_cal_week(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_mic(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
-void draw_icon_lightbulb(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
+void draw_icon_lightbulb(Rgb565Surface &it, int cx, int cy, int r, UiColor col,
+                         bool shadow = false, bool is_on = true);
 void draw_icon_ceiling_fan(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_curtains(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_blinds_slats(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool is_open = false, bool shadow = false);
@@ -199,6 +201,7 @@ void draw_icon_sun(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool s
 void draw_icon_crescent_moon(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_wind(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_arrow_v(Rgb565Surface &it, int cx, int cy, int r, bool is_up, UiColor col, bool shadow = false);
+const char *route_icon_slug(RouteId route) noexcept;
 void draw_route_icon(Rgb565Surface &it, RouteId route, int cx, int cy, int r,
                      UiColor col, UiColor cut_c, bool shadow = false);
 
@@ -315,12 +318,27 @@ void labeled_action_row(Rgb565Surface &it, int cx, int cy, int w, int h,
                         TileDrawIconFn draw_icon_fn = nullptr, void *icon_ctx = nullptr,
                         UiColor icon_c = UiColor::WHITE);
 
+inline UiColor resolve_shortcut_accent_color(ShortcutAccent accent,
+                                             const UiFrameContext &ctx,
+                                             UiColor fallback) noexcept {
+  switch (accent) {
+    case ShortcutAccent::PRIMARY: return ctx.theme_primary;
+    case ShortcutAccent::GOLD:    return ctx.col_gold;
+    case ShortcutAccent::GREEN:   return ctx.col_green;
+    case ShortcutAccent::RED:     return ctx.col_red;
+    case ShortcutAccent::ORANGE:  return ctx.col_orange;
+    case ShortcutAccent::DEFAULT:
+    default:                      return fallback;
+  }
+}
+
 void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
                const char *label, bool active, bool disabled,
                UiColor accent_c, UiColor text_c,
                UiFontView font,
                TileDrawIconFn draw_icon_fn, void *user_ctx,
-               uint16_t widget_id = WidgetId::NONE, int16_t param = 0);
+               uint16_t widget_id = WidgetId::NONE, int16_t param = 0,
+               bool inverted_badge = false, bool has_accent = false);
 
 void icon_circle_button(Rgb565Surface &it, int cx, int cy, int r,
                         UiColor bg_c, UiColor brd_c,

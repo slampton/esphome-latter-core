@@ -141,7 +141,8 @@ void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   // D-048: Status readout rendered directly over wallpaper with 1px kChromeShadow (never inside a glass card).
   const int icon_cy = hero_y0 + (is_fb ? (hero_h * 25) / 100 : (hero_h * 32) / 100);
   const int st_y = hero_y0 + (is_fb ? (hero_h * 60) / 100 : (hero_h * 72) / 100);
-  ui::draw_icon_shield_home(it, cx, icon_cy, ui::hero_icon_r(hero_h), badge_col, true);
+  const bool is_disarmed = eq_ascii_ci_sv(alarm_state, "disarmed");
+  ui::draw_icon_shield_home(it, cx, icon_cy, ui::hero_icon_r(hero_h), badge_col, true, !is_disarmed);
 
   const UiFontView st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
   const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));

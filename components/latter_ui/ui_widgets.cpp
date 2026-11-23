@@ -306,19 +306,19 @@ void draw_icon_power(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool
   draw_mdi_r(it, "mdi:power", cx, cy, r, col, shadow, "mdi:power");
 }
 void draw_icon_clock_solid(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:clock-outline", cx, cy, r, col, shadow, "mdi:clock-outline");
+  draw_mdi_r(it, "mdi:clock", cx, cy, r, col, shadow, "mdi:clock");
 }
 void draw_icon_hourglass(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:timer-sand", cx, cy, r, col, shadow, "mdi:clock-outline");
+  draw_mdi_r(it, "mdi:timer-sand", cx, cy, r, col, shadow, "mdi:clock");
 }
 void draw_icon_alarm_clock(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:alarm", cx, cy, r, col, shadow, "mdi:clock-outline");
+  draw_mdi_r(it, "mdi:alarm", cx, cy, r, col, shadow, "mdi:clock");
 }
 void draw_icon_stopwatch(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:timer-outline", cx, cy, r, col, shadow, "mdi:clock-outline");
+  draw_mdi_r(it, "mdi:timer", cx, cy, r, col, shadow, "mdi:clock");
 }
-void draw_icon_shield_home(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:shield-home", cx, cy, r, col, shadow, "mdi:home");
+void draw_icon_shield_home(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow, bool is_armed) {
+  draw_mdi_r(it, is_armed ? "mdi:shield-home" : "mdi:shield-home-outline", cx, cy, r, col, shadow, "mdi:home");
 }
 void draw_icon_camera(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
   draw_mdi_r(it, "mdi:video", cx, cy, r, col, shadow, "mdi:cctv");
@@ -357,8 +357,8 @@ void draw_icon_cal_week(Rgb565Surface &it, int cx, int cy, int r, UiColor col, b
 void draw_icon_mic(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
   draw_mdi_r(it, "mdi:microphone", cx, cy, r, col, shadow, "mdi:microphone");
 }
-void draw_icon_lightbulb(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:lightbulb", cx, cy, r, col, shadow, "mdi:lightbulb");
+void draw_icon_lightbulb(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow, bool is_on) {
+  draw_mdi_r(it, is_on ? "mdi:lightbulb" : "mdi:lightbulb-outline", cx, cy, r, col, shadow, "mdi:lightbulb");
 }
 void draw_icon_ceiling_fan(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
   draw_mdi_r(it, "mdi:fan", cx, cy, r, col, shadow, "mdi:fan");
@@ -405,7 +405,7 @@ void draw_icon_carousel(Rgb565Surface &it, int cx, int cy, int r, UiColor col, b
   draw_mdi_r(it, "mdi:view-carousel", cx, cy, r, col, shadow, "mdi:view-carousel");
 }
 void draw_icon_gear(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:cog-outline", cx, cy, r, col, shadow, "mdi:cog");
+  draw_mdi_r(it, "mdi:cog", cx, cy, r, col, shadow, "mdi:cog");
 }
 void draw_icon_chevron(Rgb565Surface &it, int cx, int cy, int r, bool is_right, UiColor col, bool shadow) {
   draw_mdi_r(it, is_right ? "mdi:chevron-right" : "mdi:chevron-left", cx, cy, r, col, shadow, "mdi:chevron-right");
@@ -435,91 +435,160 @@ void draw_icon_arrow_v(Rgb565Surface &it, int cx, int cy, int r, bool is_up, UiC
   draw_mdi_r(it, is_up ? "mdi:arrow-up" : "mdi:arrow-down", cx, cy, r, col, shadow, "mdi:arrow-up");
 }
 
+const char *route_icon_slug(RouteId route) noexcept {
+  switch (route) {
+    case RouteId::APP_AREA:            return "mdi:sofa";
+    case RouteId::APP_PINNED:          return "mdi:pin";
+    case RouteId::APP_MUSIC:           return "mdi:music";
+    case RouteId::MUSIC_LIBRARY:       return "mdi:music-box";
+    case RouteId::MUSIC_SPEAKERS:      return "mdi:speaker-multiple";
+    case RouteId::MUSIC_FAVORITES:     return "mdi:heart";
+    case RouteId::MUSIC_PLAYLISTS:     return "mdi:playlist-music";
+    case RouteId::MUSIC_QUEUE:         return "mdi:playlist-play";
+    case RouteId::MUSIC_ALBUM_TRACKS:  return "mdi:album";
+    case RouteId::MUSIC_LYRICS:        return "mdi:script-text";
+    case RouteId::MUSIC_INFO:          return "mdi:information";
+    case RouteId::APP_HOME_HUB:        return "mdi:home";
+    case RouteId::HOME_HUB_ALARM:      return "mdi:shield-home";
+    case RouteId::APP_CAMERAS:         return "mdi:cctv";
+    case RouteId::CAMERAS_GRID:        return "mdi:view-grid";
+    case RouteId::CAMERAS_SINGLE:      return "mdi:video";
+    case RouteId::CAMERAS_CAROUSEL:    return "mdi:view-carousel";
+    case RouteId::CAMERAS_SETTINGS:    return "mdi:cog";
+    case RouteId::HOME_HUB_INTERCOM:   return "mdi:bullhorn";
+    case RouteId::HOME_HUB_THERMOSTAT: return "mdi:thermostat";
+    case RouteId::AREA_CLIMATE:        return "mdi:thermometer";
+    case RouteId::HOME_HUB_ENTRY:      return "mdi:lock";
+    case RouteId::HOME_HUB_VACUUM:     return "mdi:robot-vacuum";
+    case RouteId::AREA_PICKER:         return "mdi:floor-plan";
+    case RouteId::AREA_SCENE:          return "mdi:shimmer";
+    case RouteId::AREA_LIGHT:          return "mdi:lightbulb";
+    case RouteId::AREA_COVER:          return "mdi:blinds-horizontal";
+    case RouteId::AREA_FAN:            return "mdi:fan";
+    case RouteId::AREA_SWITCH:         return "mdi:toggle-switch";
+    case RouteId::AREA_MEDIA:          return "mdi:television-speaker";
+    case RouteId::AREA_ALL:            return "mdi:view-grid";
+    case RouteId::APP_REMOTE:          return "mdi:remote-tv";
+    case RouteId::REMOTE_DEVICES:      return "mdi:remote";
+    case RouteId::APP_WEATHER:
+    case RouteId::WEATHER_CURRENT:     return "mdi:weather-partly-cloudy";
+    case RouteId::WEATHER_FORECAST:    return "mdi:calendar-week";
+    case RouteId::WEATHER_SUN:         return "mdi:white-balance-sunny";
+    case RouteId::WEATHER_MOON:        return "mdi:moon-waning-crescent";
+    case RouteId::APP_TIME:
+    case RouteId::APP_CLOCK:
+    case RouteId::TIME_CLOCK:          return "mdi:clock";
+    case RouteId::TIME_TIMERS:         return "mdi:timer-sand";
+    case RouteId::TIME_ALARMS:         return "mdi:alarm";
+    case RouteId::TIME_STOPWATCH:
+    case RouteId::TOOLS_STOPWATCH:     return "mdi:timer";
+    case RouteId::APP_TOOLS:           return "mdi:view-grid";
+    case RouteId::TOOLS_LEVEL:         return "mdi:spirit-level";
+    case RouteId::TOOLS_FLASHLIGHT:    return "mdi:flashlight";
+    case RouteId::TOOLS_CALCULATOR:    return "mdi:calculator-variant";
+    case RouteId::APP_CALENDAR:        return "mdi:calendar";
+    case RouteId::CALENDAR_OVERVIEW:   return "mdi:calendar-text";
+    case RouteId::CALENDAR_DAY:        return "mdi:calendar-today";
+    case RouteId::CALENDAR_WEEK:       return "mdi:calendar-week";
+    case RouteId::CALENDAR_MONTH:      return "mdi:calendar-month";
+    case RouteId::TOOLS_DICE:          return "mdi:dice-5";
+    case RouteId::TOOLS_COIN_FLIP:     return "mdi:alpha-c-circle";
+    case RouteId::APP_GAMES:           return "mdi:controller";
+    case RouteId::GAMES_MARBLES:       return "mdi:billiards";
+    case RouteId::GAMES_ARCHERY:       return "mdi:bullseye-arrow";
+    case RouteId::GAMES_BRICKS:        return "mdi:wall";
+    case RouteId::GAMES_CHOMP:         return "mdi:pac-man";
+    case RouteId::GAMES_2048:          return "mdi:numeric-2-box-multiple";
+    case RouteId::GAMES_MEMORY:        return "mdi:cards";
+    case RouteId::SETTINGS_DISPLAY:    return "mdi:brightness-6";
+    case RouteId::SETTINGS_SLEEP:      return "mdi:power-sleep";
+    case RouteId::SETTINGS_SOUND:      return "mdi:volume-high";
+    case RouteId::SETTINGS_VOICE:      return "mdi:microphone";
+    case RouteId::SETTINGS_MUSIC:      return "mdi:music-box";
+    case RouteId::SETTINGS_HOME:       return "mdi:home";
+    case RouteId::SETTINGS_ACTIONS:    return "mdi:gesture-tap-button";
+    case RouteId::SETTINGS_UPDATE:     return "mdi:cellphone-arrow-down";
+    case RouteId::SETTINGS_INFO:       return "mdi:information";
+    case RouteId::SETTINGS_ROOT:
+    case RouteId::NONE:
+    default:                           return "mdi:cog";
+  }
+}
+
 void draw_route_icon(Rgb565Surface &it, RouteId route, int cx, int cy, int r,
                      UiColor col, UiColor cut_c, bool shadow) {
   (void)cut_c;
-  const int mdi_px = std::max(16, 2 * r);
+  const int mdi_px = std::max(14, 2 * r);
   if (route == RouteId::APP_AREA) {
     render_mdi_icon(it, resolve_area_dock_icon(area_ctx_state()), cx, cy, mdi_px, col, shadow, "mdi:sofa");
     return;
   }
-  const char *slug = "mdi:cog";
+  const char *slug = route_icon_slug(route);
   const char *fb = "mdi:cog";
   switch (route) {
-    case RouteId::APP_PINNED:          slug = "mdi:pin"; fb = "mdi:pin"; break;
-    case RouteId::APP_MUSIC:           slug = "mdi:music"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_LIBRARY:       slug = "mdi:music-box-outline"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_SPEAKERS:      slug = "mdi:speaker-multiple"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_FAVORITES:     slug = "mdi:heart"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_PLAYLISTS:     slug = "mdi:playlist-music"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_QUEUE:         slug = "mdi:playlist-play"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_ALBUM_TRACKS:  slug = "mdi:album"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_LYRICS:        slug = "mdi:script-text"; fb = "mdi:music"; break;
-    case RouteId::MUSIC_INFO:          slug = "mdi:information-outline"; fb = "mdi:music"; break;
-    case RouteId::APP_HOME_HUB:        slug = "mdi:home"; fb = "mdi:home"; break;
-    case RouteId::HOME_HUB_ALARM:      slug = "mdi:shield-home"; fb = "mdi:home"; break;
-    case RouteId::APP_CAMERAS:         slug = "mdi:cctv"; fb = "mdi:video"; break;
-    case RouteId::CAMERAS_GRID:        slug = "mdi:view-grid"; fb = "mdi:cctv"; break;
-    case RouteId::CAMERAS_SINGLE:      slug = "mdi:video"; fb = "mdi:cctv"; break;
-    case RouteId::CAMERAS_CAROUSEL:    slug = "mdi:view-carousel"; fb = "mdi:cctv"; break;
-    case RouteId::CAMERAS_SETTINGS:    slug = "mdi:cog-outline"; fb = "mdi:cog"; break;
-    case RouteId::HOME_HUB_INTERCOM:   slug = "mdi:bullhorn"; fb = "mdi:home"; break;
-    case RouteId::HOME_HUB_THERMOSTAT: slug = "mdi:thermostat"; fb = "mdi:thermometer"; break;
-    case RouteId::AREA_CLIMATE:        slug = "mdi:thermometer"; fb = "mdi:thermostat"; break;
-    case RouteId::HOME_HUB_ENTRY:      slug = "mdi:lock"; fb = "mdi:home"; break;
-    case RouteId::HOME_HUB_VACUUM:     slug = "mdi:robot-vacuum"; fb = "mdi:home"; break;
-    case RouteId::AREA_PICKER:         slug = "mdi:floor-plan"; fb = "mdi:map-marker-outline"; break;
-    case RouteId::AREA_SCENE:          slug = "mdi:shimmer"; fb = "mdi:sofa"; break;
-    case RouteId::AREA_LIGHT:          slug = "mdi:lightbulb"; fb = "mdi:sofa"; break;
-    case RouteId::AREA_COVER:          slug = "mdi:blinds-horizontal"; fb = "mdi:sofa"; break;
-    case RouteId::AREA_FAN:            slug = "mdi:fan"; fb = "mdi:sofa"; break;
-    case RouteId::AREA_SWITCH:         slug = "mdi:toggle-switch"; fb = "mdi:sofa"; break;
-    case RouteId::AREA_MEDIA:          slug = "mdi:television-speaker"; fb = "mdi:speaker"; break;
-    case RouteId::AREA_ALL:            slug = "mdi:view-grid"; fb = "mdi:apps"; break;
-    case RouteId::APP_REMOTE:          slug = "mdi:remote-tv"; fb = "mdi:remote"; break;
-    case RouteId::REMOTE_DEVICES:      slug = "mdi:remote"; fb = "mdi:remote-tv"; break;
+    case RouteId::APP_PINNED:          fb = "mdi:pin"; break;
+    case RouteId::APP_MUSIC:
+    case RouteId::MUSIC_LIBRARY:
+    case RouteId::MUSIC_SPEAKERS:
+    case RouteId::MUSIC_FAVORITES:
+    case RouteId::MUSIC_PLAYLISTS:
+    case RouteId::MUSIC_QUEUE:
+    case RouteId::MUSIC_ALBUM_TRACKS:
+    case RouteId::MUSIC_LYRICS:
+    case RouteId::MUSIC_INFO:          fb = "mdi:music"; break;
+    case RouteId::APP_HOME_HUB:
+    case RouteId::HOME_HUB_ALARM:
+    case RouteId::HOME_HUB_INTERCOM:
+    case RouteId::HOME_HUB_ENTRY:
+    case RouteId::HOME_HUB_VACUUM:     fb = "mdi:home"; break;
+    case RouteId::APP_CAMERAS:         fb = "mdi:video"; break;
+    case RouteId::CAMERAS_GRID:
+    case RouteId::CAMERAS_SINGLE:
+    case RouteId::CAMERAS_CAROUSEL:    fb = "mdi:cctv"; break;
+    case RouteId::CAMERAS_SETTINGS:    fb = "mdi:cog"; break;
+    case RouteId::HOME_HUB_THERMOSTAT: fb = "mdi:thermometer"; break;
+    case RouteId::AREA_CLIMATE:        fb = "mdi:thermostat"; break;
+    case RouteId::AREA_PICKER:         fb = "mdi:map-marker"; break;
+    case RouteId::AREA_SCENE:
+    case RouteId::AREA_LIGHT:
+    case RouteId::AREA_COVER:
+    case RouteId::AREA_FAN:
+    case RouteId::AREA_SWITCH:         fb = "mdi:sofa"; break;
+    case RouteId::AREA_MEDIA:          fb = "mdi:speaker"; break;
+    case RouteId::AREA_ALL:
+    case RouteId::APP_TOOLS:
+    case RouteId::GAMES_MEMORY:        fb = "mdi:apps"; break;
+    case RouteId::APP_REMOTE:          fb = "mdi:remote"; break;
+    case RouteId::REMOTE_DEVICES:      fb = "mdi:remote-tv"; break;
     case RouteId::APP_WEATHER:
-    case RouteId::WEATHER_CURRENT:     slug = "mdi:weather-partly-cloudy"; fb = "mdi:cloud"; break;
-    case RouteId::WEATHER_FORECAST:    slug = "mdi:calendar-week"; fb = "mdi:cloud"; break;
-    case RouteId::WEATHER_SUN:         slug = "mdi:white-balance-sunny"; fb = "mdi:weather-sunny"; break;
-    case RouteId::WEATHER_MOON:        slug = "mdi:moon-waning-crescent"; fb = "mdi:weather-night"; break;
+    case RouteId::WEATHER_CURRENT:
+    case RouteId::WEATHER_FORECAST:    fb = "mdi:cloud"; break;
+    case RouteId::WEATHER_SUN:         fb = "mdi:weather-sunny"; break;
+    case RouteId::WEATHER_MOON:        fb = "mdi:weather-night"; break;
     case RouteId::APP_TIME:
     case RouteId::APP_CLOCK:
-    case RouteId::TIME_CLOCK:          slug = "mdi:clock-outline"; fb = "mdi:clock-outline"; break;
-    case RouteId::TIME_TIMERS:         slug = "mdi:timer-sand"; fb = "mdi:clock-outline"; break;
-    case RouteId::TIME_ALARMS:         slug = "mdi:alarm"; fb = "mdi:clock-outline"; break;
+    case RouteId::TIME_CLOCK:
+    case RouteId::TIME_TIMERS:
+    case RouteId::TIME_ALARMS:
     case RouteId::TIME_STOPWATCH:
-    case RouteId::TOOLS_STOPWATCH:     slug = "mdi:timer-outline"; fb = "mdi:clock-outline"; break;
-    case RouteId::APP_TOOLS:           slug = "mdi:view-grid-outline"; fb = "mdi:apps"; break;
-    case RouteId::TOOLS_LEVEL:         slug = "mdi:spirit-level"; fb = "mdi:compass-outline"; break;
-    case RouteId::TOOLS_FLASHLIGHT:    slug = "mdi:flashlight"; fb = "mdi:lightbulb"; break;
-    case RouteId::TOOLS_CALCULATOR:    slug = "mdi:calculator-variant"; fb = "mdi:calculator"; break;
-    case RouteId::APP_CALENDAR:        slug = "mdi:calendar"; fb = "mdi:calendar"; break;
-    case RouteId::CALENDAR_OVERVIEW:   slug = "mdi:calendar-text"; fb = "mdi:calendar"; break;
-    case RouteId::CALENDAR_DAY:        slug = "mdi:calendar-today"; fb = "mdi:calendar"; break;
-    case RouteId::CALENDAR_WEEK:       slug = "mdi:calendar-week"; fb = "mdi:calendar"; break;
-    case RouteId::CALENDAR_MONTH:      slug = "mdi:calendar-month"; fb = "mdi:calendar"; break;
-    case RouteId::TOOLS_DICE:          slug = "mdi:dice-5"; fb = "mdi:dice-multiple"; break;
-    case RouteId::TOOLS_COIN_FLIP:     slug = "mdi:alpha-c-circle"; fb = "mdi:circle-double"; break;
-    case RouteId::APP_GAMES:           slug = "mdi:controller"; fb = "mdi:gamepad-variant"; break;
-    case RouteId::GAMES_MARBLES:       slug = "mdi:billiards"; fb = "mdi:circle-multiple"; break;
-    case RouteId::GAMES_ARCHERY:       slug = "mdi:bullseye-arrow"; fb = "mdi:target"; break;
-    case RouteId::GAMES_BRICKS:        slug = "mdi:wall"; fb = "mdi:view-grid"; break;
-    case RouteId::GAMES_CHOMP:         slug = "mdi:pac-man"; fb = "mdi:ghost"; break;
-    case RouteId::GAMES_2048:          slug = "mdi:numeric-2-box-multiple"; fb = "mdi:grid"; break;
-    case RouteId::GAMES_MEMORY:        slug = "mdi:cards"; fb = "mdi:apps"; break;
-    case RouteId::SETTINGS_DISPLAY:    slug = "mdi:brightness-6"; break;
-    case RouteId::SETTINGS_SLEEP:      slug = "mdi:power-sleep"; break;
-    case RouteId::SETTINGS_SOUND:      slug = "mdi:volume-high"; break;
-    case RouteId::SETTINGS_VOICE:      slug = "mdi:microphone"; break;
-    case RouteId::SETTINGS_MUSIC:      slug = "mdi:music-box-outline"; break;
-    case RouteId::SETTINGS_HOME:       slug = "mdi:home-outline"; break;
-    case RouteId::SETTINGS_ACTIONS:    slug = "mdi:gesture-tap-button"; break;
-    case RouteId::SETTINGS_UPDATE:     slug = "mdi:cellphone-arrow-down"; break;
-    case RouteId::SETTINGS_INFO:       slug = "mdi:information-outline"; break;
-    case RouteId::SETTINGS_ROOT:
-    case RouteId::NONE:
-    default: break;
+    case RouteId::TOOLS_STOPWATCH:     fb = "mdi:clock"; break;
+    case RouteId::TOOLS_LEVEL:         fb = "mdi:compass"; break;
+    case RouteId::TOOLS_FLASHLIGHT:    fb = "mdi:lightbulb"; break;
+    case RouteId::TOOLS_CALCULATOR:    fb = "mdi:calculator"; break;
+    case RouteId::APP_CALENDAR:
+    case RouteId::CALENDAR_OVERVIEW:
+    case RouteId::CALENDAR_DAY:
+    case RouteId::CALENDAR_WEEK:
+    case RouteId::CALENDAR_MONTH:      fb = "mdi:calendar"; break;
+    case RouteId::TOOLS_DICE:          fb = "mdi:dice-multiple"; break;
+    case RouteId::TOOLS_COIN_FLIP:     fb = "mdi:circle-double"; break;
+    case RouteId::APP_GAMES:           fb = "mdi:gamepad-variant"; break;
+    case RouteId::GAMES_MARBLES:       fb = "mdi:circle-multiple"; break;
+    case RouteId::GAMES_ARCHERY:       fb = "mdi:target"; break;
+    case RouteId::GAMES_BRICKS:        fb = "mdi:view-grid"; break;
+    case RouteId::GAMES_CHOMP:         fb = "mdi:ghost"; break;
+    case RouteId::GAMES_2048:          fb = "mdi:grid"; break;
+    default:                           fb = "mdi:cog"; break;
   }
   render_mdi_icon(it, slug, cx, cy, mdi_px, col, shadow, fb);
 }
@@ -864,23 +933,38 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
                const char *label, bool active, bool disabled,
                UiColor accent_c, UiColor text_c, UiFontView font,
                TileDrawIconFn draw_icon_fn, void *user_ctx,
-               uint16_t widget_id, int16_t param) {
+               uint16_t widget_id, int16_t param,
+               bool inverted_badge, bool has_accent) {
   const int eff_w = std::max(48, w);
   const int eff_h = std::max(48, h);
   const int x0 = cx - eff_w / 2;
   const int y0 = cy - eff_h / 2;
   const UiColor bg_c = active ? chrome_card_bg_on() : chrome_card_bg_off();
-  const UiColor brd_c = active ? accent_c : (disabled ? chrome_card_brd_off() : chrome_card_brd_on());
+  const UiColor brd_c = disabled
+                            ? chrome_card_brd_off()
+                            : ((active || has_accent) ? accent_c : chrome_card_brd_on());
 
   render_card_box(it, x0, y0, eff_w, eff_h, bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, text_c);
 
   const int icon_r = std::min(card_icon_r(eff_h), std::max(10, eff_h / 4));
   const int icon_cy = cy - eff_h / 6;
-  if (draw_icon_fn != nullptr) {
-    draw_icon_fn(it, cx, icon_cy, icon_r, disabled ? text_c : (active ? accent_c : text_c), true, user_ctx);
+  const int lbl_y = cy + (eff_h * 27) / 100;
+  if (inverted_badge) {
+    const int max_top = (icon_cy - y0) - std::max(3, scale_s(4));
+    const int max_bot = (lbl_y - icon_cy) - std::max(11, eff_h / 7);
+    const int max_r = std::max(icon_r, std::min({max_top, max_bot, eff_w / 2 - scale_s(6)}));
+    const int disc_r = std::clamp(icon_r + scale_s(4), icon_r, max_r);
+    const UiColor disc_c = disabled ? text_c : (has_accent ? accent_c : text_c);
+    fast_filled_circle_aa(it, cx, icon_cy, disc_r, disc_c);
+    if (draw_icon_fn != nullptr) {
+      const int inset_r = std::max(7, std::max(14, (icon_r * 16) / 10) / 2);
+      draw_icon_fn(it, cx, icon_cy, inset_r, kChromeShadow, false, user_ctx);
+    }
+  } else if (draw_icon_fn != nullptr) {
+    const UiColor icon_c = disabled ? text_c : ((active || has_accent) ? accent_c : text_c);
+    draw_icon_fn(it, cx, icon_cy, icon_r, icon_c, true, user_ctx);
   }
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    const int lbl_y = cy + (eff_h * 27) / 100;
     const std::string fit = fit_text_to_width_font(std::string(label), std::max(32, eff_w - scale_x(12)), font);
     shadow_print(it, cx, lbl_y, font, text_c, UiTextAlign::CENTER, fit.c_str());
   }

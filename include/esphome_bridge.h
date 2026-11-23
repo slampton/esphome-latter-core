@@ -40,7 +40,7 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include "state/device_runtime_state.h"
 
 #ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026112201L
+#define LATTER_SDK_REV 2026112202L
 #endif
 
 namespace esphome {

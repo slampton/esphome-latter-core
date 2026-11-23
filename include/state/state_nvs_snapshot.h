@@ -84,7 +84,10 @@ static_assert(std::is_trivially_copyable_v<HibernateSnapshot>,
 inline void pack_snapshot_shortcut_slot(const ShortcutItem &src, DockSnapshotSlot &dst) {
   dst = DockSnapshotSlot{};
   dst.kind = (src.kind == ShortcutKind::ENTITY) ? 2U : 1U;
-  dst.confirm = src.confirm ? 1U : 0U;
+  const uint8_t confirm_bit = (src.kind == ShortcutKind::ENTITY && src.confirm) ? 0x01U : 0x00U;
+  const uint8_t inv_bit = (src.badge_style == ShortcutBadgeStyle::INVERTED) ? 0x02U : 0x00U;
+  const uint8_t acc_bits = static_cast<uint8_t>((static_cast<uint8_t>(src.accent) & 0x07U) << 4);
+  dst.confirm = static_cast<uint8_t>(confirm_bit | inv_bit | acc_bits);
   dst.route_id = static_cast<uint8_t>(src.route_id);
   dst.state = src.state;
   std::string_view slug(src.icon);
@@ -100,6 +103,14 @@ inline void pack_snapshot_shortcut_slot(const ShortcutItem &src, DockSnapshotSlo
 inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutItem &dst) {
   if (src.kind != 1U && src.kind != 2U) return false;
   dst = ShortcutItem{};
+  const ShortcutBadgeStyle unpacked_badge =
+      ((src.confirm & 0x02U) != 0U) ? ShortcutBadgeStyle::INVERTED : ShortcutBadgeStyle::GLASS;
+  const uint8_t raw_acc = static_cast<uint8_t>((src.confirm >> 4) & 0x07U);
+  const ShortcutAccent unpacked_accent =
+      (raw_acc <= static_cast<uint8_t>(ShortcutAccent::ORANGE))
+          ? static_cast<ShortcutAccent>(raw_acc)
+          : ShortcutAccent::DEFAULT;
+
   const char *icon_end = static_cast<const char *>(std::memchr(src.icon_slug, '\0', sizeof(src.icon_slug)));
   const size_t icon_len = (icon_end != nullptr) ? static_cast<size_t>(icon_end - src.icon_slug) : (sizeof(src.icon_slug) - 1U);
   const std::string_view slug_sv(src.icon_slug, icon_len);
@@ -126,6 +137,8 @@ inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutI
     dst.icon = slug_sv.empty() ? "" : ("mdi:" + std::string(slug_sv));
     dst.confirm = false;
     dst.state = -1;
+    dst.badge_style = unpacked_badge;
+    dst.accent = unpacked_accent;
     return true;
   }
 
@@ -144,8 +157,10 @@ inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutI
   dst.action = std::string(act_sv);
   dst.label = lbl_sv.empty() ? std::string(tgt_sv) : std::string(lbl_sv);
   dst.icon = slug_sv.empty() ? "" : ("mdi:" + std::string(slug_sv));
-  dst.confirm = (src.confirm != 0U);
+  dst.confirm = ((src.confirm & 0x01U) != 0U);
   dst.state = static_cast<int8_t>(std::clamp<int>(src.state, -1, 2));
+  dst.badge_style = unpacked_badge;
+  dst.accent = unpacked_accent;
   return true;
 }
 

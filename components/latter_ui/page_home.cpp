@@ -1246,28 +1246,75 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       else if (rel_slot > static_cast<float>(vis_count - 1)) alpha = std::max(0.15f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.15f);
 
       const ShortcutItem &item = dock_items[g_idx];
-      const bool item_active = (item.kind == ShortcutKind::ENTITY && item.state == 1);
-      const UiColor base_fg = (item.kind == ShortcutKind::ENTITY && item.state == 2) ? ctx.col_gray : ctx.col_white;
-      const UiColor slot_fg_c(static_cast<uint8_t>(static_cast<float>(base_fg.r) * alpha),
-                              static_cast<uint8_t>(static_cast<float>(base_fg.g) * alpha),
-                              static_cast<uint8_t>(static_cast<float>(base_fg.b) * alpha));
+      const bool is_entity = (item.kind == ShortcutKind::ENTITY);
+      const bool item_active = is_entity && (item.state == 1);
+      const bool item_off = is_entity && (item.state == 0);
+      const bool item_unavail = is_entity && (item.state == 2);
+      const bool is_inverted = (item.badge_style == ShortcutBadgeStyle::INVERTED);
+      const bool has_accent = (item.accent != ShortcutAccent::DEFAULT);
+      const UiColor accent_col = ui::resolve_shortcut_accent_color(item.accent, ctx, ctx.theme_primary);
       const int d = 2 * dock_r + 1;
-      const UiColor dock_tint = item_active ? ui::chrome_card_bg_on() : kChromeGlassTint;
-      const UiColor dock_rim = item_active ? ctx.theme_primary : kChromeGlassSheen;
-      UiColor eff_tint;
-      int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-      resolve_glass_fill(GlassBackdrop{}, dock_tint, dock_rim, eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot, -1, GlassVariant::Clear);
-      const int a_top = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
-      const int a_bot = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
-      const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(item_active ? std::min(255, raw_rim_top + 48) : raw_rim_top) * alpha));
-      const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(item_active ? std::min(255, raw_rim_bot + 36) : raw_rim_bot) * alpha));
-      fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f, dock_rim, sheen_top, sheen_bot, 1);
-      fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
+
+      UiColor slot_fg_c = ctx.col_white;
+      UiColor cut_c = kChromeGlassTint;
+      bool icon_shadow = (alpha > 0.55f);
+
+      if (is_inverted) {
+        const UiColor base_orb = item_unavail ? ctx.col_gray : (has_accent ? accent_col : ctx.col_white);
+        const int rim_top = static_cast<int>(std::roundf(88.0f * alpha));
+        const int rim_bot = static_cast<int>(std::roundf(24.0f * alpha));
+        if (alpha >= 0.99f) {
+          fill_round_rect_aa(it, bx - dock_r, dock_y - dock_r, d, d,
+                             static_cast<float>(dock_r) + 0.5f, base_orb, base_orb, 0);
+        } else {
+          const int orb_a = std::clamp(static_cast<int>(std::roundf(256.0f * alpha)), 0, 256);
+          fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d,
+                                static_cast<float>(dock_r) + 0.5f, base_orb, orb_a, orb_a);
+        }
+        if (rim_top > 0 || rim_bot > 0) {
+          fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d,
+                                static_cast<float>(dock_r) + 0.5f, kChromeGlassSheen, rim_top, rim_bot, 1);
+        }
+        slot_fg_c = (alpha >= 0.99f) ? kChromeShadow : lerp_color(base_orb, kChromeShadow, alpha);
+        cut_c = base_orb;
+        icon_shadow = false;
+      } else {
+        const bool show_tint = !item_unavail && (item_active || (has_accent && !item_off));
+        const UiColor raw_bg = item_active ? ui::chrome_card_bg_on() : kChromeGlassTint;
+        const UiColor raw_brd = show_tint ? accent_col : kChromeCardBorder;
+        GlassVariant eff_var = GlassVariant::Clear;
+        UiColor norm_tint, rim_col;
+        normalize_glass_chrome(raw_bg, raw_brd, eff_var, norm_tint, rim_col);
+        UiColor eff_tint;
+        int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
+        resolve_glass_fill(GlassBackdrop{}, norm_tint, show_tint ? rim_col : kChromeGlassSheen,
+                           eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot, -1, eff_var);
+        const int a_top = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
+        const int a_bot = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
+        const int rim_boost_top = item_active ? 48 : (show_tint ? 32 : 0);
+        const int rim_boost_bot = item_active ? 36 : (show_tint ? 24 : 0);
+        const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_top + rim_boost_top)) * alpha));
+        const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_bot + rim_boost_bot)) * alpha));
+        fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f, rim_col, sheen_top, sheen_bot, 1);
+        fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
+
+        const UiColor base_fg = item_unavail
+                                    ? ctx.col_gray
+                                    : (item_off
+                                           ? (has_accent ? ctx.col_slate : ctx.col_white)
+                                           : (has_accent ? accent_col : ctx.col_white));
+        slot_fg_c = scale_color(base_fg, alpha);
+        cut_c = eff_tint;
+      }
 
       if (item.kind == ShortcutKind::ROUTE && item.icon.empty()) {
-        ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, eff_tint, alpha > 0.55f);
+        ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, cut_c, icon_shadow);
       } else {
-        render_mdi_icon(it, item.icon, bx, dock_y, std::max(16, 2 * icon_r), slot_fg_c, alpha > 0.55f,
+        char state_slug_buf[96];
+        const std::string_view eff_slug =
+            is_entity ? resolve_state_mdi_slug(item.icon, item.state, state_slug_buf, sizeof(state_slug_buf))
+                      : std::string_view(item.icon);
+        render_mdi_icon(it, eff_slug, bx, dock_y, std::max(16, 2 * icon_r), slot_fg_c, icon_shadow,
                         (item.kind == ShortcutKind::ROUTE) ? "mdi:apps" : "mdi:gesture-tap-button");
       }
     }

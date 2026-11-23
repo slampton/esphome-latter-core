@@ -21,6 +21,20 @@ enum class ShortcutOrigin : uint8_t {
   PINNED_APP = 2,
 };
 
+enum class ShortcutBadgeStyle : uint8_t {
+  GLASS = 0,
+  INVERTED = 1,
+};
+
+enum class ShortcutAccent : uint8_t {
+  DEFAULT = 0,
+  PRIMARY = 1,
+  GOLD = 2,
+  GREEN = 3,
+  RED = 4,
+  ORANGE = 5,
+};
+
 struct ShortcutItem {
   ShortcutKind kind = ShortcutKind::ROUTE;
   RouteId route_id = RouteId::NONE;
@@ -30,6 +44,8 @@ struct ShortcutItem {
   std::string icon = "";   // empty = native bespoke glyph (for ROUTE), or "mdi:<slug>"
   bool confirm = false;
   int8_t state = -1;       // -1 = stateless/route, 0 = off/closed/locked, 1 = on/open/unlocked, 2 = unavailable
+  ShortcutBadgeStyle badge_style = ShortcutBadgeStyle::GLASS;
+  ShortcutAccent accent = ShortcutAccent::DEFAULT;
 };
 
 struct ShortcutsState {
@@ -123,9 +139,13 @@ inline uint32_t compute_shortcuts_ui_sig(const ShortcutsState &st = shortcuts_st
   h = (h ^ static_cast<uint32_t>(st.pinned_items.size())) * 16777619U;
   for (const auto &it : st.dock_items) {
     h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.state + 2))) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(it.badge_style)) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(it.accent)) * 16777619U;
   }
   for (const auto &it : st.pinned_items) {
     h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.state + 2))) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(it.badge_style)) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(it.accent)) * 16777619U;
   }
   return h;
 }

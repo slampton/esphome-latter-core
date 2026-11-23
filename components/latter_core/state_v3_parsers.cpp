@@ -1072,8 +1072,8 @@ bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st) {
 
 bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
   if (rec.empty()) return false;
-  std::string_view cols[7]{};
-  const size_t n = v3_split_fields(rec, cols, 7, '|');
+  std::string_view cols[9]{};
+  const size_t n = v3_split_fields(rec, cols, 9, '|');
   if (n < 4) return false;
   out_item = ShortcutItem{};
   const std::string_view kind_sv = cols[0];
@@ -1083,6 +1083,23 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
   const std::string_view icon_sv = (n >= 5) ? cols[4] : std::string_view{};
   const std::string_view confirm_sv = (n >= 6) ? cols[5] : std::string_view{};
   const std::string_view state_sv = (n >= 7) ? cols[6] : std::string_view{};
+  const std::string_view badge_sv = (n >= 8) ? trim_ascii_ws(cols[7]) : std::string_view{};
+  const std::string_view accent_sv = (n >= 9) ? trim_ascii_ws(cols[8]) : std::string_view{};
+
+  auto parse_badge_style = [](std::string_view sv) noexcept -> ShortcutBadgeStyle {
+    if (eq_ascii_ci_sv(sv, "inverted")) return ShortcutBadgeStyle::INVERTED;
+    return ShortcutBadgeStyle::GLASS;
+  };
+  auto parse_accent = [](std::string_view sv) noexcept -> ShortcutAccent {
+    if (eq_ascii_ci_sv(sv, "primary")) return ShortcutAccent::PRIMARY;
+    if (eq_ascii_ci_sv(sv, "gold")) return ShortcutAccent::GOLD;
+    if (eq_ascii_ci_sv(sv, "green")) return ShortcutAccent::GREEN;
+    if (eq_ascii_ci_sv(sv, "red")) return ShortcutAccent::RED;
+    if (eq_ascii_ci_sv(sv, "orange")) return ShortcutAccent::ORANGE;
+    return ShortcutAccent::DEFAULT;
+  };
+  const ShortcutBadgeStyle parsed_badge = parse_badge_style(badge_sv);
+  const ShortcutAccent parsed_accent = parse_accent(accent_sv);
 
   if (kind_sv == "route") {
     out_item.kind = ShortcutKind::ROUTE;
@@ -1100,6 +1117,8 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
     out_item.icon = v3_unescape_subfield(icon_sv);
     out_item.confirm = false;
     out_item.state = -1;
+    out_item.badge_style = parsed_badge;
+    out_item.accent = parsed_accent;
     return true;
   }
 
@@ -1116,6 +1135,8 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
     out_item.confirm = v3_parse_bool(confirm_sv);
     const int parsed_state = v3_parse_int(state_sv, -1);
     out_item.state = static_cast<int8_t>(std::clamp(parsed_state, -1, 2));
+    out_item.badge_style = parsed_badge;
+    out_item.accent = parsed_accent;
     return true;
   }
 
