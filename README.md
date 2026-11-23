@@ -51,7 +51,7 @@ All five boards run the **exact same firmware and universal GUI**. Each board fi
 ### Quickstart
 1. **Pick a board** from the table above and connect it to your computer with a USB-C data cable.
 2. **Flash in Chrome or Edge** using the **[Latter Web Installer](https://slampton.github.io/esphome-latter-core/)** (~2 minutes, including Wi-Fi setup over USB via Improv Serial), or compile in ESPHome Device Builder. → [Flashing guide](docs/flashing.md)
-3. **Adopt in Home Assistant**: add the discovered ESPHome device (leave *"Allow the device to perform Home Assistant actions"* **off**), install **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** via HACS, accept **Discovered: Latter**, and open **Latter Studio** in the sidebar. → [Getting started walkthrough](https://github.com/slampton/ha-latter/blob/main/docs/getting-started.md)
+3. **Adopt in Home Assistant**: add the discovered ESPHome device (leave *"Allow the device to perform Home Assistant actions"* **off**), install **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** via the Home Assistant Marketplace, accept **Discovered: Latter**, and open **Latter Studio** in the sidebar. → [Getting started walkthrough](https://github.com/slampton/ha-latter/blob/main/docs/getting-started.md)
 
 ---
 

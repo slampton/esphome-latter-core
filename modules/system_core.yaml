@@ -420,7 +420,7 @@ button:
     id: restart_button
     device_class: restart
     icon: "mdi:restart"
-    entity_category: diagnostic
+    entity_category: config
     on_press:
       - lambda: 'latter_ui::flush_persisted_prefs_if_dirty();'
       - light.turn_off: display_brightness

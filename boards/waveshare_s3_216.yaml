@@ -148,7 +148,7 @@ binary_sensor:
       inverted: true
     name: "Boot Button"
     id: boot_button
-    entity_category: diagnostic
+    internal: true
 
   # PWR key state (AXP PWRON -> BSS138 -> SYS_OUT -> GPIO16, HIGH while pressed). Press timing lives
   # in modules/hal/pmu_axp2101.yaml. GPIO16 is an RTC GPIO, so it also arms the ext0 deep-sleep wake.

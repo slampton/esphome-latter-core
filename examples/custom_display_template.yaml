@@ -203,7 +203,7 @@ binary_sensor:
   - platform: gpio
     id: boot_button
     name: "Boot Button"
-    entity_category: diagnostic
+    internal: true
     pin: { number: GPIO0, mode: INPUT_PULLUP, inverted: true, ignore_strapping_warning: true }
 
 display:

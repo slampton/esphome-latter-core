@@ -130,7 +130,7 @@ binary_sensor:
       ignore_strapping_warning: true
     name: "Boot Button"
     id: boot_button
-    entity_category: diagnostic
+    internal: true
 
   # PWR key state (K1 -> BSS138 inverter -> GPIO49, HIGH while pressed). Press timing lives in
   # modules/hal/pmu_axp2101.yaml. GPIO49 is not an LP GPIO, so it cannot wake the P4 from deep sleep (alarm-sleep
