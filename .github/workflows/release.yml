@@ -155,22 +155,21 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "${{ github.event.release.tag_name }}" elf/*.elf --clobber
 
-  deploy_pages:
-    name: Deploy Unified Web Installer to GitHub Pages
+  # Upload and deploy run as separate jobs (GitHub's two-job Pages architecture) so the
+  # Actions artifact index settles before actions/deploy-pages lists artifacts, and so
+  # re-running a failed deploy_pages job never re-uploads a duplicate github-pages artifact.
+  package_pages:
+    name: Stage Unified Web Installer Artifact
     needs: build_device
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      contents: read
+      pages: read
+    outputs:
+      artifact_id: ${{ steps.upload_pages.outputs.artifact_id }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
 
       - name: Download all device build artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -190,20 +189,70 @@ jobs:
           sed -E "s#<span class=\"nav-badge\">v[0-9]+\.[0-9]+\.[0-9]+</span>#<span class=\"nav-badge\">v${VERSION}</span>#g" index.html > _site/index.html
           grep -Fq "<span class=\"nav-badge\">v${VERSION}</span>" _site/index.html
 
-      - name: Fast-forward stable branch on tagged release
-        if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-        shell: bash
-        run: |
-          git push origin "HEAD:refs/heads/stable" --force
-
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Upload Pages artifact
+        id: upload_pages
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: _site
 
+  deploy_pages:
+    name: Deploy Unified Web Installer to GitHub Pages
+    needs: package_pages
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Wait for github-pages artifact metadata
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACT_ID: ${{ needs.package_pages.outputs.artifact_id }}
+        run: |
+          for attempt in $(seq 1 15); do
+            ids=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name == "github-pages") | .id' 2>/dev/null || true)
+            if [[ -n "${ARTIFACT_ID}" ]]; then
+              if printf '%s\n' "${ids}" | grep -Fxq "${ARTIFACT_ID}"; then
+                echo "github-pages artifact ${ARTIFACT_ID} indexed (attempt ${attempt})"
+                exit 0
+              fi
+            elif [[ -n "${ids}" ]]; then
+              echo "github-pages artifact indexed (attempt ${attempt})"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::warning::github-pages artifact ${ARTIFACT_ID} not yet visible in REST listing after 30s; proceeding to deploy-pages"
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
+  promote_stable:
+    name: Fast-Forward stable Branch on Tagged Release
+    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
+    needs: deploy_pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward stable branch on tagged release
+        shell: bash
+        run: |
+          git push origin "HEAD:refs/heads/stable" --force
