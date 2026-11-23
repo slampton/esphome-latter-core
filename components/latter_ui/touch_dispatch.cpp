@@ -2197,7 +2197,7 @@ void request_music_lyrics_refresh(const std::string &track_key, const std::strin
 }
 
 void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
-  static constexpr uint32_t kMusicPeerBrowseDebounceMs = 220U;
+  static constexpr uint32_t kMusicPeerBrowseDebounceMs = 380U;
   cancel_core_timeout(kTimeoutMusicPeerBrowseId);
   auto &rs = runtime_state();
   const auto &rt = touch_engine().runtime();

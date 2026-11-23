@@ -486,7 +486,7 @@ void test_live_touch_engine_end_to_end_5geom() {
     LATTER_CHECK(rs.music.view == MusicView::VOLUME);
 
     // 7. Peer-tab browse debouncing: rapid tab traversal cancels intermediate RPCs and emits only
-    // the settled tab once the 220 ms debounce fires, without latching lyrics.track_key on pass-through.
+    // the settled tab once the 380 ms debounce fires, without latching lyrics.track_key on pass-through.
     {
       struct DebounceSink {
         uint32_t armed_id{0};
@@ -536,7 +536,7 @@ void test_live_touch_engine_end_to_end_5geom() {
       }
       LATTER_CHECK(deb_box.published.empty());
       LATTER_CHECK(rs.music.lyrics.track_key.empty());
-      LATTER_CHECK(d_sink.armed_id == kTimeoutMusicPeerBrowseId && d_sink.armed_delay == 220U && d_sink.pending);
+      LATTER_CHECK(d_sink.armed_id == kTimeoutMusicPeerBrowseId && d_sink.armed_delay == 380U && d_sink.pending);
 
       // Settle on ALBUM_TRACKS -> fires single-chunk current_album_tracks RPC only.
       auto cb = std::move(d_sink.pending);
