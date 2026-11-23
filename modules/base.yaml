@@ -64,7 +64,9 @@ api:
     - action: latter_ping
       id: latter_ping_action
       then:
-        - logger.log: "Latter companion connected"
+        - logger.log:
+            level: DEBUG
+            format: "Latter companion connected"
         # Latter pings every bound Device once its RPC outbox listener is attached: answer with a fresh hello
         # unless on_client_connected already has send_device_hello in flight or just completed with clean prefs.
         - if:

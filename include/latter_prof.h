@@ -4,11 +4,11 @@
 // Latter [PROF:*] Flight Recorder, Memory Watch & Render Section Profiler
 // (latter_prof.h)
 // ==============================================================================
-// [PROF:*] diagnostics log at INFO only while "System: Telemetry Profiler" is on, so a device at the
-// default INFO level stays quiet in steady state. Use LATTER_PROF_LOGI(fmt, ...) for every [PROF:*]
-// INFO line. Exempt (plain ESP_LOGI("PROF", ...)): [PROF:BOOT], the once-per-boot summary, and
-// [PROF:LINK], the Link Report. Genuine warnings ([PROF:LOWWATER], [PROF:STALL], [PROF:AUDIO_STALL],
-// IMU / battery faults) use ESP_LOGW("PROF", ...) and always log.
+// [PROF:*] diagnostics log at INFO only while Telemetry Profiler is on (auto-disabling after 24 h),
+// so a device at the default INFO level stays quiet in steady state. Use LATTER_PROF_LOGI(fmt, ...)
+// for every [PROF:*] INFO line (including [PROF:BOOT] and [PROF:LINK]; zero always-on exemptions).
+// Genuine warnings ([PROF:LOWWATER], [PROF:STALL], [PROF:AUDIO_STALL], [PROF:BOOT] light-sleep crash
+// breadcrumbs, IMU / battery faults) use ESP_LOGW("PROF", ...) and always log.
 // ==============================================================================
 
 #include <cstddef>
@@ -43,10 +43,7 @@ inline void latter_host_log_sink(const char *, const char *, Args &&...) {}
 
 #ifdef USE_ESP32
 #include <esp_heap_caps.h>
-#include <esp_memory_utils.h>
 #include <esp_timer.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <sdkconfig.h>
 #endif
 
@@ -78,9 +75,56 @@ inline uint32_t hal_millis_now() {
 #endif
 }
 
+inline constexpr uint32_t kProfilerDefaultTimeoutMs = 24UL * 3600UL * 1000UL;
+
+struct ProfilerTimerState {
+  uint32_t started_ms{0U};
+  uint32_t timeout_ms{kProfilerDefaultTimeoutMs};
+  bool armed{false};
+};
+
 inline bool &profiler_enabled() {
   static bool s_enabled = false;
   return s_enabled;
+}
+
+inline ProfilerTimerState &profiler_timer_state() {
+  static ProfilerTimerState s_timer{};
+  return s_timer;
+}
+
+inline void profiler_start(uint32_t now_ms, uint32_t timeout_ms = kProfilerDefaultTimeoutMs) {
+  auto &st = profiler_timer_state();
+  st.started_ms = now_ms;
+  st.timeout_ms = timeout_ms;
+  st.armed = true;
+  profiler_enabled() = true;
+}
+
+inline void profiler_stop() {
+  auto &st = profiler_timer_state();
+  profiler_enabled() = false;
+  st.armed = false;
+  st.started_ms = 0U;
+  st.timeout_ms = kProfilerDefaultTimeoutMs;
+}
+
+inline bool profiler_is_expired(uint32_t now_ms) {
+  if (!profiler_enabled()) return false;
+  const auto &st = profiler_timer_state();
+  if (!st.armed) return false;
+  if (st.timeout_ms == 0U) return true;
+  return static_cast<uint32_t>(now_ms - st.started_ms) >= st.timeout_ms;
+}
+
+inline uint32_t profiler_remaining_sec(uint32_t now_ms) {
+  if (!profiler_enabled()) return 0U;
+  const auto &st = profiler_timer_state();
+  if (!st.armed) return 0U;
+  const uint32_t elapsed = static_cast<uint32_t>(now_ms - st.started_ms);
+  if (elapsed >= st.timeout_ms) return 0U;
+  const uint32_t rem = st.timeout_ms - elapsed;
+  return (rem / 1000U) + ((rem % 1000U) != 0U ? 1U : 0U);
 }
 
 }  // namespace latter_ui
@@ -195,11 +239,12 @@ inline void watch_internal_low_water(bool ble_act, bool mww_run, bool va_act, bo
 #endif
 }
 
-// On-demand memory report ("System: Log Memory Report"): heap totals per region plus FreeRTOS tasks.
-inline void log_memory_report() {
+// Compact 3-region heap summary emitted when Telemetry Profiler is enabled.
+inline void log_heap_summary() {
 #ifdef USE_ESP32
+  if (!profiler_enabled()) return;
   auto region = [](const char *name, uint32_t caps) {
-    multi_heap_info_t hi;
+    multi_heap_info_t hi{};
     heap_caps_get_info(&hi, caps);
     LATTER_PROF_LOGI("[PROF:HEAP] %s free=%uKB largest=%uKB min_ever=%uKB alloc=%uKB blocks=%u/%u", name,
                      (unsigned)(hi.total_free_bytes / 1024U), (unsigned)(hi.largest_free_block / 1024U),
@@ -209,23 +254,6 @@ inline void log_memory_report() {
   region("internal", MALLOC_CAP_INTERNAL);
   region("dma", MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
   region("psram", MALLOC_CAP_SPIRAM);
-#if configUSE_TRACE_FACILITY
-  UBaseType_t n = uxTaskGetNumberOfTasks();
-  auto *ts = static_cast<TaskStatus_t *>(heap_caps_malloc(sizeof(TaskStatus_t) * (n + 4), MALLOC_CAP_SPIRAM));
-  if (ts == nullptr) return;
-  n = uxTaskGetSystemState(ts, n + 4, nullptr);
-  unsigned int_stacks = 0;
-  for (UBaseType_t i = 0; i < n; i++) {
-    const bool ext = esp_ptr_external_ram(ts[i].pxStackBase);
-    if (!ext) int_stacks++;
-    LATTER_PROF_LOGI("[PROF:TASK] %-16s stack=%s unused=%uB prio=%u", ts[i].pcTaskName, ext ? "PSRAM" : "INT",
-                     (unsigned)ts[i].usStackHighWaterMark, (unsigned)ts[i].uxCurrentPriority);
-  }
-  LATTER_PROF_LOGI("[PROF:TASK] %u tasks, %u with internal-RAM stacks", (unsigned)n, int_stacks);
-  heap_caps_free(ts);
-#else
-  LATTER_PROF_LOGI("[PROF:TASK] task list needs CONFIG_FREERTOS_USE_TRACE_FACILITY");
-#endif
 #endif
 }
 

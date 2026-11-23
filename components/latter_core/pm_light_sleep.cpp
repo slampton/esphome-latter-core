@@ -438,7 +438,7 @@ void pm_init() {
     ESP_LOGE("power", "Light sleep: wake-pin callbacks unavailable (%s); waking on timers and Wi-Fi only",
              esp_err_to_name(err));
   }
-  ESP_LOGI("power",
+  ESP_LOGD("power",
            "Light sleep: awake lock held at boot, wake pins pwr=%d btn=%d touch=%d imu=%d, quiet loop %lums (%lums with touch wake)",
            st.pins[PM_WAKE_PWR_KEY].gpio, st.pins[PM_WAKE_ACTION_BTN].gpio, st.pins[PM_WAKE_TOUCH].gpio,
            st.pins[PM_WAKE_IMU].gpio, static_cast<unsigned long>(kPmQuietLoopIntervalMs),
@@ -448,7 +448,7 @@ void pm_init() {
   s_p4_quiet_inited = true;
   s_p4_quiet_awake = true;
   s_p4_loop_interval_awake = esphome::App.get_loop_interval();
-  ESP_LOGI("power",
+  ESP_LOGD("power",
            "ESP32-P4 battery quiet-loop pacing ready (fixed CPLL/200MHz PSRAM; quiet loop %lums, %lums with touch wake)",
            static_cast<unsigned long>(kPmQuietLoopIntervalMs),
            static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));

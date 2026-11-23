@@ -94,7 +94,8 @@ esphome:
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
                           "(docs/flashing.md) and rebuild.");
-            ESP_LOGI("latter", "Latter SDK rev %ld (YAML rev %ld)", (long)LATTER_SDK_REV, LATTER_YAML_REV);
+            ESP_LOGI("latter", "Latter v%s ready (SDK %ld, reset: %s)", "${version}", (long)LATTER_SDK_REV,
+                     latter_ui::last_reset_reason());
             latter_ui::start_stall_guard();
             latter_ui::link_report_init();
             id(latter_mic_i2s).add_data_callback([](const microphone::AudioCapture &c) {
@@ -408,6 +409,8 @@ sensor:
     id: latter_wifi_signal
     entity_category: diagnostic
     update_interval: 60s
+    filters:
+      - delta: 2.0
 
 button:
   - platform: restart
@@ -485,18 +488,38 @@ interval:
   - interval: 60s
     then:
       - lambda: |-
+          const uint32_t now_60s_ms = millis();
           latter_ui::link_report_init();
           latter_ui::link_report_sample();
-          (void)latter_ui::link_report_log_line(millis(), latter_ui::last_reset_reason());
+          if (latter_ui::profiler_enabled()) {
+            (void)latter_ui::link_report_log_line(now_60s_ms, latter_ui::last_reset_reason());
+          }
           if (latter_ui::link_state().ha_connected) {
-            id(publish_device_telemetry).execute();
+            const auto &rs = latter_ui::runtime_state();
+            static uint32_t last_tel_pub_ms = 0U;
+            static uint32_t last_seen_ha_conn_ms = 0U;
+            const uint32_t ha_conn_ms = latter_ui::link_state().last_ha_connect_ms;
+            if (last_tel_pub_ms == 0U || (ha_conn_ms != 0U && ha_conn_ms != last_seen_ha_conn_ms)) {
+              last_seen_ha_conn_ms = ha_conn_ms;
+              last_tel_pub_ms = (ha_conn_ms != 0U) ? ha_conn_ms : ((now_60s_ms != 0U) ? now_60s_ms : 1U);
+            }
+            const bool batt_quiet = (LATTER_HAS_BATTERY != 0) && !rs.hw_usb_connected &&
+                                    (rs.nav.display_power_state == 2);
+            if (latter_ui::profiler_enabled()) {
+              last_tel_pub_ms = (now_60s_ms != 0U) ? now_60s_ms : 1U;
+              id(publish_device_telemetry).execute();
+            } else if (!batt_quiet && (now_60s_ms - last_tel_pub_ms >= 900000U)) {
+              last_tel_pub_ms = (now_60s_ms != 0U) ? now_60s_ms : 1U;
+              id(publish_device_telemetry).execute();
+            }
           }
 
 script:
-  # Replay the boot ringbuffer and [PROF:BOOT] summary only when a log-viewer client (esphome logs /
-  # Device Builder) connects. Home Assistant connects with subscribe_logs: false and receives boot/crash
-  # forensics via device_telemetry and device_hello, so skipping replay on HA connects avoids a ~120 ms
-  # loop stall during initial v3 hydration and avoids re-dumping stale @...ms boot errors into open viewers.
+  # Replay the 1 kB boot ringbuffer and any boot-fault warnings (plus [PROF:BOOT] when the profiler is on)
+  # only when a log-viewer client (esphome logs / Device Builder) connects. Home Assistant connects with
+  # subscribe_logs: false and receives boot/crash forensics via device_telemetry and device_hello, so skipping
+  # replay on HA connects avoids a ~120 ms loop stall during initial v3 hydration and avoids re-dumping stale
+  # @...ms boot errors into open viewers.
   - id: log_client_boot_replay
     mode: restart
     then:

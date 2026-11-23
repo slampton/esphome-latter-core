@@ -128,7 +128,7 @@ void LatterTouchscreen::finish_setup_() {
       this, +[](void *ctx) { static_cast<LatterTouchscreen *>(ctx)->pump_from_host(); });
   this->setup_complete_ = true;
 
-  ESP_LOGI(TAG, "Touch HAL ready: proto=%s chip=0x%04X addr=0x%02X mode=%s poll=%ums raw=%dx%d",
+  ESP_LOGD(TAG, "Touch HAL ready: proto=%s chip=0x%04X addr=0x%02X mode=%s poll=%ums raw=%dx%d",
            ::latter_ui::touch_hal_protocol_name(this->protocol_),
            static_cast<unsigned>(this->detected_chip_id_), this->address_,
            (this->interrupt_pin_ != nullptr)

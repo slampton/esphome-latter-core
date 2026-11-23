@@ -15,7 +15,7 @@ esp32:
       CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
       CONFIG_COMPILER_OPTIMIZATION_PERF: "y"
       CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM: "y"
-      CONFIG_FREERTOS_USE_TRACE_FACILITY: "y"  # task list for the System: Log Memory Report button
+      CONFIG_FREERTOS_USE_TRACE_FACILITY: "y"  # eTaskGetState() in Stall Guard and wake_profiling task CPU stats
       # Halve ESPHome's PSRAM default static Wi-Fi RX buffers (16 -> 8, reclaiming ~12.8 KB internal DMA SRAM)
       # while satisfying ESP-IDF wifi_init.c's WIFI_RX_BA_WIN <= 2 * WIFI_STATIC_RX_BUFFER_NUM invariant.
       CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM: "8"

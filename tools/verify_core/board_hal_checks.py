@@ -495,8 +495,6 @@ def _verify_core_cpp_and_prof_gates(failures: list[str]) -> None:
         clean = strip_cpp_comments(path.read_text(encoding="utf-8"))
         for m_prof in re.finditer(r'ESP_LOGI\s*\([^;]*?"\[PROF:([A-Z0-9_]+)\]', clean):
             tag = m_prof.group(1)
-            if tag in {"BOOT", "LINK"}:
-                continue
             window = clean[max(0, m_prof.start() - PROF_WINDOW_CHARS) : m_prof.start()]
             if "prof_enabled" not in window and "profiler" not in window and "profile_logging_" not in window:
                 failures.append(f"[PROF GATE] {rel} logs [PROF:{tag}] at INFO without profiler_enabled() gate")

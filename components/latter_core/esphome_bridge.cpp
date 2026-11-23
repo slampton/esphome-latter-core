@@ -122,7 +122,7 @@ void on_api_client_authenticated(VoiceAssistant *va, const std::string &client_i
   if (va == nullptr) return;
   if (client_info.find("Home Assistant") != std::string::npos) {
     if (va->get_api_connection() != nullptr) {
-      ESP_LOGI("va_api", "Releasing stale VoiceAssistant API client for new Home Assistant connection (%s)",
+      ESP_LOGD("va_api", "Releasing stale VoiceAssistant API client for new Home Assistant connection (%s)",
                client_address.c_str());
       va->*bridge_get(VA_ApiClient_Tag{}) = nullptr;
     }
@@ -140,7 +140,7 @@ void clean_disconnect_api_before_hibernate(VoiceAssistant *va) {
     va->*bridge_get(VA_ApiClient_Tag{}) = nullptr;
   }
   if (api::global_api_server != nullptr) {
-    ESP_LOGI("power", "Sending clean API DisconnectRequest to Home Assistant before Hibernate rail cut");
+    ESP_LOGD("power", "Sending clean API DisconnectRequest to Home Assistant before Hibernate rail cut");
     api::global_api_server->on_shutdown();
   }
 #else

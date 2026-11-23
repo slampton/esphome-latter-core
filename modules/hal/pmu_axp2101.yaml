@@ -155,6 +155,7 @@ sensor:
     update_interval: never
     filters:
       - throttle: 120s
+      - delta: 0.01
 
 text_sensor:
   - platform: template
@@ -267,7 +268,7 @@ script:
               is_charging = (((stat1 >> 5) & 0x03) == 1) && (chg_state < 4);
               if ((stat1 & 0x67) != last_stat1) {  // direction + phase (other bits may toggle)
                 last_stat1 = stat1 & 0x67;
-                if (!bm.fault) {
+                if (!bm.fault && latter_ui::profiler_enabled()) {
                   uint8_t r0 = 0, r50 = 0, r48 = 0, r36 = 0, r37 = 0;
                   uint8_t rr = 0x00;
                   id(bus_internal).write_readv(0x34, &rr, 1, &r0, 1);

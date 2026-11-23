@@ -105,7 +105,7 @@ bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g) {
         g.weak = true;
         g.weak_since_ms = now_ms;
         g.above_since_ms = 0;
-        ESP_LOGI("power", "Light sleep: weak Wi-Fi link (%.0f dBm smoothed), staying awake", g.ema);
+        LATTER_PROF_LOGI("[PROF:PM] weak_link=1 rssi_ema=%.0f", g.ema);
       }
     } else {
       g.below_count = 0;
@@ -118,7 +118,7 @@ bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g) {
       g.below_count = 0;
       g.weak_total_ms += now_ms - g.weak_since_ms;
       g.above_since_ms = 0;
-      ESP_LOGI("power", "Light sleep: Wi-Fi link recovered (%.0f dBm smoothed)", g.ema);
+      LATTER_PROF_LOGI("[PROF:PM] weak_link=0 rssi_ema=%.0f", g.ema);
     }
   } else {
     g.above_since_ms = 0;
@@ -222,10 +222,9 @@ std::string link_report_line(uint32_t now_ms, const char *reset_reason) {
 }
 
 std::string link_report_log_line(uint32_t now_ms, const char *reset_reason) {
+  if (!profiler_enabled()) return {};
   std::string line = link_report_line(now_ms, reset_reason);
-  if (now_ms >= 5000U || link_report().api_connects > 0U) {
-    ESP_LOGI("PROF", "[PROF:LINK] %s", line.c_str());
-  }
+  LATTER_PROF_LOGI("[PROF:LINK] %s", line.c_str());
   return line;
 }
 

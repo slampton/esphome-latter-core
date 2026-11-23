@@ -86,7 +86,7 @@ inline void probe_frame_buffer_endian(esphome::display::Display &it, uint16_t *b
   } else {
     active_frame_endian_mode() = 0;
   }
-  ESP_LOGI("disp_fb", "Bound direct RGB565 framebuffer: ptr=%p endian_mode=%d",
+  ESP_LOGD("disp_fb", "Bound direct RGB565 framebuffer: ptr=%p endian_mode=%d",
            static_cast<void *>(buf16), active_frame_endian_mode());
 }
 

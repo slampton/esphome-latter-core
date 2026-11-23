@@ -12,22 +12,16 @@
 # api_reboot_timeout) live strictly in boards/*.yaml (loaded before this package).
 latter_core:
 
-# Boot lines are usually logged before any API log viewer connects. Keep warnings plus the one-shot
-# boot status lines and replay them to every client that connects (fixed buffer, no heap): display
-# buffers, audio, SDK revision, [PROF:BOOT] (reset reason, crash flag, previous power-off; [PROF:*] INFO
-# lines are otherwise gated on the Telemetry Profiler), the AXP2101 charger setup and the light-sleep setup.
-# Steady state at the default INFO level is quiet: per-touch, per-frame, per-turn and per-cycle lines log at
-# DEBUG, [PROF:*] diagnostics only while the Telemetry Profiler is on ([PROF GATE]).
+# Boot lines are usually logged before any API log viewer connects. Keep all warnings/errors
+# (captured automatically across every tag) plus the one-shot `latter` boot banner in a lean
+# 1 kB ring buffer (fixed buffer, no heap) for replay when a log viewer connects.
+# Steady state at the default INFO level is quiet: internal HAL/policy details log at DEBUG,
+# and [PROF:*] diagnostics emit only while the Telemetry Profiler is on ([PROF GATE], auto-off 24 h).
 logger:
   level: INFO
-  boot_log_buffer_size: 3kB
+  boot_log_buffer_size: 1kB
   boot_logs:
-    disp_fb: INFO
-    audio: INFO
     latter: INFO
-    PROF: INFO
-    pmu: INFO
-    power: INFO
 
 safe_mode:
   boot_is_good_after: 60s

@@ -120,7 +120,7 @@ constexpr size_t kFbClearFrameBytes = static_cast<size_t>(SCREEN_W) * SCREEN_H *
 constexpr size_t kFbClearChunks = (kFbClearFrameBytes + kFbClearPatternBytes - 1) / kFbClearPatternBytes;
 
 void fb_clear_log_heap(const char *when) {
-  ESP_LOGI("disp_fb", "DMA clear heap %s: int_free=%uB int_max_blk=%uB", when,
+  ESP_LOGD("disp_fb", "DMA clear heap %s: int_free=%uB int_max_blk=%uB", when,
            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
 }
@@ -164,7 +164,7 @@ bool fb_clear_init() {
       st.use_ppa = true;
       st.align = kFbPpaRowBytes;
       st.ok = true;
-      ESP_LOGI("disp_fb", "Between-frames clear enabled: PPA fill (%u px rows)", static_cast<unsigned>(kFbPpaRowPx));
+      ESP_LOGD("disp_fb", "Between-frames clear enabled: PPA fill (%u px rows)", static_cast<unsigned>(kFbPpaRowPx));
       return true;
     }
     fb_clear_fail("ppa_register", static_cast<int>(perr));
@@ -189,7 +189,7 @@ bool fb_clear_init() {
   st.ok = (err == ESP_OK && st.pattern != nullptr);
   if (err != ESP_OK) fb_clear_fail("install", static_cast<int>(err));
   else if (st.pattern == nullptr) fb_clear_fail("pattern_alloc");
-  ESP_LOGI("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u, chunks=%u)", st.ok ? "enabled" : "unavailable",
+  ESP_LOGD("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u, chunks=%u)", st.ok ? "enabled" : "unavailable",
            static_cast<int>(err), static_cast<unsigned>(st.align), static_cast<unsigned>(kFbClearChunks));
   fb_clear_log_heap("after install");
   return st.ok;
@@ -325,7 +325,7 @@ void fb_clear_wait() {
         return;
       }
     }
-    ESP_LOGI("disp_fb", "PPA fill verified: %u KB in %ld us", static_cast<unsigned>(st.interior_len / 1024),
+    ESP_LOGD("disp_fb", "PPA fill verified: %u KB in %ld us", static_cast<unsigned>(st.interior_len / 1024),
              static_cast<long>(g_fb_clear_done_us.load(std::memory_order_acquire) - st.ppa_t0_us));
   }
 #endif

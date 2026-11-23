@@ -221,7 +221,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
         ws.pause_until_ms = 0;
         ws.backoff_stage = 0;
         if (wifi->is_disabled()) {
-          ESP_LOGI("power", "Wake / USB: resuming Wi-Fi station scan immediately");
+          ESP_LOGD("power", "Wake / USB: resuming Wi-Fi station scan immediately");
           ws.base_valid = false;
           wifi->enable();
         }
@@ -246,7 +246,7 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
             const uint32_t pause_ms = kBackoffMs[ws.backoff_stage < 3 ? ws.backoff_stage : 2];
             if (ws.backoff_stage < 2) ws.backoff_stage++;
             ws.pause_until_ms = (now_ms + pause_ms) | 1U;
-            ESP_LOGI("power", "Off-site standby: pausing Wi-Fi scan for %lus",
+            ESP_LOGD("power", "Off-site standby: pausing Wi-Fi scan for %lus",
                      static_cast<unsigned long>(pause_ms / 1000U));
             if (ws.hp_held) {
               wifi->release_high_performance();

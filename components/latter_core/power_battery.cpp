@@ -214,7 +214,7 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
     uint8_t stat0 = 0;
     const bool vbus_present = axp_rd(bus, 0x00, &stat0, 1) && ((stat0 & 0x20) != 0);
     if (!vbus_present) {
-      ESP_LOGI("power", "On battery without LP wake key: powering off cleanly via AXP2101 (skipping alarm in %lds)",
+      ESP_LOGD("power", "On battery without LP wake key: powering off cleanly via AXP2101 (skipping alarm in %lds)",
                (long)sec_until_alarm);
       sec_until_alarm = -1;
     }
@@ -229,14 +229,14 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
   // On early cold-boot battery cutoff Wi-Fi is uninitialized, so esp_wifi_sta_get_ap_info() returns immediately.
   wifi_ap_record_t ap_info;
   if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-    ESP_LOGI("power", "Disconnecting Wi-Fi station cleanly before hibernate/deep sleep");
+    ESP_LOGD("power", "Disconnecting Wi-Fi station cleanly before hibernate/deep sleep");
     (void)esp_wifi_disconnect();
     esphome::delay(100);
   }
 #endif
   if (sec_until_alarm > 0 && sec_until_alarm <= 43200) {
     uint64_t wake_sec = static_cast<uint64_t>((sec_until_alarm > 90) ? (sec_until_alarm - 90) : 15);
-    ESP_LOGI("power", "Armed alarm in %lds: entering timer-wake deep sleep (wake in %llus, AXP2101 rails kept ON)",
+    ESP_LOGD("power", "Armed alarm in %lds: entering timer-wake deep sleep (wake in %llus, AXP2101 rails kept ON)",
              (long)sec_until_alarm, (unsigned long long)wake_sec);
     esp_sleep_enable_timer_wakeup(wake_sec * 1000000ULL);
 #if defined(LATTER_C6_RESET_PIN) && !defined(CONFIG_ESP32P4_SELECTS_REV_LESS_V3)
@@ -254,7 +254,7 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
     for (uint8_t i = 0; i < 4; i++) {
       axp_wr(bus, static_cast<uint8_t>(0x04 + i), rec[i]);
     }
-    ESP_LOGI("power", "AXP2101 power-off: reason=%s vbat=%umV soc=%u", hibernate_reason_name(rec[0] & 0x0F),
+    ESP_LOGD("power", "AXP2101 power-off: reason=%s vbat=%umV soc=%u", hibernate_reason_name(rec[0] & 0x0F),
              (unsigned)rec_mv, (unsigned)rec_soc);
     if (!axp_wr(bus, 0x10, 0x01)) {
       ESP_LOGW("power", "AXP2101 power-off write (0x10=0x01) failed; falling back to ESP deep sleep");
@@ -373,7 +373,7 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
   tel.icc_ma = icc_ma;
   tel.boot_valid = true;
   static const int kCvMv[8] = {0, 4000, 4100, 4200, 4350, 4400, 0, 0};
-  ESP_LOGI("pmu",
+  ESP_LOGD("pmu",
            "AXP2101: ICC=%dmA (0x62=0x%02X) IPRE=%dmA ITERM=%dmA%s CV=%dmV (0x%02X) cell=%dmAh "
            "DCDC=0x%02X LDO0=0x%02X LDO1=0x%02X ADC=0x%02X TS=0x%02X PWRON=0x%02X ILIM=0x%02X CHG=0x%02X VOFF=0x%02X",
            icc_ma, r62, (r61 & 0x0F) * 25, (r63 & 0x0F) * 25, (r63 & 0x10) ? "" : "(off)", kCvMv[r64 & 0x07], r64,
@@ -460,7 +460,7 @@ bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus) {
     tv.tv_sec = static_cast<time_t>(epoch64);
     tv.tv_usec = 0;
     settimeofday(&tv, nullptr);
-    ESP_LOGI("rtc", "Restored system UTC clock from PCF85063 RTC (epoch=%lld)",
+    ESP_LOGD("rtc", "Restored system UTC clock from PCF85063 RTC (epoch=%lld)",
              static_cast<long long>(epoch64));
   }
   return true;

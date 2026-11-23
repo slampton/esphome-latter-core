@@ -864,6 +864,94 @@ void test_audio_path_and_intercom_arbitrator() {
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
 }
 
+void test_profiler_timer_and_logging_policy() {
+  using namespace latter_ui;
+
+  static_assert(kProfilerDefaultTimeoutMs == 24UL * 3600UL * 1000UL);
+
+  // Clean baseline: profiler off, not expired, 0 s remaining.
+  profiler_stop();
+  LATTER_CHECK(!profiler_enabled());
+  LATTER_CHECK(!profiler_is_expired(1000U));
+  LATTER_CHECK(profiler_remaining_sec(1000U) == 0U);
+
+  // Default 24 h timer semantics (remains enabled at expiry until caller logs [PROF:STOP] & calls profiler_stop()).
+  profiler_start(1000U);
+  LATTER_CHECK(profiler_enabled());
+  LATTER_CHECK(!profiler_is_expired(1000U));
+  LATTER_CHECK(profiler_remaining_sec(1000U) == 86400U);
+  LATTER_CHECK(!profiler_is_expired(1000U + kProfilerDefaultTimeoutMs - 1U));
+  LATTER_CHECK(profiler_remaining_sec(1000U + kProfilerDefaultTimeoutMs - 1U) == 1U);
+  LATTER_CHECK(profiler_is_expired(1000U + kProfilerDefaultTimeoutMs));
+  LATTER_CHECK(profiler_remaining_sec(1000U + kProfilerDefaultTimeoutMs) == 0U);
+  LATTER_CHECK(profiler_enabled());
+  profiler_stop();
+  LATTER_CHECK(!profiler_enabled());
+  LATTER_CHECK(!profiler_is_expired(1000U + kProfilerDefaultTimeoutMs));
+  LATTER_CHECK(profiler_remaining_sec(1000U + kProfilerDefaultTimeoutMs) == 0U);
+
+  // Custom timeout with uint32_t wrap-around across 0xFFFFFFFFU -> 0U.
+  profiler_start(0xFFFFFF00U, 5000U);
+  LATTER_CHECK(profiler_enabled());
+  LATTER_CHECK(!profiler_is_expired(0xFFFFFF00U));
+  LATTER_CHECK(profiler_remaining_sec(0xFFFFFF00U) == 5U);
+  LATTER_CHECK(!profiler_is_expired(0xFFFFFFFFU));
+  LATTER_CHECK(profiler_remaining_sec(0xFFFFFFFFU) == 5U);
+  LATTER_CHECK(!profiler_is_expired(0U));
+  LATTER_CHECK(profiler_remaining_sec(0U) == 5U);
+  LATTER_CHECK(!profiler_is_expired(4743U));  // 0x100 + 4743 = 4999 ms elapsed
+  LATTER_CHECK(profiler_remaining_sec(4743U) == 1U);
+  LATTER_CHECK(profiler_is_expired(4744U));   // 5000 ms elapsed
+  LATTER_CHECK(profiler_remaining_sec(4744U) == 0U);
+  LATTER_CHECK(profiler_is_expired(10000U));
+
+  // Starting at exactly now_ms == 0U and restarting while active to extend deadline.
+  profiler_start(0U, 3000U);
+  LATTER_CHECK(!profiler_is_expired(2999U));
+  LATTER_CHECK(profiler_remaining_sec(2999U) == 1U);
+  LATTER_CHECK(profiler_is_expired(3000U));
+  profiler_start(2500U, 2000U);
+  LATTER_CHECK(!profiler_is_expired(4499U));
+  LATTER_CHECK(profiler_is_expired(4500U));
+  profiler_stop();
+
+  // link_report_log_line() is quiet when profiler is off while link_report_line() remains functional.
+  const std::string raw_line = link_report_line(60000U, "power-on");
+  LATTER_CHECK(raw_line.find("up=60") != std::string::npos);
+  LATTER_CHECK(raw_line.find("rst=power-on") != std::string::npos);
+  LATTER_CHECK(link_report_log_line(60000U, "power-on").empty());
+
+  profiler_start(60000U, 10000U);
+  const std::string prof_line = link_report_log_line(60000U, "power-on");
+  LATTER_CHECK(prof_line.find("up=60") != std::string::npos);
+  LATTER_CHECK(prof_line.find("rst=power-on") != std::string::npos);
+  profiler_stop();
+
+  // Source-level logging & battery-safe telemetry invariants.
+  const std::string prof_h = read_repo_file("../../include/latter_prof.h");
+  const std::string disp_fw_yaml = read_repo_file("../../modules/latter_display_firmware.yaml");
+  const std::string sys_core_yaml = read_repo_file("../../modules/system_core.yaml");
+  const std::string sys_sync_yaml = read_repo_file("../../modules/system_ui_sync.yaml");
+  const std::string pwr_yaml = read_repo_file("../../modules/power_policy.yaml");
+  const std::string sleep_yaml = read_repo_file("../../modules/sleep_lifecycle.yaml");
+  const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+
+  LATTER_CHECK(prof_h.find("log_heap_summary()") != std::string::npos);
+  LATTER_CHECK(prof_h.find("log_memory_report") == std::string::npos);
+  LATTER_CHECK(prof_h.find("[PROF:TASK]") == std::string::npos);
+  LATTER_CHECK(disp_fw_yaml.find("boot_log_buffer_size: 1kB") != std::string::npos);
+  LATTER_CHECK(disp_fw_yaml.find("PROF: INFO") == std::string::npos);
+  LATTER_CHECK(sys_sync_yaml.find("profiler_start(") != std::string::npos);
+  LATTER_CHECK(sys_sync_yaml.find("log_heap_summary()") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("profiler_is_expired(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("profiler_stop()") != std::string::npos);
+  LATTER_CHECK(sleep_yaml.find("Entering hibernate (reason=%s") != std::string::npos);
+  LATTER_CHECK(sys_core_yaml.find("900000U") != std::string::npos);
+  LATTER_CHECK(sys_core_yaml.find("delta: 2.0") != std::string::npos);
+  LATTER_CHECK(axp_yaml.find("delta: 0.01") != std::string::npos);
+  LATTER_CHECK(axp_yaml.find("!bm.fault && latter_ui::profiler_enabled()") != std::string::npos);
+}
+
 }  // namespace
 
 void run_power_audio_hal_tests() {
@@ -874,6 +962,7 @@ void run_power_audio_hal_tests() {
   test_panel_dcs_timeout_isolation_and_wake_grace();
   test_display_lifecycle_controller();
   test_audio_path_and_intercom_arbitrator();
+  test_profiler_timer_and_logging_policy();
 }
 
 }  // namespace latter_test

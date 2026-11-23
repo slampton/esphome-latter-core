@@ -165,13 +165,19 @@ interval:
             va_stuck_since_ms = 0;
           }
 
-          // 4. [PROF:*] Flight Recorder Power & Heap Telemetry
+          // 4. [PROF:*] Flight Recorder Auto-Disable (24h) & Power/Heap Telemetry
           uint32_t now_1s_ms = millis();
           #if LATTER_HAS_TOUCH
           if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
             latter_ui::hal_recover_touchscreen_if_failed(id(touch_screen), now_1s_ms);
           }
           #endif
+          if (latter_ui::profiler_enabled() && latter_ui::profiler_is_expired(now_1s_ms)) {
+            LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler auto-disabled after 24h");
+            latter_ui::profiler_stop();
+            id(ble_ctrl).set_profile_logging(false);
+            id(publish_device_telemetry).execute();
+          }
           static uint32_t last_prof_10s_ms = 0;
           static int last_prof_pwr_state = -1;
           if (latter_ui::profiler_enabled() &&
@@ -236,7 +242,7 @@ interval:
           if (rs.nav.display_power_state == 0 && !showcase_active_1s && (now_1s_ms > last_user_act_ms)) {
             uint32_t touch_idle_ms = now_1s_ms - last_user_act_ms;
             if (rs.nav.active_game > 0 && touch_idle_ms >= 180000U) {
-              ESP_LOGI("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
+              ESP_LOGD("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
               rs.nav.active_game = 0;
               id(stop_alarm_sound).execute();
               latter_ui::display_lifecycle().note_activity(now_1s_ms);
@@ -245,7 +251,7 @@ interval:
                 ((rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
                  latter_ui::is_camera_view_active(rs)) &&
                 touch_idle_ms >= 300000U) {
-              ESP_LOGI("power", "Tool/Camera untouched on battery for 5 min: exiting to idle");
+              ESP_LOGD("power", "Tool/Camera untouched on battery for 5 min: exiting to idle");
               if (latter_ui::is_camera_view_active(rs)) {
                 if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
                   latter_ui::intercom_session().stop_call_with_hw(now_1s_ms);
@@ -275,7 +281,7 @@ interval:
               (now_1s_ms > last_user_act_ms) &&
               (now_1s_ms - last_user_act_ms >= rth_ms) &&
               latter_ui::should_return_to_home_on_idle(rs, prefs, media_playing_1s, cam_busy_1s)) {
-            ESP_LOGI("power", "Idle exceeded Return to Home timeout (%s): returning to Home",
+            ESP_LOGD("power", "Idle exceeded Return to Home timeout (%s): returning to Home",
                      latter_ui::pref_return_to_home_timeout_cstr(prefs));
             id(sync_ui_touch_runtime).execute();
             latter_ui::touch_engine().navigate_home(now_1s_ms);
@@ -338,7 +344,7 @@ interval:
           }
           #if LATTER_HAS_BATTERY
           if (dl_act.start_hibernate_countdown_now) {
-            ESP_LOGI("power", "Inactivity with screen off exceeded %s: starting hibernation countdown",
+            ESP_LOGD("power", "Inactivity with screen off exceeded %s: starting hibernation countdown",
                      latter_ui::pref_battery_hibernate_timeout_cstr(prefs));
             latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::IDLE;
             id(start_hibernation_countdown).execute();

@@ -191,7 +191,7 @@ esphome:
                   id(publish_display_state).execute();
                 }
               } else if (sv_cmd == "set_profiler_on") {
-                latter_ui::profiler_enabled() = true;
+                latter_ui::profiler_start(now_ms);
                 id(ble_ctrl).set_profile_logging(true);
                 auto &fr = latter_ui::flight_recorder();
                 fr.window_frames = 0;
@@ -199,8 +199,11 @@ esphome:
                 fr.max_render_us = 0;
                 fr.slow_frames = 0;
                 fr.last_summary_ms = now_ms;
-                LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '${name}' (screen=%dx%d)",
+                LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '${name}' (screen=%dx%d, auto_off=24h)",
                                  latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+                latter_ui::log_boot_summary();
+                (void)latter_ui::link_report_log_line(now_ms, latter_ui::last_reset_reason());
+                latter_ui::log_heap_summary();
                 const auto &r = latter_ui::runtime_state();
                 latter_ui::log_power_and_mem_profile(
                     "PROFILER_ON", r.nav.display_power_state, r.hw_usb_connected, r.hw_batt_charging,
@@ -211,7 +214,7 @@ esphome:
                 id(publish_device_telemetry).execute();
               } else if (sv_cmd == "set_profiler_off") {
                 LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler off");
-                latter_ui::profiler_enabled() = false;
+                latter_ui::profiler_stop();
                 id(ble_ctrl).set_profile_logging(false);
                 id(publish_device_telemetry).execute();
               } else if (sv_cmd == "request_telemetry") {

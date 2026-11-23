@@ -529,14 +529,18 @@ void log_boot_summary() {
                (unsigned)e.levels);
     }
   }
-  const uint32_t up_s = hal_millis_now() / 1000U;
   const char *rr = last_reset_reason();
   const int crash = crash_record_present() ? 1 : 0;
   const int rollback = firmware_rolled_back() ? 1 : 0;
+  if (crash != 0 || rollback != 0) {
+    ESP_LOGW("latter", "Previous boot fault detected (reset=%s crash=%d rollback=%d)", rr, crash, rollback);
+  }
+  if (!profiler_enabled()) return;
+  const uint32_t up_s = hal_millis_now() / 1000U;
   const auto &tel = pmu_telemetry();
   if (!tel.boot_valid) {
-    ESP_LOGI("PROF", "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d pmu=none", (long)LATTER_SDK_REV,
-             (unsigned long)up_s, rr, crash, rollback);
+    LATTER_PROF_LOGI("[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d pmu=none", (long)LATTER_SDK_REV,
+                     (unsigned long)up_s, rr, crash, rollback);
     return;
   }
   static const char *const kOff[8] = {"pwrkey-long", "software", "pwrkey-low", "vsys-undervolt",
@@ -568,10 +572,10 @@ void log_boot_summary() {
       std::snprintf(hib_s, sizeof(hib_s), "%s@%umV", hibernate_reason_name(prev.reason), (unsigned)prev.mv);
     }
   }
-  ESP_LOGI("PROF",
-           "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) hib=%s on=0x%02X(%s) icc=%dmA cv=0x%02X",
-           (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", hib_s,
-           tel.on_src, on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
+  LATTER_PROF_LOGI(
+      "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) hib=%s on=0x%02X(%s) icc=%dmA cv=0x%02X",
+      (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", hib_s,
+      tel.on_src, on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
 }
 
 }  // namespace latter_ui
