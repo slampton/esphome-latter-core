@@ -1504,7 +1504,13 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       rs.music.drilldown == MusicDrilldown::NONE &&
       rs.music.takeover == MusicTakeover::NONE &&
       (rs.music.view == MusicView::LYRICS || rs.music.view == MusicView::INFO) &&
-      (!rs.music.hud_active || gest.start_y < ly.mode_bar_zone_top()) &&
+      (!rs.music.hud_active ||
+       gest.start_y < ((rs.music.view == MusicView::LYRICS)
+                           ? compute_music_lyrics_transport_geom(
+                                 SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                                 LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI)
+                                 .vp_bot
+                           : ly.mode_bar_zone_top())) &&
       !(gest.axis_lock != GestureAxisLock::Slider && gest.start_y <= ly.top_edge_zone_y() && dy > 0) &&
       (gest.axis_lock == GestureAxisLock::Slider ||
        (std::abs(dy) >= ly.drag_start() && std::abs(dy) > std::abs(dx)))) {
@@ -1967,6 +1973,7 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::TAP_WAKE_MODE: return pref_tap_to_wake_cstr(p);
     case S::WEATHER_SIM_CONDITION: return pref_weather_sim_cstr();
     case S::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
+    case S::MUSIC_AUTO_OPEN: return pref_music_auto_open_cstr(p);
     case S::MUSIC_FULLSCREEN_ART_MODE: return pref_album_art_style_cstr(p);
     case S::MUSIC_ALBUM_SORT_ORDER: return pref_album_sort_order_cstr(p);
     case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: return pref_artist_album_sort_order_cstr(p);
@@ -2030,6 +2037,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::TAP_WAKE_MODE: pk = K::TAP_TO_WAKE; break;
     case S::WEATHER_SIM_CONDITION: break;
     case S::MUSIC_OVERLAY_STYLE: pk = K::MUSIC_OVERLAY_STYLE; break;
+    case S::MUSIC_AUTO_OPEN: pk = K::MUSIC_AUTO_OPEN; break;
     case S::MUSIC_FULLSCREEN_ART_MODE: pk = K::ALBUM_ART_STYLE; break;
     case S::MUSIC_ALBUM_SORT_ORDER: pk = K::ALBUM_SORT_ORDER; break;
     case S::MUSIC_ARTIST_ALBUM_SORT_ORDER: pk = K::ARTIST_ALBUM_SORT_ORDER; break;

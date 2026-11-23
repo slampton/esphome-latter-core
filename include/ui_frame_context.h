@@ -384,6 +384,7 @@ struct UiFrameContext {
   UiStrView clock_face_style_opt{"Analog"};
   UiStrView weather_sim_opt{"Live (Home Assistant)"};
   UiStrView music_overlay_style_opt{"Art + Metadata"};
+  UiStrView music_auto_open_opt{"Now Playing"};
   UiStrView music_fullscreen_art_opt{"Full Screen"};
   UiStrView music_album_sort_opt{"A-Z"};
   UiStrView music_artist_album_sort_opt{"Release Year"};

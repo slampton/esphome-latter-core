@@ -89,7 +89,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026112202L;
+            constexpr long LATTER_YAML_REV = 2026112301L;
             static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -199,8 +199,13 @@ api:
                     std::string_view(track_key.c_str(), track_key.size()),
                     synced,
                     std::string_view(lines.c_str(), lines.size()))) {
+              const auto auto_res = latter_ui::reconcile_lyrics_auto_view();
               const auto &rs = latter_ui::runtime_state();
               if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
+                if (auto_res.fetch_remote_art &&
+                    (!latter_ui::media_state().is_local || id(album_art).get_width() == 0)) {
+                  id(fetch_remote_art_debounced).execute();
+                }
                 if (rs.nav.gui_page == latter_ui::PageId::MUSIC &&
                     rs.music.view == latter_ui::MusicView::LYRICS) {
                   latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));

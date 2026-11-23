@@ -353,6 +353,77 @@ inline constexpr MusicInfoGeom compute_music_info_geom(
   return g;
 }
 
+struct MusicLyricsTransportGeom {
+  int cx{233};
+  int min_hit{73};
+  int transport_cy{288};
+  int prev_cx{137};
+  int play_cx{233};
+  int next_cx{329};
+  int play_r{28};
+  int side_r{22};
+  int play_hit_pad{8};
+  int side_hit_pad{14};
+  int play_hit_r{36};
+  int side_hit_r{36};
+  int vp_bot{248};
+};
+
+inline constexpr MusicLyricsTransportGeom compute_music_lyrics_transport_geom(
+    int w, int h, bool round, bool wearable, int ppi) noexcept {
+  MusicLyricsTransportGeom g{};
+  const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
+  const int min_s = (w < h) ? w : h;
+  g.cx = ly.cx;
+  g.min_hit = mm_to_px_for(7.0f, ppi);
+
+  g.play_r = std::clamp(scale_min_for(28, min_s), 22, 42);
+  g.side_r = std::clamp(scale_min_for(22, min_s), 18, 34);
+  g.play_hit_pad = std::max(0, (g.min_hit - (2 * g.play_r + 1) + 1) / 2);
+  g.side_hit_pad = std::max(0, (g.min_hit - (2 * g.side_r + 1) + 1) / 2);
+  g.play_hit_r = g.play_r + g.play_hit_pad;
+  g.side_hit_r = g.side_r + g.side_hit_pad;
+
+  const int max_hit_r = std::max(g.play_hit_r, g.side_hit_r);
+  const int r_track = ly.dock_r + scale_s_for(3, min_s);
+  const int mode_bar_vis_top = ly.app_dock_y - r_track;
+  const int mode_bar_hit_top = std::min(
+      ly.app_dock_y - ly.dock_hit_r,
+      ly.app_dock_y - ly.dock_r - scale_y_for(12, h));
+  const int vis_gap = std::max(10, scale_y_for(14, h));
+  const int cy_from_vis = mode_bar_vis_top - vis_gap - g.play_r;
+  const int cy_from_hit = mode_bar_hit_top - 2 - max_hit_r;
+  g.transport_cy = std::min(cy_from_vis, cy_from_hit);
+
+  const int min_dx = g.play_hit_r + g.side_hit_r + std::max(6, scale_x_for(8, w));
+  const int safe_half = band_safe_span_for(
+                            g.transport_cy, 2 * g.side_r, w, h, round, wearable, 14) /
+                        2;
+  const int desk_half = (w > 520) ? (kMaxContentColW / 2) : safe_half;
+  const int max_half = std::min(safe_half, desk_half);
+  const int max_dx = std::max(min_dx, max_half - g.side_r);
+  const int dx = std::clamp(std::max(min_dx, scale_min_for(96, min_s)), min_dx, max_dx);
+  g.play_cx = g.cx;
+  g.prev_cx = g.cx - dx;
+  g.next_cx = g.cx + dx;
+
+  g.vp_bot = (g.transport_cy - max_hit_r) - std::max(4, scale_y_for(4, h));
+  return g;
+}
+
+inline void register_music_lyrics_transport_hits(
+    FrameHitTable &ht, const MusicLyricsTransportGeom &g) {
+  ht.add_circle(g.prev_cx, g.transport_cy, g.side_r,
+                WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                0, g.side_hit_pad);
+  ht.add_circle(g.play_cx, g.transport_cy, g.play_r,
+                WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                0, g.play_hit_pad);
+  ht.add_circle(g.next_cx, g.transport_cy, g.side_r,
+                WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                0, g.side_hit_pad);
+}
+
 inline void step_music_lyrics_auto_scroll(
     MusicLyricsState &lyr, uint32_t pos_ms, uint32_t now_ms,
     int anchor_y_in_viewport, const int *line_doc_cys, int line_count, int max_scroll_px) noexcept {
@@ -466,6 +537,7 @@ enum class UiSelectId : uint8_t {
   TAP_WAKE_MODE = 0,
   WEATHER_SIM_CONDITION,
   MUSIC_OVERLAY_STYLE,
+  MUSIC_AUTO_OPEN,
   MUSIC_FULLSCREEN_ART_MODE,
   MUSIC_ALBUM_SORT_ORDER,
   MUSIC_ARTIST_ALBUM_SORT_ORDER,

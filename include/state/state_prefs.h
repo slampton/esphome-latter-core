@@ -81,7 +81,8 @@ enum class PrefKey : uint8_t {
   SCREENSAVER_PHOTO_CLOCK = 62,
   WEATHER_APP_BACKGROUND = 63,
   DO_NOT_DISTURB = 64,
-  COUNT = 65,
+  MUSIC_AUTO_OPEN = 65,
+  COUNT = 66,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 128U,
               "PrefKey::COUNT must remain < 128 to fit in 128-bit PrefMask.");
@@ -149,6 +150,12 @@ static constexpr uint32_t kPrefEffectPowerPolicy       = 1U << 6;
 static constexpr uint32_t kPrefEffectRedraw            = 1U << 7;
 static constexpr uint32_t kPrefEffectNavPolicy         = 1U << 8;
 static constexpr uint32_t kPrefEffectBedtime           = 1U << 9;
+
+enum class MusicAutoOpenMode : uint8_t {
+  NowPlaying = 0,
+  Lyrics = 1,
+  Off = 2,
+};
 
 struct PersistedAlarmPref {
   uint8_t hour = 7;
@@ -247,8 +254,12 @@ struct PersistedDevicePrefs {
   uint8_t camera_stream_mode = 0;          // 0..2 ("Auto", "Low Bandwidth", "Snapshots")
   uint8_t camera_doorbell_popup = 0;       // 0..1 ("Snapshot", "Live Video"; P4-only for Live Video)
   bool do_not_disturb = false;             // Appended v3.0+ tail field: Do Not Disturb mode
+  uint8_t music_auto_open = 0;             // Appended v3.0+ tail field: 0..2 ("Now Playing", "Lyrics", "Off")
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
+  constexpr MusicAutoOpenMode music_auto_open_enum() const noexcept {
+    return static_cast<MusicAutoOpenMode>((music_auto_open < 3U) ? music_auto_open : 0U);
+  }
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
     return static_cast<WakeWordMode>((wake_word_mode < 3U) ? wake_word_mode : 0U);
   }
@@ -413,6 +424,8 @@ inline constexpr const char *const kAlbumArtStyleOpts[4] = {
     "Full Screen", "Letterbox", "Standard", "None"};
 inline constexpr const char *const kMusicOverlayStyleOpts[3] = {
     "Art Only", "Art + Metadata", "Always Visible"};
+inline constexpr const char *const kMusicAutoOpenOpts[3] = {
+    "Now Playing", "Lyrics", "Off"};
 inline constexpr const char *const kAlbumSortOpts[3] = {
     "Alphabetical", "Newest on Top", "Oldest on Top"};
 inline constexpr const char *const kArtistAlbumSortOpts[3] = {
@@ -650,6 +663,7 @@ inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persi
 inline const char *pref_calendar_week_start_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCalendarWeekStartOpts, p.calendar_week_start); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
 inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
+inline const char *pref_music_auto_open_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicAutoOpenOpts, p.music_auto_open); }
 inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumSortOpts, p.album_sort_order); }
 inline const char *pref_artist_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kArtistAlbumSortOpts, p.artist_album_sort_order); }
 inline const char *pref_podcast_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kPodcastSortOpts, p.podcast_sort_order); }
@@ -758,6 +772,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   }
   if (p.album_art_style >= 4) p.album_art_style = 0;
   if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
+  if (p.music_auto_open >= 3) p.music_auto_open = 0;
   if (p.album_sort_order >= 3) p.album_sort_order = 0;
   if (p.artist_album_sort_order >= 3) p.artist_album_sort_order = 0;
   if (p.podcast_sort_order >= 2) p.podcast_sort_order = 0;

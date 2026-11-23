@@ -98,6 +98,7 @@ inline void reset_common_nav_fields(DeviceRuntimeState &rs, uint32_t now_ms) {
   rs.nav.system_menu_mode = 0;
   rs.nav.active_game = 0;
   rs.music.direct_nav = false;
+  rs.music.clear_lyrics_auto_state();
   rs.nav.sleep_menu_page = 1;
   rs.nav.display_menu_page = 1;
   rs.nav.system_dashboard_page = 1;
@@ -180,6 +181,7 @@ void resolve_music_track_strings(const DeviceRuntimeState &rs, const UiTouchRunt
 }
 void reset_music_to_now_playing(DeviceRuntimeState &rs, uint32_t now_ms, bool show_hud) {
   rs.music.reset_overlays();
+  rs.music.clear_lyrics_auto_state();
   rs.music.view = MusicView::NOW_PLAYING;
   rs.music.sync_carousel_for_view();
   mode_bar_anim().snap(0, 0);
@@ -425,14 +427,18 @@ void cycle_music_pref_slot(const UiTouchRuntime &rt, int slot) {
                       cycle_option(rt.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE),
                                    {"Art Only", "Art + Metadata", "Always Visible"}));
   } else if (slot == 2) {
+    rt.set_select_opt(UiSelectId::MUSIC_AUTO_OPEN,
+                      cycle_option(rt.select_opt(UiSelectId::MUSIC_AUTO_OPEN),
+                                   {"Now Playing", "Lyrics", "Off"}));
+  } else if (slot == 3) {
     rt.set_select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER,
                       cycle_option(rt.select_opt(UiSelectId::MUSIC_ALBUM_SORT_ORDER),
                                    {"Alphabetical", "Newest on Top", "Oldest on Top"}));
-  } else if (slot == 3) {
+  } else if (slot == 4) {
     rt.set_select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER,
                       cycle_option(rt.select_opt(UiSelectId::MUSIC_ARTIST_ALBUM_SORT_ORDER),
                                    {"Oldest on Top", "Newest on Top", "Alphabetical"}));
-  } else if (slot == 4) {
+  } else if (slot == 5) {
     rt.set_select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER,
                       cycle_option(rt.select_opt(UiSelectId::MUSIC_PODCAST_SORT_ORDER),
                                    {"Newest on Top", "Oldest on Top"}));
@@ -447,6 +453,9 @@ void TouchGestureEngine::launch_dock_app_(int chosen_app, DeviceRuntimeState &rs
   shortcut_confirm_state().clear();
   rs.nav.quick_actions_open = false;
   home_dock_page() = 0;
+  if (chosen_app != PageId::MUSIC) {
+    rs.music.clear_lyrics_auto_state();
+  }
 
   if (chosen_app == PageId::HOME_HUB) {
     TouchGestureEngine::enter_home_hub_tab_(-1, false, rs, rt, now_ms);
@@ -822,7 +831,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       else if (route_id == RouteId::SETTINGS_SLEEP) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
       else if (route_id == RouteId::SETTINGS_SOUND) { rs.nav.system_menu_mode = 7; }
       else if (route_id == RouteId::SETTINGS_VOICE) { rs.nav.system_menu_mode = 11; }
-      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = 9; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
+      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
       else if (route_id == RouteId::SETTINGS_ACTIONS) { rs.nav.system_menu_mode = 3; }
       else if (route_id == RouteId::SETTINGS_UPDATE) { rs.nav.system_menu_mode = 5; rs.nav.update_check_state = 0; }
       else if (route_id == RouteId::SETTINGS_INFO) { rs.nav.system_menu_mode = 8; }
@@ -2172,6 +2181,7 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
   m.overlay_mode = 0;
   m.drilldown = MusicDrilldown::NONE;
   m.takeover = MusicTakeover::NONE;
+  m.clear_lyrics_auto_state();
   m.target_speaker_id.clear();
   m.hud_active = true;
   m.hud_timer = now_ms;
@@ -2393,6 +2403,35 @@ bool TouchGestureEngine::handle_tap_music_(
     return true;
   }
 
+  auto handle_transport_tap = [&]() -> bool {
+    if (wid == WidgetId::MUSIC_PLAY_PAUSE) {
+      if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+        const bool was_playing = is_music_playing_effective(!ms.is_local, rt_.local_mp_playing, ms.state, now_rel);
+        m.action_feedback = was_playing ? "Paused" : "Playing";
+        m.feedback_timer = now_rel;
+        m.hud_timer = now_rel;
+        rt_.cmd(UiHostCmd::TOGGLE_HA_MUSIC);
+        rt_.schedule_disp();
+      }
+      return true;
+    }
+    if (wid == WidgetId::MUSIC_PREV_BTN || wid == WidgetId::MUSIC_NEXT_BTN) {
+      if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        const bool is_next = (wid == WidgetId::MUSIC_NEXT_BTN);
+        std::string t_title, t_artist, t_album;
+        bool is_speech = false;
+        resolve_music_track_strings(rs, rt_, t_title, t_artist, t_album, is_speech);
+        if (is_speech) media_seek_relative(is_next ? 1 : -1, now_rel);
+        else if (is_next) media_next_track(now_rel);
+        else media_prev_track(now_rel);
+        m.hud_timer = now_rel;
+        rt_.schedule_disp();
+      }
+      return true;
+    }
+    return false;
+  };
+
   if (m.view == MusicView::NOW_PLAYING) {
     const bool controls_shown = always_vis || m.hud_active;
     if (!controls_shown && wid != WidgetId::MUSIC_SCRUB_OPEN_BTN) {
@@ -2411,25 +2450,8 @@ bool TouchGestureEngine::handle_tap_music_(
       m.hud_timer = now_rel;
       mark_dirty_full();
       rt_.schedule_disp();
-    } else if (wid == WidgetId::MUSIC_PLAY_PAUSE &&
-               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const bool was_playing = is_music_playing_effective(!ms.is_local, rt_.local_mp_playing, ms.state, now_rel);
-      m.action_feedback = was_playing ? "Paused" : "Playing";
-      m.feedback_timer = now_rel;
-      m.hud_timer = now_rel;
-      rt_.cmd(UiHostCmd::TOGGLE_HA_MUSIC);
-      rt_.schedule_disp();
-    } else if ((wid == WidgetId::MUSIC_PREV_BTN || wid == WidgetId::MUSIC_NEXT_BTN) &&
-               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-      const bool is_next = (wid == WidgetId::MUSIC_NEXT_BTN);
-      std::string t_title, t_artist, t_album;
-      bool is_speech = false;
-      resolve_music_track_strings(rs, rt_, t_title, t_artist, t_album, is_speech);
-      if (is_speech) media_seek_relative(is_next ? 1 : -1, now_rel);
-      else if (is_next) media_next_track(now_rel);
-      else media_prev_track(now_rel);
-      m.hud_timer = now_rel;
-      rt_.schedule_disp();
+    } else if (controls_shown && handle_transport_tap()) {
+      return true;
     } else if ((wid == WidgetId::NONE || wid == WidgetId::MUSIC_ART_TAP) &&
                !always_vis && m.hud_active &&
                (now_rel - m.hud_timer >= TOUCH_GUARD_DISMISS) &&
@@ -2473,6 +2495,7 @@ bool TouchGestureEngine::handle_tap_music_(
       return true;
     }
     if (m.view == MusicView::LYRICS) {
+      if (handle_transport_tap()) return true;
       if (wid == WidgetId::MUSIC_LYRIC_SYNC_BTN &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         m.lyrics.manual_override_until_ms = 0U;
@@ -3862,9 +3885,17 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
         }
         return true;
       }
+      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+        rs.music.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+        mark_dirty_full();
+        rt.schedule_disp();
+        return true;
+      }
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
           touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
-        cycle_music_pref_slot(rt, hit->param);
+        const int pg = std::clamp(rs.music.settings_page, 1, 2);
+        cycle_music_pref_slot(rt, (pg - 1) * 5 + hit->param);
         rt.schedule_disp();
       }
       return true;
@@ -4163,7 +4194,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
         else if (item_idx == 1) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
         else if (item_idx == 2) { rs.nav.system_menu_mode = 7; }
         else if (item_idx == 3) { rs.nav.system_menu_mode = 11; }
-        else if (item_idx == 4) { rs.nav.system_menu_mode = 9; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
+        else if (item_idx == 4) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
         else if (item_idx == 5 && prefs.home_screen_enabled) {
           rs.nav.gui_page = PageId::HOME;
           rs.nav.home_subpage = 1;

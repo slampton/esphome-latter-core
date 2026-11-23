@@ -427,7 +427,8 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
         (static_cast<uint32_t>(prefs.music_overlay_style & 0x07U) << 10) |
         (static_cast<uint32_t>(prefs.album_sort_order & 0x03U) << 13) |
         (static_cast<uint32_t>(prefs.artist_album_sort_order & 0x03U) << 15) |
-        (static_cast<uint32_t>(prefs.podcast_sort_order & 0x03U) << 17);
+        (static_cast<uint32_t>(prefs.podcast_sort_order & 0x03U) << 17) |
+        (static_cast<uint32_t>(prefs.music_auto_open & 0x03U) << 19);
     mu_sig = (mu_sig ^ mu_flags) * 16777619U;
     mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.is_local ? ctx.spk_vol_pct : rs.music.remote_vol_pct)) * 16777619U;
     mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.queue_count)) * 16777619U;
@@ -444,6 +445,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     hash_sv(ms.art_url);
     hash_sv(rs.music.loaded_art_url);
     hash_sv(ctx.music_overlay_style_opt.sv());
+    hash_sv(ctx.music_auto_open_opt.sv());
     hash_sv(ctx.music_fullscreen_art_opt.sv());
     auto hash_art = [&](ArtImageView art) {
       mu_sig = (mu_sig ^ static_cast<uint32_t>(art.width)) * 16777619U;
@@ -497,6 +499,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     uint32_t sy_sig = 2166136261U;
     sy_sig = (sy_sig ^ (prefs.bedtime_active ? 1U : 0U)) * 16777619U;
     sy_sig = (sy_sig ^ (prefs.do_not_disturb ? 2U : 0U)) * 16777619U;
+    sy_sig = (sy_sig ^ static_cast<uint32_t>(rs.music.settings_page)) * 16777619U;
     sy_sig = (sy_sig ^ device_prefs_state().rev ^ prefs.prefs_seq) * 16777619U;
     sig ^= (sy_sig | 1U);
   }

@@ -239,12 +239,29 @@ script:
           if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
             id(enable_speaker_path).execute();
           }
-          const std::string &art_u = latter_ui::media_state().art_url;
+          const auto &ms = latter_ui::media_state();
+          const std::string &art_u = ms.art_url;
           if (rs.nav.gui_page == 2 &&
-              (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
+              (!ms.is_local || id(album_art).get_width() == 0) &&
               !art_u.empty() &&
               art_u != rs.music.loaded_art_url) {
             id(fetch_remote_art_debounced).execute();
+          }
+          if (rs.nav.gui_page == latter_ui::PageId::MUSIC &&
+              !ms.title.empty() &&
+              !latter_ui::is_speech_media_type(ms.media_type) &&
+              (rs.music.view == latter_ui::MusicView::LYRICS ||
+               (rs.music.view == latter_ui::MusicView::NOW_PLAYING &&
+                rs.music.lyrics_auto_managed && rs.music.lyrics_auto_fallback))) {
+            const std::string cur_key = latter_ui::build_music_track_key(ms.title, ms.artist);
+            if (!cur_key.empty() && rs.music.lyrics.track_key != cur_key) {
+              if (rs.music.view == latter_ui::MusicView::LYRICS) {
+                rs.music.lyrics.track_key = cur_key;
+                rs.music.lyrics.lines.clear();
+                rs.music.lyrics.active_line_idx = -1;
+              }
+              latter_actions::emit_music_lyrics_fetch(cur_key, "", millis());
+            }
           }
           const std::string &wp_u = latter_ui::area_ctx_state().wallpaper_url;
           if (!wp_u.empty() &&

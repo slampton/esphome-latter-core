@@ -21,9 +21,14 @@ esphome:
               ctx.local_album_art_w = id(album_art).get_width();
               ctx.remote_art_fetch_running = id(fetch_remote_art_debounced).is_running();
               ctx.last_touch_ms = latter_ui::touch_gesture().last_touch_ms;
+              ctx.pin_pad_open = latter_ui::ui::pin_pad_state().open;
 
               const auto eff = latter_ui::v3_domain_reducer().reduce(sv_dom, ctx);
               (void)eff.area_changed;
+              if (eff.wake_from_screensaver) {
+                latter_ui::note_wake_reason(latter_ui::WakeReason::MEDIA);
+                id(wake_to_active_state).execute();
+              }
               if (eff.mark_dirty_full) {
                 latter_ui::mark_dirty_full();
               }
@@ -90,7 +95,7 @@ esphome:
               if (eff.release_remote_art) {
                 latter_ui::release_art(id(remote_album_art));
               }
-              if (eff.fetch_remote_art) {
+              if (eff.fetch_remote_art && !eff.wake_from_screensaver) {
                 id(fetch_remote_art_debounced).execute();
               }
               if (eff.fetch_music_lyrics) {

@@ -82,6 +82,14 @@ void populate_rich_host_state(latter_ui::UiFrameContext &ctx) {
   ms.position = 48.0f;
   ms.position_updated_ms = 20000U;
   ms.media_caps = kMediaCapShuffleSet | kMediaCapRepeatSet;
+  {
+    const std::string tkey = build_music_track_key(ms.title, ms.artist);
+    const std::string lrc_blob =
+        std::string("0") + kProtocolFieldSep + "Waiting in a car" +
+        kProtocolRecordSep + "45000" + kProtocolFieldSep + "Waiting for a ride in the dark" +
+        kProtocolRecordSep + "90000" + kProtocolFieldSep + "The night city grows";
+    (void)apply_music_lyrics_action(1, 0, 1, tkey, true, lrc_blob, runtime_state().music.lyrics);
+  }
 
   auto &wx = weather_state();
   wx = WeatherState{};
@@ -586,7 +594,7 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
 
-  static_assert(LATTER_SDK_REV == 2026112202L, "LATTER_SDK_REV must match 2026112202L");
+  static_assert(LATTER_SDK_REV == 2026112301L, "LATTER_SDK_REV must match 2026112301L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);

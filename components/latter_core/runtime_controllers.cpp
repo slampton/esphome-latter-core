@@ -32,6 +32,177 @@ void V3DomainReducer::reset() {
   *this = V3DomainReducer{};
 }
 
+MusicAutoOpenResult try_auto_open_music_on_playback_start(
+    DeviceRuntimeState &rs,
+    const MediaState &ms,
+    const PersistedDevicePrefs &prefs,
+    uint32_t now_ms,
+    bool pin_pad_open,
+    int local_album_art_w,
+    bool is_local_play_event,
+    uint32_t last_touch_ms) {
+  MusicAutoOpenResult res{};
+  const MusicAutoOpenMode mode = prefs.music_auto_open_enum();
+  if (mode == MusicAutoOpenMode::Off) {
+    return res;
+  }
+
+  if (is_local_play_event) {
+    const bool local_is_default =
+        ms.active_speaker.empty() || (ms.is_local && ms.is_default_speaker);
+    if (!local_is_default) {
+      return res;
+    }
+  } else if (!ms.is_default_speaker) {
+    return res;
+  }
+
+  const bool alert_ring =
+      rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active;
+  const bool ota_or_hib = rs.nav.ota_in_progress || rs.nav.is_hibernating;
+  const bool va_busy = rs.voice.active || rs.voice.tts_received;
+  const bool overlay_busy =
+      pin_pad_open || rs.nav.shortcut_confirm.open || rs.nav.quick_actions_open;
+  const bool game_busy = (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game > 0);
+  const bool cam_busy =
+      rs.intercom.cam_call_active || rs.intercom.cam_listen_active ||
+      rs.intercom.cam_intercom_ptt_active;
+  const bool cal_busy =
+      (rs.nav.gui_page == PageId::CALENDAR &&
+       (rs.cal.drilldown >= CalDrilldown::ADD_STEP1 || rs.cal.dictation_field != 0U ||
+        rs.cal.delete_confirm_open));
+  const bool showcase_busy = rs.showcase.is_active(now_ms);
+
+  if (alert_ring || ota_or_hib || va_busy || overlay_busy || game_busy || cam_busy ||
+      cal_busy || showcase_busy) {
+    return res;
+  }
+
+  const int start_page = resolve_start_screen_page(prefs);
+  if (!audio_session().should_auto_open_music_page(
+          rs.nav.gui_page, prefs.home_screen_enabled, start_page, alert_ring, now_ms,
+          ota_or_hib)) {
+    return res;
+  }
+
+  // Respect active Music browsing/settings subviews when the screen is already awake.
+  if (rs.nav.gui_page == PageId::MUSIC && rs.nav.display_power_state == 0) {
+    if (rs.music.view != MusicView::NOW_PLAYING && rs.music.view != MusicView::LYRICS) {
+      return res;
+    }
+    const bool recent_local_tap =
+        (last_touch_ms != 0U) && (static_cast<uint32_t>(now_ms - last_touch_ms) < 3000U);
+    if (rs.music.view == MusicView::NOW_PLAYING && mode == MusicAutoOpenMode::Lyrics &&
+        recent_local_tap) {
+      return res;
+    }
+  }
+
+  const bool will_be_awake =
+      (rs.nav.display_power_state == 0) ||
+      (rs.nav.display_power_state == 1 && !prefs.bedtime_active);
+
+  rs.nav.gui_page = PageId::MUSIC;
+  rs.nav.home_subpage = 0;
+  rs.nav.active_game = 0;
+  rs.music.reset_overlays();
+  rs.music.direct_nav = false;
+
+  const std::string cur_key = build_music_track_key(ms.title, ms.artist);
+  const bool is_speech = is_speech_media_type(ms.media_type);
+
+  if (mode == MusicAutoOpenMode::Lyrics) {
+    rs.music.lyrics_auto_managed = true;
+    if (is_speech) {
+      rs.music.view = MusicView::NOW_PLAYING;
+      rs.music.lyrics_auto_fallback = true;
+    } else if (!cur_key.empty() && rs.music.lyrics.track_key == cur_key &&
+               !rs.music.lyrics.loading) {
+      if (rs.music.lyrics.lines.empty()) {
+        rs.music.view = MusicView::NOW_PLAYING;
+        rs.music.lyrics_auto_fallback = true;
+      } else {
+        rs.music.view = MusicView::LYRICS;
+        rs.music.lyrics_auto_fallback = false;
+      }
+    } else {
+      rs.music.view = MusicView::LYRICS;
+      rs.music.lyrics_auto_fallback = false;
+    }
+  } else {
+    rs.music.view = MusicView::NOW_PLAYING;
+    rs.music.clear_lyrics_auto_state();
+  }
+  rs.music.sync_carousel_for_view();
+  res.opened = true;
+
+  if (rs.nav.display_power_state == 1 && !prefs.bedtime_active) {
+    res.wake_from_screensaver = true;
+  }
+
+  if (will_be_awake) {
+    res.mark_dirty_full = true;
+    if (!ms.art_url.empty() &&
+        (rs.music.view == MusicView::LYRICS ||
+         std::string_view(pref_album_art_style_cstr(prefs)) != "None") &&
+        (!ms.is_local || local_album_art_w == 0) &&
+        ms.art_url != rs.music.loaded_art_url) {
+      res.fetch_remote_art = true;
+    }
+    if (rs.music.view == MusicView::LYRICS && !is_speech && !cur_key.empty() &&
+        rs.music.lyrics.track_key != cur_key) {
+      auto &lyr = rs.music.lyrics;
+      lyr.track_key = cur_key;
+      lyr.loading = true;
+      lyr.lines.clear();
+      lyr.active_line_idx = -1;
+      lyr.scroll_px = 0;
+      lyr.target_scroll_px = 0;
+      lyr.scroll_anim_start_ms = 0U;
+      res.fetch_music_lyrics = true;
+    }
+  }
+
+  return res;
+}
+
+LyricsAutoViewResult reconcile_lyrics_auto_view(
+    DeviceRuntimeState &rs,
+    const MediaState &ms,
+    const PersistedDevicePrefs &prefs) {
+  LyricsAutoViewResult res{};
+  if (rs.nav.gui_page != PageId::MUSIC || !rs.music.lyrics_auto_managed ||
+      prefs.music_auto_open_enum() != MusicAutoOpenMode::Lyrics ||
+      rs.music.drilldown != MusicDrilldown::NONE ||
+      rs.music.takeover != MusicTakeover::NONE) {
+    return res;
+  }
+
+  const std::string cur_key = build_music_track_key(ms.title, ms.artist);
+  if (cur_key.empty() || rs.music.lyrics.track_key != cur_key || rs.music.lyrics.loading) {
+    return res;
+  }
+
+  if (rs.music.view == MusicView::LYRICS && rs.music.lyrics.lines.empty()) {
+    rs.music.view = MusicView::NOW_PLAYING;
+    rs.music.lyrics_auto_fallback = true;
+    rs.music.sync_carousel_for_view();
+    res.view_changed = true;
+    if (!ms.art_url.empty() &&
+        std::string_view(pref_album_art_style_cstr(prefs)) != "None" &&
+        ms.art_url != rs.music.loaded_art_url) {
+      res.fetch_remote_art = true;
+    }
+  } else if (rs.music.view == MusicView::NOW_PLAYING && rs.music.lyrics_auto_fallback &&
+             !rs.music.lyrics.lines.empty() && !is_speech_media_type(ms.media_type)) {
+    rs.music.view = MusicView::LYRICS;
+    rs.music.lyrics_auto_fallback = false;
+    rs.music.sync_carousel_for_view();
+    res.view_changed = true;
+  }
+  return res;
+}
+
 V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
                                         const V3ReduceContext &ctx) {
   V3DomainEffects eff{};
@@ -311,10 +482,90 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
         music_queue_cleared() = false;
       }
     }
-    if (track_changed && r.nav.display_power_state == 0 &&
-        r.nav.gui_page == PageId::MUSIC && r.music.view == MusicView::LYRICS &&
-        !ms.title.empty()) {
-      eff.fetch_music_lyrics = true;
+
+    const bool now_default_playing = ms.is_default_speaker && ms.playing;
+    bool auto_opened_now = false;
+    if (!active_media_primed_) {
+      active_media_primed_ = true;
+      prev_default_playing_ = now_default_playing;
+    } else {
+      if (prev_default_playing_ && !now_default_playing) {
+        audio_session().note_local_playback_stopped();
+      } else if (!prev_default_playing_ && now_default_playing) {
+        const auto ao = try_auto_open_music_on_playback_start(
+            r, ms, prefs, ctx.now_ms, ctx.pin_pad_open, ctx.local_album_art_w,
+            /*is_local_play_event=*/false, ctx.last_touch_ms);
+        if (ao.opened) {
+          auto_opened_now = true;
+          if (ao.wake_from_screensaver) eff.wake_from_screensaver = true;
+          if (ao.mark_dirty_full) {
+            eff.mark_dirty_full = true;
+            eff.ensure_anim_poller = true;
+            eff.schedule_disp_update = true;
+          }
+          if (ao.fetch_remote_art) eff.fetch_remote_art = true;
+          if (ao.fetch_music_lyrics) eff.fetch_music_lyrics = true;
+        }
+      }
+      prev_default_playing_ = now_default_playing;
+    }
+
+    if (!auto_opened_now && track_changed && r.nav.gui_page == PageId::MUSIC && !ms.title.empty()) {
+      const bool is_speech = is_speech_media_type(ms.media_type);
+      const std::string cur_key = build_music_track_key(ms.title, ms.artist);
+      if (r.music.view == MusicView::LYRICS) {
+        if (is_speech && r.music.lyrics_auto_managed &&
+            prefs.music_auto_open_enum() == MusicAutoOpenMode::Lyrics) {
+          r.music.view = MusicView::NOW_PLAYING;
+          r.music.lyrics_auto_fallback = true;
+          r.music.sync_carousel_for_view();
+          eff.mark_dirty_full = true;
+          if (r.nav.display_power_state == 0) {
+            eff.schedule_disp_update = true;
+          }
+        } else if (!is_speech && r.music.lyrics.track_key == cur_key && !r.music.lyrics.loading) {
+          if (r.music.lyrics.lines.empty() && r.music.lyrics_auto_managed &&
+              prefs.music_auto_open_enum() == MusicAutoOpenMode::Lyrics) {
+            r.music.view = MusicView::NOW_PLAYING;
+            r.music.lyrics_auto_fallback = true;
+            r.music.sync_carousel_for_view();
+            eff.mark_dirty_full = true;
+            if (r.nav.display_power_state == 0) {
+              eff.schedule_disp_update = true;
+            }
+          }
+        } else if (r.nav.display_power_state == 0 && !is_speech) {
+          auto &lyr = r.music.lyrics;
+          lyr.track_key = cur_key;
+          lyr.loading = true;
+          lyr.lines.clear();
+          lyr.active_line_idx = -1;
+          lyr.scroll_px = 0;
+          lyr.target_scroll_px = 0;
+          lyr.scroll_anim_start_ms = 0U;
+          eff.fetch_music_lyrics = true;
+        }
+      } else if (r.music.view == MusicView::NOW_PLAYING &&
+                 r.music.lyrics_auto_managed && r.music.lyrics_auto_fallback &&
+                 prefs.music_auto_open_enum() == MusicAutoOpenMode::Lyrics &&
+                 !is_speech) {
+        if (r.music.lyrics.track_key == cur_key && !r.music.lyrics.loading) {
+          if (!r.music.lyrics.lines.empty()) {
+            r.music.view = MusicView::LYRICS;
+            r.music.lyrics_auto_fallback = false;
+            r.music.sync_carousel_for_view();
+            eff.mark_dirty_full = true;
+            if (r.nav.display_power_state == 0) {
+              eff.ensure_anim_poller = true;
+              eff.schedule_disp_update = true;
+            }
+          }
+        } else if (r.nav.display_power_state == 0) {
+          // Stay on Now Playing while checking whether the new track has lyrics;
+          // reconcile_lyrics_auto_view() flips back to Lyrics iff non-empty lyrics arrive.
+          eff.fetch_music_lyrics = true;
+        }
+      }
     }
 
     if (ms.art_url.empty()) {

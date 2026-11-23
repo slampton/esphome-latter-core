@@ -144,6 +144,31 @@ inline void render_music_stadium_mode_bar(Rgb565Surface &it, const UiFrameContex
                ctx.theme_primary, ctx.col_white, draw_music_mode_icon, &ic);
 }
 
+inline void render_music_transport_row(Rgb565Surface &it, const UiFrameContext &ctx,
+                                       const ResolvedTrackStrings &trk,
+                                       int prev_cx, int play_cx, int next_cx,
+                                       int transport_cy, int side_r, int play_r) {
+  render_glass_circle(it, prev_cx, transport_cy, side_r,
+                      ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
+                      GlassVariant::Clear, ctx.col_white);
+  render_glass_circle(it, play_cx, transport_cy, play_r,
+                      trk.is_playing ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                      trk.is_playing ? ctx.theme_primary : ctx.col_white,
+                      GlassVariant::Clear, ctx.col_white);
+  render_glass_circle(it, next_cx, transport_cy, side_r,
+                      ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
+                      GlassVariant::Clear, ctx.col_white);
+
+  const int side_ic_sz = std::max(18, (side_r * 11) / 10);
+  const int hero_ic_sz = std::max(22, (play_r * 12) / 10);
+  render_mdi_icon(it, trk.is_speech ? "mdi:rewind-10" : "mdi:skip-previous",
+                  prev_cx, transport_cy, side_ic_sz, ctx.col_white, true);
+  render_mdi_icon(it, trk.is_playing ? "mdi:pause" : "mdi:play",
+                  play_cx, transport_cy, hero_ic_sz, ctx.col_white, true);
+  render_mdi_icon(it, trk.is_speech ? "mdi:fast-forward-30" : "mdi:skip-next",
+                  next_cx, transport_cy, side_ic_sz, ctx.col_white, true);
+}
+
 void draw_lyrics_alpha_print(Rgb565Surface &it, int x, int y,
                              UiFontView font, UiColor col,
                              UiTextAlign align, const char *txt,
@@ -199,6 +224,8 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   const bool show_hud = rs.music.hud_active;
+  const MusicLyricsTransportGeom tg = compute_music_lyrics_transport_geom(
+      SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
   const int min_hit = mm_to_px(7.0f);
   int vp_top = LATTER_ROUND_DISPLAY ? scale_y(28) : scale_y(20);
   int vp_bot = SCREEN_H - (LATTER_ROUND_DISPLAY ? scale_y(28) : scale_y(20));
@@ -227,13 +254,16 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
       sync_hit_bottom = sync_cy + sync_hit_h / 2 + 2;
     }
     vp_top = std::max(ly.hdr_y + scale_y(24), sync_hit_bottom);
-    vp_bot = std::max(vp_top + 60, ly.mode_bar_zone_top() - scale_y(6));
+    vp_bot = std::max(vp_top + 60, tg.vp_bot);
   }
 
   const int vp_h = std::max(60, vp_bot - vp_top);
 
   auto finish_lyrics_chrome = [&]() {
     if (show_hud) {
+      render_music_transport_row(it, ctx, trk, tg.prev_cx, tg.play_cx, tg.next_cx,
+                                 tg.transport_cy, tg.side_r, tg.play_r);
+      register_music_lyrics_transport_hits(frame_hits(), tg);
       render_music_stadium_mode_bar(it, ctx, trk.is_speech);
     } else {
       frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::MUSIC_ART_TAP, kHitTap);
@@ -665,12 +695,13 @@ void render_music_settings_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   if (pg == 1) {
     items[0] = {"Art", ctx.music_fullscreen_art_opt.sv()};
     items[1] = {"HUD", ctx.music_overlay_style_opt.sv()};
-    items[2] = {"Albums", ctx.music_album_sort_opt.sv()};
-    items[3] = {"Artist", ctx.music_artist_album_sort_opt.sv()};
+    items[2] = {"Auto-Open", ctx.music_auto_open_opt.sv()};
+    items[3] = {"Albums", ctx.music_album_sort_opt.sv()};
     count = 4;
   } else {
-    items[0] = {"Podcasts", ctx.music_podcast_sort_opt.sv()};
-    count = 1;
+    items[0] = {"Artist", ctx.music_artist_album_sort_opt.sv()};
+    items[1] = {"Podcasts", ctx.music_podcast_sort_opt.sv()};
+    count = 2;
   }
 
   for (int i = 0; i < count; ++i) {
@@ -1062,25 +1093,8 @@ void render_now_playing_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   if (show_controls) {
-    render_glass_circle(it, g.prev_cx, g.transport_cy, g.side_r,
-                        ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                        GlassVariant::Clear, ctx.col_white);
-    render_glass_circle(it, g.play_cx, g.transport_cy, g.play_r,
-                        trk.is_playing ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                        trk.is_playing ? ctx.theme_primary : ctx.col_white,
-                        GlassVariant::Clear, ctx.col_white);
-    render_glass_circle(it, g.next_cx, g.transport_cy, g.side_r,
-                        ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
-                        GlassVariant::Clear, ctx.col_white);
-
-    const int side_ic_sz = std::max(18, (g.side_r * 11) / 10);
-    const int hero_ic_sz = std::max(24, (g.play_r * 12) / 10);
-    render_mdi_icon(it, trk.is_speech ? "mdi:rewind-10" : "mdi:skip-previous",
-                    g.prev_cx, g.transport_cy, side_ic_sz, ctx.col_white, true);
-    render_mdi_icon(it, trk.is_playing ? "mdi:pause" : "mdi:play",
-                    g.play_cx, g.transport_cy, hero_ic_sz, ctx.col_white, true);
-    render_mdi_icon(it, trk.is_speech ? "mdi:fast-forward-30" : "mdi:skip-next",
-                    g.next_cx, g.transport_cy, side_ic_sz, ctx.col_white, true);
+    render_music_transport_row(it, ctx, trk, g.prev_cx, g.play_cx, g.next_cx,
+                               g.transport_cy, g.side_r, g.play_r);
 
     const bool show_toast = !rs.music.action_feedback.empty() &&
                             (ctx.now_ms >= rs.music.feedback_timer) &&

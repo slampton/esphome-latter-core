@@ -265,7 +265,8 @@ enum class MediaField : size_t {
   FAVORITE = 20,  // favorite (bool)
   QUEUE_COUNT = 21,  // queue_count (u16)
   MEDIA_CAPS = 22,  // media_caps (u16)
-  COUNT = 23
+  IS_DEFAULT_SPEAKER = 23,  // is_default_speaker (bool)
+  COUNT = 24
 };
 
 // Domain: remote_config
@@ -387,7 +388,8 @@ enum class DevicePrefsField : size_t {
   SCREENSAVER_PHOTO_CLOCK = 68,  // screensaver_photo_clock (bool)
   WEATHER_APP_BACKGROUND = 69,  // weather_app_background (bool)
   DO_NOT_DISTURB = 70,  // do_not_disturb (bool)
-  COUNT = 71
+  MUSIC_AUTO_OPEN = 71,  // music_auto_open (string)
+  COUNT = 72
 };
 
 // Domain: shortcuts

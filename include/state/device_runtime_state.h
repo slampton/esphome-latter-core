@@ -579,6 +579,7 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
     return false;
   }
   if (rt.nav.gui_page == 3 && rt.nav.active_game > 0) return false;
+  if (rt.nav.gui_page == PageId::REMOTE) return false;
   if (rt.nav.gui_page == PageId::MUSIC &&
       is_music_ambient_tab(rt.music.view) &&
       rt.music.drilldown == MusicDrilldown::NONE &&
@@ -776,6 +777,7 @@ struct V3ReduceContext {
   int local_album_art_w{0};
   bool remote_art_fetch_running{false};
   uint32_t last_touch_ms{0U};
+  bool pin_pad_open{false};
 };
 
 struct V3DomainEffects {
@@ -805,12 +807,41 @@ struct V3DomainEffects {
   bool release_remote_art{false};
   bool fetch_remote_art{false};
   bool fetch_music_lyrics{false};
+  bool wake_from_screensaver{false};
   bool navigate_home_from_remote{false};
   bool navigate_start_screen_remote{false};
   bool sync_display_brightness{false};
   bool sync_display_brightness_smooth{false};
   bool apply_device_prefs_effects{false};
 };
+
+struct MusicAutoOpenResult {
+  bool opened{false};
+  bool wake_from_screensaver{false};
+  bool fetch_remote_art{false};
+  bool fetch_music_lyrics{false};
+  bool mark_dirty_full{false};
+};
+
+MusicAutoOpenResult try_auto_open_music_on_playback_start(
+    DeviceRuntimeState &rs,
+    const MediaState &ms,
+    const PersistedDevicePrefs &prefs,
+    uint32_t now_ms,
+    bool pin_pad_open = false,
+    int local_album_art_w = 0,
+    bool is_local_play_event = false,
+    uint32_t last_touch_ms = 0U);
+
+struct LyricsAutoViewResult {
+  bool view_changed{false};
+  bool fetch_remote_art{false};
+};
+
+LyricsAutoViewResult reconcile_lyrics_auto_view(
+    DeviceRuntimeState &rs = runtime_state(),
+    const MediaState &ms = media_state(),
+    const PersistedDevicePrefs &prefs = persisted_prefs());
 
 class V3DomainReducer {
  public:
@@ -828,6 +859,8 @@ class V3DomainReducer {
   std::string prev_spk_name_{};
   std::string prev_art_{};
   bool prev_is_local_{false};
+  bool active_media_primed_{false};
+  bool prev_default_playing_{false};
   int prev_vol_pct_{-1};
   bool prev_shuffle_{false};
   uint8_t prev_repeat_mode_{0};

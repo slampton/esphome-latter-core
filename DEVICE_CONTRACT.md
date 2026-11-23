@@ -87,7 +87,7 @@ Active Area state, climate/security/cover summaries, camera/intercom directories
 | `41` | `screensaver_photo_url` | `AreaCtxField::SCREENSAVER_PHOTO_URL` | `url` | Signed HTTP URL for the active Photo Frame screensaver image (un-dimmed, darken=1.0); empty when screensaver_style is not Photo Frame or the photo pool is empty |
 | `42` | `area_ambient_light` | `AreaCtxField::AREA_AMBIENT_LIGHT` | `string` | Calibrated active Area ambient light level ('<norm_pct_0_100>|<formatted_lux>', e.g. '57|5.6'); empty when no illuminance sensor is available for the active Area |
 
-### `active_media` (`MediaField`, `23` total fields)
+### `active_media` (`MediaField`, `24` total fields)
 
 Active media player state, metadata, playback progress, artwork URL, and speaker routing.
 
@@ -113,6 +113,7 @@ Active media player state, metadata, playback progress, artwork URL, and speaker
 | `20` | `favorite` | `MediaField::FAVORITE` | `bool` | 1 if the current track is marked favorite in Music Assistant, else 0 |
 | `21` | `queue_count` | `MediaField::QUEUE_COUNT` | `u16` | Total items in the active Music Assistant playback queue (0 when empty or non-MA) |
 | `22` | `media_caps` | `MediaField::MEDIA_CAPS` | `u16` | Active speaker capability bitmask (1=pause, 2=seek, 4=volume_set, 8=volume_mute, 16=previous_track, 32=next_track, 64=shuffle_set, 128=repeat_set, 256=grouping, 512=music_assistant, 1024=favorite) |
+| `23` | `is_default_speaker` | `MediaField::IS_DEFAULT_SPEAKER` | `bool` | 1 if active_speaker is this device's configured default speaker (or its own local speaker when unset), else 0 |
 
 ### `remote_config` (`RemoteField`, `6` total fields)
 
@@ -157,7 +158,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `device_prefs` (`DevicePrefsField`, `71` total fields)
+### `device_prefs` (`DevicePrefsField`, `72` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -231,6 +232,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `68` | `screensaver_photo_clock` | `DevicePrefsField::SCREENSAVER_PHOTO_CLOCK` | `bool` | 1 = show subtle clock overlay on Photo Frame screensaver, else 0 |
 | `69` | `weather_app_background` | `DevicePrefsField::WEATHER_APP_BACKGROUND` | `bool` | 1 = show live animated weather sky background in the Sky & Weather app, else 0 |
 | `70` | `do_not_disturb` | `DevicePrefsField::DO_NOT_DISTURB` | `bool` | 1 = Do Not Disturb active, else 0 |
+| `71` | `music_auto_open` | `DevicePrefsField::MUSIC_AUTO_OPEN` | `string` | Auto-open Music view when default speaker starts playing (Now Playing|Lyrics|Off) |
 
 ### `shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -296,9 +298,9 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 
 ## 6. Latter Studio Control-Plane Contract
 
-- **Studio Wire Revision (`studio_rev`)**: `45`
+- **Studio Wire Revision (`studio_rev`)**: `46`
 - **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `deactivate_screensaver`, `wake_screen`, `screen_off`, `set_profiler_on`, `set_profiler_off`, `request_telemetry`, `trigger_va`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
 - **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
 - **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`
 - **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `63` typed preference descriptors
+- **Declarative `device_prefs` Specs**: `64` typed preference descriptors

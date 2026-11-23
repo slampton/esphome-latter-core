@@ -7,8 +7,8 @@ namespace {
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
   LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 1U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 65U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 71U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 66U);
+  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 72U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 43U);
   LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
 
@@ -226,6 +226,15 @@ void test_device_prefs_v2_and_event_timer_sync() {
   rs.nav.gui_page = 8;
   rs.nav.tools_subpage = 5;
   LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  // Remote Control app stays active and never auto-returns to Home (D-079)
+  rs.nav.gui_page = latter_ui::PageId::REMOTE;
+  rs.nav.remote_subpage = 0;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, false));
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, true));
+  rs.nav.remote_subpage = 1;
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, false));
+  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, true));
+  rs.nav.remote_subpage = 0;
   LATTER_CHECK(latter_ui::set_pref_by_key_str(
       p, latter_ui::PrefKey::RETURN_TO_HOME_TIMEOUT, "Never", false, nav_chg, nav_eff));
   rs.nav.gui_page = 6;
@@ -335,11 +344,13 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::TOOLS_ITEMS) == 52U);
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::DO_NOT_DISTURB) == 70U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 71U);
+  static_assert(static_cast<size_t>(DevicePrefsField::MUSIC_AUTO_OPEN) == 71U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 72U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 46U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::DO_NOT_DISTURB) == 64U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 65U);
+  static_assert(static_cast<uint8_t>(PrefKey::MUSIC_AUTO_OPEN) == 65U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 66U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -854,6 +865,193 @@ void test_ambient_light_brightness_d075() {
   LATTER_CHECK(area_ctx_state().area_ambient_pct == 82);
 }
 
+void test_music_auto_open_and_lyrics_fallback_d080() {
+  using namespace latter_ui;
+  reset_runtime_state();
+  v3_domain_reducer().reset();
+
+  // 1. NVS append-only load from pre-music_auto_open prefix defaults music_auto_open to 0 ("Now Playing")
+  {
+    PersistedDevicePrefs legacy{};
+    legacy.do_not_disturb = true;
+    legacy.music_auto_open = 2U;
+    PersistedDevicePrefs restored{};
+    restored.music_auto_open = 2U;
+    LATTER_CHECK(load_persisted_prefs_from_buffer(
+        &legacy, offsetof(PersistedDevicePrefs, music_auto_open), restored));
+    LATTER_CHECK(restored.do_not_disturb);
+    LATTER_CHECK(restored.music_auto_open == 0U);
+    LATTER_CHECK(std::string_view(pref_music_auto_open_cstr(restored)) == "Now Playing");
+  }
+
+  // Round-trip PrefKey::MUSIC_AUTO_OPEN via set_pref_by_key_str
+  {
+    PersistedDevicePrefs p{};
+    PrefMask chg{};
+    uint32_t eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Lyrics", false, chg, eff));
+    LATTER_CHECK(p.music_auto_open == 1U && p.music_auto_open_enum() == MusicAutoOpenMode::Lyrics);
+    LATTER_CHECK(get_pref_value_str(PrefKey::MUSIC_AUTO_OPEN, p) == "Lyrics");
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Off", false, chg, eff));
+    LATTER_CHECK(p.music_auto_open == 2U && p.music_auto_open_enum() == MusicAutoOpenMode::Off);
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Now Playing", false, chg, eff));
+    LATTER_CHECK(p.music_auto_open == 0U && p.music_auto_open_enum() == MusicAutoOpenMode::NowPlaying);
+  }
+
+  auto push_media = [](uint32_t rev, std::string_view st, std::string_view title,
+                       std::string_view artist, std::string_view mtype, std::string_view spk,
+                       bool is_def, std::string_view art_url, uint32_t now_ms,
+                       bool pin_open = false) -> V3DomainEffects {
+    std::vector<std::string> tok(static_cast<size_t>(MediaField::COUNT), "");
+    tok[static_cast<size_t>(MediaField::STATE)] = std::string(st);
+    tok[static_cast<size_t>(MediaField::TITLE)] = std::string(title);
+    tok[static_cast<size_t>(MediaField::ARTIST)] = std::string(artist);
+    tok[static_cast<size_t>(MediaField::MEDIA_TYPE)] = std::string(mtype);
+    tok[static_cast<size_t>(MediaField::ART_URL)] = std::string(art_url);
+    tok[static_cast<size_t>(MediaField::ACTIVE_SPEAKER)] = std::string(spk);
+    tok[static_cast<size_t>(MediaField::SPEAKER_NAME)] = "Office Sonos";
+    tok[static_cast<size_t>(MediaField::IS_LOCAL)] = "0";
+    tok[static_cast<size_t>(MediaField::IS_DEFAULT_SPEAKER)] = is_def ? "1" : "0";
+    LATTER_CHECK(parse_v3_media_payload(build_v3_packet(100U, rev, tok), media_state(), now_ms));
+    V3ReduceContext ctx{};
+    ctx.now_ms = now_ms;
+    ctx.pin_pad_open = pin_open;
+    return v3_domain_reducer().reduce("active_media", ctx);
+  };
+
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  prefs.home_screen_enabled = true;
+  prefs.music_auto_open = 0U;  // Now Playing
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.display_power_state = 0;
+
+  // 2. Cold boot prime: initial idle snapshot does not auto-open
+  (void)push_media(1U, "idle", "", "", "music", "media_player.office_sonos", true, "", 1000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  // Non-default speaker starting to play MUST NOT auto-open
+  (void)push_media(2U, "playing", "Kitchen Song", "Chef", "music", "media_player.kitchen", false,
+                   "http://ha/art/k", 2000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  // 3. External default speaker starts playing -> auto-opens Music Now Playing & fetches art
+  const auto eff_np = push_media(3U, "playing", "Time", "Pink Floyd", "music",
+                                 "media_player.office_sonos", true, "http://ha/art/1", 3000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+  LATTER_CHECK(rs.music.view == MusicView::NOW_PLAYING);
+  LATTER_CHECK(!rs.music.lyrics_auto_managed);
+  LATTER_CHECK(eff_np.mark_dirty_full && eff_np.fetch_remote_art && !eff_np.wake_from_screensaver);
+
+  // User swipes back to Home mid-session -> next track while still playing must NOT re-hijack
+  rs.nav.gui_page = PageId::HOME;
+  (void)push_media(4U, "playing", "Money", "Pink Floyd", "music",
+                   "media_player.office_sonos", true, "http://ha/art/2", 4000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  // 4. Pause then resume with music_auto_open == "Off" stays on Home
+  prefs.music_auto_open = 2U;  // Off
+  (void)push_media(5U, "paused", "Money", "Pink Floyd", "music",
+                   "media_player.office_sonos", true, "http://ha/art/2", 5000U);
+  (void)push_media(6U, "playing", "Money", "Pink Floyd", "music",
+                   "media_player.office_sonos", true, "http://ha/art/2", 6000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  // 5. Screensaver wake vs Bedtime / Screen Off silent switching
+  prefs.music_auto_open = 1U;  // Lyrics
+  prefs.bedtime_active = false;
+  (void)push_media(7U, "idle", "", "", "music", "media_player.office_sonos", true, "", 7000U);
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.display_power_state = 1;  // Screensaver
+  const auto eff_wake = push_media(8U, "playing", "Bohemian Rhapsody", "Queen", "music",
+                                   "media_player.office_sonos", true, "http://ha/art/3", 8000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+  LATTER_CHECK(rs.music.view == MusicView::LYRICS);
+  LATTER_CHECK(rs.music.lyrics_auto_managed && !rs.music.lyrics_auto_fallback);
+  LATTER_CHECK(eff_wake.wake_from_screensaver && eff_wake.fetch_music_lyrics && eff_wake.fetch_remote_art);
+
+  // 6. Lyrics -> Now Playing auto-fallback when empty lyrics arrive, then auto-return on next track with lyrics
+  rs.nav.display_power_state = 0;  // Awake after wake_to_active_state
+  LATTER_CHECK(apply_music_lyrics_action(1, 0, 1, "Bohemian Rhapsody|Queen", false, ""));
+  const auto fb_res = reconcile_lyrics_auto_view(rs, media_state(), prefs);
+  LATTER_CHECK(fb_res.view_changed);
+  LATTER_CHECK(rs.music.view == MusicView::NOW_PLAYING);
+  LATTER_CHECK(rs.music.lyrics_auto_managed && rs.music.lyrics_auto_fallback);
+
+  // Next track starts -> stays silently on Now Playing (no loading flash) while checking lyrics in background
+  const auto eff_t2 = push_media(9U, "playing", "Somebody To Love", "Queen", "music",
+                                 "media_player.office_sonos", true, "http://ha/art/4", 9000U);
+  LATTER_CHECK(rs.music.view == MusicView::NOW_PLAYING);
+  LATTER_CHECK(eff_t2.fetch_music_lyrics);
+
+  // Non-empty lyrics arrive -> auto-returns straight to Lyrics!
+  LATTER_CHECK(apply_music_lyrics_action(
+      2, 0, 1, "Somebody To Love|Queen", true, "1000\x1f" "Can anybody find me"));
+  const auto ret_res = reconcile_lyrics_auto_view(rs, media_state(), prefs);
+  LATTER_CHECK(ret_res.view_changed);
+  LATTER_CHECK(rs.music.view == MusicView::LYRICS);
+  LATTER_CHECK(rs.music.lyrics_auto_managed && !rs.music.lyrics_auto_fallback);
+
+  // Podcast track while auto-managed falls back to Now Playing immediately
+  (void)push_media(10U, "playing", "Ep 1", "Podcaster", "podcast",
+                   "media_player.office_sonos", true, "http://ha/art/5", 10000U);
+  LATTER_CHECK(rs.music.view == MusicView::NOW_PLAYING);
+  LATTER_CHECK(rs.music.lyrics_auto_managed && rs.music.lyrics_auto_fallback);
+
+  // Manual user override clears lyrics_auto_managed so future tracks stay on user's chosen view
+  rs.music.clear_lyrics_auto_state();
+  LATTER_CHECK(apply_music_lyrics_action(
+      3, 0, 1, "Next Song|Band", true, "500\x1f" "Line one"));
+  (void)push_media(11U, "playing", "Next Song", "Band", "music",
+                   "media_player.office_sonos", true, "http://ha/art/6", 11000U);
+  LATTER_CHECK(rs.music.view == MusicView::NOW_PLAYING);
+
+  // 7. Bedtime Mode on Screensaver stays dark/quiet, switches page silently in background
+  (void)push_media(12U, "idle", "", "", "music", "media_player.office_sonos", true, "", 12000U);
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.display_power_state = 1;
+  prefs.bedtime_active = true;
+  const auto eff_bt = push_media(13U, "playing", "Lullaby", "Calm", "music",
+                                 "media_player.office_sonos", true, "http://ha/art/7", 13000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+  LATTER_CHECK(rs.music.view == MusicView::LYRICS);
+  LATTER_CHECK(!eff_bt.wake_from_screensaver && !eff_bt.fetch_remote_art && !eff_bt.fetch_music_lyrics);
+
+  // 8. Screen Off (display_power_state == 2) outside Bedtime stays dark, switches page silently
+  prefs.bedtime_active = false;
+  (void)push_media(14U, "idle", "", "", "music", "media_player.office_sonos", true, "", 14000U);
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.display_power_state = 2;
+  const auto eff_off = push_media(15U, "playing", "Dawn", "Calm", "music",
+                                  "media_player.office_sonos", true, "http://ha/art/8", 15000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+  LATTER_CHECK(!eff_off.wake_from_screensaver && !eff_off.fetch_remote_art && !eff_off.fetch_music_lyrics);
+
+  // 9. Protected contexts (PIN pad, active Game, Single-App Mode) are never interrupted
+  (void)push_media(16U, "idle", "", "", "music", "media_player.office_sonos", true, "", 16000U);
+  rs.nav.display_power_state = 0;
+  rs.nav.gui_page = PageId::HOME;
+  (void)push_media(17U, "playing", "Locked", "Artist", "music",
+                   "media_player.office_sonos", true, "", 17000U, /*pin_open=*/true);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  (void)push_media(18U, "idle", "", "", "music", "media_player.office_sonos", true, "", 18000U);
+  rs.nav.gui_page = PageId::GAMES;
+  rs.nav.active_game = 1;
+  (void)push_media(19U, "playing", "Gaming", "Artist", "music",
+                   "media_player.office_sonos", true, "", 19000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::GAMES);
+  rs.nav.active_game = 0;
+
+  (void)push_media(20U, "idle", "", "", "music", "media_player.office_sonos", true, "", 20000U);
+  prefs.home_screen_enabled = false;
+  prefs.start_screen = kStartScreenTimeAppIdx;
+  rs.nav.gui_page = PageId::TIME;
+  (void)push_media(21U, "playing", "Kiosk", "Artist", "music",
+                   "media_player.office_sonos", true, "", 21000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::TIME);
+}
+
 }  // namespace
 
 void run_state_prefs_nvs_tests() {
@@ -863,6 +1061,7 @@ void run_state_prefs_nvs_tests() {
   test_bedtime_mode_d063();
   test_full_spectrum_brightness_d065();
   test_ambient_light_brightness_d075();
+  test_music_auto_open_and_lyrics_fallback_d080();
 }
 
 }  // namespace latter_test

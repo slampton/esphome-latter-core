@@ -314,17 +314,25 @@ media_player:
                     latter_ui::media_state().state = "playing";
                   }
                   latter_ui::sync_audio_session_media_observation(true, false, now_play_ms);
-                  const bool alert_ring = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active;
-                  const bool ota_or_hib = rs.nav.ota_in_progress || rs.nav.is_hibernating;
-                  const int start_page = latter_ui::resolve_start_screen_page();
-                  if (latter_ui::audio_session().should_auto_open_music_page(
-                          rs.nav.gui_page, latter_ui::persisted_prefs().home_screen_enabled,
-                          start_page, alert_ring, now_play_ms, ota_or_hib)) {
-                    rs.nav.gui_page = 2; // Auto-switch to Music Player screen on explicit/new music playback start
+                  const auto ao = latter_ui::try_auto_open_music_on_playback_start(
+                      rs, latter_ui::media_state(), latter_ui::persisted_prefs(), now_play_ms,
+                      latter_ui::ui::pin_pad_state().open, id(album_art).get_width(),
+                      /*is_local_play_event=*/true, latter_ui::touch_gesture().last_touch_ms);
+                  if (ao.opened) {
+                    rs.nav.sleep_start_time = 0;
                   }
-                  rs.nav.sleep_start_time = 0;
-                  if (rs.nav.gui_page == 2) {
-                    rs.nav.active_game = 0;
+                  if (ao.wake_from_screensaver) {
+                    latter_ui::note_wake_reason(latter_ui::WakeReason::MEDIA);
+                    id(wake_to_active_state).execute();
+                  }
+                  if (ao.fetch_remote_art && !ao.wake_from_screensaver) {
+                    id(fetch_remote_art_debounced).execute();
+                  }
+                  if (ao.fetch_music_lyrics) {
+                    latter_actions::emit_music_lyrics_fetch("", "", now_play_ms);
+                  }
+                  if (ao.mark_dirty_full) {
+                    latter_ui::mark_dirty_full();
                   }
                   latter_ui::audio_arbitrator().cancel_media_idle_debounce();
                   latter_ui::audio_arbitrator().cancel_echo_gate();
@@ -355,28 +363,19 @@ media_player:
                     - script.execute: enable_speaker_path
                     - script.wait: enable_speaker_path
               - lambda: 'id(hal_set_dac_mute).execute(false);'
-              - if:
-                  condition:
-                    lambda: |-
-                      return latter_ui::runtime_state().nav.display_power_state != 0 ||
-                             !id(display_brightness).remote_values.is_on();
-                  then:
-                    - lambda: |-
-                        latter_ui::screen_is_off_standby() = false;
-                        latter_ui::runtime_state().nav.display_power_state = 0;
-                        id(apply_power_policy).execute();
-                    - light.turn_on: display_brightness
               - lambda: |-
                   const auto &rs = latter_ui::runtime_state();
-                  const std::string &art_u = latter_ui::media_state().art_url;
-                  if (rs.nav.gui_page == 2 &&
-                      (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
-                      !art_u.empty() &&
-                      art_u != rs.music.loaded_art_url) {
-                    id(fetch_remote_art_debounced).execute();
+                  if (rs.nav.display_power_state == 0) {
+                    const std::string &art_u = latter_ui::media_state().art_url;
+                    if (rs.nav.gui_page == 2 &&
+                        (!latter_ui::media_state().is_local || id(album_art).get_width() == 0) &&
+                        !art_u.empty() &&
+                        art_u != rs.music.loaded_art_url) {
+                      id(fetch_remote_art_debounced).execute();
+                    }
+                    latter_ui::display_lifecycle().note_activity(millis());
+                    id(throttled_disp_update).execute();
                   }
-                  latter_ui::display_lifecycle().note_activity(millis());
-              - script.execute: throttled_disp_update
               - script.execute: sync_wake_word_state
     on_pause:
       then:

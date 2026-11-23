@@ -96,7 +96,8 @@ void test_protocol_v3_and_rpc() {
   LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
   LATTER_CHECK(latter_ui::media_state().has_volume);
   LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
-  static_assert(static_cast<size_t>(latter_ui::MediaField::COUNT) == 23U);
+  static_assert(static_cast<size_t>(latter_ui::MediaField::IS_DEFAULT_SPEAKER) == 23U);
+  static_assert(static_cast<size_t>(latter_ui::MediaField::COUNT) == 24U);
   static_assert(static_cast<size_t>(latter_ui::WeatherField::TEMP_UNIT) == 17U);
   static_assert(static_cast<size_t>(latter_ui::WeatherField::COUNT) == 18U);
 

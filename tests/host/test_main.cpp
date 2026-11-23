@@ -82,6 +82,33 @@ void test_music_app_v3_d059() {
 
     {
       FrameHitTable ht{};
+      const auto lg = compute_music_lyrics_transport_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+      register_music_lyrics_transport_hits(ht, lg);
+      for (int i = 0; i < 4; ++i) {
+        ht.add_circle(np.mode_slot_xs[i], np.mode_bar_cy, np.mode_bar_r,
+                      static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
+                      kHitTap | kHitFocusSlot | kHitFocusCircle,
+                      static_cast<int16_t>(i), np.mode_bar_pad);
+      }
+      check_zero_aabb_overlaps(ht, p.w, p.h);
+      for (uint16_t wid : {WidgetId::MUSIC_PREV_BTN, WidgetId::MUSIC_PLAY_PAUSE, WidgetId::MUSIC_NEXT_BTN}) {
+        const HitRegion *r = ht.find_by_id(wid);
+        LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_hit);
+        LATTER_CHECK(is_inside_bezel_for(r->cx(), r->cy(), p.w, p.h, p.round, p.wearable, 1));
+        LATTER_CHECK(lg.vp_bot < (r->y0 - static_cast<int>(r->hit_pad)));
+        LATTER_CHECK((r->y1 + static_cast<int>(r->hit_pad)) < (np.mode_bar_cy - np.mode_bar_r - np.mode_bar_pad));
+      }
+      LATTER_CHECK((lg.prev_cx + lg.side_hit_r) < (lg.play_cx - lg.play_hit_r));
+      LATTER_CHECK((lg.play_cx + lg.play_hit_r) < (lg.next_cx - lg.side_hit_r));
+      const int anchor_y = (p.h * 38) / 100;
+      LATTER_CHECK(anchor_y <= lg.vp_bot - 28);
+      if (p.w > 520) {
+        LATTER_CHECK((lg.next_cx + lg.side_r) - (lg.prev_cx - lg.side_r) <= kMaxContentColW);
+      }
+    }
+
+    {
+      FrameHitTable ht{};
       const auto vg = compute_music_volume_geom(p.w, p.h, p.round, p.wearable, p.ppi);
       register_music_volume_hits(ht, vg);
       check_zero_aabb_overlaps(ht, p.w, p.h);

@@ -220,6 +220,7 @@ const char *pref_key_name(PrefKey key) {
     case PrefKey::SCREENSAVER_PHOTO_CLOCK: return "screensaver_photo_clock";
     case PrefKey::WEATHER_APP_BACKGROUND: return "weather_app_background";
     case PrefKey::DO_NOT_DISTURB: return "do_not_disturb";
+    case PrefKey::MUSIC_AUTO_OPEN: return "music_auto_open";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -252,6 +253,7 @@ std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p) {
     case PrefKey::WAKE_GREETING: return p.wake_greeting ? "1" : "0";
     case PrefKey::ALBUM_ART_STYLE: return pref_album_art_style_cstr(p);
     case PrefKey::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
+    case PrefKey::MUSIC_AUTO_OPEN: return pref_music_auto_open_cstr(p);
     case PrefKey::ALBUM_SORT_ORDER: return pref_album_sort_order_cstr(p);
     case PrefKey::ARTIST_ALBUM_SORT_ORDER: return pref_artist_album_sort_order_cstr(p);
     case PrefKey::PODCAST_SORT_ORDER: return pref_podcast_sort_order_cstr(p);
@@ -394,6 +396,8 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       return apply_enum(p.album_art_style, kAlbumArtStyleOpts, 0);
     case PrefKey::MUSIC_OVERLAY_STYLE:
       return apply_enum(p.music_overlay_style, kMusicOverlayStyleOpts, 0);
+    case PrefKey::MUSIC_AUTO_OPEN:
+      return apply_enum(p.music_auto_open, kMusicAutoOpenOpts, 0);
     case PrefKey::ALBUM_SORT_ORDER:
       return apply_enum(p.album_sort_order, kAlbumSortOpts, 0);
     case PrefKey::ARTIST_ALBUM_SORT_ORDER:
@@ -682,6 +686,7 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::SCREENSAVER_PHOTO_CLOCK, PrefKey::SCREENSAVER_PHOTO_CLOCK);
   apply_f(DevicePrefsField::WEATHER_APP_BACKGROUND, PrefKey::WEATHER_APP_BACKGROUND);
   apply_f(DevicePrefsField::DO_NOT_DISTURB, PrefKey::DO_NOT_DISTURB);
+  apply_f(DevicePrefsField::MUSIC_AUTO_OPEN, PrefKey::MUSIC_AUTO_OPEN);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
   st.weather_app_background = p.weather_app_background;
@@ -994,6 +999,8 @@ bool parse_v3_media_payload(std::string_view payload,
   st.media_caps     = (raw_mcaps != 0U)
                           ? static_cast<uint16_t>(raw_mcaps & 0xFFFFU)
                           : (st.active_speaker.empty() ? 0U : kMediaCapDefault);
+  const std::string_view def_spk_sv = f[static_cast<size_t>(MediaField::IS_DEFAULT_SPEAKER)];
+  st.is_default_speaker = def_spk_sv.empty() ? st.is_local : v3_parse_bool(def_spk_sv);
   return true;
 }
 

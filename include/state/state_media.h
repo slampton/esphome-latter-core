@@ -117,6 +117,10 @@ inline std::string build_music_track_key(std::string_view title, std::string_vie
   return out;
 }
 
+inline constexpr bool is_speech_media_type(std::string_view mt) noexcept {
+  return mt == "podcast" || mt == "podcast_episode" || mt == "audiobook";
+}
+
 
 inline constexpr uint16_t kMediaCapPause          = 0x0001U;
 inline constexpr uint16_t kMediaCapSeek           = 0x0002U;
@@ -156,6 +160,7 @@ struct MediaState {
   std::string last_speaker = "";
   std::string local_speaker = "";
   bool is_local = false;
+  bool is_default_speaker = false;
   bool shuffle = false;
   uint8_t repeat_mode = 0;  // 0 = off, 1 = all, 2 = one
   std::string repeat = "off";
@@ -266,6 +271,8 @@ struct MusicRuntimeState {
   int info_scroll_px = 0;
   int info_scroll_page = 1;
   int settings_page = 1;
+  bool lyrics_auto_managed = false;
+  bool lyrics_auto_fallback = false;
   MusicLyricsState lyrics{};
 
   int overlay_mode = 0;
@@ -322,6 +329,11 @@ struct MusicRuntimeState {
     carousel_page = static_cast<uint8_t>(mode_bar_win_start);
   }
 
+  void clear_lyrics_auto_state() noexcept {
+    lyrics_auto_managed = false;
+    lyrics_auto_fallback = false;
+  }
+
   void reset_overlays() noexcept {
     drilldown = MusicDrilldown::NONE;
     takeover = MusicTakeover::NONE;
@@ -345,6 +357,7 @@ struct MusicRuntimeState {
       return false;
     }
     reset_overlays();
+    clear_lyrics_auto_state();
     view = next_view;
     drilldown = next_drill;
     sync_carousel_for_view();

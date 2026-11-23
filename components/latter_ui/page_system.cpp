@@ -533,23 +533,31 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     draw_back();
 
   } else if (system_menu_mode == 9) {
+    const int pg = std::clamp(rs.music.settings_page, 1, 2);
     render_page_header(it, cx, "MUSIC", font_small, col_white);
-    std::snprintf(buf, sizeof(buf), "Art: %s", ctx.music_fullscreen_art_opt.c_str());
-    draw_cycle_card_y(layout().slot5_y(0), buf, true,
-                      static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
-    std::snprintf(buf, sizeof(buf), "Overlay: %s", ctx.music_overlay_style_opt.c_str());
-    draw_cycle_card_y(layout().slot5_y(1), buf, true,
-                      static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), kHitTap | kHitFocusSlot, 1);
-    std::snprintf(buf, sizeof(buf), "Album Sort: %s", ctx.music_album_sort_opt.c_str());
-    draw_cycle_card_y(layout().slot5_y(2), buf, true,
-                      static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 2), kHitTap | kHitFocusSlot, 2);
-    std::snprintf(buf, sizeof(buf), "Artist Discog: %s", ctx.music_artist_album_sort_opt.c_str());
-    draw_cycle_card_y(layout().slot5_y(3), buf, true,
-                      static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 3), kHitTap | kHitFocusSlot, 3);
-    std::snprintf(buf, sizeof(buf), "Podcast Sort: %s", ctx.music_podcast_sort_opt.c_str());
-    draw_cycle_card_y(layout().slot5_y(4), buf, true,
-                      static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 4), kHitTap | kHitFocusSlot, 4);
+    if (pg == 1) {
+      std::snprintf(buf, sizeof(buf), "Art: %s", ctx.music_fullscreen_art_opt.c_str());
+      draw_cycle_card_y(layout().slot5_y(0), buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
+      std::snprintf(buf, sizeof(buf), "Overlay: %s", ctx.music_overlay_style_opt.c_str());
+      draw_cycle_card_y(layout().slot5_y(1), buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), kHitTap | kHitFocusSlot, 1);
+      std::snprintf(buf, sizeof(buf), "Auto-Open: %s", ctx.music_auto_open_opt.c_str());
+      draw_cycle_card_y(layout().slot5_y(2), buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 2), kHitTap | kHitFocusSlot, 2);
+      std::snprintf(buf, sizeof(buf), "Album Sort: %s", ctx.music_album_sort_opt.c_str());
+      draw_cycle_card_y(layout().slot5_y(3), buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 3), kHitTap | kHitFocusSlot, 3);
+      std::snprintf(buf, sizeof(buf), "Artist Discog: %s", ctx.music_artist_album_sort_opt.c_str());
+      draw_cycle_card_y(layout().slot5_y(4), buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 4), kHitTap | kHitFocusSlot, 4);
+    } else {
+      std::snprintf(buf, sizeof(buf), "Podcast Sort: %s", ctx.music_podcast_sort_opt.c_str());
+      draw_cycle_card_y(layout().slot5_y(0), buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
+    }
     draw_back();
+    draw_right_chevrons(pg == 2, pg == 1);
 
   } else if (system_menu_mode == 11) {
     render_page_header(it, cx, "VOICE", font_small, col_white);

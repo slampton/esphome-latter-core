@@ -348,6 +348,116 @@ void test_live_touch_engine_end_to_end_5geom() {
   LATTER_CHECK(frame_hits().focus_count() > 0);
   eng.on_input_event("cw", 1, 12000U);
   LATTER_CHECK(ui_focus_active(12000U));
+
+  // 5. Music Lyrics tap-to-wake transport overlay (Play/Pause, Prev, Next) & scroll guard (D-079)
+  {
+    s_cmds.clear();
+    MockRpcOutbox lyr_box{};
+    latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+    latter_rpc::bind_sensor_sink(&lyr_box);
+    link_state().ha_connected = true;
+
+    auto &ms = media_state();
+    ms = MediaState{};
+    ms.playing = true;
+    ms.state = "playing";
+    ms.title = "Midnight City";
+    ms.artist = "M83";
+    ms.active_speaker = "media_player.office";
+    ms.speaker_name = "Office";
+    ms.duration = 244.0f;
+    ms.position = 12.0f;
+    ms.position_updated_ms = 13000U;
+
+    rs.nav.gui_page = PageId::MUSIC;
+    rs.music.view = MusicView::LYRICS;
+    rs.music.drilldown = MusicDrilldown::NONE;
+    rs.music.takeover = MusicTakeover::NONE;
+    rs.music.hud_active = false;
+    rs.music.hud_timer = 0U;
+    const std::string tkey = build_music_track_key(ms.title, ms.artist);
+    std::string lrc_blob;
+    for (int i = 0; i < 16; ++i) {
+      if (i > 0) lrc_blob.push_back(kProtocolRecordSep);
+      lrc_blob += std::to_string(i * 10000);
+      lrc_blob.push_back(kProtocolFieldSep);
+      lrc_blob += "Lyric line " + std::to_string(i + 1) + " shining through the night";
+    }
+    (void)apply_music_lyrics_action(2, 0, 1, tkey, true, lrc_blob, rs.music.lyrics);
+    rs.music.lyrics.scroll_px = 0;
+    rs.music.lyrics.target_scroll_px = 0;
+
+    auto render_lyrics_frame = [&](uint32_t now_ms) {
+      fix.ctx.now_ms = now_ms;
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::MUSIC, compute_active_subpage_id(), 0U, true);
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+    };
+
+    // Ambient mode: only MUSIC_ART_TAP is registered, no transport buttons yet
+    render_lyrics_frame(13000U);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_ART_TAP) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_PLAY_PAUSE) == nullptr);
+
+    // Tap anywhere to wake Lyrics HUD -> exposes Prev, Play/Pause, Next
+    eng.on_touch_down(SCREEN_CX, SCREEN_CY, 13000U);
+    eng.on_touch_up(13030U);
+    LATTER_CHECK(rs.music.hud_active);
+
+    render_lyrics_frame(13050U);
+    const HitRegion *prev_r = frame_hits().find_by_id(WidgetId::MUSIC_PREV_BTN);
+    const HitRegion *play_r = frame_hits().find_by_id(WidgetId::MUSIC_PLAY_PAUSE);
+    const HitRegion *next_r = frame_hits().find_by_id(WidgetId::MUSIC_NEXT_BTN);
+    LATTER_CHECK(prev_r != nullptr && play_r != nullptr && next_r != nullptr);
+
+    // Tap Play/Pause with a small vertical finger wobble (> drag_start, < tap_max):
+    // must NOT start lyrics scroll and must fire TOGGLE_HA_MUSIC cleanly.
+    const int wobble_dy = std::min(layout().tap_max() - 1, layout().drag_start() + 2);
+    const int scroll_before = rs.music.lyrics.scroll_px;
+    eng.on_touch_down(play_r->cx(), play_r->cy(), 13080U);
+    eng.on_touch_move(play_r->cx(), play_r->cy() + wobble_dy, 13100U);
+    eng.on_touch_up(13120U);
+    LATTER_CHECK(rs.music.hud_active);
+    LATTER_CHECK(rs.music.lyrics.scroll_px == scroll_before);
+    LATTER_CHECK(!s_cmds.empty() &&
+                 std::find(s_cmds.begin(), s_cmds.end(), UiHostCmd::TOGGLE_HA_MUSIC) != s_cmds.end());
+
+    // Tap Next Track and Previous Track -> emit canonical media_command RPCs
+    eng.on_touch_down(next_r->cx(), next_r->cy(), 13300U);
+    eng.on_touch_up(13330U);
+    eng.on_touch_down(prev_r->cx(), prev_r->cy(), 13500U);
+    eng.on_touch_up(13530U);
+    uint32_t rpc_t = 13600U;
+    while (latter_rpc::has_pending_frames()) {
+      latter_rpc::step_outbox_loop(rpc_t);
+      rpc_t += 30U;
+    }
+    std::string lyr_wire;
+    for (const auto &f : lyr_box.published) lyr_wire += f;
+    LATTER_CHECK(lyr_wire.find("\"command\":\"next\"") != std::string::npos);
+    LATTER_CHECK(lyr_wire.find("\"command\":\"previous\"") != std::string::npos);
+
+    // Vertical drag inside lyrics viewport (above tg.vp_bot) still scrolls lyrics
+    const auto tg = compute_music_lyrics_transport_geom(
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+    const int drag_start_y = std::max(layout().top_edge_zone_y() + 12, tg.vp_bot - 20);
+    const int drag_dy = layout().drag_start() + 24;
+    const int pre_scroll = rs.music.lyrics.scroll_px;
+    eng.on_touch_down(SCREEN_CX, drag_start_y, 13800U);
+    eng.on_touch_move(SCREEN_CX, drag_start_y - drag_dy, 13840U);
+    eng.on_touch_up(13860U);
+    LATTER_CHECK(rs.music.lyrics.scroll_px > pre_scroll);
+
+    // Blank-area tap after TOUCH_GUARD_DISMISS dismisses HUD back to ambient full-bleed lyrics
+    const int blank_x = 12;
+    const int blank_y = std::max(layout().hdr_y + 24, tg.vp_bot - 12);
+    eng.on_touch_down(blank_x, blank_y, 14300U);
+    eng.on_touch_up(14330U);
+    LATTER_CHECK(!rs.music.hud_active);
+
+    latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
+  }
   eng.runtime().exec_cmd = nullptr;
 }
 

@@ -164,6 +164,7 @@ display:
       ctx.clock_face_style_opt = latter_ui::effective_clock_face_cstr(prefs, rs, ctx.now_ms);
       ctx.weather_sim_opt = latter_ui::effective_weather_sim_cstr(latter_ui::device_prefs_state(), rs, ctx.now_ms);
       ctx.music_overlay_style_opt = latter_ui::pref_music_overlay_style_cstr(prefs);
+      ctx.music_auto_open_opt = latter_ui::pref_music_auto_open_cstr(prefs);
       ctx.music_fullscreen_art_opt = latter_ui::pref_album_art_style_cstr(prefs);
       ctx.music_album_sort_opt = latter_ui::pref_album_sort_order_cstr(prefs);
       ctx.music_artist_album_sort_opt = latter_ui::pref_artist_album_sort_order_cstr(prefs);
