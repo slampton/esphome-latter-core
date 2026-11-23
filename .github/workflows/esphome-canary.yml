@@ -49,4 +49,4 @@ jobs:
         run: python tools/verify_core.py
 
       - name: Compile ${{ matrix.device }} against esphome:dev
-        run: bash .github/scripts/esphome_run.sh "esphome canary ${{ matrix.device }}" compile devices/${{ matrix.device }}.yaml
+        run: bash .github/scripts/esphome_run.sh "esphome canary ${{ matrix.device }}" -s name_add_mac_suffix true compile devices/${{ matrix.device }}.yaml

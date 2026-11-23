@@ -7,6 +7,7 @@ There are two ways to install Latter firmware:
 | **Best for** | Getting started quickly | Customizing, or local network push-OTA |
 | **Needs** | Chrome or Edge on a desktop, and a USB-C cable | The [ESPHome Device Builder](https://esphome.io/guides/getting_started_hassio) add-on, version 2026.11.0 or newer |
 | **Wi-Fi setup** | Over the USB cable (Improv Serial), all five devices | Your `secrets.yaml` |
+| **Hostname** | Unique `<name>-<mac6>` (6-character MAC suffix), preserved across **Project Firmware** HTTPS pull-OTA | Clean custom `name:` (`name_add_mac_suffix` defaults to `"false"`) |
 | **Updates** | HTTPS pull-OTA via the **Project Firmware** update entity in Home Assistant, plus wireless 1-click **Adopt** in Device Builder (runtime Noise PSK) | Noise-encrypted push-OTA (`ota_esphome` using `api.encryption.key`) alongside HTTPS pull-OTA |
 
 ---
@@ -23,6 +24,8 @@ There are two ways to install Latter firmware:
 When flashing finishes, the installer asks for your Wi-Fi network and password and sends them to the device over the same USB cable ([Improv Serial](https://www.improv-wifi.com/serial/)). This works on all five devices. If you close the dialog, click **Connect** again with the device plugged in and choose **Configure Wi-Fi**.
 
 Once the device is on Wi-Fi, continue with [Getting started](https://github.com/slampton/ha-latter/blob/main/docs/getting-started.md#2-add-it-to-home-assistant-through-esphome). Because Latter uses a bound diagnostic RPC outbox and direct Native API pushes, you **do not** need to enable *"Allow the device to perform Home Assistant actions"* in Home Assistant.
+
+Web Installer builds compile with `-s name_add_mac_suffix true`, so each flashed unit appends a 6-character MAC suffix (`<name>-<mac6>`, e.g. `desk-assistant-a1b2c3`). Multiple identical Devices onboard cleanly side-by-side without mDNS or Home Assistant name collisions and keep their hostname across **Project Firmware** HTTPS pull-OTA updates.
 
 ---
 
@@ -68,7 +71,7 @@ wifi:
 3. Click **Install → Plug into this computer** for the first flash (or **Wirelessly** if adopting an already-paired Web-Installer device). After that, wireless updates go over Noise-encrypted OTA authenticated by `api.encryption.key`—no separate OTA password is needed.
 
 > [!NOTE]
-> **Multiple identical devices, client-initiated dial-back & free renaming.** Latter binds every Device by its ESPHome `device_id` and MAC address and pushes Protocol v3 state directly over the Native API (`latter_push_v3`). You can run multiple identical displays (e.g. `pocket-assistant-1`, `pocket-assistant-2`) and rename them in Home Assistant at any time without editing YAML. Every build also enables ESPHome's Noise-verified `outgoing_connection` (`delay: 10s` -> Home Assistant TCP `:6054`), automatically learning and saving Home Assistant's IP in NVS on first pairing so waking battery devices and roaming displays reconnect in seconds even when mDNS or inbound backoff lags (if your IoT VLAN blocks mDNS on first setup, add `outgoing_connection: { host: <ha-ip> }` under `api:`).
+> **Multiple identical Devices, MAC suffixing, client-initiated dial-back & free renaming.** Web Installer builds append a 6-character MAC suffix (`<name>-<mac6>`) so multiple identical Devices onboard cleanly side-by-side and keep their hostname across **Project Firmware** HTTPS pull-OTA updates, while Device Builder Option B defaults `name_add_mac_suffix` to `"false"` so user-chosen names stay clean (e.g. `pocket-assistant-1`, `pocket-assistant-2`). Latter binds every Device by its ESPHome `device_id` and MAC address and pushes Protocol v3 state directly over the Native API (`latter_push_v3`), so you can run multiple identical displays and rename them in Home Assistant at any time without editing YAML. Every build also enables ESPHome's Noise-verified `outgoing_connection` (`delay: 10s` -> Home Assistant TCP `:6054`), automatically learning and saving Home Assistant's IP in NVS on first pairing so waking battery Devices and roaming displays reconnect in seconds even when mDNS or inbound backoff lags (if your IoT VLAN blocks mDNS on first setup, add `outgoing_connection: { host: <ha-ip> }` under `api:`).
 
 If the device was flashed with the web installer and paired with Home Assistant, `api.encryption` has already provisioned a runtime Noise key—Device Builder discovers it on your network and offers wireless 1-click **Adopt**. Adopting generates a short `github://` package line; replace it with the long form above (keeping the generated `api.encryption.key`, adding the 3-line `ota:` `encryption:` extension, and setting `refresh: 0s`).
 
@@ -84,7 +87,7 @@ The first build downloads the toolchain and compiles the 3-component Latter C++2
 
 ## Updates
 
-- **Web-installer devices:** Home Assistant shows a **Project Firmware** update entity backed by HTTPS `http_request` pull-OTA, and each device checks for updates in the background every 6 hours while on USB power and idle. Once paired with Home Assistant, the runtime-provisioned `api.encryption` Noise PSK also secures wireless 1-click **Adopt** in Device Builder.
+- **Web-installer Devices:** Home Assistant shows a **Project Firmware** update entity backed by HTTPS `http_request` pull-OTA, and each Device checks for updates in the background every 6 hours while on USB power and idle, keeping its `<name>-<mac6>` hostname across updates. Once paired with Home Assistant, the runtime-provisioned `api.encryption` Noise PSK also secures wireless 1-click **Adopt** in Device Builder.
 - **Device Builder devices:** `system_core.yaml` includes both `ota: - platform: http_request` and `ota: - platform: esphome` (`id: ota_esphome`), and extending `ota_esphome` with `encryption:` locks push-OTA down to `Encryption: required` using `api.encryption.key` alongside HTTPS pull-OTA. With `refresh: 0s` on the package, each build pulls the latest `main`. The boot log line `Latter SDK rev … (YAML rev …)` shows which revision is running.
 - **Placement:** wireless updates need a good link. Keep docked devices at least 30 cm apart (neighbouring devices detune each other's antennas) and check the **Wi-Fi Signal** sensor: below about -70 dBm an update can slow to several minutes or stall. Update one device at a time.
 

@@ -530,6 +530,19 @@ def render_device(facts: dict[str, Any]) -> str:
             "  latter_ref: main",
             f'  name: "{dev}"',
             f'  friendly_name: "{facts["latter_device"]}"',
+            (
+                "  # Web Installer builds pass -s name_add_mac_suffix true for "
+                "unique <name>-<mac6> hostnames;"
+            ),
+            "  # Device Builder package wrappers keep clean custom names.",
+            '  name_add_mac_suffix: "false"',
+            "",
+            "dashboard_import:",
+            (
+                "  package_import_url: "
+                f"github://slampton/esphome-latter-core/devices/{dev}.yaml@main"
+            ),
+            "  import_full_config: false",
             "",
             "external_components:",
             "  - source:",
@@ -541,6 +554,7 @@ def render_device(facts: dict[str, Any]) -> str:
             "",
             "esphome:",
             "  name: ${name}",
+            "  name_add_mac_suffix: ${name_add_mac_suffix}",
             "  friendly_name: ${friendly_name}",
             "  min_version: 2026.11.0",
             "  project:",

@@ -89,6 +89,7 @@ jobs:
           EOF
             ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config ${base_name}" config "devices/.ci_${base_name}"
             rm -f "devices/.ci_${base_name}"
+            ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config ${base_name} (mac suffix)" -s name_add_mac_suffix true config "${dev}"
           done
 
   compile:
@@ -103,22 +104,22 @@ jobs:
         target:
           - slug: pocket-assistant
             file: pocket-assistant
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: mobile-assistant
             file: mobile-assistant
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: wrist-assist
             file: wrist-assist
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: remote-assistant
             file: remote-assistant
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: desk-assistant-rev1
             file: desk-assistant
-            subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
+            subs: "-s name_add_mac_suffix true -s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
           - slug: desk-assistant-rev3
             file: desk-assistant
-            subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
+            subs: "-s name_add_mac_suffix true -s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

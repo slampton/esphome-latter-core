@@ -22,6 +22,7 @@ from .common import (
 NOISE_KEY_BYTES: Final[int] = 32
 AGENTS_MD_MAX_BYTES: Final[int] = 12000
 MIN_SDK_REV: Final[int] = 2026112201
+MAX_MAC_SUFFIX_BASE_NAME_LEN: Final[int] = 24
 REQUIRED_PRODUCT_OPTIONS: Final[tuple[str, ...]] = (
     "Minimal Digital",
     "Modern Analog",
@@ -277,6 +278,92 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
     _verify_ci_and_device_pins(failures)
 
 
+def _yaml_top_block(clean_yaml: str, key: str) -> str:
+    """Return indented body lines belonging to a top-level YAML mapping key."""
+    lines: list[str] = []
+    in_block = False
+    for raw in clean_yaml.splitlines():
+        if not raw.strip():
+            continue
+        if not raw[0].isspace():
+            in_block = bool(re.match(rf"^{re.escape(key)}\s*:\s*$", raw.rstrip()))
+            continue
+        if in_block:
+            lines.append(raw)
+    return "\n".join(lines)
+
+
+def _verify_device_mac_suffix(dev_file: Path, dtxt: str, failures: list[str]) -> None:
+    """Verify per-Device MAC-suffix substitution, esphome wiring, and 24-char base name cap."""
+    dclean = strip_yaml_comments(dtxt)
+    subs_block = _yaml_top_block(dclean, "substitutions")
+    esphome_block = _yaml_top_block(dclean, "esphome")
+    if not re.search(r'(?m)^[ \t]+name_add_mac_suffix:\s*"false"\s*$', subs_block):
+        failures.append(
+            f'[MAC SUFFIX] {dev_file.name} must define substitutions.name_add_mac_suffix: "false"'
+        )
+    if not re.search(r"(?m)^[ \t]+name_add_mac_suffix:\s*\$\{name_add_mac_suffix\}\s*$", esphome_block):
+        failures.append(
+            f"[MAC SUFFIX] {dev_file.name} must set esphome.name_add_mac_suffix: ${{name_add_mac_suffix}}"
+        )
+    base_name = extract_substitutions([dev_file]).get("name", "")
+    if not base_name or len(base_name) > MAX_MAC_SUFFIX_BASE_NAME_LEN:
+        failures.append(
+            f"[MAC SUFFIX] {dev_file.name} base name {base_name!r} ({len(base_name)} chars) "
+            f"must be 1..{MAX_MAC_SUFFIX_BASE_NAME_LEN} chars (ESPHome 31 - 7 MAC suffix limit)"
+        )
+
+
+def _verify_workflow_mac_suffix_matrix(wf_rel: str, wf_txt: str, failures: list[str]) -> None:
+    """Verify every matrix `slug:` entry passes `-s name_add_mac_suffix true` in `subs:` with exact parity."""
+    clean = strip_yaml_comments(wf_txt)
+    items: list[tuple[str, list[str]]] = []
+    cur_slug: str | None = None
+    cur_indent = -1
+    cur_lines: list[str] = []
+
+    for raw in clean.splitlines():
+        if not raw.strip():
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        m_slug = re.match(r"^(\s*)-\s+slug:\s*(\S+)\s*$", raw)
+        if m_slug:
+            if cur_slug is not None:
+                items.append((cur_slug, cur_lines))
+            cur_indent = len(m_slug.group(1))
+            cur_slug = m_slug.group(2)
+            cur_lines = []
+            continue
+        if cur_slug is not None:
+            if indent <= cur_indent:
+                items.append((cur_slug, cur_lines))
+                cur_slug = None
+                cur_lines = []
+            else:
+                cur_lines.append(raw)
+    if cur_slug is not None:
+        items.append((cur_slug, cur_lines))
+
+    if not items:
+        failures.append(f"[MAC SUFFIX] {wf_rel} has no matrix slug entries")
+        return
+
+    matched = 0
+    for item_slug, body_lines in items:
+        body = "\n".join(body_lines)
+        if re.search(r"(?m)^\s+subs:\s*.*-s\s+name_add_mac_suffix\s+true\b", body):
+            matched += 1
+        else:
+            failures.append(
+                f"[MAC SUFFIX] {wf_rel} matrix entry {item_slug!r} must pass `-s name_add_mac_suffix true` in subs"
+            )
+    subs_flag_count = len(re.findall(r"(?m)^\s+subs:\s*.*-s\s+name_add_mac_suffix\s+true\b", clean))
+    if matched != len(items) or subs_flag_count != len(items):
+        failures.append(
+            f"[MAC SUFFIX] {wf_rel} MAC-suffix subs count ({subs_flag_count}) != matrix slug count ({len(items)})"
+        )
+
+
 def _verify_ci_and_device_pins(failures: list[str]) -> None:
     val_txt = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     rel_txt = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
@@ -315,6 +402,7 @@ def _verify_ci_and_device_pins(failures: list[str]) -> None:
             failures.append(f"[ONE BEACON] {dev_file.name} must declare latter_beacon (id: ble_ctrl) only")
         if "latter_hal" in dtxt:
             failures.append(f"[COMPONENTS] {dev_file.name} still references retired latter_hal")
+        _verify_device_mac_suffix(dev_file, dtxt, failures)
     if len(dev_mins) != 1 or not ci_pins or any(p != next(iter(dev_mins)) for p in ci_pins):
         failures.append(f"[ESPHOME PIN LOCKSTEP] device min_version {sorted(dev_mins)} != CI pins {ci_pins}")
     if "compile devices/" not in val_txt or "\n  promote:" not in val_txt or "refs/heads/main" not in val_txt:
@@ -325,6 +413,17 @@ def _verify_ci_and_device_pins(failures: list[str]) -> None:
         failures.append("[RELEASE GATE] release.yml must not duplicate triggers with `push: tags:`")
     if "test_latter_state" in val_txt or "test_all.cpp" in val_txt:
         failures.append("[DEV GATE] validate.yml still references retired single-file host test")
+    _verify_workflow_mac_suffix_matrix(".github/workflows/release.yml", rel_txt, failures)
+    _verify_workflow_mac_suffix_matrix(".github/workflows/validate.yml", val_txt, failures)
+    if not re.search(r"-s\s+name_add_mac_suffix\s+true\s+config\b", strip_yaml_comments(val_txt)):
+        failures.append(
+            "[MAC SUFFIX] validate.yml must validate devices/*.yaml with `-s name_add_mac_suffix true config`"
+        )
+    if canary_path.is_file() and not re.search(
+        r"-s\s+name_add_mac_suffix\s+true\s+compile\b",
+        strip_yaml_comments(canary_path.read_text(encoding="utf-8")),
+    ):
+        failures.append("[MAC SUFFIX] esphome-canary.yml must compile with `-s name_add_mac_suffix true`")
 
 
 def verify_static_repo_invariants(failures: list[str]) -> None:

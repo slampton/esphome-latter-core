@@ -16,7 +16,7 @@ jobs:
       fail-fast: false
       matrix:
         # slug = published artifact/manifest name, file = devices/<file>.yaml (also the ESPHome
-        # build dir name), subs = ESPHome -s substitution overrides (P4 silicon profiles).
+        # build dir name), subs = ESPHome -s substitution overrides (MAC suffix + P4 silicon profiles).
         # Remote Assistant (SKU 33360) ships exclusively with rev3.x production silicon; Desk Assistant
         # (SKU 31570 / 4B) ships in both rev1.x and rev3.x batches (binaries are not cross-compatible).
         device:
@@ -24,32 +24,32 @@ jobs:
             file: pocket-assistant
             name: "Latter — Pocket Assistant (1.75C)"
             chip: "ESP32-S3"
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: mobile-assistant
             file: mobile-assistant
             name: "Latter — Mobile Assistant (2.16)"
             chip: "ESP32-S3"
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: wrist-assist
             file: wrist-assist
             name: "Latter — Wrist Assist (2.06)"
             chip: "ESP32-S3"
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: remote-assistant
             file: remote-assistant
             name: "Latter — Remote Assistant (P4 3.5)"
             chip: "ESP32-P4"
-            subs: ""
+            subs: "-s name_add_mac_suffix true"
           - slug: desk-assistant-rev1
             file: desk-assistant
             name: "Latter — Desk Assistant (P4 86-Panel / 4B, chip rev 1.x)"
             chip: "ESP32-P4"
-            subs: "-s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
+            subs: "-s name_add_mac_suffix true -s p4_silicon rev1 -s p4_engineering_sample true -s p4_cpu_frequency 360MHz"
           - slug: desk-assistant-rev3
             file: desk-assistant
             name: "Latter — Desk Assistant (P4 86-Panel / 4B, chip rev 3.x)"
             chip: "ESP32-P4"
-            subs: "-s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
+            subs: "-s name_add_mac_suffix true -s p4_silicon rev3 -s p4_engineering_sample false -s p4_cpu_frequency 400MHz"
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

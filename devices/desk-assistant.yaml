@@ -13,6 +13,9 @@ substitutions:
   latter_ref: main
   name: "desk-assistant"
   friendly_name: "Desk Assistant"
+  # Web Installer builds pass -s name_add_mac_suffix true for unique <name>-<mac6> hostnames;
+  # Device Builder package wrappers keep clean custom names.
+  name_add_mac_suffix: "false"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/desk-assistant.yaml@main
@@ -28,6 +31,7 @@ external_components:
 
 esphome:
   name: ${name}
+  name_add_mac_suffix: ${name_add_mac_suffix}
   friendly_name: ${friendly_name}
   min_version: 2026.11.0
   project:
