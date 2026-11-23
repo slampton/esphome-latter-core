@@ -397,15 +397,31 @@ def render_board(facts: dict[str, Any]) -> str:
         note = f" ({p['note']})" if p.get("note") else ""
         hdr.append(f"#   GPIO{p['gpio']:<3} {p['role']}{note} [{p['confidence']}]")
     hdr.append(BANNER)
+    stationary = str(flags.get("LATTER_IS_STATIONARY")) == "1"
+    w_px = int(flags.get("LATTER_SCREEN_W", 466))
+    h_px = int(flags.get("LATTER_SCREEN_H", 466))
+    art_sq = f"{max(w_px, h_px)}x{max(w_px, h_px)}"
     body = [
         "",
         "substitutions:",
+        '  font_time_size: "77"',
+        '  font_chrono_size: "38"',
+        '  font_date_size: "27"',
+        '  font_btn_bold_size: "26"',
+        '  font_small_size: "21"',
+        '  font_micro_size: "14"',
+        '  font_games_size: "38"',
+        f'  art_resize: "{w_px}x{h_px}"',
+        f'  sendspin_art_resize: "{art_sq}"',
+        f'  api_reboot_timeout: "{"15min" if stationary else "0s"}"',
+        f'  sendspin_buffer_size: "{"1048576" if is_p4(facts) else "524288"}"',
+        # Safe PSRAM default; opt into "true" only after bench-verifying headroom.
+        '  mww_internal_ram: "false"',
+        '  announcement_buffer_size: "131072"',
         '  audio_out_rate: "48000"',
         '  audio_out_channels: "1"',
         '  audio_out_bits: "16"',
         '  audio_in_rate: "16000"',
-        # Safe PSRAM default; opt into "true" only after bench-verifying headroom.
-        '  mww_internal_ram: "false"',
     ]
     imu_pin = pin_of(facts, "imu_int1")
     if imu_pin is not None:
@@ -515,7 +531,6 @@ def render_device(facts: dict[str, Any]) -> str:
             f'  name: "{dev}"',
             f'  friendly_name: "{facts["latter_device"]}"',
             '  version: "3.0.0"',
-            f'  api_reboot_timeout: "{"15min" if stationary else "0s"}"',
             "",
             "external_components:",
             "  - source:",

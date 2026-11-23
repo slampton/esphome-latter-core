@@ -164,8 +164,24 @@ def _check_yaml_hygiene_file(rel: str, txt: str, failures: list[str]) -> None:
     yclean = strip_yaml_comments(txt)
     if re.search(r"(?m)^globals\s*:", yclean):
         failures.append(f"[ZERO YAML GLOBALS] {rel} declares forbidden YAML globals: block")
-    if re.search(r"(?m)^\s+(?:screen_w|screen_h|art_shape)\s*:", yclean):
-        failures.append(f"[DEAD SUBSTITUTION] {rel} declares retired screen_w/screen_h/art_shape substitution")
+    m_dead = re.search(
+        r"(?m)^\s+(screen_w|screen_h|art_shape|default_clock_face|default_start_app|"
+        r"default_art_mode|default_screensaver_style|default_album_sort|"
+        r"default_artist_album_sort|default_podcast_sort)\s*:",
+        yclean,
+    )
+    if m_dead:
+        failures.append(f"[DEAD SUBSTITUTION] {rel} declares retired '{m_dead.group(1)}' substitution")
+    if rel.startswith("devices/"):
+        m_dup = re.search(
+            r"(?m)^\s+(font_[a-z_]+_size|art_resize|sendspin_art_resize|sendspin_buffer_size|"
+            r"announcement_buffer_size|mww_internal_ram|audio_[a-z_]+|api_reboot_timeout)\s*:",
+            yclean,
+        )
+        if m_dup:
+            failures.append(
+                f"[DEVICE SUBS] {rel} duplicates board-owned substitution '{m_dup.group(1)}' (keep in boards/*.yaml)"
+            )
     for sec in ("sensor", "text_sensor", "binary_sensor"):
         m_sec = re.search(rf"(?m)^{sec}\s*:\s*\n((?:[ \t]+.*\n?)*)", yclean)
         if m_sec and re.search(r"(?m)^\s*-\s*platform:\s*homeassistant\b", m_sec.group(1)):

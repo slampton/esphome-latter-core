@@ -142,25 +142,9 @@ bool tick_persisted_prefs_flush(uint32_t now_ms, uint32_t debounce_ms) {
   return save_persisted_prefs();
 }
 
-void seed_default_prefs_if_needed(
-    std::string_view def_clock_face,
-    std::string_view def_start_app,
-    std::string_view def_screensaver_style,
-    std::string_view def_art_mode,
-    std::string_view def_album_sort,
-    std::string_view def_artist_album_sort,
-    std::string_view def_podcast_sort,
-    PersistedDevicePrefs &p) {
+void seed_default_prefs_if_needed(PersistedDevicePrefs &p) {
   if (!p.defaults_seeded) {
     p.defaults_seeded = true;
-    int v = -1;
-    if ((v = find_opt_index(kClockFaceOpts, def_clock_face)) >= 0) p.clock_face = static_cast<uint8_t>(v);
-    if ((v = find_opt_index(kStartScreenOpts, def_start_app)) >= 0) p.start_screen = static_cast<uint8_t>(v);
-    if ((v = find_opt_index(kScreensaverStyleOpts, def_screensaver_style)) >= 0) p.screensaver_style = static_cast<uint8_t>(v);
-    if ((v = find_opt_index(kAlbumArtStyleOpts, def_art_mode)) >= 0) p.album_art_style = static_cast<uint8_t>(v);
-    if ((v = find_opt_index(kAlbumSortOpts, def_album_sort)) >= 0) p.album_sort_order = static_cast<uint8_t>(v);
-    if ((v = find_opt_index(kArtistAlbumSortOpts, def_artist_album_sort)) >= 0) p.artist_album_sort_order = static_cast<uint8_t>(v);
-    if ((v = find_opt_index(kPodcastSortOpts, def_podcast_sort)) >= 0) p.podcast_sort_order = static_cast<uint8_t>(v);
     seed_hardware_sleep_defaults(p);
     clamp_prefs_to_capabilities(p);
     save_persisted_prefs();

@@ -213,12 +213,13 @@ def _parse_top_level_substitutions(text: str) -> dict[str, str]:
 def _resolve_api_reboot_timeout(
     base_text: str, board_text: str, dev_text: str
 ) -> str | None:
+    # Match ESPHome's real package merge order: hal (boards/*.yaml) -> latter_firmware (modules/base.yaml) -> devices/*.yaml.
     subs: dict[str, str] = {}
-    for src in (base_text, board_text, dev_text):
+    for src in (board_text, base_text, dev_text):
         subs.update(_parse_top_level_substitutions(src))
 
     raw_val: str | None = None
-    for src in (base_text, board_text, dev_text):
+    for src in (board_text, base_text, dev_text):
         in_api = False
         for ln in strip_comments(src).splitlines():
             if not ln.strip():
@@ -561,14 +562,19 @@ def check_board(
                     f"LATTER_BLE_MINOR={scan['flags'].get('LATTER_BLE_MINOR')} "
                     "does not equal facts ble_minor"
                 )
-        if str(facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY")) == "0":
-            base_mod = (REPO / "modules" / "base.yaml").read_text(encoding="utf-8")
-            eff_reboot = _resolve_api_reboot_timeout(base_mod, scan["text"], dev_text)
-            if eff_reboot != "0s":
-                err(
-                    "mobile board api.reboot_timeout must resolve to '0s', "
-                    f"got {eff_reboot!r}"
-                )
+        base_mod = (REPO / "modules" / "base.yaml").read_text(encoding="utf-8")
+        eff_reboot = _resolve_api_reboot_timeout(base_mod, scan["text"], dev_text)
+        stationary_flag = str(facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY"))
+        if stationary_flag == "0" and eff_reboot != "0s":
+            err(
+                "mobile board api.reboot_timeout must resolve to '0s', "
+                f"got {eff_reboot!r}"
+            )
+        elif stationary_flag == "1" and (not eff_reboot or eff_reboot == "0s"):
+            err(
+                "stationary board api.reboot_timeout must be enabled (e.g. '15min'), "
+                f"got {eff_reboot!r}"
+            )
     release_yml = (REPO / ".github" / "workflows" / "release.yml").read_text(
         encoding="utf-8"
     )

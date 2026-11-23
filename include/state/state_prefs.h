@@ -794,6 +794,8 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
 inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, bool is_stationary,
                                                     bool is_wearable, bool is_round_display,
                                                     bool has_battery) noexcept {
+  p.clock_face = is_round_display ? 1U : 0U;  // Modern Analog on round displays; Minimal Digital elsewhere
+  p.clock_face_digital = (p.clock_face != 1U);
   if (is_stationary) {
     p.wake_word_mode = 1;
     p.tap_to_wake = 0;
@@ -880,15 +882,7 @@ inline void schedule_persisted_prefs_save(uint32_t now_ms) {
 bool flush_persisted_prefs_if_dirty();
 bool tick_persisted_prefs_flush(uint32_t now_ms, uint32_t debounce_ms = 1500U);
 
-void seed_default_prefs_if_needed(
-    std::string_view def_clock_face,
-    std::string_view def_start_app,
-    std::string_view def_screensaver_style,
-    std::string_view def_art_mode,
-    std::string_view def_album_sort,
-    std::string_view def_artist_album_sort,
-    std::string_view def_podcast_sort,
-    PersistedDevicePrefs &p = persisted_prefs());
+void seed_default_prefs_if_needed(PersistedDevicePrefs &p = persisted_prefs());
 
 const char *pref_key_name(PrefKey key);
 std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = persisted_prefs());

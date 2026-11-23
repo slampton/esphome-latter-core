@@ -427,20 +427,24 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
     LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_wall)) == "Always On");
     LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_mode_cstr(p_wall)) == "Never");
     LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(p_wall)) == "Handheld Only");
+    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_wall)) == "Minimal Digital");
 
     latter_ui::PersistedDevicePrefs p_pocket{};
     latter_ui::seed_hardware_sleep_defaults_for_traits(p_pocket, false, false, true, true);
     LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_pocket)) == "Docked Only");
     LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_mode_cstr(p_pocket)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_pocket)) == "Modern Analog");
 
     latter_ui::PersistedDevicePrefs p_wear{};
     latter_ui::seed_hardware_sleep_defaults_for_traits(p_wear, false, true, false, true);
     LATTER_CHECK(std::string_view(latter_ui::pref_tap_to_wake_cstr(p_wear)) == "Double Tap");
     LATTER_CHECK(p_wear.day_brightness_pct() == 80U && p_wear.night_brightness_pct() == 25U);
+    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_wear)) == "Minimal Digital");
 
     latter_ui::PersistedDevicePrefs p_hand{};
     latter_ui::seed_hardware_sleep_defaults_for_traits(p_hand, false, false, false, true);
     LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_hand)) == "30 min");
+    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_hand)) == "Minimal Digital");
   }
 
   auto &prefs = latter_ui::persisted_prefs();

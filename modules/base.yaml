@@ -9,23 +9,9 @@ substitutions:
   friendly_name: "Latter Device"
   version: "3.0.0"
   latter_asset_ref: "main"
-  font_time_size: "77"
-  font_chrono_size: "38"
-  font_date_size: "27"
-  font_btn_bold_size: "26"
-  font_small_size: "21"
-  font_micro_size: "14"
-  font_games_size: "38"
-  default_clock_face: "Minimal Digital"
-  api_reboot_timeout: "0s"
   api_outgoing_delay: "10s"
-  sendspin_buffer_size: "196608"
-  mww_internal_ram: "false"
-  announcement_buffer_size: "65536"
-  audio_out_rate: "48000"
-  audio_out_channels: "1"
-  audio_out_bits: "16"
-  audio_in_rate: "16000"
+  # api_reboot_timeout is supplied by each board HAL or standalone example ("15min" stationary, "0s" battery)
+  # so modules/base.yaml (included after hal:) never clobbers board-specific substitutions.
 
 esphome:
   on_boot:

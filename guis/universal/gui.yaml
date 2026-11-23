@@ -2,15 +2,8 @@
 # Latter Universal Multi-Geometry GUI Shell (guis/universal/gui.yaml)
 # Thin declarative font/palette shell + compositor dispatch to compiled page_*.cpp
 # and touch_engine.cpp translation units in components/latter_ui/.
+# Font pixel sizes (${font_*_size}) are declared by each board HAL (boards/*.yaml).
 # ==============================================================================
-substitutions:
-  font_time_size: "77"
-  font_chrono_size: "38"
-  font_date_size: "27"
-  font_btn_bold_size: "26"
-  font_small_size: "21"
-  font_micro_size: "14"
-  font_games_size: "38"
 
 font:
   - file: "gfonts://Roboto"

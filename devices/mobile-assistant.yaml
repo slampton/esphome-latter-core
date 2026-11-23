@@ -12,8 +12,6 @@ substitutions:
   name: "mobile-assistant"
   friendly_name: "Mobile Assistant"
   version: "3.0.0"
-  default_clock_face: "Minimal Digital"
-  api_reboot_timeout: "0s"
 
 dashboard_import:
   package_import_url: github://slampton/esphome-latter-core/devices/mobile-assistant.yaml@main

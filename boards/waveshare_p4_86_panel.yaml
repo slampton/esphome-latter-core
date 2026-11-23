@@ -37,13 +37,8 @@ substitutions:
   font_games_size: "56"
   art_resize: "720x720"
   sendspin_art_resize: "720x720"
-  default_start_app: "Home"
-  default_clock_face: "Minimal Digital"
-  default_art_mode: "Full Screen"
-  default_screensaver_style: "Ambient Clock"
-  default_album_sort: "Alphabetical"
-  default_artist_album_sort: "Oldest on Top"
-  default_podcast_sort: "Newest on Top"
+  # Mains-powered stationary panel: reboot after 15 min without an HA API client to recover stalled Wi-Fi/TCP.
+  api_reboot_timeout: "15min"
   sendspin_buffer_size: "1048576"
   # micro_wake_word arena + weights in internal RAM (~70% faster inference); boards with internal-RAM headroom only
   mww_internal_ram: "true"

@@ -9,6 +9,7 @@ from typing import Final
 from .common import (
     RAW_IT_DRAW_RE,
     ROOT,
+    collect_yaml_include_chain,
     extract_substitutions,
     strip_cpp_comments,
     strip_cpp_strings_and_comments,
@@ -266,7 +267,7 @@ def _check_pages_d070_d072(failures: list[str]) -> None:
             failures.append(f"[UI LIST STANDARD] page_{fam} family must size 1-line lists via list_card_w & slot5_h")
 
 
-def _check_contrast_fonts_and_ui_doc(gui_yaml_path: Path, gui_uncommented: str, failures: list[str]) -> None:
+def _check_contrast_fonts_and_ui_doc(gui_uncommented: str, failures: list[str]) -> None:
     palette = {
         m.group(1): m.group(2)
         for m in re.finditer(r'-\s*id:\s*([A-Za-z0-9_]+)\s*\n\s*hex:\s*"([0-9A-Fa-f]{6})"', gui_uncommented)
@@ -281,16 +282,25 @@ def _check_contrast_fonts_and_ui_doc(gui_yaml_path: Path, gui_uncommented: str, 
         if ratio < MIN_CONTRAST_RATIO:
             failures.append(f"[TEXT CONTRAST] {cid} (#{chex}) on #{bg_hex} has contrast {ratio:.2f}:1 (< 4.5:1)")
 
-    gui_subs = extract_substitutions([gui_yaml_path])
-    board_metrics = _collect_board_font_metrics(gui_subs, failures)
+    board_metrics = _collect_board_font_metrics(failures)
     _verify_ui_design_doc_table(board_metrics, failures)
 
 
-def _collect_board_font_metrics(gui_subs: dict[str, str], failures: list[str]) -> dict[str, dict[str, int]]:
+def _device_yaml_for_board(board_stem: str) -> Path | None:
+    needle = f"boards/{board_stem}.yaml"
+    for dev in sorted((ROOT / "devices").glob("*.yaml")):
+        if needle in dev.read_text(encoding="utf-8"):
+            return dev
+    return None
+
+
+def _collect_board_font_metrics(failures: list[str]) -> dict[str, dict[str, int]]:
     board_metrics: dict[str, dict[str, int]] = {}
     for bf in sorted((ROOT / "boards").glob("*.yaml")):
         btxt = bf.read_text(encoding="utf-8")
-        bsubs = {**gui_subs, **extract_substitutions([bf])}
+        dev = _device_yaml_for_board(bf.stem)
+        # Resolve effective font sizes through ESPHome's real package merge chain (hal -> latter_firmware -> device).
+        bsubs = extract_substitutions(collect_yaml_include_chain(dev) if dev else [bf])
         m_ppi = re.search(r"-DLATTER_PANEL_PPI=(\d+)", btxt)
         m_w = re.search(r"-DLATTER_SCREEN_W=(\d+)", btxt)
         m_h = re.search(r"-DLATTER_SCREEN_H=(\d+)", btxt)
@@ -304,8 +314,11 @@ def _collect_board_font_metrics(gui_subs: dict[str, str], failures: list[str]) -
         is_wear = bool(m_wear and int(m_wear.group(1)) != 0)
         default_rect_cr = WEARABLE_DEFAULT_CORNER_R if is_wear else RECT_DEFAULT_CORNER_R
         eff_cr = int(m_cr.group(1)) if m_cr else (w_px // 2 if is_rnd else default_rect_cr)
-        f_small = int(bsubs.get("font_small_size", "21"))
-        f_micro = int(bsubs.get("font_micro_size", "14"))
+        if "font_small_size" not in bsubs or "font_micro_size" not in bsubs:
+            failures.append(f"[FONT MM] {bf.name}: missing effective font_small_size/font_micro_size substitution")
+            continue
+        f_small = int(bsubs["font_small_size"])
+        f_micro = int(bsubs["font_micro_size"])
         if f_small * 25.4 / ppi < MIN_SMALL_FONT_MM:
             failures.append(f"[FONT MM] {bf.name}: font_small_size={f_small}px at {ppi} PPI < 2.0 mm")
         if f_micro * 25.4 / ppi < MIN_MICRO_FONT_MM:
@@ -355,4 +368,4 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
     _check_gui_yaml_and_fast_primitives(gui_uncommented, failures)
     _check_takeover_and_touch_tokens(gui_uncommented, failures)
     _check_pages_d070_d072(failures)
-    _check_contrast_fonts_and_ui_doc(gui_yaml_path, gui_uncommented, failures)
+    _check_contrast_fonts_and_ui_doc(gui_uncommented, failures)

@@ -90,19 +90,23 @@ void test_device_prefs_v2_and_event_timer_sync() {
   auto &p = latter_ui::persisted_prefs();
   p = latter_ui::PersistedDevicePrefs{};
   latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
-  latter_ui::seed_default_prefs_if_needed(
-      "Modern Analog", "Home", "Aurora",
-      "Full Screen", "Alphabetical", "Newest on Top", "Oldest on Top");
+  latter_ui::seed_default_prefs_if_needed();
   const char *expected_ww_default = (LATTER_IS_STATIONARY != 0) ? "Always On" : "Docked Only";
   const char *expected_clock_default = (LATTER_ROUND_DISPLAY != 0) ? "Modern Analog" : "Minimal Digital";
   LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == expected_ww_default);
   LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr()) == expected_clock_default);
-  LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_style_cstr()) == "Aurora");
+  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr()) == "Home");
+  LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_style_cstr()) == "Ambient Clock");
+  LATTER_CHECK(std::string_view(latter_ui::pref_album_art_style_cstr()) == "Full Screen");
+  LATTER_CHECK(std::string_view(latter_ui::pref_album_sort_order_cstr()) == "Alphabetical");
+  LATTER_CHECK(std::string_view(latter_ui::pref_artist_album_sort_order_cstr()) == "Oldest on Top");
+  LATTER_CHECK(std::string_view(latter_ui::pref_podcast_sort_order_cstr()) == "Newest on Top");
   LATTER_CHECK(p.prefs_seq == 0U && p.dirty_mask == 0ULL);
 
   const std::string seed_dirty = latter_ui::build_hello_dirty_prefs(p);
   LATTER_CHECK(seed_dirty.find(std::string("wake_word_mode=") + expected_ww_default) != std::string::npos);
-  LATTER_CHECK(seed_dirty.find("screensaver_style=Aurora") != std::string::npos);
+  LATTER_CHECK(seed_dirty.find(std::string("clock_face=") + expected_clock_default) != std::string::npos);
+  LATTER_CHECK(seed_dirty.find("screensaver_style=Ambient Clock") != std::string::npos);
   LATTER_CHECK(seed_dirty.find("ble_beacon_enabled=") == std::string::npos);
 
   latter_ui::reset_all_v3_rev_guards();

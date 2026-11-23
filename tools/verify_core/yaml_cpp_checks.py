@@ -11,6 +11,7 @@ from typing import Final
 from .common import (
     ROOT,
     collect_yaml_include_chain,
+    extract_substitutions,
     iter_repo_files,
     strip_cpp_strings_and_comments,
     strip_yaml_comments,
@@ -425,6 +426,53 @@ def verify_yaml_cpp_and_ids(failures: list[str]) -> None:
             _check_balanced_lambda_blocks(rel, raw_txt.splitlines(), failures)
 
     _verify_dangling_yaml_ids(failures)
+    _verify_package_substitutions(failures)
+
+
+def _verify_package_substitutions(failures: list[str]) -> None:
+    """Ensure later packages never clobber board HAL substitutions and every ${var} resolves."""
+    targets = (
+        sorted((ROOT / "devices").glob("*.yaml"))
+        + sorted((ROOT / "examples").glob("*.yaml"))
+        + sorted((ROOT / "examples" / "bringup").glob("*.yaml"))
+    )
+    sub_ref_re = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+    boards_dir = (ROOT / "boards").resolve()
+    reported_clobber: set[tuple[str, str]] = set()
+    reported_missing: set[tuple[str, str, str]] = set()
+
+    for target in targets:
+        chain = collect_yaml_include_chain(target)
+        merged_subs: dict[str, str] = {}
+        board_subs: dict[str, str] = {}
+        for yf in chain:
+            file_subs = extract_substitutions([yf])
+            if yf.parent.resolve() == boards_dir:
+                board_subs.update(file_subs)
+            elif board_subs and yf != target.resolve():
+                overlap = sorted(set(board_subs) & set(file_subs))
+                if overlap:
+                    yrel = yf.relative_to(ROOT).as_posix()
+                    key = (yrel, ",".join(overlap))
+                    if key not in reported_clobber:
+                        reported_clobber.add(key)
+                        failures.append(
+                            f"[SUB CLOBBER] {yrel} (loaded after boards/*.yaml in {target.name}) "
+                            f"overwrites board substitution(s): {overlap}"
+                        )
+            merged_subs.update(file_subs)
+
+        for yf in chain:
+            yrel = yf.relative_to(ROOT).as_posix()
+            yclean = strip_yaml_comments(yf.read_text(encoding="utf-8"))
+            for var in sub_ref_re.findall(yclean):
+                if var not in merged_subs:
+                    mkey = (target.name, yrel, var)
+                    if mkey not in reported_missing:
+                        reported_missing.add(mkey)
+                        failures.append(
+                            f"[UNRESOLVED SUB] {yrel} (in {target.name}) references undefined substitution '${{{var}}}'"
+                        )
 
 
 def _verify_dangling_yaml_ids(failures: list[str]) -> None:

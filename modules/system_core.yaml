@@ -21,10 +21,7 @@ esphome:
               rs.hw_boot_battery_check();
             }
             latter_ui::load_persisted_prefs();
-            latter_ui::seed_default_prefs_if_needed(
-                "${default_clock_face}", "${default_start_app}",
-                "${default_screensaver_style}", "${default_art_mode}", "${default_album_sort}",
-                "${default_artist_album_sort}", "${default_podcast_sort}");
+            latter_ui::seed_default_prefs_if_needed();
             // Light-sleep awake lock (created held), wake pins and sleep pad config; no-op without light sleep.
             latter_ui::pm_init();
             id(hal_release_deep_sleep_holds).execute();

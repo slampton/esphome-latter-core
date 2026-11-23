@@ -49,7 +49,7 @@ Palette colors are ESPHome `color:` IDs in [`gui.yaml`](../guis/universal/gui.ya
 
 ### 1.2 Typography
 
-Every font is a Google font fetched at build time: Roboto, plus Orbitron 700 for game titles. Sizes are pixel sizes set by substitutions. [`gui.yaml`](../guis/universal/gui.yaml) holds the defaults, and a board file overrides them.
+Every font is a Google font fetched at build time: Roboto, plus Orbitron 700 for game titles. Sizes are pixel sizes declared by each board HAL (`boards/*.yaml`) and consumed by [`gui.yaml`](../guis/universal/gui.yaml) (never duplicated in `devices/*.yaml` or overridden by later packages).
 
 | ID | Weight | Glyphs | Default | Wrist, Mobile | Desk | Use |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
