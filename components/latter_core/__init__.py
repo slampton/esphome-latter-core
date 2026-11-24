@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.const import CONF_HEIGHT, CONF_ID, CONF_PIN, CONF_WIDTH
+from esphome.const import CONF_HEIGHT, CONF_ID, CONF_PIN, CONF_WIDTH, Framework
 from esphome.core import CORE
 
 CODEOWNERS = ["@slampton"]
@@ -272,7 +271,8 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_DIAGNOSTICS, default={}): _DIAGNOSTICS_SCHEMA,
         }
     ).extend(cv.COMPONENT_SCHEMA),
-    cv.only_with_esp_idf,
+    cv.only_on_esp32,
+    cv.only_with_framework(Framework.ESP_IDF),
     _validate_latter_core,
 )
 
@@ -328,10 +328,11 @@ endfunction()
 cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL _latter_quiet_sendspin_logs)"""
 
 
-def AUTO_LOAD(config: dict[str, Any]) -> list[str]:
+def AUTO_LOAD(config: dict[str, Any] | None) -> list[str]:
     """Load latter_ui when a display is present (Toolkit + Universal Apps or Toolkit-only)."""
-    gui_mode = str(config.get(CONF_GUI, "universal")).strip().lower()
-    caps = config.get(CONF_CAPABILITIES) or {}
+    cfg = config if isinstance(config, dict) else {}
+    gui_mode = str(cfg.get(CONF_GUI, "universal")).strip().lower()
+    caps = cfg.get(CONF_CAPABILITIES) or {}
     has_display = bool(caps.get(CONF_DISPLAY, gui_mode != "none"))
     return ["latter_ui"] if has_display else []
 
@@ -360,7 +361,7 @@ def _emit_board_defines(config: dict[str, Any]) -> None:
     drivers = config[CONF_DRIVERS]
     diag = config[CONF_DIAGNOSTICS]
 
-    cg.add_define("LATTER_BOARD_ID", json.dumps(config[CONF_BOARD_ID]))
+    cg.add_define("LATTER_BOARD_ID", config[CONF_BOARD_ID])
     cg.add_define("LATTER_BLE_MINOR", int(config[CONF_BLE_MINOR]))
     _add_bool_define("LATTER_GUI_UNIVERSAL", gui_mode == "universal")
 
