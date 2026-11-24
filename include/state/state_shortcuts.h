@@ -204,6 +204,16 @@ int collect_effective_dock_items(ShortcutItem *out_items,
                                  int max_items = kMaxEffectiveDockItems,
                                  const ShortcutsState &st = shortcuts_state());
 
+inline TileGridInputItem *pinned_grid_input_scratch() noexcept {
+  static TileGridInputItem s_buf[ShortcutsState::kMaxPinnedItems]{};
+  return s_buf;
+}
+
+inline TileGridPlacement *pinned_grid_placements_scratch() noexcept {
+  static TileGridPlacement s_buf[ShortcutsState::kMaxPinnedItems]{};
+  return s_buf;
+}
+
 inline TileGridLayoutResult resolve_pinned_grid_layout(
     const ShortcutsState &st,
     int cols,
@@ -217,10 +227,10 @@ inline TileGridLayoutResult resolve_pinned_grid_layout(
     return resolve_tile_grid_layout(nullptr, 0, cols, rows, out_placements, out_cap,
                                     out_page_source_pages, max_pages);
   }
-  TileGridInputItem in[ShortcutsState::kMaxPinnedItems]{};
+  TileGridInputItem *in = pinned_grid_input_scratch();
   for (int i = 0; i < count; ++i) {
     const auto &it = st.pinned_items[static_cast<size_t>(i)];
-    in[i] = TileGridInputItem{it.page, it.col, it.row, it.col_span, it.row_span, i};
+    in[i] = TileGridInputItem{it.page, it.col, it.row, it.col_span, it.row_span, static_cast<int16_t>(i)};
   }
   return resolve_tile_grid_layout(in, count, cols, rows, out_placements, out_cap,
                                   out_page_source_pages, max_pages);

@@ -54,7 +54,7 @@ void render_pinned_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   const int cols = tile_grid_cols_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
   const int rows = tile_grid_rows_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
-  TileGridPlacement placements[ShortcutsState::kMaxPinnedItems]{};
+  TileGridPlacement *placements = pinned_grid_placements_scratch();
   int8_t page_sources[kTileGridMaxLogicalPages]{};
   const auto layout_res = resolve_pinned_grid_layout(
       sc, cols, rows, placements, static_cast<int>(ShortcutsState::kMaxPinnedItems),
@@ -65,7 +65,8 @@ void render_pinned_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                             ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
                             : cur_pg;
 
-  ui::TileGridEntry entries[2 * kTileGridMaxSlotsPerPage]{};
+  // Static BSS scratch keeps TileGridEntry[32] off ESPHome's 8 KB loopTask stack.
+  static ui::TileGridEntry entries[2 * kTileGridMaxSlotsPerPage]{};
   int entry_count = 0;
   for (int i = 0; i < layout_res.placement_count && entry_count < 2 * kTileGridMaxSlotsPerPage; ++i) {
     const auto &pl = placements[i];

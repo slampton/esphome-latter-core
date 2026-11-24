@@ -33,7 +33,7 @@ struct TileGridInputItem {
   int8_t row = -1;
   uint8_t col_span = 1;
   uint8_t row_span = 1;
-  int item_index = -1;
+  int16_t item_index = -1;
 };
 
 struct TileGridPlacement {
@@ -43,8 +43,11 @@ struct TileGridPlacement {
   int8_t row = 0;
   uint8_t col_span = 1;
   uint8_t row_span = 1;
-  int item_index = -1;
+  int16_t item_index = -1;
 };
+
+static_assert(sizeof(TileGridInputItem) <= 8, "TileGridInputItem must stay compact (<= 8 bytes)");
+static_assert(sizeof(TileGridPlacement) <= 8, "TileGridPlacement must stay compact (<= 8 bytes)");
 
 struct TileGridLayoutResult {
   int placement_count = 0;
@@ -52,6 +55,23 @@ struct TileGridLayoutResult {
 };
 
 namespace detail {
+
+static constexpr int kMaxTileGridSolverItems = 256;
+static_assert(kMaxTileGridSolverItems <= 256, "TileGridSolverScratch indices fit in uint8_t");
+
+// Static BSS scratch keeps resolve_tile_grid_layout() off the 8 KB ESPHome loopTask stack.
+struct TileGridSolverScratch {
+  uint16_t occ[kTileGridMaxLogicalPages]{};
+  int8_t page_origin[kTileGridMaxLogicalPages]{};
+  int8_t logical_to_visual[kTileGridMaxLogicalPages]{};
+  uint8_t deferred_idx[kMaxTileGridSolverItems]{};
+  uint8_t autoflow_idx[kMaxTileGridSolverItems]{};
+};
+
+inline TileGridSolverScratch &tile_grid_solver_scratch() noexcept {
+  static TileGridSolverScratch s_scratch{};
+  return s_scratch;
+}
 
 constexpr uint16_t tile_grid_rect_mask(int cols, int col, int row, int w, int h) noexcept {
   uint16_t mask = 0U;
@@ -99,22 +119,25 @@ inline TileGridLayoutResult resolve_tile_grid_layout(
     return res;
   }
 
-  static constexpr int kMaxSolverItems = 256;
-  const int n = std::min(count, kMaxSolverItems);
+  const int n = std::min(count, detail::kMaxTileGridSolverItems);
 
-  uint16_t occ[kTileGridMaxLogicalPages]{};
-  int8_t page_origin[kTileGridMaxLogicalPages]{};
+  auto &scratch = detail::tile_grid_solver_scratch();
+  uint16_t (&occ)[kTileGridMaxLogicalPages] = scratch.occ;
+  int8_t (&page_origin)[kTileGridMaxLogicalPages] = scratch.page_origin;
+  int8_t (&logical_to_visual)[kTileGridMaxLogicalPages] = scratch.logical_to_visual;
+  uint8_t (&deferred_idx)[detail::kMaxTileGridSolverItems] = scratch.deferred_idx;
+  uint8_t (&autoflow_idx)[detail::kMaxTileGridSolverItems] = scratch.autoflow_idx;
   for (int p = 0; p < kTileGridMaxLogicalPages; ++p) {
+    occ[p] = 0U;
     page_origin[p] = -1;
+    logical_to_visual[p] = -1;
   }
 
-  int16_t deferred_idx[kMaxSolverItems]{};
   int deferred_cnt = 0;
-  int16_t autoflow_idx[kMaxSolverItems]{};
   int autoflow_cnt = 0;
 
   int placed_cnt = 0;
-  auto emit_logical = [&](int logical_pg, int col, int row, int w, int h, int item_idx) noexcept {
+  auto emit_logical = [&](int logical_pg, int col, int row, int w, int h, int16_t item_idx) noexcept {
     if (placed_cnt < eff_out_cap) {
       TileGridPlacement p{};
       p.visual_page = static_cast<int8_t>(logical_pg);  // Temporarily stores logical page
@@ -133,7 +156,7 @@ inline TileGridLayoutResult resolve_tile_grid_layout(
     const auto &it = items[i];
     const bool is_explicit = (it.page >= 0 && it.col >= 0 && it.row >= 0);
     if (!is_explicit) {
-      autoflow_idx[autoflow_cnt++] = static_cast<int16_t>(i);
+      autoflow_idx[autoflow_cnt++] = static_cast<uint8_t>(i);
       continue;
     }
     const int w = std::clamp(static_cast<int>(it.col_span), 1, eff_cols);
@@ -150,12 +173,12 @@ inline TileGridLayoutResult resolve_tile_grid_layout(
         continue;
       }
     }
-    deferred_idx[deferred_cnt++] = static_cast<int16_t>(i);
+    deferred_idx[deferred_cnt++] = static_cast<uint8_t>(i);
   }
 
   // Sort deferred explicit items in reading order: (page, row, col, orig_idx)
   for (int i = 1; i < deferred_cnt; ++i) {
-    const int16_t key = deferred_idx[i];
+    const uint8_t key = deferred_idx[i];
     const auto &ka = items[key];
     int j = i - 1;
     while (j >= 0) {
@@ -209,10 +232,6 @@ inline TileGridLayoutResult resolve_tile_grid_layout(
   }
 
   // Compaction: collapse empty logical pages into contiguous visual_page = 0 .. total_pages - 1
-  int8_t logical_to_visual[kTileGridMaxLogicalPages]{};
-  for (int p = 0; p < kTileGridMaxLogicalPages; ++p) {
-    logical_to_visual[p] = -1;
-  }
   int vis_pages = 0;
   for (int p = 0; p < eff_max_pages; ++p) {
     if (occ[p] != 0U) {

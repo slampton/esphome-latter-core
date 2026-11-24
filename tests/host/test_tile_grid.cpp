@@ -122,7 +122,7 @@ void test_tile_grid_solver_reflow_and_compaction() {
     // 9 items on logical page 0 (full 3x3)
     for (int r = 0; r < 3; ++r) {
       for (int c = 0; c < 3; ++c) {
-        in[k] = TileGridInputItem{0, static_cast<int8_t>(c), static_cast<int8_t>(r), 1, 1, k};
+        in[k] = TileGridInputItem{0, static_cast<int8_t>(c), static_cast<int8_t>(r), 1, 1, static_cast<int16_t>(k)};
         ++k;
       }
     }

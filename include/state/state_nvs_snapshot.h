@@ -248,10 +248,10 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
   if (!sc.pinned_items.empty()) {
     const int grid_cols = tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
     const int grid_rows = tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
-    auto placements = std::make_unique<TileGridPlacement[]>(ShortcutsState::kMaxPinnedItems);
+    TileGridPlacement *placements = pinned_grid_placements_scratch();
     int8_t page_sources[kTileGridMaxLogicalPages]{};
     const auto layout_res = resolve_pinned_grid_layout(
-        sc, grid_cols, grid_rows, placements.get(), static_cast<int>(ShortcutsState::kMaxPinnedItems),
+        sc, grid_cols, grid_rows, placements, static_cast<int>(ShortcutsState::kMaxPinnedItems),
         page_sources, kTileGridMaxLogicalPages);
     size_t packed = 0U;
     for (int i = 0; i < layout_res.placement_count && packed < kHibernatePinnedPage1Slots; ++i) {
