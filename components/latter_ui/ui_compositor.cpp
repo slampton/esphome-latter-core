@@ -227,9 +227,11 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     if (ui_focus_active(ctx.now_ms)) {
       qa_sig = (qa_sig ^ (0x80U | static_cast<uint32_t>(ui_focus_index() & 0x3F))) * 16777619U;
     }
-    if (is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url) &&
-        resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour)) {
-      qa_sig = (qa_sig ^ 0x5AU) * 16777619U;
+    if (is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url)) {
+      const auto &ws_qa = weather_state();
+      if (has_known_day_night_phase(ws_qa.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+        qa_sig = (qa_sig ^ (resolve_day_night_sky_is_night(ws_qa.sun_state, ctx.now.is_valid(), ctx.now.hour) ? 0x5AU : 0x3CU)) * 16777619U;
+      }
     } else if (ctx.home_wallpaper_art.valid()) {
       qa_sig = (qa_sig ^ 0xA5U) * 16777619U;
     }
@@ -237,9 +239,19 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     return qa_sig;
   }
   uint32_t sig = batt_u8 | (static_cast<uint32_t>(prefs.glass_style & 0x03U) << 29);
-  if (is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url) &&
-      resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour)) {
-    sig |= (1U << 28);
+  {
+    const bool sky_backdrop_candidate =
+        is_day_night_sky_wallpaper_url(area_ctx_state().wallpaper_url) ||
+        prefs.weather_background || prefs.weather_app_background;
+    if (sky_backdrop_candidate) {
+      const auto &ws_sig = weather_state();
+      if (has_known_day_night_phase(ws_sig.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+        sig |= (1U << 31);
+        if (resolve_day_night_sky_is_night(ws_sig.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+          sig |= (1U << 28);
+        }
+      }
+    }
   }
   if (rs.hw_batt_charging) sig |= (1U << 8);
   if (rs.hw_usb_connected) sig |= (1U << 9);
@@ -281,7 +293,8 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
         ((static_cast<uint32_t>(prefs.home_weather_tap_action) & 0x03U) << 13);
     sig ^= (home_prefs_bits * 0x9E3779B1U);
     if (rs.nav.home_subpage == HomeSubpage::MAIN) {
-      if (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting)) {
+      if ((rs.nav.wake_greeting_pending && ctx.now.is_valid()) ||
+          is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting)) {
         sig ^= 0x5A17C3E9U ^ (ctx.now_ms << 3);
       }
       {
@@ -546,7 +559,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   }
   if (rs.nav.gui_page == PageId::HOME) {
     if (ctx.home_wake_greeting &&
-        (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, true))) {
+        ((rs.nav.wake_greeting_pending && ctx.now.is_valid()) || is_wake_greeting_visible(ctx.now_ms, true))) {
       return true;
     }
     if (is_doorbell_or_intercom_active()) return true;

@@ -34,7 +34,7 @@ namespace latter_core {
 // Hibernate Snapshot POD & Cold-Boot Hydration (NVS-backed Frame #1 Seed)
 // ==============================================================================
 static constexpr uint32_t kHibernateSnapshotMagic   = 0x4C485350U;  // "LHSP"
-static constexpr uint16_t kHibernateSnapshotVersion = 1U;
+static constexpr uint16_t kHibernateSnapshotVersion = 2U;
 static constexpr uint32_t kHibernateSnapshotHash    = 0x4C484942U;  // "LHIB"
 static constexpr size_t kHibernateDockSlots         = 10U;
 static constexpr size_t kHibernatePinnedPage1Slots  = 6U;
@@ -43,7 +43,7 @@ struct DockSnapshotSlot {
   uint8_t kind = 0;         // 0 = empty, 1 = ROUTE, 2 = ENTITY
   uint8_t confirm = 0;      // 0 = direct, 1 = confirm
   uint8_t route_id = 0;     // RouteId when kind == 1
-  int8_t state = -1;        // -1 = stateless/route, 0 = off, 1 = on, 2 = unavailable
+  int8_t state = -1;        // -1 = neutral/pending (live entity state arrives via HA shortcuts)
   char icon_slug[24]{};     // MDI slug without "mdi:" prefix (or empty for default route glyph)
   char label[22]{};         // Display label
   char target[38]{};        // Entity ID when kind == 2 (route token resolved via route_id)
@@ -53,7 +53,7 @@ struct DockSnapshotSlot {
 struct HibernateSnapshot {
   uint32_t magic = kHibernateSnapshotMagic;
   uint16_t version = kHibernateSnapshotVersion;
-  bool sun_below_horizon = false;
+  bool wallpaper_is_day_night_sky = false;
   bool dock_configured = false;
   uint16_t dock_count = 0;
   uint16_t pinned_total = 0;
@@ -61,8 +61,6 @@ struct HibernateSnapshot {
   DockSnapshotSlot pinned_page1[kHibernatePinnedPage1Slots]{};
   char area_name[48]{};
   char area_icon[32]{};
-  char weather_condition[24]{};
-  float weather_temp = NAN;
   char posix_tz[48]{};
 };
 
@@ -77,7 +75,7 @@ inline void pack_snapshot_shortcut_slot(const ShortcutItem &src, DockSnapshotSlo
   const uint8_t acc_bits = static_cast<uint8_t>((static_cast<uint8_t>(src.accent) & 0x07U) << 4);
   dst.confirm = static_cast<uint8_t>(confirm_bit | inv_bit | acc_bits);
   dst.route_id = static_cast<uint8_t>(src.route_id);
-  dst.state = src.state;
+  dst.state = -1;  // Never persist volatile live entity states across cold boots (D-085)
   std::string_view slug(src.icon);
   if (slug.rfind("mdi:", 0) == 0) slug.remove_prefix(4);
   copy_bounded_cstr(dst.icon_slug, slug);
@@ -146,7 +144,7 @@ inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutI
   dst.label = lbl_sv.empty() ? std::string(tgt_sv) : std::string(lbl_sv);
   dst.icon = slug_sv.empty() ? "" : ("mdi:" + std::string(slug_sv));
   dst.confirm = ((src.confirm & 0x01U) != 0U);
-  dst.state = static_cast<int8_t>(std::clamp<int>(src.state, -1, 2));
+  dst.state = -1;  // Neutral/pending until live HA shortcuts arrive (D-085)
   dst.badge_style = unpacked_badge;
   dst.accent = unpacked_accent;
   return true;
@@ -198,9 +196,9 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
   snap.magic = kHibernateSnapshotMagic;
   snap.version = kHibernateSnapshotVersion;
   const auto &ac = area_ctx_state();
-  const auto &ws = weather_state();
   const auto &sc = shortcuts_state();
 
+  snap.wallpaper_is_day_night_sky = is_day_night_sky_wallpaper_url(ac.wallpaper_url);
   snap.dock_configured = sc.dock_configured;
   const size_t dcnt = std::min<size_t>(sc.dock_items.size(), kHibernateDockSlots);
   snap.dock_count = static_cast<uint16_t>(dcnt);
@@ -217,9 +215,6 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
 
   copy_bounded_cstr(snap.area_name, ac.area_name);
   copy_bounded_cstr(snap.area_icon, ac.area_icon);
-  copy_bounded_cstr(snap.weather_condition, ws.condition);
-  snap.weather_temp = ws.temperature;
-  snap.sun_below_horizon = (ws.sun_state == "below_horizon");
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4996)
@@ -260,7 +255,6 @@ inline bool load_hibernate_snapshot_if_cold() {
   }
   snap.area_name[sizeof(snap.area_name) - 1] = '\0';
   snap.area_icon[sizeof(snap.area_icon) - 1] = '\0';
-  snap.weather_condition[sizeof(snap.weather_condition) - 1] = '\0';
   snap.posix_tz[sizeof(snap.posix_tz) - 1] = '\0';
 
   if (snap.posix_tz[0] != '\0') {
@@ -306,16 +300,8 @@ inline bool load_hibernate_snapshot_if_cold() {
   if (ac.area_icon.empty() && snap.area_icon[0] != '\0') {
     ac.area_icon = snap.area_icon;
   }
-
-  auto &ws = weather_state();
-  if (ws.condition.empty()) {
-    if (snap.weather_condition[0] != '\0') {
-      ws.condition = snap.weather_condition;
-      ws.temperature = snap.weather_temp;
-      ws.sun_state = snap.sun_below_horizon ? "below_horizon" : "above_horizon";
-    } else if (ws.sun_state.empty()) {
-      ws.sun_state = snap.sun_below_horizon ? "below_horizon" : "above_horizon";
-    }
+  if (ac.epoch == 0U && ac.rev == 0U && ac.wallpaper_url.empty() && snap.wallpaper_is_day_night_sky) {
+    ac.wallpaper_url = std::string(kDayNightSkyWallpaperUrl);
   }
   return true;
 }

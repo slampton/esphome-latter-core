@@ -267,9 +267,11 @@ int &home_activity_overlay_page() { static int pg = 0; return pg; }
 int &snoozed_alarm_slot() noexcept { return runtime_state().alarms.snoozed_alarm_slot; }
 uint32_t &wake_greeting_start_ms() { static uint32_t ts = 0; return ts; }
 bool &wake_greeting_latched() { static bool latched = false; return latched; }
+const char *&wake_greeting_latched_text() { static const char *txt = nullptr; return txt; }
 
 void dismiss_wake_greeting() {
   wake_greeting_latched() = false;
+  wake_greeting_latched_text() = nullptr;
   runtime_state().nav.wake_greeting_pending = false;
 }
 
@@ -883,7 +885,8 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const bool has_custom_wallpaper = (!ac.wallpaper_url.empty() && !has_day_night_sky &&
                                      ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
                                      ctx.home_wallpaper_art.get_width() > 0);
-  const bool dns_night = resolve_day_night_sky_is_night(ws.sun_state, ctx.now.is_valid(), ctx.now.hour);
+  const bool dns_known = has_known_day_night_phase(ws.sun_state, ctx.now.is_valid(), ctx.now.hour);
+  const bool dns_night = dns_known && resolve_day_night_sky_is_night(ws.sun_state, ctx.now.is_valid(), ctx.now.hour);
   const BackdropMode bd_mode = resolve_backdrop_mode(
       PageId::HOME, home_subpage, show_weather_bg, prefs.weather_app_background,
       sim_override_on, has_custom_wallpaper, has_day_night_sky);
@@ -894,7 +897,8 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     home_act_state().was_visible = false;
     home_act_state().fade_out_start_ms = 0U;
     if (bd_mode == BackdropMode::DayNightSky) {
-      render_static_day_night_sky_base(it, cx, cy, dns_night);
+      if (dns_known) render_static_day_night_sky_base(it, cx, cy, dns_night);
+      else frame_base(it, ctx.col_bg);
     } else {
       render_page_wallpaper_base(it, ctx.home_wallpaper_art, bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
     }
@@ -1001,6 +1005,17 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const bool live_sky_drawn = (bd_mode == BackdropMode::LiveWeatherSky && weather_ready);
   const int cel_x = layout().celestial_x, cel_y = layout().celestial_y;
   const bool show_celestial = is_night ? ctx.home_moon_phase : ctx.home_sun_arc;
+  double moon_cycle = 0.5;
+  bool moon_known = true;
+  if (weather_ready && is_night) {
+    moon_known = compute_synodic_moon_phase(
+        ctx.now.is_valid(), ctx.now.is_valid() ? ctx.now.timestamp : 0LL,
+        ws.moon_phase, moon_cycle, nullptr, nullptr);
+  }
+  const bool celestial_visible =
+      weather_ready && show_celestial &&
+      weather_condition_shows_celestial(cond, is_night) &&
+      (!is_night || moon_known);
 
   if (home_subpage == 2) {
     set_home_activity_deck_rotates(false);
@@ -1008,20 +1023,22 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     home_activity_rendered_rows() = 0;
     reset_home_activity_anim_state(false);
     if (bd_mode == BackdropMode::DayNightSky) {
-      render_static_day_night_sky_base(it, cx, cy, dns_night);
+      if (dns_known) render_static_day_night_sky_base(it, cx, cy, dns_night);
+      else frame_base(it, ctx.col_bg);
     } else if (bd_mode == BackdropMode::CustomWallpaper) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
-    } else if ((show_weather_bg || sim_override_on) && weather_ready) {
+    } else if ((show_weather_bg || sim_override_on) && (weather_ready || dns_known)) {
       backdrop_active() = true;
       frame_base(it, ctx.col_bg);
-      if (!is_night) {
+      const bool eff_night = weather_ready ? is_night : dns_night;
+      if (!eff_night) {
 #if LATTER_ROUND_DISPLAY
         fast_filled_circle(it, cx, cy, 228, UiColor(7, 13, 22));
 #else
         fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, UiColor(7, 13, 22));
 #endif
       }
-      if (show_celestial) {
+      if (celestial_visible) {
         fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 23 : scale_min(27),
                            is_night ? UiColor(22, 26, 34) : UiColor(42, 36, 12));
       }
@@ -1030,15 +1047,20 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
   } else if (live_sky_drawn) {
     backdrop_active() = true;
-    double moon_cycle = 0.5;
-    if (is_night) {
-      compute_synodic_moon_phase(ctx.now.is_valid(), ctx.now.is_valid() ? ctx.now.timestamp : 0LL,
-                                 ws.moon_phase, moon_cycle, nullptr, nullptr);
-    }
     render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night, moon_cycle, cel_x, cel_y, true,
-                                    rs.hw_accel_x, rs.hw_accel_y, show_celestial);
+                                    rs.hw_accel_x, rs.hw_accel_y, celestial_visible);
+  } else if (bd_mode == BackdropMode::LiveWeatherSky) {
+    if (dns_known) {
+      render_neutral_day_night_sky_base(it, cx, cy, dns_night);
+    } else {
+      frame_base(it, ctx.col_bg);
+    }
   } else if (has_day_night_sky) {
-    render_static_day_night_sky_base(it, cx, cy, dns_night);
+    if (dns_known) {
+      render_static_day_night_sky_base(it, cx, cy, dns_night);
+    } else {
+      frame_base(it, ctx.col_bg);
+    }
   } else if (has_custom_wallpaper) {
     render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 0);
   } else {
@@ -1080,7 +1102,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     return;
   }
 
-  if (live_sky_drawn && show_celestial) {
+  if (live_sky_drawn && celestial_visible) {
     frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? scale_min(30) : scale_min(34),
                             WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, scale_s(10));
   }
@@ -1128,16 +1150,26 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const HomeActivityView view = resolve_home_activity_view(act_items, act_count, now_ms, ly.home_activity_two_line());
 
   if (rs.nav.wake_greeting_pending) {
-    rs.nav.wake_greeting_pending = false;
-    if (show_wake_greeting && ctx.now.is_valid() && !view.pinned) {
+    if (!show_wake_greeting || view.pinned) {
+      rs.nav.wake_greeting_pending = false;
+    } else if (ctx.now.is_valid()) {
+      rs.nav.wake_greeting_pending = false;
       wake_greeting_latched() = true;
       wake_greeting_start_ms() = (now_ms == 0U) ? 1U : now_ms;
+      const std::string greet_cond = weather_ready ? cond : std::string{};
+      const float greet_temp_f = weather_ready ? weather_temp_to_fahrenheit(ws.temperature, ws.temp_unit) : NAN;
+      wake_greeting_latched_text() =
+          resolve_wake_greeting(ctx.now.hour, ctx.now.minute, ctx.now.day_of_year, greet_cond, greet_temp_f);
+    } else if (now_ms >= 15000U) {
+      // Non-RTC cold-boot grace expired without valid time; avoid firing a late greeting.
+      rs.nav.wake_greeting_pending = false;
     }
   }
   if (wake_greeting_latched()) {
     const uint32_t el_chk = (now_ms >= wake_greeting_start_ms()) ? (now_ms - wake_greeting_start_ms()) : 0U;
     if (!show_wake_greeting || view.pinned || !ctx.now.is_valid() || el_chk >= kWakeGreetingTotalMs) {
       wake_greeting_latched() = false;
+      wake_greeting_latched_text() = nullptr;
     }
   }
   const uint32_t greet_el = (wake_greeting_latched() && now_ms >= wake_greeting_start_ms())
@@ -1287,8 +1319,13 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   if (greeting_active) {
-    const float greet_temp_f = weather_temp_to_fahrenheit(ws.temperature, ws.temp_unit);
-    const char *raw_greet = resolve_wake_greeting(ctx.now.hour, ctx.now.minute, ctx.now.day_of_year, cond, greet_temp_f);
+    const char *raw_greet = wake_greeting_latched_text();
+    if (raw_greet == nullptr) {
+      const std::string greet_cond = weather_ready ? cond : std::string{};
+      const float greet_temp_f = weather_ready ? weather_temp_to_fahrenheit(ws.temperature, ws.temp_unit) : NAN;
+      raw_greet = resolve_wake_greeting(ctx.now.hour, ctx.now.minute, ctx.now.day_of_year, greet_cond, greet_temp_f);
+      wake_greeting_latched_text() = raw_greet;
+    }
     const std::string fit_greet = fit_text_to_width_font(
         std::string(raw_greet), std::min(scale_x(340), safe_span(act_card_cy)), ctx.font_date);
     const int greet_y = act_card_cy - 2;

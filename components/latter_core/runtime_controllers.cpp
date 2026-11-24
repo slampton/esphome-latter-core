@@ -211,6 +211,8 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
   if (sv_dom == "area_context") {
     const auto &st = area_ctx_state();
+    const bool first_area_ctx = !area_ctx_primed_;
+    area_ctx_primed_ = true;
     const bool area_icon_changed = (st.area_icon != prev_area_icon_);
     prev_area_icon_ = st.area_icon;
     const bool ambient_light_changed = (st.area_ambient_light != prev_area_ambient_light_);
@@ -408,10 +410,10 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
       const int gp = r.nav.gui_page;
-      if (wallpaper_cleared || wallpaper_changed) {
+      if (wallpaper_cleared || wallpaper_changed || first_area_ctx) {
         eff.mark_dirty_full = true;
       }
-      if (wallpaper_cleared || wallpaper_changed || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
+      if (wallpaper_cleared || wallpaper_changed || first_area_ctx || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
           gp == PageId::PINNED || gp == PageId::CALENDAR || gp == PageId::CAMERAS || gp == PageId::WEATHER) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;
@@ -650,11 +652,13 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
     if (weather_state().sun_state != prev_sun_) {
       prev_sun_ = weather_state().sun_state;
       eff.sync_display_brightness = true;
+      eff.sync_display_brightness_smooth = (r.nav.display_power_state == 0);
       eff.mark_dirty_full = true;
     }
     eff.weather_sim_dirty = true;
     eff.reset_ambient_frame_ms = true;
     if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
+      eff.mark_dirty_full = true;
       eff.ensure_anim_poller = true;
       eff.schedule_disp_update = true;
     }

@@ -95,6 +95,7 @@ void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, boo
 std::string format_weather_title(const std::string &c_in);
 bool &night_meteor_epoch_initialized();
 bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms = 0);
+bool weather_condition_shows_celestial(std::string_view cond, bool is_night) noexcept;
 void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                                      const std::string &cond, bool is_night,
                                      double moon_cycle = 0.5,
@@ -103,6 +104,7 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
                                      float accel_x = 0.0f, float accel_y = 0.0f,
                                      bool show_celestial = true);
 void render_static_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night);
+void render_neutral_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night);
 void sky_base_cache_drop() noexcept;
 void weather_cloud_cache_drop() noexcept;
 void game_arena_drop() noexcept;

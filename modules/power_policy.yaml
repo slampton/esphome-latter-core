@@ -82,6 +82,9 @@ interval:
           // 10. Bedtime schedule edge evaluation, auto-exit forgotten Games (>3m untouched),
           // Battery Flashlight/Level/Camera (>5m untouched), and Return-to-Home idle navigation reset.
           auto now_bt = id(ha_time).now();
+          if (!now_bt.is_valid()) {
+            now_bt = id(sntp_time).now();
+          }
           if (now_bt.is_valid()) {
             const int bt_edge = latter_core::bedtime_schedule_tracker().evaluate_hour(
                 latter_core::persisted_prefs().bedtime_schedule,

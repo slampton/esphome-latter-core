@@ -331,6 +331,11 @@ inline void render_static_day_night_sky_base(esphome::display::Display &it, int 
   render_static_day_night_sky_base(surf, cx, cy, is_night);
 }
 
+inline void render_neutral_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night) {
+  Rgb565Surface surf = make_esphome_surface(it);
+  render_neutral_day_night_sky_base(surf, cx, cy, is_night);
+}
+
 template <typename DispT>
   requires(!std::is_pointer_v<DispT>)
 inline void schedule_disp_update(DispT *disp) {

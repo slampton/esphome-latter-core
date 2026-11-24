@@ -859,6 +859,16 @@ void test_ambient_light_brightness_d075() {
   const auto b_fb_day = resolve_active_brightness_target(p, "above_horizon", true, 12, -1, -1);
   LATTER_CHECK(b_fb_day.kind == ActiveBrightnessTargetKind::DAY && b_fb_day.pct == 90U);
 
+  // Cold-boot empty sun_state falls back to local RTC clock (D-085) instead of blinding daytime brightness at night.
+  const auto b_cold_night = resolve_active_brightness_target(p, "", true, 23, -1, -1);
+  LATTER_CHECK(b_cold_night.kind == ActiveBrightnessTargetKind::NIGHT && b_cold_night.pct == 20U);
+  const auto b_cold_day = resolve_active_brightness_target(p, "", true, 14, -1, -1);
+  LATTER_CHECK(b_cold_day.kind == ActiveBrightnessTargetKind::DAY && b_cold_day.pct == 90U);
+  p.auto_brightness_mode = static_cast<uint8_t>(AutoBrightnessMode::SunSynchronized);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 2).kind == ActiveBrightnessTargetKind::NIGHT);
+  LATTER_CHECK(resolve_active_brightness_target(p, "", true, 12).kind == ActiveBrightnessTargetKind::DAY);
+  p.auto_brightness_mode = static_cast<uint8_t>(AutoBrightnessMode::AmbientLight);
+
   // Inverted night_brightness > day_brightness configuration never inverts or underflows.
   PersistedDevicePrefs inv{};
   inv.day_brightness = 25;
@@ -1121,7 +1131,7 @@ void test_wave2_overhaul_contracts() {
   static_assert(static_cast<size_t>(PrefKey::COUNT) == 72U);
   static_assert(static_cast<uint8_t>(PrefKey::GLASS_STYLE) == 66U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_SHOW_BATTERY) == 71U);
-  static_assert(kHibernateSnapshotVersion == 1U);
+  static_assert(kHibernateSnapshotVersion == 2U);
   static_assert(kPersistedPrefsMinSize == offsetof(PersistedDevicePrefs, glass_style) + sizeof(PersistedDevicePrefs::glass_style));
 
   // 2. device_hello clean-boot byte ceiling (zero unchanged defaults dumped; compact RPC payload)

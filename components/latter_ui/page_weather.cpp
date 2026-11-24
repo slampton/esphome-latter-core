@@ -1431,7 +1431,6 @@ void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view co
   const bool is_fog_mist = (cond.find("fog") != std::string_view::npos ||
                             cond.find("mist") != std::string_view::npos ||
                             cond.find("haze") != std::string_view::npos);
-  const bool is_windy = (cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos);
   const bool is_clear_day = (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday"));
   const bool is_partly = (cond.find("partly") != std::string_view::npos ||
                           cond.find("mostlysunny") != std::string_view::npos ||
@@ -1492,9 +1491,9 @@ void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view co
   }
 
   if (is_clear_or_partly_night) render_night_starfield_dome(it, cx, cy, cel_cx, cel_cy, show_celestial);
-  if (show_celestial && cel_cx > 0 && cel_cy > 0) {
+  if (show_celestial && cel_cx > 0 && cel_cy > 0 && weather_condition_shows_celestial(cond, is_night)) {
     if (is_night) render_lunar_disc(it, cel_cx, cel_cy, LATTER_ROUND_DISPLAY ? 24 : scale_min(30), moon_cycle);
-    else if (is_clear_day || is_partly || is_windy || is_fog_mist) render_solar_orb_disc(it, cel_cx, cel_cy, is_fog_mist);
+    else render_solar_orb_disc(it, cel_cx, cel_cy, is_fog_mist);
   }
 
   const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
@@ -1728,10 +1727,45 @@ bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t l
   return (st.precip_alpha_scale > 0.001f) || !st.calm_frame_rendered;
 }
 
+bool weather_condition_shows_celestial(std::string_view cond, bool is_night) noexcept {
+  if (cond.empty() || cond == "neutral") return false;
+  const bool is_fog_mist = (cond.find("fog") != std::string_view::npos ||
+                            cond.find("mist") != std::string_view::npos ||
+                            cond.find("haze") != std::string_view::npos);
+  const bool is_windy = (cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos);
+  const bool is_clear_day = (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday"));
+  const bool is_partly = (cond.find("partly") != std::string_view::npos ||
+                          cond.find("mostlysunny") != std::string_view::npos ||
+                          cond.find("partlysunny") != std::string_view::npos);
+  const bool is_storm = (cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos);
+  const bool is_rain_precip = (cond.find("rain") != std::string_view::npos ||
+                               cond.find("pouring") != std::string_view::npos ||
+                               cond.find("drizzle") != std::string_view::npos);
+  const bool is_snow_precip = (cond.find("snow") != std::string_view::npos ||
+                               cond.find("sleet") != std::string_view::npos ||
+                               cond.find("hail") != std::string_view::npos);
+  const bool is_overcast_canopy =
+      ((cond.find("cloud") != std::string_view::npos || cond.find("overcast") != std::string_view::npos) && !is_partly) ||
+      is_rain_precip || is_snow_precip;
+  if (is_overcast_canopy || is_storm) return false;
+  if (is_night) {
+    const bool is_clear_or_partly_night =
+        (cond == "clear-night" || cond == "clearnight" || cond == "sunny" ||
+         cond == "clear" || cond == "clear-day" || cond == "clearday" || is_partly);
+    return is_clear_or_partly_night || is_windy || is_fog_mist;
+  }
+  return is_clear_day || is_partly || is_windy || is_fog_mist;
+}
+
 void render_static_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night) {
   backdrop_active() = true;
   blit_or_bake_sky_base(it, cx, cy, is_night ? std::string_view("clear-night") : std::string_view("sunny"),
                         is_night, 0.5, 0, 0, false);
+}
+
+void render_neutral_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night) {
+  backdrop_active() = true;
+  blit_or_bake_sky_base(it, cx, cy, std::string_view("neutral"), is_night, 0.5, 0, 0, false);
 }
 
 void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
@@ -2483,7 +2517,8 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         (!ac.wallpaper_url.empty() && !has_day_night_sky &&
          ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
          ctx.home_wallpaper_art.valid());
-    const bool dns_night = resolve_day_night_sky_is_night(ws.sun_state, now.is_valid(), now.hour);
+    const bool dns_known = has_known_day_night_phase(ws.sun_state, now.is_valid(), now.hour);
+    const bool dns_night = dns_known && resolve_day_night_sky_is_night(ws.sun_state, now.is_valid(), now.hour);
     const BackdropMode bd_mode = resolve_backdrop_mode(
         PageId::WEATHER, 0, prefs.weather_background, prefs.weather_app_background,
         sim_override_on, has_custom_wallpaper, has_day_night_sky);
@@ -2499,8 +2534,8 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                         sky_moon_cycle, 0, 0, true,
                                         rs.hw_accel_x, rs.hw_accel_y, false);
       } else if (!backdrop_active()) {
-        if (has_day_night_sky) {
-          render_static_day_night_sky_base(it, cx, cy, dns_night);
+        if (dns_known) {
+          render_neutral_day_night_sky_base(it, cx, cy, dns_night);
         } else if (has_custom_wallpaper) {
           render_page_wallpaper_base(it, ctx.home_wallpaper_art, true, cx, ctx.col_bg);
         } else {
@@ -2508,7 +2543,10 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         }
       }
     } else if (bd_mode == BackdropMode::DayNightSky) {
-      if (!backdrop_active()) render_static_day_night_sky_base(it, cx, cy, dns_night);
+      if (!backdrop_active()) {
+        if (dns_known) render_static_day_night_sky_base(it, cx, cy, dns_night);
+        else frame_base(it, ctx.col_bg);
+      }
     } else if (bd_mode == BackdropMode::CustomWallpaper) {
       if (!backdrop_active()) render_page_wallpaper_base(it, ctx.home_wallpaper_art, true, cx, ctx.col_bg);
     } else if (!backdrop_active()) {
@@ -2548,7 +2586,9 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     fast_circle_aa(it, deg_cx, deg_cy, deg_r, kChromeDegSilver, deg_th);
 
     const int cond_max_w = std::min({kMaxContentColW, safe_span(scale_y(182), 16), scale_x(340)});
-    const std::string cond_title = fit_text_to_width_font(format_weather_title(cond), cond_max_w, font_date);
+    const bool weather_syncing = (!sim_override_on && ws.rev == 0U && ws.epoch == 0U && cond.empty());
+    const std::string raw_cond_title = weather_syncing ? std::string("Syncing...") : format_weather_title(cond);
+    const std::string cond_title = fit_text_to_width_font(raw_cond_title, cond_max_w, font_date);
     ui::shadow_print(it, cx, scale_y(182), font_date, theme_secondary, UiTextAlign::CENTER, cond_title.c_str());
 
     const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);

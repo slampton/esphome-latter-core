@@ -550,8 +550,13 @@ void test_photo_frame_screensaver_day_night_sky_d067() {
 
   static_assert(is_day_night_sky_wallpaper_url("latter://day_night_sky"));
   static_assert(!is_day_night_sky_wallpaper_url("http://ha.local/api/latter/wallpaper/1"));
+  static_assert(!has_known_day_night_phase("", false, -1));
+  static_assert(has_known_day_night_phase("", true, 22));
+  static_assert(has_known_day_night_phase("below_horizon", false, -1));
   static_assert(resolve_day_night_sky_is_night("below_horizon", true, 12));
   static_assert(!resolve_day_night_sky_is_night("above_horizon", true, 23));
+  static_assert(resolve_day_night_sky_is_night("", true, 22));
+  static_assert(!resolve_day_night_sky_is_night("", true, 12));
 
   const uint32_t kSsSig = (1U << 3);
   const std::string url = "http://ha.local/api/latter/wallpaper/p1?mode=screensaver";

@@ -1049,6 +1049,7 @@ class V3DomainReducer {
   std::string prev_spk_name_{};
   std::string prev_art_{};
   bool prev_is_local_{false};
+  bool area_ctx_primed_{false};
   bool active_media_primed_{false};
   bool prev_default_playing_{false};
   int prev_vol_pct_{-1};

@@ -54,9 +54,14 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   if (!frame_base_state().painted) {
     if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
-      render_static_day_night_sky_base(
-          it, ctx.cx, ctx.cy,
-          resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
+      const auto &ws_sy = weather_state();
+      if (has_known_day_night_phase(ws_sy.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+        render_static_day_night_sky_base(
+            it, ctx.cx, ctx.cy,
+            resolve_day_night_sky_is_night(ws_sy.sun_state, ctx.now.is_valid(), ctx.now.hour));
+      } else {
+        frame_base(it, ctx.col_bg);
+      }
     } else {
       const bool has_wall = (!ac.wallpaper_url.empty() &&
                              ac.wallpaper_url == rs.music.loaded_wallpaper_url &&

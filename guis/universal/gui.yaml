@@ -231,11 +231,16 @@ display:
           weather_sim_active, has_wallpaper, has_day_night_sky,
           tools_full_bleed, ctx.music_fullscreen_art_opt == "None");
       const bool weather_sky_active = (bd_mode == latter_ui::BackdropMode::LiveWeatherSky);
+      const auto &ws_cad = latter_core::weather_state();
+      const bool weather_ready_cad =
+          weather_sim_active ||
+          (!std::isnan(ws_cad.temperature) && !ws_cad.condition.empty() &&
+           !ws_cad.sun_state.empty() && ws_cad.sun_state != "unknown" && ws_cad.sun_state != "unavailable");
       const uint32_t latest_input_ms = std::max(
           latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
       const bool motion_power_gui = rs.hw_usb_connected || rs.showcase.is_active(ctx.now_ms);
       const bool weather_sky_stepping_hint =
-          weather_sky_active &&
+          weather_sky_active && weather_ready_cad &&
           latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, true);
 
       const bool clock_sweep_hint =
@@ -331,9 +336,14 @@ display:
         if (cam_live_canvas) {
           latter_ui::frame_base_skip();
         } else if (bd_mode == latter_ui::BackdropMode::DayNightSky) {
-          const bool dns_night = latter_core::resolve_day_night_sky_is_night(
-              latter_core::weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour);
-          latter_ui::render_static_day_night_sky_base(it, ctx.cx, ctx.cy, dns_night);
+          const auto &ws_bd = latter_core::weather_state();
+          if (latter_core::has_known_day_night_phase(ws_bd.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+            const bool dns_night = latter_core::resolve_day_night_sky_is_night(
+                ws_bd.sun_state, ctx.now.is_valid(), ctx.now.hour);
+            latter_ui::render_static_day_night_sky_base(it, ctx.cx, ctx.cy, dns_night);
+          } else {
+            latter_ui::frame_base(it, ctx.col_bg);
+          }
         } else {
           const bool use_page_wallpaper = (bd_mode == latter_ui::BackdropMode::CustomWallpaper);
           if (rs.nav.gui_page != 5 || use_page_wallpaper) {

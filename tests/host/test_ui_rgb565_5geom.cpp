@@ -1116,6 +1116,182 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
   }
 }
 
+void test_additive_cold_boot_sky_and_celestial_d085() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Consistent Sun & Moon visibility across weather conditions (both hidden under overcast/rain/snow/storm)
+  LATTER_CHECK(weather_condition_shows_celestial("sunny", false));
+  LATTER_CHECK(weather_condition_shows_celestial("partlycloudy", false));
+  LATTER_CHECK(weather_condition_shows_celestial("windy", false));
+  LATTER_CHECK(weather_condition_shows_celestial("fog", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("cloudy", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("overcast", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("rainy", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("pouring", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("snowy", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("lightning-rainy", false));
+  LATTER_CHECK(!weather_condition_shows_celestial("neutral", false));
+
+  LATTER_CHECK(weather_condition_shows_celestial("clear-night", true));
+  LATTER_CHECK(weather_condition_shows_celestial("partlycloudy", true));
+  LATTER_CHECK(weather_condition_shows_celestial("windy", true));
+  LATTER_CHECK(weather_condition_shows_celestial("fog", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("cloudy", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("overcast", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("rainy", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("pouring", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("snowy", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("lightning-rainy", true));
+  LATTER_CHECK(!weather_condition_shows_celestial("neutral", true));
+
+  // 2. Pure-gradient pre-sync Home sky (no wisps, no stars, no Sun/Moon, no weather text/hitboxes)
+  {
+    HostSurfaceFixture fix{};
+    populate_rich_host_state(fix.ctx);
+    auto &rs = runtime_state();
+    auto &prefs = persisted_prefs();
+    auto &ws = weather_state();
+    auto &ac = area_ctx_state();
+    prefs.weather_background = true;
+    prefs.home_sun = true;
+    prefs.home_moon = true;
+    prefs.home_show_weather = true;
+    prefs.wake_greeting = true;
+    fix.ctx.home_weather_bg = true;
+    fix.ctx.home_sun_arc = true;
+    fix.ctx.home_moon_phase = true;
+    fix.ctx.home_wake_greeting = true;
+    timer_slots()[0].running = false;
+    sync_multi_timer_state();
+    media_state() = MediaState{};
+    ws = WeatherState{};
+    ac.wallpaper_url.clear();
+    rs.nav.gui_page = PageId::HOME;
+    rs.nav.home_subpage = 0;
+
+    // 2a. Non-RTC cold boot (!now.is_valid()): solid black backdrop (never flashes daytime blue at midnight)
+    //     and wake_greeting_pending stays armed during the 15 s boot grace window.
+    auto make_wall_time = [](uint16_t yr, uint8_t mo, uint8_t dom, uint8_t hr, uint8_t min, int64_t ts) {
+      UiWallTime wt{};
+      wt.year = yr;
+      wt.month = mo;
+      wt.day_of_month = dom;
+      wt.day_of_week = 3;
+      wt.day_of_year = 328;
+      wt.hour = hr;
+      wt.minute = min;
+      wt.second = 0;
+      wt.timestamp = ts;
+      return wt;
+    };
+    dismiss_wake_greeting();
+    rs.nav.wake_greeting_pending = true;
+    fix.ctx.now = UiWallTime{};
+    fix.ctx.now_ms = 2000U;
+    fix.fill(0x1234U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    LATTER_CHECK(!backdrop_active());
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) == nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO) == nullptr);
+    LATTER_CHECK(rs.nav.wake_greeting_pending);
+
+    // 2b. RTC / synced daytime cold boot (hour = 12, ws empty): pure day blue gradient, no celestial/weather hitboxes,
+    //     and wake greeting latches once (surviving live weather push without mutating mid-display).
+    fix.ctx.now = make_wall_time(2026, 11, 24, 12, 15, 1795551300LL);
+    fix.ctx.now_ms = 2500U;
+    fix.fill(0U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    LATTER_CHECK(backdrop_active());
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) == nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO) == nullptr);
+    LATTER_CHECK(!rs.nav.wake_greeting_pending);
+    LATTER_CHECK(is_wake_greeting_visible(2500U, true));
+
+    // 2c. Pure-gradient pre-sync night sky (hour = 23, ws empty): zero bright star pixels vs static Day & Night Sky.
+    auto decode_px_rgb = [](uint16_t hw_px, uint8_t &r, uint8_t &g, uint8_t &b) {
+      const uint16_t raw = decode_hw_rgb565_raw(hw_px);
+      r = static_cast<uint8_t>(((raw >> 11) & 0x1FU) << 3);
+      g = static_cast<uint8_t>(((raw >> 5) & 0x3FU) << 2);
+      b = static_cast<uint8_t>((raw & 0x1FU) << 3);
+    };
+    fix.ctx.now = make_wall_time(2026, 11, 24, 23, 5, 1795590300LL);
+    fix.fill(0U);
+    frame_base_begin();
+    render_neutral_day_night_sky_base(fix.surf, fix.ctx.cx, fix.ctx.cy, true);
+    int neutral_bright_px = 0;
+    for (uint16_t raw : fix.pixels) {
+      uint8_t r = 0, g = 0, b = 0;
+      decode_px_rgb(raw, r, g, b);
+      if (r > 40 || g > 55 || b > 75) ++neutral_bright_px;
+    }
+    LATTER_CHECK(neutral_bright_px == 0);
+
+    fix.fill(0U);
+    frame_base_begin();
+    render_static_day_night_sky_base(fix.surf, fix.ctx.cx, fix.ctx.cy, true);
+    int static_star_px = 0;
+    for (uint16_t raw : fix.pixels) {
+      uint8_t r = 0, g = 0, b = 0;
+      decode_px_rgb(raw, r, g, b);
+      if (r > 80 && g > 80 && b > 80) ++static_star_px;
+    }
+    LATTER_CHECK(static_star_px > 20);
+
+    // 2d. Live night overcast/rain hides Moon & omits HOME_QUICK_BTN; live clear-night with valid time shows Moon.
+    ws.epoch = 1U;
+    ws.rev = 1U;
+    ws.condition = "rainy";
+    ws.temperature = 58.0f;
+    ws.sun_state = "below_horizon";
+    ws.moon_phase = "first_quarter";
+    fix.ctx.now_ms = 3200U;
+    fix.fill(0U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) == nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO) != nullptr);
+    LATTER_CHECK(is_wake_greeting_visible(3200U, true));
+
+    // Clear night with unknown time & empty moon_phase -> never renders a bogus Full Moon or hitbox.
+    ws.condition = "clear-night";
+    ws.moon_phase.clear();
+    fix.ctx.now = UiWallTime{};
+    fix.fill(0U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) == nullptr);
+
+    // Clear night with valid time -> Moon renders and registers HOME_QUICK_BTN.
+    fix.ctx.now = make_wall_time(2026, 11, 24, 23, 5, 1795590300LL);
+    fix.fill(0U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) != nullptr);
+
+    // 3. Weather App pre-sync parity: neutral day/night base + Syncing... state with zero live weather.
+    ws = WeatherState{};
+    rs.nav.gui_page = PageId::WEATHER;
+    rs.nav.sky_weather_subpage = 0;
+    prefs.weather_app_background = true;
+    fix.fill(0U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_weather_page(fix.surf, fix.ctx);
+    LATTER_CHECK(backdrop_active());
+
+    dismiss_wake_greeting();
+    evict_registered_psram_caches();
+  }
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
@@ -1124,6 +1300,7 @@ void run_ui_rgb565_5geom_tests() {
   test_wcag_palette_and_surface_contrast_5geom();
   test_art_canvas_lut_and_dual_sink_parity_5geom();
   test_rotated_fallback_print_and_adaptive_glass_style();
+  test_additive_cold_boot_sky_and_celestial_d085();
 }
 
 }  // namespace latter_test

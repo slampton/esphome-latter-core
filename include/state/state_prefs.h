@@ -574,8 +574,8 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
         return {ActiveBrightnessTargetKind::AMBIENT, PrefKey::DAY_BRIGHTNESS,
                 static_cast<uint8_t>(pct), "Ambient"};
       }
-      // Missing/unavailable Area lux sensor: graceful Sun Synchronized fallback
-      const bool is_night = (sun_state == "below_horizon");
+      // Missing/unavailable Area lux sensor: graceful Sun Synchronized / local-clock fallback
+      const bool is_night = resolve_day_night_sky_is_night(sun_state, time_valid, hour);
       if (is_night) {
         return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
                 lo_bri, "Ambient · Night"};
@@ -584,7 +584,7 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
               hi_bri, "Ambient · Day"};
     }
     case AutoBrightnessMode::SunSynchronized: {
-      const bool is_night = (sun_state == "below_horizon");
+      const bool is_night = resolve_day_night_sky_is_night(sun_state, time_valid, hour);
       if (is_night) {
         return {ActiveBrightnessTargetKind::NIGHT, PrefKey::NIGHT_BRIGHTNESS,
                 lo_bri, "Auto · Night"};

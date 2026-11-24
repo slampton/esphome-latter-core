@@ -73,6 +73,25 @@ esphome:
               }
             }
             latter_core::hal_rtc_restore_system_clock(id(bus_internal));
+            {
+              auto now_boot = id(ha_time).now();
+              if (!now_boot.is_valid()) {
+                now_boot = id(sntp_time).now();
+              }
+              if (now_boot.is_valid()) {
+                const auto &p_bt = latter_core::persisted_prefs();
+                const int bt_edge = latter_core::bedtime_schedule_tracker().evaluate_hour(
+                    p_bt.bedtime_schedule, p_bt.bedtime_start_hour, p_bt.bedtime_end_hour, now_boot.hour);
+                if (bt_edge >= 0 && (bt_edge == 1) != p_bt.bedtime_active) {
+                  uint32_t bt_eff = 0U;
+                  (void)latter_core::record_local_pref_edit(
+                      latter_core::PrefKey::BEDTIME_ACTIVE, (bt_edge == 1) ? "1" : "0", millis(), bt_eff);
+                }
+              }
+              if (latter_core::persisted_prefs().bedtime_active) {
+                rs.nav.wake_greeting_pending = false;
+              }
+            }
             latter_core::parse_latter_remote_slots_summary(latter_core::remote_state().slots_summary);
             rs.remote.active_slot = latter_core::resolve_active_remote_slot(rs.remote.active_slot);
             rs.audio.run_boot_init();
@@ -449,7 +468,10 @@ button:
     icon: "mdi:restart"
     entity_category: config
     on_press:
-      - lambda: 'latter_core::flush_persisted_prefs_if_dirty();'
+      - lambda: |-
+          latter_core::flush_persisted_prefs_if_dirty();
+          latter_core::save_hibernate_snapshot();
+          latter_core::hal_rtc_sync_from_system_clock(id(bus_internal));
       - light.turn_off: display_brightness
       - component.update: disp1
       - delay: 150ms
@@ -592,6 +614,8 @@ script:
           rs.music.loaded_screensaver_photo_url = "";
           rs.music.screensaver_photo_failed = false;
           rs.alert.loaded_camera_url = "";
+          latter_core::flush_persisted_prefs_if_dirty();
+          latter_core::save_hibernate_snapshot();
           latter_core::handle_ota_begin(&id(disp1), rs);
       - script.execute: apply_power_policy
       - component.update: disp1
@@ -609,9 +633,30 @@ script:
     then:
       - lambda: |-
           latter_core::hal_rtc_sync_from_system_clock(id(bus_internal));
-          const auto &n = latter_core::runtime_state().nav;
-          if (n.display_power_state == 0 && !n.is_hibernating) {
+          auto now_ts = id(ha_time).now();
+          if (!now_ts.is_valid()) {
+            now_ts = id(sntp_time).now();
+          }
+          if (now_ts.is_valid()) {
+            const auto &p_bt = latter_core::persisted_prefs();
+            const int bt_edge = latter_core::bedtime_schedule_tracker().evaluate_hour(
+                p_bt.bedtime_schedule, p_bt.bedtime_start_hour, p_bt.bedtime_end_hour, now_ts.hour);
+            if (bt_edge >= 0 && (bt_edge == 1) != p_bt.bedtime_active) {
+              uint32_t bt_eff = 0U;
+              if (latter_core::record_local_pref_edit(
+                      latter_core::PrefKey::BEDTIME_ACTIVE, (bt_edge == 1) ? "1" : "0", millis(), bt_eff)) {
+                latter_core::device_prefs_state().last_effects |= bt_eff;
+                id(apply_device_prefs_effects).execute();
+              }
+            }
+          }
+          auto &n = latter_core::runtime_state().nav;
+          n.ambient_bri_ramp_pending = (n.display_power_state == 0);
+          id(sync_display_brightness).execute();
+          if (n.display_power_state != 2 && !n.is_hibernating) {
             latter_ui::record_ambient_frame_ms(0);
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
           }
 
   # Replay the 1 kB boot ringbuffer and any boot-fault warnings (plus [PROF:BOOT] when the profiler is on)

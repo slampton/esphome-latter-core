@@ -262,7 +262,8 @@ void test_shortcut_record_parsing_and_ui_sig() {
     LATTER_CHECK(out_e.confirm);
     LATTER_CHECK(out_e.badge_style == ShortcutBadgeStyle::INVERTED);
     LATTER_CHECK(out_e.accent == ShortcutAccent::ORANGE);
-    LATTER_CHECK(out_e.state == 1);
+    // D-085: snapshot unpacks entity shortcuts neutral (-1) until live HA shortcuts arrive.
+    LATTER_CHECK(out_e.state == -1);
   }
 }
 

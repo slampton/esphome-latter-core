@@ -149,6 +149,12 @@ inline constexpr bool is_day_night_sky_wallpaper_url(std::string_view url) noexc
   return url == kDayNightSkyWallpaperUrl;
 }
 
+inline constexpr bool has_known_day_night_phase(
+    std::string_view sun_state, bool time_valid, int hour) noexcept {
+  if (sun_state == "below_horizon" || sun_state == "above_horizon") return true;
+  return time_valid && hour >= 0 && hour <= 23;
+}
+
 inline constexpr bool resolve_day_night_sky_is_night(
     std::string_view sun_state, bool time_valid, int hour) noexcept {
   if (sun_state == "below_horizon") return true;

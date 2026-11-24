@@ -469,7 +469,7 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_core::HibernateSnapshot>);
   LATTER_CHECK(LATTER_CORE_REV == 2026112402L);
-  LATTER_CHECK(latter_core::kHibernateSnapshotVersion == 1U);
+  LATTER_CHECK(latter_core::kHibernateSnapshotVersion == 2U);
 
   latter_core::reset_hibernate_snapshot_for_test();
   latter_core::reset_all_v3_rev_guards();
@@ -486,6 +486,7 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   latter_core::area_ctx_state().epoch = 42U;
   latter_core::area_ctx_state().rev = 9U;
   latter_core::area_ctx_state().area_name = "Primary Suite";
+  latter_core::area_ctx_state().wallpaper_url = std::string(latter_core::kDayNightSkyWallpaperUrl);
   latter_core::weather_state().epoch = 42U;
   latter_core::weather_state().rev = 5U;
   latter_core::weather_state().condition = "partlycloudy";
@@ -500,10 +501,11 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   sc_save.dock_items.push_back(latter_core::ShortcutItem{
       latter_core::ShortcutKind::ROUTE, latter_core::RouteId::APP_PINNED, "app:pinned", "", "Pinned", "", false, -1});
   sc_save.dock_items.push_back(latter_core::ShortcutItem{
-      latter_core::ShortcutKind::ENTITY, latter_core::RouteId::NONE, "script.call_help", "turn_on",
-      "Call Jordan", "mdi:bell-ring", true, -1});
+      latter_core::ShortcutKind::ENTITY, latter_core::RouteId::NONE, "light.desk_lamp", "toggle",
+      "Desk Lamp", "mdi:desk-lamp", true, 1});
   sc_save.pinned_items.push_back(latter_core::ShortcutItem{
-      latter_core::ShortcutKind::ROUTE, latter_core::RouteId::WEATHER_MOON, "weather:moon", "", "Moon Phase", "", false, -1});
+      latter_core::ShortcutKind::ENTITY, latter_core::RouteId::NONE, "switch.fan", "toggle",
+      "Fan", "mdi:fan", false, 0});
   LATTER_CHECK(latter_core::save_hibernate_snapshot("PST8PDT,M3.2.0,M11.1.0/2"));
 
   latter_core::area_ctx_state() = latter_core::AreaContextState{};
@@ -518,11 +520,18 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_core::hydrated_posix_tz() == "PST8PDT,M3.2.0,M11.1.0/2");
   LATTER_CHECK(latter_core::shortcuts_state().dock_configured);
   LATTER_CHECK(latter_core::shortcuts_state().dock_items.size() == 2U);
-  LATTER_CHECK(latter_core::shortcuts_state().dock_items[1].target == "script.call_help");
+  LATTER_CHECK(latter_core::shortcuts_state().dock_items[1].target == "light.desk_lamp");
   LATTER_CHECK(latter_core::shortcuts_state().dock_items[1].confirm);
+  // Additive-only cold boot (D-085): entity shortcuts unpack neutral (-1), never stale ON/OFF.
+  LATTER_CHECK(latter_core::shortcuts_state().dock_items[1].state == -1);
   LATTER_CHECK(latter_core::shortcuts_state().pinned_items.size() == 1U);
+  LATTER_CHECK(latter_core::shortcuts_state().pinned_items[0].state == -1);
   LATTER_CHECK(latter_core::area_ctx_state().area_name == "Primary Suite");
-  LATTER_CHECK(latter_core::weather_state().condition == "partlycloudy");
+  LATTER_CHECK(latter_core::is_day_night_sky_wallpaper_url(latter_core::area_ctx_state().wallpaper_url));
+  // Additive-only cold boot (D-085): volatile weather/temp/sun never hydrate from snapshot.
+  LATTER_CHECK(latter_core::weather_state().condition.empty());
+  LATTER_CHECK(std::isnan(latter_core::weather_state().temperature));
+  LATTER_CHECK(latter_core::weather_state().sun_state.empty());
   LATTER_CHECK(latter_core::area_ctx_state().epoch == 0U && latter_core::area_ctx_state().rev == 0U);
   LATTER_CHECK(latter_core::weather_state().epoch == 0U && latter_core::weather_state().rev == 0U);
   LATTER_CHECK(latter_core::shortcuts_state().epoch == 0U && latter_core::shortcuts_state().rev == 0U);
@@ -530,12 +539,13 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   latter_core::shortcuts_state().live_received = true;
   latter_core::shortcuts_state().dock_items.clear();
   latter_core::area_ctx_state().area_name = "Office";
-  latter_core::weather_state().condition = "sunny";
-  latter_core::weather_state().temperature = 74.0f;
-  latter_core::weather_state().sun_state = "above_horizon";
+  latter_core::area_ctx_state().epoch = 1U;
+  latter_core::area_ctx_state().rev = 1U;
+  latter_core::area_ctx_state().wallpaper_url.clear();
   LATTER_CHECK(latter_core::load_hibernate_snapshot_if_cold());
   LATTER_CHECK(latter_core::shortcuts_state().dock_items.empty());
   LATTER_CHECK(latter_core::area_ctx_state().area_name == "Office");
+  LATTER_CHECK(latter_core::area_ctx_state().wallpaper_url.empty());
 
   latter_core::area_ctx_state() = latter_core::AreaContextState{};
   latter_core::weather_state() = latter_core::WeatherState{};
@@ -548,6 +558,7 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   ac_tok[static_cast<size_t>(latter_core::AreaCtxField::COVERS_OPEN)] = "3";
   LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(1, 1, ac_tok)));
   LATTER_CHECK(latter_core::area_ctx_state().area_name == "Kitchen" && latter_core::area_ctx_state().covers_open == 3);
+  LATTER_CHECK(latter_core::area_ctx_state().wallpaper_url.empty());
 
   std::vector<std::string> wx_tok(static_cast<size_t>(latter_core::WeatherField::COUNT), "");
   wx_tok[static_cast<size_t>(latter_core::WeatherField::CONDITION)] = "rainy";
@@ -557,13 +568,18 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(latter_core::weather_state().condition == "rainy");
 
   latter_core::area_ctx_state().area_name = std::string(80, 'y');
-  latter_core::weather_state().sun_state = "above_horizon";
+  latter_core::area_ctx_state().wallpaper_url = "http://ha.local/api/latter/wallpaper/1";
   LATTER_CHECK(latter_core::save_hibernate_snapshot("EST5EDT,M3.2.0,M11.1.0/2"));
   latter_core::area_ctx_state() = latter_core::AreaContextState{};
   latter_core::weather_state() = latter_core::WeatherState{};
   LATTER_CHECK(latter_core::load_hibernate_snapshot_if_cold());
   LATTER_CHECK(latter_core::area_ctx_state().area_name.size() == 47U);
-  LATTER_CHECK(latter_core::weather_state().sun_state == "above_horizon");
+  LATTER_CHECK(latter_core::area_ctx_state().wallpaper_url.empty());
+  LATTER_CHECK(latter_core::weather_state().sun_state.empty());
+
+  const std::string sys_core_yaml = read_repo_file("../../modules/system_core.yaml");
+  LATTER_CHECK(sys_core_yaml.find("latter_core::save_hibernate_snapshot();") != std::string::npos);
+  LATTER_CHECK(sys_core_yaml.find("bedtime_schedule_tracker().evaluate_hour(") != std::string::npos);
 
   {
     latter_core::PersistedDevicePrefs p_wall{};
