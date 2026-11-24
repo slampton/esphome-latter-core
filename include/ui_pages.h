@@ -76,8 +76,6 @@ void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, boo
 std::string format_weather_title(const std::string &c_in);
 bool &night_meteor_epoch_initialized();
 bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms = 0);
-bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms = 0);
-float weather_precip_alpha_scale();
 void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                                      const std::string &cond, bool is_night,
                                      double moon_cycle = 0.5,

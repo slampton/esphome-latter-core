@@ -386,7 +386,7 @@ def _parse_top_level_substitutions(text: str) -> dict[str, str]:
 def _resolve_api_reboot_timeout(
     base_text: str, board_text: str, dev_text: str
 ) -> str | None:
-    # Match ESPHome's real package merge order: hal (boards/*.yaml) -> latter_firmware (modules/base.yaml) -> devices/*.yaml.
+    # Match ESPHome's real package merge order: hal (boards/*.yaml) -> latter_firmware (modules/system_core.yaml) -> devices/*.yaml.
     subs: dict[str, str] = {}
     for src in (board_text, base_text, dev_text):
         subs.update(_parse_top_level_substitutions(src))
@@ -485,8 +485,8 @@ def _check_flagship_wiring(
                     f"LATTER_BLE_MINOR={scan['flags'].get('LATTER_BLE_MINOR')} "
                     "does not equal facts ble_minor"
                 )
-        base_mod = (REPO / "modules" / "base.yaml").read_text(encoding="utf-8")
-        eff_reboot = _resolve_api_reboot_timeout(base_mod, scan["text"], dev_text)
+        sys_core_mod = (REPO / "modules" / "system_core.yaml").read_text(encoding="utf-8")
+        eff_reboot = _resolve_api_reboot_timeout(sys_core_mod, scan["text"], dev_text)
         stationary_flag = str(facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY"))
         if stationary_flag == "0" and eff_reboot != "0s":
             err(

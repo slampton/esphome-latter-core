@@ -35,9 +35,6 @@ esphome:
             rs.hw_poll_pmu_1s = +[]() {
               id(hal_poll_pmu_1s).execute();
             };
-            rs.hw_wait_pwr_key_release = +[]() {
-              id(hal_wait_pwr_key_release).execute();
-            };
             rs.hw_pwr_key_pressed = +[]() -> bool {
               return id(pwr_key).state;
             };
@@ -72,17 +69,6 @@ script:
           // Mask all AXP2101 IRQs (no IRQ line is routed), apply board rail / TS / charger traits,
           // and log the resulting PMIC configuration for the board facts ledger.
           latter_core::hal_init_axp2101(id(bus_internal));
-
-  - id: hal_wait_pwr_key_release
-    mode: restart
-    then:
-      # Wait (up to 3 s) for the PWR key to be released so the AXP2101 PWRON input does not
-      # immediately re-power the PMIC after the hibernate power-off write.
-      - wait_until:
-          condition:
-            binary_sensor.is_off: pwr_key
-          timeout: 3s
-      - delay: 100ms
 
   - id: hal_poll_pmu_1s
     mode: restart

@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Active Media, Music Peer Views & Synced Lyrics State PODs
+// Latter Core: Active Media, Music Peer Views & Synced Lyrics State PODs
 // (include/state/state_media.h)
 // ==============================================================================
 
@@ -104,11 +104,13 @@ inline constexpr const char *music_repeat_mode_label(uint8_t mode) noexcept {
 
 inline std::string build_music_track_key(std::string_view title, std::string_view artist) {
   if (title.empty()) return "";
+  const std::string esc_title = v3_escape_subfield(title);
+  const std::string esc_artist = v3_escape_subfield(artist);
   std::string out;
-  out.reserve(title.size() + 1U + artist.size());
-  out.append(title);
+  out.reserve(esc_title.size() + 1U + esc_artist.size());
+  out.append(esc_title);
   out.push_back('|');
-  out.append(artist);
+  out.append(esc_artist);
   return out;
 }
 

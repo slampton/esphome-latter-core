@@ -4,9 +4,7 @@
 // ==============================================================================
 
 #include "ui_touch_engine.h"
-#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
-#endif
 #include "ui_touch_recognizer.h"
 #include "audio_router.h"
 #include "hal_display_lifecycle.h"
@@ -785,9 +783,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       else if (route_id == RouteId::TOOLS_COIN_FLIP) sub = ToolsSubpage::COIN_FLIP;
       rs.nav.tools_subpage = sub;
       if (sub == ToolsSubpage::FLASHLIGHT) rt.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
-#if LATTER_GUI_UNIVERSAL
       else if (sub == ToolsSubpage::CALCULATOR) reset_calculator_state();
-#endif
       rt.apply_power_policy();
       mark_dirty_full();
       rt.schedule_disp();
@@ -1518,7 +1514,6 @@ const HomeActivityItem *TouchGestureEngine::resolve_home_activities_(uint32_t no
   const HomeActivityItem *act_items = home_activity_rendered_items(out_count);
   if (out_count > 0) return act_items;
   HomeActivityItem *fallback_items = touch_activity_fallback_scratch();
-#if LATTER_GUI_UNIVERSAL
   const auto &ms_hm = media_state();
   const bool m_play = is_music_playing_effective(
       !ms_hm.is_local, rt.local_mp_playing, ms_hm.state, now_ms);
@@ -1533,12 +1528,6 @@ const HomeActivityItem *TouchGestureEngine::resolve_home_activities_(uint32_t no
       prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
       fallback_items, rt.time_hour, rt.time_minute, calendar_state().summary,
       rt.time_day_of_week);
-#else
-  (void)now_ms;
-  (void)rs;
-  (void)prefs;
-  (void)rt;
-#endif
   return fallback_items;
 }
 
@@ -1640,7 +1629,7 @@ bool TouchGestureEngine::handle_tap_home_area_(
       const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
       if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 && act_count > 0) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const bool quick_tap = (tx >= hit->x1 - scale_x(56));
+          const bool quick_tap = (tx >= hit->x1 - scale_s(56));
           TouchGestureEngine::handle_home_activity_action_(act_items, act_count, hit->param, quick_tap, now_rel, rs, prefs, rt_);
         }
       } else if (wid == WidgetId::NONE &&
@@ -3254,10 +3243,10 @@ bool TouchGestureEngine::handle_tap_time_cal_(
         if (opt_idx == 0) {
           rs.cal.draft_location.clear();
         } else {
-          std::string_view locs[kMaxCalendarLocations]{};
+          std::string locs[kMaxCalendarLocations]{};
           const int n_locs = parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
           if (opt_idx - 1 < n_locs) {
-            rs.cal.draft_location = std::string(locs[opt_idx - 1]);
+            rs.cal.draft_location = std::move(locs[opt_idx - 1]);
           }
         }
       } else if (rs.cal.drilldown == CalDrilldown::PICK_CALENDAR) {
@@ -4303,18 +4292,11 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
 
   if (sub == ToolsSubpage::CALCULATOR) {
     if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
-#if LATTER_GUI_UNIVERSAL
       reset_calculator_state();
-#endif
       exit_tool_subpage(false);
     } else if (wid >= WidgetId::CALC_KEY_BASE && wid < WidgetId::CALC_KEY_BASE + 20 &&
                touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
-#if LATTER_GUI_UNIVERSAL
       handle_calculator_keypad_tap(tx, ty);
-#else
-      (void)tx;
-      (void)ty;
-#endif
       rt.schedule_disp();
     }
     return true;
@@ -4582,9 +4564,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
       if (target_sub > 0) {
         rs.nav.tools_subpage = target_sub;
         if (target_sub == ToolsSubpage::FLASHLIGHT) rt_.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
-#if LATTER_GUI_UNIVERSAL
         else if (target_sub == ToolsSubpage::CALCULATOR) reset_calculator_state();
-#endif
         rt_.apply_power_policy();
         mark_dirty_full();
         rt_.schedule_disp();

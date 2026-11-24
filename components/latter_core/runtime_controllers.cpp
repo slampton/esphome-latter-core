@@ -996,7 +996,6 @@ void reset_runtime_state(bool preserve_hooks) {
   const auto saved_boot_chk = rt.hw_boot_battery_check;
   const auto saved_init_pmu = rt.hw_init_pmu;
   const auto saved_poll_pmu = rt.hw_poll_pmu_1s;
-  const auto saved_wait_key = rt.hw_wait_pwr_key_release;
   const auto saved_key_pressed = rt.hw_pwr_key_pressed;
   const auto saved_upd_batt = rt.hw_update_batt_level;
   const auto saved_imu_pm = rt.hw_set_imu_power_mode;
@@ -1011,18 +1010,12 @@ void reset_runtime_state(bool preserve_hooks) {
   const auto saved_mot_poll = rt.on_motion_poller_changed;
   const auto saved_wom_wake = rt.on_imu_wom_wake;
   const auto saved_audio = rt.audio;
-  const auto saved_on_conn = rt.on_ha_client_connected;
-  const auto saved_on_disc = rt.on_ha_client_disconnected;
-  const auto saved_on_push = rt.on_v3_domain_pushed;
-  const auto saved_on_cmd = rt.on_device_command;
-  const auto saved_on_hello = rt.on_hello_sent;
 
   rt = DeviceRuntimeState{};
   if (preserve_hooks) {
     rt.hw_boot_battery_check = saved_boot_chk;
     rt.hw_init_pmu = saved_init_pmu;
     rt.hw_poll_pmu_1s = saved_poll_pmu;
-    rt.hw_wait_pwr_key_release = saved_wait_key;
     rt.hw_pwr_key_pressed = saved_key_pressed;
     rt.hw_update_batt_level = saved_upd_batt;
     rt.hw_set_imu_power_mode = saved_imu_pm;
@@ -1037,11 +1030,6 @@ void reset_runtime_state(bool preserve_hooks) {
     rt.on_motion_poller_changed = saved_mot_poll;
     rt.on_imu_wom_wake = saved_wom_wake;
     rt.audio = saved_audio;
-    rt.on_ha_client_connected = saved_on_conn;
-    rt.on_ha_client_disconnected = saved_on_disc;
-    rt.on_v3_domain_pushed = saved_on_push;
-    rt.on_device_command = saved_on_cmd;
-    rt.on_hello_sent = saved_on_hello;
   }
 
   link_state() = LinkState{};

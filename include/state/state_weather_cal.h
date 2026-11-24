@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Weather Forecast, Civil Date Math & PSRAM Calendar Store
+// Latter Core: Weather Forecast, Civil Date Math & PSRAM Calendar Store
 // (include/state/state_weather_cal.h)
 // ==============================================================================
 
@@ -107,9 +107,9 @@ bool parse_v3_weather_payload(std::string_view payload, WeatherState &st = weath
 bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st = calendar_state());
 
 struct CalendarRecord {
-  std::string_view time;
-  std::string_view title;
-  std::string_view location;
+  std::string time;
+  std::string title;
+  std::string location;
   bool all_day = false;
 };
 
@@ -123,9 +123,9 @@ inline size_t parse_calendar_records(std::string_view summary, CalendarRecord *o
   for (size_t i = 0; i < n; i++) {
     std::string_view f[4];
     if (v3_split_fields(recs[i], f, 4, '|') != 4) continue;
-    out[count].time = f[0];
-    out[count].title = f[1];
-    out[count].location = f[2];
+    out[count].time = v3_unescape_subfield(f[0]);
+    out[count].title = v3_unescape_subfield(f[1]);
+    out[count].location = v3_unescape_subfield(f[2]);
     out[count].all_day = (f[3] == "1");
     count++;
   }
@@ -293,8 +293,8 @@ int collect_writable_calendar_sources(std::string_view raw,
                                       int *out_source_indices = nullptr,
                                       int max_out = kMaxCalendarSources) noexcept;
 int parse_calendar_locations_catalog(std::string_view raw,
-                                     std::string_view *out,
-                                     int max_out = kMaxCalendarLocations) noexcept;
+                                     std::string *out,
+                                     int max_out = kMaxCalendarLocations);
 
 struct CalendarWindowEvent {
   int32_t start_ymd = 0;    // YYYYMMDD local start date

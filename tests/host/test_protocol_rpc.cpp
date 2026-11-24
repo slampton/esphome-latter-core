@@ -594,13 +594,166 @@ void test_sram_psram_budget_and_http_stall_guards() {
       "../../modules/power_policy.yaml",
       "../../modules/sleep_lifecycle.yaml",
   });
-  const std::string base_yaml = read_repo_file("../../modules/base.yaml");
+  const std::string sys_core_yaml = read_repo_file("../../modules/system_core.yaml");
   LATTER_CHECK(wid_src.find("sample_surface ? sample_glass_mean(") != std::string::npos);
   LATTER_CHECK(pm_yaml.find("defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)") != std::string::npos);
-  LATTER_CHECK(base_yaml.find("update_interval: 300s") == std::string::npos);
+  LATTER_CHECK(sys_core_yaml.find("update_interval: 300s") == std::string::npos);
   LATTER_CHECK(wth_src.find("art_canvas_drop_all()") != std::string::npos);
   LATTER_CHECK(dp_yaml.find("timeout: 15s") == std::string::npos);
   LATTER_CHECK(dp_yaml.find("timeout: 4s") != std::string::npos);
+}
+
+void test_wave2_v3_wire_escaping_and_base_fold() {
+  using namespace latter_core;
+
+  // 1. v3_escape_subfield / v3_unescape_subfield exact round-trip for \, |, ;
+  {
+    const std::string raw = "A\\B|C;D\\\\|;";
+    const std::string esc = v3_escape_subfield(raw);
+    LATTER_CHECK(esc == "A\\\\B\\pC\\sD\\\\\\\\\\p\\s");
+    LATTER_CHECK(v3_unescape_subfield(esc) == raw);
+    LATTER_CHECK(v3_escape_subfield("").empty());
+    LATTER_CHECK(v3_unescape_subfield("").empty());
+  }
+
+  // 2. parse_calendar_records(): unescapes time, summary/title, and location subfields
+  {
+    const std::string wire =
+        std::string("TODAY 09:00\\s PDT|Q1 \\p Review \\s Ops|Suite \\\\A\\p1|0") +
+        kProtocolRecordSep +
+        "TOMORROW|1:1 \\s Sync|HQ\\\\2\\sWest|1";
+    CalendarRecord recs[4]{};
+    const size_t n = parse_calendar_records(wire, recs, 4);
+    LATTER_CHECK(n == 2U);
+    LATTER_CHECK(recs[0].time == "TODAY 09:00; PDT");
+    LATTER_CHECK(recs[0].title == "Q1 | Review ; Ops");
+    LATTER_CHECK(recs[0].location == "Suite \\A|1");
+    LATTER_CHECK(!recs[0].all_day);
+    LATTER_CHECK(recs[1].time == "TOMORROW");
+    LATTER_CHECK(recs[1].title == "1:1 ; Sync");
+    LATTER_CHECK(recs[1].location == "HQ\\2;West");
+    LATTER_CHECK(recs[1].all_day);
+  }
+
+  // 3. parse_broadcast_phrases(): unescapes BEFORE truncating to 64 bytes (escaped input > 64 B!)
+  {
+    const std::string long_escaped = std::string(60U, 'a') + "\\s\\s\\s\\s";  // 68 wire bytes -> 64 raw bytes
+    LATTER_CHECK(long_escaped.size() == 68U);
+    const std::string wire =
+        std::string("Dinner\\s kids\\p now \\\\ home") +
+        kProtocolRecordSep + long_escaped +
+        kProtocolRecordSep + std::string(70U, 'b');
+    std::vector<std::string> phrases;
+    const int n = parse_broadcast_phrases(wire, phrases);
+    LATTER_CHECK(n == 3);
+    LATTER_CHECK(phrases[0] == "Dinner; kids| now \\ home");
+    LATTER_CHECK(phrases[1].size() == 64U);
+    LATTER_CHECK(phrases[1] == std::string(60U, 'a') + ";;;;");
+    LATTER_CHECK(phrases[2].size() == 64U);
+    LATTER_CHECK(phrases[2] == std::string(64U, 'b'));
+  }
+
+  // 4. parse_calendar_locations_catalog(): unescapes \, |, ; in every entry
+  {
+    const std::string wire =
+        std::string("Office \\s East") + kProtocolRecordSep +
+        "Lab \\p B" + kProtocolRecordSep +
+        "Home \\\\ HQ";
+    std::string locs[4];
+    const size_t n = parse_calendar_locations_catalog(wire, locs, 4);
+    LATTER_CHECK(n == 3U);
+    LATTER_CHECK(locs[0] == "Office ; East");
+    LATTER_CHECK(locs[1] == "Lab | B");
+    LATTER_CHECK(locs[2] == "Home \\ HQ");
+  }
+
+  // 5. build_music_track_key() & emit_music_lyrics_fetch(): escape title/artist symmetrically with HA lyrics.py
+  {
+    const std::string title = "Run | Hide; Go\\Now";
+    const std::string artist = "A|B;C\\D";
+    const std::string key = build_music_track_key(title, artist);
+    LATTER_CHECK(key == "Run \\p Hide\\s Go\\\\Now|A\\pB\\sC\\\\D");
+    std::string_view parts[3];
+    LATTER_CHECK(v3_split_fields(key, parts, 3, '|') == 2U);
+    LATTER_CHECK(v3_unescape_subfield(parts[0]) == title);
+    LATTER_CHECK(v3_unescape_subfield(parts[1]) == artist);
+
+    media_state() = MediaState{};
+    media_state().title = title;
+    media_state().artist = artist;
+    MockRpcOutbox rpc_box{};
+    latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+    const int req_id = emit_music_lyrics_fetch("", "media_player.desk", 1500U, &rpc_box);
+    LATTER_CHECK(req_id > 0 && !rpc_box.published.empty());
+    std::string joined;
+    for (const auto &f : rpc_box.published) joined += f;
+    LATTER_CHECK(joined.find("\"mode\":\"lyrics_fetch\"") != std::string::npos);
+    // JSON-escaped form of "Run \p Hide\s Go\\Now|A\pB\sC\\D"
+    LATTER_CHECK(joined.find("Run \\\\p Hide\\\\s Go\\\\\\\\Now|A\\\\pB\\\\sC\\\\\\\\D") != std::string::npos);
+  }
+
+  // 6. collect_active_world_clocks(): unescapes cols[1] before matching custom_lbl
+  {
+    PersistedDevicePrefs p{};
+    p.show_utc_clock = false;
+    std::strncpy(p.world_clocks_spec,
+                 "HQ\\West|America/Los_Angeles;Other|America/Los_Angeles",
+                 sizeof(p.world_clocks_spec) - 1U);
+    AreaContextState ac{};
+    ac.world_clocks_summary =
+        "America/Los_Angeles|Other|PST|-480|0;America/Los_Angeles|HQ\\\\West|PDT|-420|1";
+    WorldClockEntry entries[kMaxWorldClocks + 1]{};
+    const int n = collect_active_world_clocks(p, ac, entries);
+    LATTER_CHECK(n == 2);
+    LATTER_CHECK(entries[0].city == "HQ\\West");
+    LATTER_CHECK(entries[0].abbr == "PDT");
+    LATTER_CHECK(entries[0].utc_offset_min == -420);
+    LATTER_CHECK(entries[0].is_dst);
+    LATTER_CHECK(entries[1].city == "Other");
+    LATTER_CHECK(entries[1].abbr == "PST");
+    LATTER_CHECK(entries[1].utc_offset_min == -480);
+    LATTER_CHECK(!entries[1].is_dst);
+  }
+
+  // 7. parse_cameras_records(): unescapes f[4] (unlock_entity) alongside entity_id/name/area_id
+  {
+    const std::string wire =
+        std::string("camera.front\\sdoor|Front \\p Entry|area\\\\foyer|0x3F|lock.front\\sdoor\\p1\\\\a") +
+        kProtocolRecordSep +
+        "camera.back|Back Yard|backyard|0x05|lock.back_gate";
+    CameraRecord cams[4]{};
+    const int n = parse_cameras_records(wire, cams, 4);
+    LATTER_CHECK(n == 2);
+    LATTER_CHECK(cams[0].entity_id == "camera.front;door");
+    LATTER_CHECK(cams[0].name == "Front | Entry");
+    LATTER_CHECK(cams[0].area_id == "area\\foyer");
+    LATTER_CHECK(cams[0].caps == 0x3FU);
+    LATTER_CHECK(cams[0].unlock_entity == "lock.front;door|1\\a");
+    LATTER_CHECK(cams[0].has_unlock() && cams[0].unlock_is_lock());
+    LATTER_CHECK(cams[1].unlock_entity == "lock.back_gate");
+  }
+
+  // 8. modules/base.yaml fold & removed hook pointers / dead code source-level invariants
+  {
+    const std::string sys_core = read_repo_file("../../modules/system_core.yaml");
+    const std::string sys_sync = read_repo_file("../../modules/system_ui_sync.yaml");
+    const std::string pmu_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+    LATTER_CHECK(sys_core.find("LATTER_YAML_REV = 2026112401L") != std::string::npos);
+    LATTER_CHECK(sys_core.find("base.yaml") == std::string::npos);
+    LATTER_CHECK(sys_core.find("send_device_hello") != std::string::npos);
+    LATTER_CHECK(sys_core.find("latter_rpc_outbox") != std::string::npos);
+    LATTER_CHECK(sys_core.find("on_ha_client_connected") == std::string::npos);
+    LATTER_CHECK(sys_core.find("on_v3_domain_pushed") == std::string::npos);
+    LATTER_CHECK(sys_core.find("on_device_command") == std::string::npos);
+    LATTER_CHECK(sys_core.find("on_hello_sent") == std::string::npos);
+    LATTER_CHECK(sys_sync.find("on_v3_domain_pushed") == std::string::npos);
+    LATTER_CHECK(sys_sync.find("on_device_command") == std::string::npos);
+    LATTER_CHECK(sys_sync.find("STOP_HA_MUSIC") == std::string::npos);
+    LATTER_CHECK(sys_sync.find("media_stop_playback") == std::string::npos);
+    LATTER_CHECK(sys_sync.find("apply_device_ui_command_effects") != std::string::npos);
+    LATTER_CHECK(pmu_yaml.find("hw_wait_pwr_key_release") == std::string::npos);
+    LATTER_CHECK(pmu_yaml.find("hal_wait_pwr_key_release") == std::string::npos);
+  }
 }
 
 }  // namespace
@@ -610,6 +763,7 @@ void run_protocol_rpc_tests() {
   test_v3_domain_reducer_and_timer_alarm();
   test_phase4_security_dnd_hit_targets_and_iso_tz();
   test_sram_psram_budget_and_http_stall_guards();
+  test_wave2_v3_wire_escaping_and_base_fold();
 }
 
 }  // namespace latter_test

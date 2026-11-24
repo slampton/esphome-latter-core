@@ -240,31 +240,6 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
         ),
     ),
     (
-        "TOOLKIT_ONLY_ESP32",
-        (
-            "USE_ESP32",
-            "ESP_PLATFORM",
-            "USE_I2C",
-            "USE_API",
-            "USE_WIFI",
-            "USE_FONT",
-            "USE_VOICE_ASSISTANT",
-            "USE_MICRO_WAKE_WORD",
-            "USE_MICROPHONE",
-            "CONFIG_IDF_TARGET_ESP32S3=1",
-            "LATTER_SCREEN_W=466",
-            "LATTER_SCREEN_H=466",
-            "LATTER_PANEL_PPI=266",
-            "LATTER_ROUND_DISPLAY=1",
-            "LATTER_GUI_UNIVERSAL=0",
-            "LATTER_HAS_BATTERY=1",
-            "LATTER_BATTERY_MAH=500",
-            "LATTER_HAS_IMU=1",
-            "LATTER_HAS_RTC=0",
-            "LATTER_IS_STATIONARY=0",
-        ),
-    ),
-    (
         "TOUCHLESS_AUDIOLESS_ESP32",
         (
             "USE_ESP32",
@@ -290,21 +265,6 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "LATTER_HAS_HW_JPEG=0",
         ),
     ),
-)
-
-UI_TOOLKIT_ONLY_TUS: Final[frozenset[str]] = frozenset(
-    {
-        "hit_table.cpp",
-        "ui_gfx.cpp",
-        "ui_widgets.cpp",
-        "ui_compositor.cpp",
-        "overlay_notification.cpp",
-        "overlay_quick_actions.cpp",
-        "overlay_takeover.cpp",
-        "overlay_voice_assistant.cpp",
-        "touch_engine.cpp",
-        "touch_dispatch.cpp",
-    }
 )
 
 CORE_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
@@ -638,10 +598,7 @@ def _submit_gpp_syntax_and_beacon_tasks(
     has_esp_lam = write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
     for cfg_lbl, defs in UI_TRAIT_MATRICES:
         # ui_mdi.cpp only branches on USE_ESP32 (zero geometry #ifdefs); syntax-check it once on S3_ESP32.
-        if cfg_lbl == "TOOLKIT_ONLY_ESP32":
-            matrix_ui_cpps = [p for p in geom_ui_cpps if p.name in UI_TOOLKIT_ONLY_TUS]
-            extra_tus = []
-        elif cfg_lbl == "TOUCHLESS_AUDIOLESS_ESP32":
+        if cfg_lbl == "TOUCHLESS_AUDIOLESS_ESP32":
             matrix_ui_cpps = geom_ui_cpps
             extra_tus = []
         else:
@@ -835,10 +792,7 @@ def _append_msvc_syntax_and_beacon_lines(td_path: Path, bat_lines: list[str]) ->
         has_esp_lam = write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
         for cfg_lbl, defs in UI_TRAIT_MATRICES:
             # ui_mdi.cpp only branches on USE_ESP32 (zero geometry #ifdefs); syntax-check it once on S3_ESP32.
-            if cfg_lbl == "TOOLKIT_ONLY_ESP32":
-                matrix_ui_cpps = [p for p in geom_ui_cpps if p.name in UI_TOOLKIT_ONLY_TUS]
-                extra_tus = []
-            elif cfg_lbl == "TOUCHLESS_AUDIOLESS_ESP32":
+            if cfg_lbl == "TOUCHLESS_AUDIOLESS_ESP32":
                 matrix_ui_cpps = geom_ui_cpps
                 extra_tus = []
             else:

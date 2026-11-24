@@ -468,7 +468,7 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_core::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_CORE_REV == 2026112303L);
+  LATTER_CHECK(LATTER_CORE_REV == 2026112401L);
   LATTER_CHECK(latter_core::kHibernateSnapshotVersion == 1U);
 
   latter_core::reset_hibernate_snapshot_for_test();
@@ -1080,6 +1080,7 @@ void test_profiler_timer_and_logging_policy() {
 
   // Source-level logging & battery-safe telemetry invariants.
   const std::string prof_h = read_repo_file("../../include/latter_prof.h");
+  const std::string disp_only_yaml = read_repo_file("../../modules/latter_display_only_firmware.yaml");
   const std::string disp_fw_yaml = read_repo_file("../../modules/latter_display_firmware.yaml");
   const std::string sys_core_yaml = read_repo_file("../../modules/system_core.yaml");
   const std::string sys_sync_yaml = read_repo_file("../../modules/system_ui_sync.yaml");
@@ -1091,8 +1092,11 @@ void test_profiler_timer_and_logging_policy() {
   LATTER_CHECK(prof_h.find("log_heap_summary()") != std::string::npos);
   LATTER_CHECK(prof_h.find("log_memory_report") == std::string::npos);
   LATTER_CHECK(prof_h.find("[PROF:TASK]") == std::string::npos);
-  LATTER_CHECK(disp_fw_yaml.find("boot_log_buffer_size: 1kB") != std::string::npos);
-  LATTER_CHECK(disp_fw_yaml.find("PROF: INFO") == std::string::npos);
+  LATTER_CHECK(disp_only_yaml.find("boot_log_buffer_size: 1kB") != std::string::npos);
+  LATTER_CHECK(disp_only_yaml.find("PROF: INFO") == std::string::npos);
+  LATTER_CHECK(disp_fw_yaml.find("!include latter_display_only_firmware.yaml") != std::string::npos);
+  LATTER_CHECK(disp_fw_yaml.find("logger:") == std::string::npos);
+  LATTER_CHECK(disp_fw_yaml.find("safe_mode:") == std::string::npos);
   LATTER_CHECK(sys_sync_yaml.find("profiler_start(") != std::string::npos);
   LATTER_CHECK(sys_sync_yaml.find("log_heap_summary()") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("profiler_is_expired(") != std::string::npos);

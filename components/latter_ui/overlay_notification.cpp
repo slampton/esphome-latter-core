@@ -1,7 +1,5 @@
 #include "ui_compositor.h"
-#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
-#endif
 #include "hal_video_stream.h"
 
 #include <algorithm>
@@ -64,7 +62,6 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     }
 
     bool drew_live = false;
-#if LATTER_GUI_UNIVERSAL
     const uint16_t *v_px = nullptr;
     int v_w = 0, v_h = 0;
     if (video_client().acquire_frame(v_px, v_w, v_h)) {
@@ -79,10 +76,6 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     if (!drew_live) {
       render_camera_video_placeholder(it, ctx, vp, nullptr, "Connecting live video...", accent_c);
     }
-#else
-    (void)drew_live;
-    fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, st.col_black);
-#endif
 
     const UiColor ring_c = (is_crit && !pulse) ? ui::chrome_danger_bg() : accent_c;
     render_bezel_alert_border(it, cx, cy, ring_c);
@@ -95,9 +88,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
       const int ptt_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 62);
       const int ptt_top = std::max(1, ptt_y - ly.min_hit_px() / 2 - scale_y(8));
       frame_hits().add_rect(0, 0, SCREEN_W, ptt_top, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
-#if LATTER_GUI_UNIVERSAL
       render_doorbell_ptt_banner(it, ctx, ptt_y);
-#endif
       return;
     }
 
@@ -182,7 +173,6 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     }
     const CameraRect snap_vp{cx - snap_w / 2, snap_top, snap_w, snap_h};
 
-#if LATTER_GUI_UNIVERSAL
     if (cam_ready) {
       blit_rgb565_fitted_frame(it, ctx.camera_snapshot_art.data,
                                ctx.camera_snapshot_art.width, ctx.camera_snapshot_art.height,
@@ -190,10 +180,6 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     } else {
       render_camera_video_placeholder(it, ctx, snap_vp, nullptr, "Loading camera snapshot...", accent_c);
     }
-#else
-    (void)cam_ready;
-    fill_rect_row_major(it, snap_vp.x0, snap_vp.y0, snap_vp.w, snap_vp.h, st.col_black);
-#endif
 
     render_bezel_alert_border(it, cx, cy, ring_c);
     render_page_header(it, cx, fit_title, ctx.font_small, st.col_white);

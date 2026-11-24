@@ -34,7 +34,7 @@ namespace latter_core {
 // ------------------------------------------------------------------------------
 
 inline constexpr size_t kMaxJpegBytes = LATTER_HAS_HW_JPEG ? (192U * 1024U) : (96U * 1024U);
-inline constexpr uint16_t kVideoMaxViewportDim = LATTER_HAS_HW_JPEG ? 768U : 512U;
+// kVideoMaxViewportDim (768U with HW JPEG, 512U otherwise) is canonically exported by hal_manifest.h.
 inline constexpr uint32_t kVideoHttpConnectTimeoutMs = 8000U;
 inline constexpr uint32_t kVideoHttpReadPollMs = 150U;
 inline constexpr uint32_t kVideoStreamStallTimeoutMs = 4000U;

@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Timers, Stopwatch, Alarms & World Clock Catalog/Codec
+// Latter Core: Timers, Stopwatch, Alarms & World Clock Catalog/Codec
 // (include/state/state_time_alarms.h)
 // ==============================================================================
 
@@ -354,8 +354,9 @@ inline int collect_active_world_clocks(const PersistedDevicePrefs &p,
     for (size_t r = 0; r < s_cnt; ++r) {
       if (used_rec[r]) continue;
       std::string_view cols[5];
-      if (v3_split_fields(summary_recs[r], cols, 5, '|') == 5 && cols[0] == iana) {
-        if (cols[1] == custom_lbl) {
+      if (v3_split_fields(summary_recs[r], cols, 5, '|') == 5 &&
+          v3_unescape_subfield(cols[0]) == iana) {
+        if (v3_unescape_subfield(cols[1]) == custom_lbl) {
           for (int c = 0; c < 5; ++c) matched_cols[c] = cols[c];
           match_r = static_cast<int>(r);
           break;

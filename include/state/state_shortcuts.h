@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: App Dock & Pinned Shortcuts State PODs
+// Latter Core: App Dock & Pinned Shortcuts State PODs
 // (include/state/state_shortcuts.h)
 // ==============================================================================
 

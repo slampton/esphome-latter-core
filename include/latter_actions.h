@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Typed Outbound Protocol v3 RPC Action Helpers (latter_actions.h)
+// Latter Core: Typed Outbound Protocol v3 RPC Action Helpers (latter_actions.h)
 // ==============================================================================
 // Provides typed C++ wrappers around latter_rpc::emit(...) for all 20 outbound
 // RPC methods declared in protocol/latter_v3.json so C++ touch/UI handlers and
@@ -122,6 +122,8 @@ inline int emit_music_browse(std::string_view mode,
   return req_id;
 }
 
+// Emits `music_browse` (mode=lyrics_fetch). `track_key` must use `build_music_track_key()`
+// escaping (`\`/`|`/; -> `\\`/`\p`/`\s`), symmetric with HA `media/lyrics.py` decoding.
 template <typename OutboxT = std::nullptr_t>
 inline int emit_music_lyrics_fetch(std::string_view track_key = "",
                                    std::string_view speaker = "",

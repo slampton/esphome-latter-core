@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Complete DeviceRuntimeState POD Umbrella & Controller APIs
+// Latter Core: Complete DeviceRuntimeState POD Umbrella & Controller APIs
 // (include/state/device_runtime_state.h)
 // ==============================================================================
 
@@ -247,7 +247,6 @@ struct DeviceRuntimeState {
   void (*hw_boot_battery_check)() = nullptr;
   void (*hw_init_pmu)() = nullptr;
   void (*hw_poll_pmu_1s)() = nullptr;
-  void (*hw_wait_pwr_key_release)() = nullptr;
   bool (*hw_pwr_key_pressed)() = nullptr;
   void (*hw_update_batt_level)() = nullptr;
   void (*hw_set_imu_power_mode)(ImuPowerMode mode) = nullptr;
@@ -267,13 +266,6 @@ struct DeviceRuntimeState {
 
   // Optional audio subsystem hooks bound by modules/audio_pipeline.yaml + audio_scripts.yaml
   AudioRuntimeHooks audio{};
-
-  // Display/session lifecycle hooks bound by modules/system_core.yaml on top of modules/base.yaml
-  void (*on_ha_client_connected)(const std::string &client_info, const std::string &client_address) = nullptr;
-  void (*on_ha_client_disconnected)(const std::string &client_info) = nullptr;
-  void (*on_v3_domain_pushed)(std::string_view domain) = nullptr;
-  void (*on_device_command)(std::string_view command) = nullptr;
-  void (*on_hello_sent)() = nullptr;
 
   DeviceRuntimeState() {
     for (size_t i = 0; i < kSlotsPerPage; ++i) {

@@ -119,10 +119,8 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                  const SystemTakeoverState &st);
 void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                   const SystemTakeoverState &st);
-#if LATTER_GUI_UNIVERSAL
 void render_docked_screensaver(Rgb565Surface &it, const UiFrameContext &ctx,
                                const SystemTakeoverState &st);
-#endif
 
 // Renders all system-owned global takeovers in strict priority order:
 //   OTA -> Hibernation -> Panel Off -> Alarm/Timer/Find-My -> Voice Assistant ->

@@ -4,9 +4,7 @@
 // ==============================================================================
 
 #include "ui_touch_engine.h"
-#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
-#endif
 #include "ui_touch_recognizer.h"
 #include "audio_router.h"
 #include "hal_display_lifecycle.h"
@@ -1324,7 +1322,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       int opt_cnt = 10;
       if (rs.cal.drilldown == CalDrilldown::PICK_LOCATION) {
-        std::string_view locs[kMaxCalendarLocations]{};
+        std::string locs[kMaxCalendarLocations]{};
         opt_cnt = 1 + parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
       } else if (rs.cal.drilldown == CalDrilldown::PICK_CALENDAR) {
         opt_cnt = std::max(1, collect_writable_calendar_sources(calendar_state().calendars_meta, nullptr, nullptr));
@@ -2083,9 +2081,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
         chg.append(opt.data(), opt.size());
         latter_core::emit_set_device_prefs(persisted_prefs().prefs_seq, chg);
       }
-#if LATTER_GUI_UNIVERSAL
       night_meteor_epoch_initialized() = false;
-#endif
       weather_sim_dirty() = true;
       record_ambient_frame_ms(0U);
       cmd(UiHostCmd::NOTIFY_WEATHER_SIM_CHANGED);

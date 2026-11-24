@@ -1,7 +1,5 @@
 #include "ui_compositor.h"
-#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
-#endif
 
 #include <algorithm>
 #include <cmath>
@@ -22,14 +20,9 @@ void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
 
   // Single backdrop paint respecting user-configured Day/Night Sky, Custom Wallpaper, or Solid Black.
   if (is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
-#if LATTER_GUI_UNIVERSAL
     render_static_day_night_sky_base(
         it, cx, cy,
         resolve_day_night_sky_is_night(weather_state().sun_state, ctx.now.is_valid(), ctx.now.hour));
-#else
-    (void)cy;
-    frame_base(it, st.col_bg);
-#endif
   } else {
     const bool has_wall = (!ac.wallpaper_url.empty() &&
                            ac.wallpaper_url == rs.music.loaded_wallpaper_url &&

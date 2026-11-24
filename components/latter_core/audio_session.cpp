@@ -491,23 +491,6 @@ LocalMediaHwAction media_toggle_playback(bool local_mp_playing, uint32_t now_ms)
   return ms.is_local ? LocalMediaHwAction::StopLocalMww : LocalMediaHwAction::None;
 }
 
-bool media_stop_playback(uint32_t now_ms) {
-  auto &m = runtime_state().music;
-  auto &ms = media_state();
-  set_remote_play_override(false, now_ms);
-  if (!ms.title.empty()) {
-    ms.state = "paused";
-  }
-  sync_audio_session_media_observation(false, true, now_ms);
-  m.action_feedback = "Playback Stopped";
-  m.feedback_timer = now_ms;
-  m.overlay_mode = 0;
-  m.hud_active = true;
-  m.hud_timer = now_ms;
-  latter_core::emit_media_command("pause");
-  return ms.is_local;
-}
-
 bool media_clear_queue(uint32_t now_ms) {
   auto &m = runtime_state().music;
   auto &ms = media_state();
@@ -606,30 +589,6 @@ void media_seek_absolute(uint32_t now_ms) {
   audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, now_ms);
   latter_core::emit_media_seek(
       static_cast<int>(std::max(0.0f, runtime_state().music.pos_base)));
-}
-
-int media_fetch_browse(uint32_t now_ms) {
-  const auto &rs = runtime_state();
-  const std::string &mode_s = rs.music.selected_category_mode;
-  const int page = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
-  std::string_view search_sv{};
-  if (mode_s == "artist_albums") {
-    search_sv = rs.music.drilldown_artist_name;
-  } else if (mode_s == "current_album_tracks" || mode_s == "album_tracks" ||
-             mode_s == "podcast_episodes" || mode_s == "lyrics" || mode_s == "bio") {
-    search_sv = rs.music.drilldown_album_id;
-  }
-  const std::string_view alb_opt(pref_album_sort_order_cstr());
-  const char *alb_sort =
-      (alb_opt == "Newest on Top") ? "year_desc" : ((alb_opt == "Oldest on Top") ? "year" : "name");
-  const std::string_view art_opt(pref_artist_album_sort_order_cstr());
-  const char *art_sort =
-      (art_opt == "Alphabetical") ? "name" : ((art_opt == "Newest on Top") ? "year_desc" : "year");
-  const std::string_view pod_opt(pref_podcast_sort_order_cstr());
-  const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
-  return latter_core::emit_music_browse(
-      mode_s, page, search_sv, rs.music.active_speaker_entity,
-      media_state().last_speaker, alb_sort, art_sort, pod_sort, LATTER_SLOT_COUNT, now_ms);
 }
 
 bool media_play_slot(int slot_1based, uint32_t now_ms) {

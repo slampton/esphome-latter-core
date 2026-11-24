@@ -181,80 +181,6 @@ void seed_default_prefs_if_needed(PersistedDevicePrefs &p) {
   }
 }
 
-const char *pref_key_name(PrefKey key) {
-  switch (key) {
-    case PrefKey::WAKE_WORD_MODE: return "wake_word_mode";
-    case PrefKey::TAP_TO_WAKE: return "tap_to_wake";
-    case PrefKey::PICKUP_TO_WAKE: return "pickup_to_wake";
-    case PrefKey::BATTERY_SCREEN_TIMEOUT: return "battery_screen_timeout";
-    case PrefKey::DOCKED_IDLE_TIMEOUT: return "docked_idle_timeout";
-    case PrefKey::BATTERY_HIBERNATE_TIMEOUT: return "battery_hibernate_timeout";
-    case PrefKey::SCREENSAVER_MODE: return "screensaver_mode";
-    case PrefKey::SCREENSAVER_STYLE: return "screensaver_style";
-    case PrefKey::AUTO_BRIGHTNESS_MODE: return "auto_brightness_mode";
-    case PrefKey::MANUAL_BRIGHTNESS: return "manual_brightness";
-    case PrefKey::DAY_BRIGHTNESS: return "day_brightness";
-    case PrefKey::NIGHT_BRIGHTNESS: return "night_brightness";
-    case PrefKey::DAY_START_HOUR: return "day_start_hour";
-    case PrefKey::NIGHT_START_HOUR: return "night_start_hour";
-    case PrefKey::COLOR_PROFILE: return "color_profile";
-    case PrefKey::VA_VISUAL_PROFILE: return "va_visual_profile";
-    case PrefKey::START_SCREEN: return "start_screen";
-    case PrefKey::CLOCK_FACE: return "clock_face";
-    case PrefKey::TIME_FORMAT: return "time_format";
-    case PrefKey::WEATHER_BACKGROUND: return "weather_background";
-    case PrefKey::HOME_SUN: return "home_sun";
-    case PrefKey::HOME_MOON: return "home_moon";
-    case PrefKey::WAKE_GREETING: return "wake_greeting";
-    case PrefKey::ALBUM_ART_STYLE: return "album_art_style";
-    case PrefKey::MUSIC_OVERLAY_STYLE: return "music_overlay_style";
-    case PrefKey::ALBUM_SORT_ORDER: return "album_sort_order";
-    case PrefKey::ARTIST_ALBUM_SORT_ORDER: return "artist_album_sort_order";
-    case PrefKey::PODCAST_SORT_ORDER: return "podcast_sort_order";
-    case PrefKey::WW_SENS_OKAY_NABU: return "ww_sens_okay_nabu";
-    case PrefKey::WW_SENS_HEY_LUNA: return "ww_sens_hey_luna";
-    case PrefKey::WW_SENS_HEY_JARVIS: return "ww_sens_hey_jarvis";
-    case PrefKey::WW_SENS_HEY_MYCROFT: return "ww_sens_hey_mycroft";
-    case PrefKey::WW_SENS_ALEXA: return "ww_sens_alexa";
-    case PrefKey::WAKE_SCREEN_ON_ASSIST: return "wake_screen_on_assist";
-    case PrefKey::ALERT_VOLUME: return "alert_volume";
-    case PrefKey::VOLUME_STEP_SIZE: return "volume_step_size";
-    case PrefKey::GAME_SOUND_EFFECTS: return "game_sound_effects";
-    case PrefKey::BLE_BEACON_ENABLED: return "ble_beacon_enabled";
-    case PrefKey::BLE_BEACON_MODE: return "ble_beacon_mode";
-    case PrefKey::HOME_SCREEN_ENABLED: return "home_screen_enabled";
-    case PrefKey::RETURN_TO_HOME_TIMEOUT: return "return_to_home_timeout";
-    case PrefKey::HOME_CLOCK_TAP_ACTION: return "home_clock_tap_action";
-    case PrefKey::SHOW_UTC_CLOCK: return "show_utc_clock";
-    case PrefKey::WORLD_CLOCKS: return "world_clocks";
-    case PrefKey::ALARMS_SUMMARY: return "alarms_summary";
-    case PrefKey::LOCAL_CLOCK_LABEL: return "local_clock_label";
-    case PrefKey::TOOLS_ITEMS: return "tools_items";
-    case PrefKey::GAMES_ITEMS: return "games_items";
-    case PrefKey::HOME_DATE_TAP_ACTION: return "home_date_tap_action";
-    case PrefKey::CALENDAR_LOOKAHEAD_DAYS: return "calendar_lookahead_days";
-    case PrefKey::CALENDAR_WEEK_START: return "calendar_week_start";
-    case PrefKey::BEDTIME_ACTIVE: return "bedtime_active";
-    case PrefKey::BEDTIME_DISPLAY: return "bedtime_display";
-    case PrefKey::BEDTIME_SCHEDULE: return "bedtime_schedule";
-    case PrefKey::BEDTIME_START_HOUR: return "bedtime_start_hour";
-    case PrefKey::BEDTIME_END_HOUR: return "bedtime_end_hour";
-    case PrefKey::BEDTIME_BRIGHTNESS: return "bedtime_brightness";
-    case PrefKey::CAMERA_DEFAULT_VIEW: return "camera_default_view";
-    case PrefKey::CAMERA_CAROUSEL_INTERVAL: return "camera_carousel_interval";
-    case PrefKey::CAMERA_FRAMING: return "camera_framing";
-    case PrefKey::CAMERA_STREAM_MODE: return "camera_stream_mode";
-    case PrefKey::CAMERA_DOORBELL_POPUP: return "camera_doorbell_popup";
-    case PrefKey::SCREENSAVER_PHOTO_CLOCK: return "screensaver_photo_clock";
-    case PrefKey::WEATHER_APP_BACKGROUND: return "weather_app_background";
-    case PrefKey::DO_NOT_DISTURB: return "do_not_disturb";
-    case PrefKey::MUSIC_AUTO_OPEN: return "music_auto_open";
-    case PrefKey::GLASS_STYLE: return "glass_style";
-    case PrefKey::COUNT: break;
-  }
-  return "";
-}
-
 std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p) {
   switch (key) {
     case PrefKey::WAKE_WORD_MODE: return pref_wake_word_mode_cstr(p);
@@ -509,9 +435,6 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       const std::string norm = normalize_tools_items_csv(sv);
       if (effective_tools_items_sv(p) == norm && p.tools_items[0] != '\0') return false;
       copy_bounded_cstr(p.tools_items, norm);
-      if (&p == &persisted_prefs()) {
-        device_prefs_state().tools_items = norm;
-      }
       changed_mask |= pref_key_bit(key);
       effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
       return true;
@@ -520,9 +443,6 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       const std::string norm = normalize_games_items_csv(sv);
       if (effective_games_items_sv(p) == norm && p.games_items[0] != '\0') return false;
       copy_bounded_cstr(p.games_items, norm);
-      if (&p == &persisted_prefs()) {
-        device_prefs_state().games_items = norm;
-      }
       changed_mask |= pref_key_bit(key);
       effects_mask |= (kPrefEffectNavPolicy | kPrefEffectRedraw);
       return true;
@@ -567,20 +487,10 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       return apply_enum(p.camera_doorbell_popup, kPrefOptsCameraDoorbellPopup, 0);
     case PrefKey::SCREENSAVER_PHOTO_CLOCK:
       return apply_bool(p.screensaver_photo_clock, kPrefEffectScreensaverChange);
-    case PrefKey::WEATHER_APP_BACKGROUND: {
-      const bool chg = apply_bool(p.weather_app_background, 0);
-      if (chg && &p == &persisted_prefs()) {
-        device_prefs_state().weather_app_background = p.weather_app_background;
-      }
-      return chg;
-    }
-    case PrefKey::DO_NOT_DISTURB: {
-      const bool chg = apply_bool(p.do_not_disturb, kPrefEffectNone);
-      if (chg && &p == &persisted_prefs()) {
-        device_prefs_state().do_not_disturb = p.do_not_disturb;
-      }
-      return chg;
-    }
+    case PrefKey::WEATHER_APP_BACKGROUND:
+      return apply_bool(p.weather_app_background, 0);
+    case PrefKey::DO_NOT_DISTURB:
+      return apply_bool(p.do_not_disturb, kPrefEffectNone);
     case PrefKey::GLASS_STYLE:
       return apply_enum(p.glass_style, kPrefOptsGlassStyle, 0);
     case PrefKey::COUNT:
@@ -632,8 +542,15 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
   if (!apply_if_newer(st.epoch, st.rev, epoch, rev)) return false;
   v3_check_field_count("device_prefs", payload, kCount);
 
+  const uint32_t in_seq = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)], 0);
+  const bool hello_in_flight = hello_sync_state().in_flight;
+  const bool preserve_dirty = hello_in_flight || (in_seq <= p.prefs_seq);
+
   PrefMask changed_mask{};
   auto apply_f = [&](DevicePrefsField df, PrefKey pk) {
+    if (preserve_dirty && !(p.dirty_mask & pref_key_bit(pk)).empty()) {
+      return;
+    }
     set_pref_by_key_str(p, pk, f[static_cast<size_t>(df)], changed_mask, out_effects);
   };
 
@@ -704,10 +621,6 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::DO_NOT_DISTURB, PrefKey::DO_NOT_DISTURB);
   apply_f(DevicePrefsField::MUSIC_AUTO_OPEN, PrefKey::MUSIC_AUTO_OPEN);
   apply_f(DevicePrefsField::GLASS_STYLE, PrefKey::GLASS_STYLE);
-  st.tools_items = std::string(effective_tools_items_sv(p));
-  st.games_items = std::string(effective_games_items_sv(p));
-  st.weather_app_background = p.weather_app_background;
-  st.do_not_disturb = p.do_not_disturb;
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {
@@ -731,11 +644,10 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
     }
   }
 
-  const uint32_t in_seq = v3_parse_u32(f[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)], 0);
   bool meta_changed = false;
-  if (in_seq > p.prefs_seq) {
+  if (in_seq > p.prefs_seq && (!hello_in_flight || p.dirty_mask.empty())) {
     p.prefs_seq = in_seq;
-    if (p.dirty_mask.any()) {
+    if (!hello_in_flight && p.dirty_mask.any()) {
       p.dirty_mask.clear();
     }
     meta_changed = true;
@@ -1473,8 +1385,8 @@ int collect_writable_calendar_sources(std::string_view raw,
 }
 
 int parse_calendar_locations_catalog(std::string_view raw,
-                                            std::string_view *out,
-                                            int max_out) noexcept {
+                                     std::string *out,
+                                     int max_out) {
   if (raw.empty() || out == nullptr || max_out <= 0) return 0;
   const int cap = std::min(max_out, kMaxCalendarLocations);
   std::string_view recs[kMaxCalendarLocations]{};
@@ -1482,7 +1394,12 @@ int parse_calendar_locations_catalog(std::string_view raw,
   int count = 0;
   for (size_t i = 0; i < n; ++i) {
     const std::string_view sv = trim_ascii_ws(recs[i]);
-    if (!sv.empty()) out[count++] = sv;
+    if (sv.empty()) continue;
+    const std::string unescaped = v3_unescape_subfield(sv);
+    const std::string_view cleaned = trim_ascii_ws(unescaped);
+    if (!cleaned.empty()) {
+      out[count++] = std::string(cleaned);
+    }
   }
   return count;
 }

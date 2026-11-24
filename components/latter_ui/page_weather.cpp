@@ -1708,10 +1708,6 @@ bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms
   return !is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday");
 }
 
-bool has_weather_motion(const std::string &cond, bool is_night, uint32_t now_ms) {
-  return has_weather_motion_sv(cond, is_night, now_ms);
-}
-
 bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond,
                              std::string_view sun_state, uint32_t now_ms) {
   const bool sim_active = (!sim_opt.empty() && sim_opt != "Live (Home Assistant)");
@@ -1722,10 +1718,6 @@ bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond
                    (cond.find("night") != std::string_view::npos));
   resolve_weather_sim_view(sim_opt, cond, is_night);
   return has_weather_motion_sv(cond, is_night, now_ms);
-}
-
-float weather_precip_alpha_scale() {
-  return sky_fade_state().precip_alpha_scale;
 }
 
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,

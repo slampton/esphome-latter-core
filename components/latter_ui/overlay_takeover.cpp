@@ -279,9 +279,7 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
   // 10. DOCKED SCREENSAVER (Mode 1)
   if (st.display_power_state == 1) {
     frame_base(it, st.col_bg);
-#if LATTER_GUI_UNIVERSAL
     render_docked_screensaver(it, ctx, st);
-#endif
     return true;
   }
 

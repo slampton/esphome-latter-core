@@ -15,8 +15,12 @@ _SETTINGS_ROOT_ROUTE_ID: Final = 250
 _MAX_UINT8_OPTIONS: Final = 255
 
 _FORBIDDEN_CORE_TOP_KEYS: Final[frozenset[str]] = frozenset(
-    {"studio_contract", "ha_services", "world_clock_zones", "world_clock_aliases"}
+    {"studio_contract", "ha_services", "world_clock_zones", "world_clock_aliases", "catalog_ui"}
 )
+_ALLOWED_SHORTCUT_ROUTE_KEYS: Final[frozenset[str]] = frozenset(
+    {"token", "label", "dock_only", "capability"}
+)
+_ALLOWED_NON_FW_CATALOG_KEYS: Final[frozenset[str]] = frozenset({"token", "capability"})
 _REQUIRED_PREF_SPEC_KEYS: Final[frozenset[str]] = frozenset(
     {"key", "domain", "default", "options", "min", "max", "step", "capability"}
 )
@@ -156,6 +160,54 @@ def _validate_pref_spec(
             raise ValueError(f"text pref {key!r} must have empty options and null min/max/step")
 
 
+def _validate_catalogs(schema: dict[str, Any]) -> None:
+    catalogs = schema.get("catalogs") or {}
+    if not isinstance(catalogs, dict):
+        raise TypeError("Schema catalogs must be a JSON object")
+
+    shortcut_routes = catalogs.get("shortcut_routes") or []
+    if len(shortcut_routes) >= _SETTINGS_ROOT_ROUTE_ID:
+        raise ValueError(
+            f"RouteId overflow: shortcut_routes has {len(shortcut_routes)} entries "
+            f"(must be < {_SETTINGS_ROOT_ROUTE_ID}, reserved for SETTINGS_ROOT)"
+        )
+    seen_route_idents: set[str] = {"NONE", "SETTINGS_ROOT"}
+    for idx, r in enumerate(shortcut_routes, start=1):
+        extra = sorted(set(r.keys()) - _ALLOWED_SHORTCUT_ROUTE_KEYS)
+        if extra:
+            raise ValueError(
+                f"catalogs.shortcut_routes[{idx}] contains Studio-only/unknown keys {extra} "
+                "(Studio display groups belong in studio_contract.json['catalog_ui'])"
+            )
+        if not str(r.get("label") or "").strip():
+            raise ValueError(f"catalogs.shortcut_routes[{idx}] missing firmware label")
+        ident = _assert_cpp_ident(
+            str(r["token"]).upper().replace(":", "_").replace("-", "_"),
+            f"shortcut_routes[{idx}].token",
+        )
+        if ident in seen_route_idents:
+            raise ValueError(f"Duplicate RouteId enum identifier {ident!r}")
+        seen_route_idents.add(ident)
+
+    for cat_name, items in catalogs.items():
+        if cat_name == "shortcut_routes":
+            continue
+        if not isinstance(items, list) or not items:
+            raise ValueError(f"catalogs.{cat_name} must be a non-empty list")
+        seen_tokens: set[str] = set()
+        for idx, item in enumerate(items):
+            extra = sorted(set(item.keys()) - _ALLOWED_NON_FW_CATALOG_KEYS)
+            if extra:
+                raise ValueError(
+                    f"catalogs.{cat_name}[{idx}] contains Studio-only/unknown keys {extra} "
+                    "(display labels belong in studio_contract.json['catalog_ui'])"
+                )
+            tok = str(item.get("token") or "").strip()
+            if not tok or tok in seen_tokens:
+                raise ValueError(f"catalogs.{cat_name}[{idx}] has missing or duplicate token {tok!r}")
+            seen_tokens.add(tok)
+
+
 def validate_schema(schema: dict[str, Any]) -> None:
     """Validate structural, ownership-split, index-contiguity, RouteId, and pref-spec invariants."""
     forbidden = sorted(_FORBIDDEN_CORE_TOP_KEYS.intersection(schema.keys()))
@@ -176,27 +228,17 @@ def validate_schema(schema: dict[str, Any]) -> None:
     for hf in header_fields:
         _assert_cpp_ident(str(hf["cpp_enum"]), "header.cpp_enum")
 
-    shortcut_routes = (schema.get("catalogs") or {}).get("shortcut_routes") or []
-    if len(shortcut_routes) >= _SETTINGS_ROOT_ROUTE_ID:
-        raise ValueError(
-            f"RouteId overflow: shortcut_routes has {len(shortcut_routes)} entries "
-            f"(must be < {_SETTINGS_ROOT_ROUTE_ID}, reserved for SETTINGS_ROOT)"
-        )
-    seen_route_idents: set[str] = {"NONE", "SETTINGS_ROOT"}
-    for idx, r in enumerate(shortcut_routes, start=1):
-        ident = _assert_cpp_ident(
-            str(r["token"]).upper().replace(":", "_").replace("-", "_"),
-            f"shortcut_routes[{idx}].token",
-        )
-        if ident in seen_route_idents:
-            raise ValueError(f"Duplicate RouteId enum identifier {ident!r}")
-        seen_route_idents.add(ident)
+    _validate_catalogs(schema)
 
     domains = schema.get("domains") or {}
     if not domains:
         raise ValueError("Schema domains map must not be empty")
     start_idx = len(header_fields)
     for dom_key, dom in domains.items():
+        if "entity_suffix" in dom:
+            raise ValueError(
+                f"Domain {dom_key!r} must not declare retired v2.x 'entity_suffix'"
+            )
         enum_name = _assert_cpp_ident(str(dom["cpp_enum_name"]), f"domains.{dom_key}.cpp_enum_name")
         fields = dom.get("fields") or []
         if not fields:

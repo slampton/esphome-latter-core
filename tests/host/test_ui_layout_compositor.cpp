@@ -635,6 +635,49 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
     LATTER_CHECK(dp.cy - dp.r_out - dp.outer_pad > 0);
     LATTER_CHECK(dp.cy + dp.r_out + dp.outer_pad < lc.h);
     LATTER_CHECK(dp.r_out > dp.r_in && dp.r_in >= 36);
+
+    // Tablet landscape Activity Card internals & hit rects use scale_s (zero 64 px text crush on 1024x600 / 1280x800).
+    const int min_dim = (lc.w < lc.h) ? lc.w : lc.h;
+    const int act_card_w = std::min(kMaxContentColW, scale_x_for(380, lc.w));
+    const int act_card_h = scale_y_for(60, lc.h) + scale_y_for(56, lc.h);
+    const int act_col_w = scale_s_for(56, min_dim);
+    const int drop_col_w = scale_s_for(52, min_dim);
+    const int card_left = lc.w / 2 - act_card_w / 2;
+    const int card_right = lc.w / 2 + act_card_w / 2;
+    const int txt_x = card_left + scale_s_for(48, min_dim);
+    const int div1_x = card_right - drop_col_w - act_col_w;
+    const int max_txt = div1_x - txt_x - scale_s_for(8, min_dim);
+    LATTER_CHECK(max_txt >= 190);
+    FrameHitTable act_ht{};
+    const int act_cy = ly.dock_y - ly.dock_r - mm_to_px_for(3.0f, lc.ppi) - act_card_h / 2;
+    register_home_activity_hit_regions(act_ht, lc.w / 2, act_cy, act_card_w, act_card_h,
+                                       true, true, 0, 1, act_col_w, drop_col_w);
+    const HitRegion *hr_row = act_ht.hit_test(txt_x + 4, act_cy - act_card_h / 4, kHitTap);
+    const HitRegion *hr_act = act_ht.hit_test(card_right - drop_col_w - act_col_w / 2, act_cy - act_card_h / 4, kHitTap);
+    const HitRegion *hr_exp = act_ht.hit_test(card_right - drop_col_w / 2, act_cy, kHitTap);
+    LATTER_CHECK(hr_row != nullptr && hr_row->widget_id == WidgetId::HOME_ACT_ROW_0);
+    LATTER_CHECK(hr_act != nullptr && hr_act->widget_id == WidgetId::HOME_ACT_ACTION_0);
+    LATTER_CHECK(hr_exp != nullptr && hr_exp->widget_id == WidgetId::HOME_ACT_EXPAND);
+    LATTER_CHECK(hr_row->x1 + 1 == div1_x && hr_act->x0 == div1_x && hr_act->x1 + 1 == card_right - drop_col_w);
+
+    // Camera Single 4-pill & 2-pill action rows stay proportional and non-overlapping on 1024x600 / 1280x800.
+    const int cam_h = std::max(38, scale_y_for(40, lc.h));
+    const int cam_y = (ly.app_dock_y - ly.dock_r - scale_s_for(3, min_dim)) - scale_y_for(14, lc.h) - cam_h / 2;
+    HomeHubPillGeom cam_geoms[4]{};
+    const int n4 = compute_action_pill_row(
+        4, cam_y, cam_h, std::min(kMaxContentColW, scale_s_for(376, min_dim)),
+        scale_s_for(104, min_dim), scale_s_for(8, min_dim),
+        lc.w, lc.h, false, false, lc.ppi, cam_geoms, 12);
+    LATTER_CHECK(n4 == 4);
+    for (int i = 0; i < 4; ++i) {
+      LATTER_CHECK(cam_geoms[i].w >= ((min_dim >= 600) ? 105 : 80));
+      LATTER_CHECK(cam_geoms[i].hit_h >= mm_to_px_for(7.0f, lc.ppi));
+      if (i > 0) {
+        LATTER_CHECK(cam_geoms[i - 1].cx + cam_geoms[i - 1].w / 2 < cam_geoms[i].cx - cam_geoms[i].w / 2);
+      }
+    }
+    const int row_span = (cam_geoms[3].cx + cam_geoms[3].w / 2) - (cam_geoms[0].cx - cam_geoms[0].w / 2);
+    LATTER_CHECK(row_span <= kMaxContentColW);
   }
 
   // Isotropic toggle_switch aspect ratio across all active geometries.

@@ -579,6 +579,7 @@ static constexpr int kGlassSheenBotQ8 = 28;
 struct GlassBackdrop {
   UiColor bright{};
   UiColor mean{};
+  uint16_t sample_count = 0;
   bool valid = false;
 };
 

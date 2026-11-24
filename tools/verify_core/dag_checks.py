@@ -219,38 +219,70 @@ def _extract_string_tuple_var(tree: ast.Module, var_name: str, suffix: str) -> l
 
 
 def _check_ui_headers_manifest(failures: list[str]) -> None:
-    """Verify `components/latter_ui/__init__.py` Toolkit/Universal header & source manifests match disk 1:1."""
+    """Verify `components/latter_ui/__init__.py` STAGED_HEADERS & GLOBAL_YAML_INCLUDES match disk 1:1."""
     init_py = ROOT / "components" / "latter_ui" / "__init__.py"
     if not init_py.is_file():
         failures.append("[UI MANIFEST] components/latter_ui/__init__.py missing")
         return
     tree = ast.parse(init_py.read_text(encoding="utf-8"), filename="components/latter_ui/__init__.py")
-    toolkit_hdrs = _extract_string_tuple_var(tree, "UI_TOOLKIT_HEADERS", ".h")
-    app_hdrs = _extract_string_tuple_var(tree, "UI_UNIVERSAL_APP_HEADERS", ".h")
-    hdr_overlap = sorted(set(toolkit_hdrs) & set(app_hdrs))
-    if hdr_overlap:
-        failures.append(f"[UI MANIFEST] UI_TOOLKIT_HEADERS overlaps UI_UNIVERSAL_APP_HEADERS: {hdr_overlap}")
-    listed_hdrs = sorted(toolkit_hdrs + app_hdrs)
+    staged_hdrs = _extract_string_tuple_var(tree, "STAGED_HEADERS", ".h")
+    if len(staged_hdrs) != len(set(staged_hdrs)):
+        failures.append("[UI MANIFEST] components/latter_ui/__init__.py STAGED_HEADERS contains duplicates")
     on_disk_hdrs = sorted(p.name for p in (ROOT / "include").glob("ui_*.h"))
-    if listed_hdrs != on_disk_hdrs:
-        missing = sorted(set(on_disk_hdrs) - set(listed_hdrs))
-        extra = sorted(set(listed_hdrs) - set(on_disk_hdrs))
+    if sorted(staged_hdrs) != on_disk_hdrs:
+        missing = sorted(set(on_disk_hdrs) - set(staged_hdrs))
+        extra = sorted(set(staged_hdrs) - set(on_disk_hdrs))
         failures.append(
-            f"[UI MANIFEST] components/latter_ui/__init__.py UI headers mismatch: missing={missing}, extra={extra}"
+            f"[UI MANIFEST] components/latter_ui/__init__.py STAGED_HEADERS mismatch: missing={missing}, extra={extra}"
         )
 
-    toolkit_srcs = _extract_string_tuple_var(tree, "UI_TOOLKIT_SOURCES", ".cpp")
-    app_srcs = _extract_string_tuple_var(tree, "UI_UNIVERSAL_APP_SOURCES", ".cpp")
-    src_overlap = sorted(set(toolkit_srcs) & set(app_srcs))
-    if src_overlap:
-        failures.append(f"[UI MANIFEST] UI_TOOLKIT_SOURCES overlaps UI_UNIVERSAL_APP_SOURCES: {src_overlap}")
-    listed_srcs = sorted(toolkit_srcs + app_srcs)
-    on_disk_srcs = sorted(p.name for p in (ROOT / "components" / "latter_ui").glob("*.cpp"))
-    if listed_srcs != on_disk_srcs:
-        missing = sorted(set(on_disk_srcs) - set(listed_srcs))
-        extra = sorted(set(listed_srcs) - set(on_disk_srcs))
+    global_incs = _extract_string_tuple_var(tree, "GLOBAL_YAML_INCLUDES", ".h")
+    if not global_incs or len(global_incs) != len(set(global_incs)):
+        failures.append("[UI MANIFEST] components/latter_ui/__init__.py GLOBAL_YAML_INCLUDES must be non-empty/unique")
+    elif not set(global_incs) <= set(staged_hdrs) or global_incs != ["ui_esphome_display.h"]:
         failures.append(
-            f"[UI MANIFEST] components/latter_ui/__init__.py UI sources mismatch: missing={missing}, extra={extra}"
+            f"[UI MANIFEST] components/latter_ui/__init__.py GLOBAL_YAML_INCLUDES expected ['ui_esphome_display.h'], "
+            f"got {global_incs}"
+        )
+
+
+def _check_core_headers_manifest(failures: list[str]) -> None:
+    """Verify `components/latter_core/__init__.py` STAGED_HEADERS & GLOBAL_YAML_INCLUDES match disk 1:1."""
+    init_py = ROOT / "components" / "latter_core" / "__init__.py"
+    if not init_py.is_file():
+        failures.append("[CORE MANIFEST] components/latter_core/__init__.py missing")
+        return
+    tree = ast.parse(init_py.read_text(encoding="utf-8"), filename="components/latter_core/__init__.py")
+    staged_hdrs = _extract_string_tuple_var(tree, "STAGED_HEADERS", ".h")
+    if len(staged_hdrs) != len(set(staged_hdrs)):
+        failures.append("[CORE MANIFEST] components/latter_core/__init__.py STAGED_HEADERS contains duplicates")
+    inc_root = ROOT / "include"
+    on_disk_hdrs = sorted(
+        p.relative_to(inc_root).as_posix()
+        for p in iter_repo_files(inc_root)
+        if p.suffix.lower() == ".h" and not p.name.startswith("ui_")
+    )
+    if sorted(staged_hdrs) != on_disk_hdrs:
+        missing = sorted(set(on_disk_hdrs) - set(staged_hdrs))
+        extra = sorted(set(staged_hdrs) - set(on_disk_hdrs))
+        failures.append(
+            f"[CORE MANIFEST] components/latter_core/__init__.py STAGED_HEADERS mismatch: "
+            f"missing={missing}, extra={extra}"
+        )
+    if "latter_traits.h" not in staged_hdrs:
+        failures.append("[CORE MANIFEST] components/latter_core/__init__.py STAGED_HEADERS missing latter_traits.h")
+    elif "hal_manifest.h" in staged_hdrs and staged_hdrs.index("latter_traits.h") > staged_hdrs.index("hal_manifest.h"):
+        failures.append("[CORE MANIFEST] STAGED_HEADERS must list latter_traits.h before hal_manifest.h")
+
+    global_incs = _extract_string_tuple_var(tree, "GLOBAL_YAML_INCLUDES", ".h")
+    if not global_incs or len(global_incs) != len(set(global_incs)):
+        failures.append(
+            "[CORE MANIFEST] components/latter_core/__init__.py GLOBAL_YAML_INCLUDES must be non-empty/unique"
+        )
+    elif not set(global_incs) <= set(staged_hdrs):
+        extra_g = sorted(set(global_incs) - set(staged_hdrs))
+        failures.append(
+            f"[CORE MANIFEST] components/latter_core/__init__.py GLOBAL_YAML_INCLUDES not in STAGED_HEADERS: {extra_g}"
         )
 
 
@@ -261,4 +293,5 @@ def verify_dag_and_layers(failures: list[str]) -> None:
     _check_ui_header_boundaries(failures)
     _check_core_to_ui_inversion(failures)
     _check_ui_cpp_boundaries(failures)
+    _check_core_headers_manifest(failures)
     _check_ui_headers_manifest(failures)

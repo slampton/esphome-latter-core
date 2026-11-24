@@ -387,13 +387,11 @@ float media_step_volume(int dir,
                         bool step_already_recorded = false);
 
 LocalMediaHwAction media_toggle_playback(bool local_mp_playing, uint32_t now_ms);
-bool media_stop_playback(uint32_t now_ms);
 bool media_clear_queue(uint32_t now_ms);
 void media_next_track(uint32_t now_ms);
 void media_prev_track(uint32_t now_ms);
 void media_seek_relative(int dir, uint32_t now_ms);
 void media_seek_absolute(uint32_t now_ms);
-int media_fetch_browse(uint32_t now_ms);
 bool media_play_slot(int slot_1based, uint32_t now_ms);
 
 // Returns true when the newly selected speaker is remote (caller mutes local DAC & turns off speaker_enable).

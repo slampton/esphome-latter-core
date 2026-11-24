@@ -1,4 +1,4 @@
-"""Latter Core SDK component: validated board schema, HAL drivers, Protocol v3 state, RPC outbox & actions."""
+"""Latter Core component: validated board schema, HAL drivers, Protocol v3 state, RPC outbox & actions."""
 
 from __future__ import annotations
 
@@ -215,6 +215,12 @@ def _validate_latter_core(config: dict[str, Any]) -> dict[str, Any]:
     bl = dict(config.get(CONF_BACKLIGHT) or {})
 
     if gui_mode == "none":
+        if caps.get(CONF_DISPLAY, False):
+            raise cv.Invalid(
+                "gui: none cannot be combined with capabilities.display: true "
+                "(use gui: universal for display boards, or capabilities.display: false for screenless nodes)",
+                path=[CONF_GUI],
+            )
         caps.setdefault(CONF_DISPLAY, False)
         caps.setdefault(CONF_TOUCH, False)
     else:
@@ -276,8 +282,9 @@ CONFIG_SCHEMA = cv.All(
     _validate_latter_core,
 )
 
-CORE_HEADERS: tuple[str, ...] = (
+STAGED_HEADERS: tuple[str, ...] = (
     "latter_prof.h",
+    "latter_traits.h",
     "hal_manifest.h",
     "latter_protocol.h",
     "latter_rpc.h",
@@ -306,6 +313,20 @@ CORE_HEADERS: tuple[str, ...] = (
     "latter_actions.h",
 )
 
+# Minimal DAG roots emitted into generated main.cpp; transitively pull every staged core header
+# needed by YAML lambdas without polluting main.cpp with 28 redundant top-level #include lines.
+GLOBAL_YAML_INCLUDES: tuple[str, ...] = (
+    "esphome_bridge.h",
+    "latter_actions.h",
+    "state/state_nvs_snapshot.h",
+    "audio_router.h",
+    "hal_battery.h",
+    "hal_imu_qmi8658.h",
+    "hal_link_report.h",
+    "hal_touch.h",
+    "hal_video_stream.h",
+)
+
 _SENDSPIN_QUIET_CMAKE = """\
 function(_latter_quiet_sendspin_logs)
   if(COMMAND idf_build_get_property)
@@ -329,7 +350,7 @@ cmake_language(DEFER DIRECTORY ${CMAKE_SOURCE_DIR} CALL _latter_quiet_sendspin_l
 
 
 def AUTO_LOAD(config: dict[str, Any] | None) -> list[str]:
-    """Load latter_ui when a display is present (Toolkit + Universal Apps or Toolkit-only)."""
+    """Load latter_ui when a display is present (screenless nodes skip latter_ui cleanly)."""
     cfg = config if isinstance(config, dict) else {}
     gui_mode = str(cfg.get(CONF_GUI, "universal")).strip().lower()
     caps = cfg.get(CONF_CAPABILITIES) or {}
@@ -491,7 +512,7 @@ def _stage_core_headers(config: dict[str, Any]) -> None:
 
     _emit_board_defines(config)
 
-    for hdr in CORE_HEADERS:
+    for hdr in STAGED_HEADERS:
         src_file = comp_dir / hdr
         if not src_file.is_file():
             src_file = inc_dir / hdr
@@ -501,6 +522,8 @@ def _stage_core_headers(config: dict[str, Any]) -> None:
             raise cv.Invalid(f"Missing required Latter Core header: {hdr}")
         dst_file = Path(CORE.relative_src_path(hdr))
         _copy_if_changed(src_file, dst_file)
+
+    for hdr in GLOBAL_YAML_INCLUDES:
         cg.add_global(cg.RawStatement(f'#include "{hdr}"'))
 
 

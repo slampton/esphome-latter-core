@@ -1,10 +1,11 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Versioned Persisted Device Preferences & Brightness/DND PODs
+// Latter Core: Versioned Persisted Device Preferences & Brightness/DND PODs
 // (include/state/state_prefs.h)
 // ==============================================================================
 
+#include "latter_traits.h"
 #include "state/state_common.h"
 
 namespace latter_core {
@@ -169,62 +170,62 @@ struct PersistedAlarmPref {
 struct PersistedDevicePrefs {
   uint32_t magic = kPersistedPrefsMagic;
   uint16_t version = kPersistedPrefsVersion;
-  bool clock_face_digital = true;
-  bool is_24h_format = false;
+  bool clock_face_digital = (kPrefDefaultClockFaceIdx != 1U);
+  bool is_24h_format = (kPrefDefaultTimeFormatIdx == 1U);
   bool defaults_seeded = false;
 
-  // Tier 2 + Tier 3 Device Preferences (compact enum indices / integers / bools)
-  uint8_t wake_word_mode = 0;              // 0..2 ("Docked Only", "Always On", "Disabled")
-  uint8_t tap_to_wake = 2;                 // 0..3 ("Single Tap", "Double Tap", "Docked Only", "Disabled")
-  uint8_t pickup_to_wake = 1;              // 0..2 ("Always On", "Docked Only", "Disabled")
-  uint8_t battery_screen_timeout = 2;      // 0..5 ("10s", "15s", "30s", "1 min", "2 min", "Never")
-  uint8_t docked_idle_timeout = 3;         // 0..6 ("10s", "15s", "30s", "1 min", "2 min", "5 min", "Never")
-  uint8_t battery_hibernate_timeout = 2;   // 0..4 ("5 min", "10 min", "15 min", "30 min", "Disabled")
-  uint8_t screensaver_mode = 0;            // 0..2 ("Docked Only", "Always", "Never")
-  uint8_t screensaver_style = 0;           // 0..5 ("Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks")
-  bool screensaver_photo_clock = false;    // Optional subtle clock on Photo Frame screensaver
-  uint8_t auto_brightness_mode = 1;        // 0..2 ("Disabled", "Sun Synchronized", "Time Schedule")
-  uint8_t manual_brightness = 80;          // 1..100 (%)
-  uint8_t day_brightness = 90;             // 1..100 (%)
-  uint8_t night_brightness = 35;           // 1..100 (%)
-  uint8_t day_start_hour = 7;              // 0..23
-  uint8_t night_start_hour = 20;           // 0..23
-  uint8_t color_profile = 0;               // 0..4 ("Steel Blue", "Pink", "Blue", "Green", "Custom")
-  uint8_t va_visual_profile = 0;           // 0..4 ("Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave")
-  uint8_t start_screen = 0;                // 0..12 ("Home", "Pinned", "Time App", "Calendar", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools")
-  uint8_t clock_face = 0;                  // 0..2 ("Minimal Digital", "Modern Analog", "Hybrid Digital")
-  uint8_t time_format = 0;                 // 0..1 ("12-Hour (AM/PM)", "24-Hour")
-  uint8_t home_clock_tap_action = 0;       // 0..1 ("Time App", "Clock Face")
-  uint8_t home_date_tap_action = 1;        // 0..1 ("Day View", "Overview")
-  uint8_t calendar_lookahead_days = 30;    // 7, 14, 30, or 60 days
-  uint8_t calendar_week_start = 0;         // 0..1 ("Sunday", "Monday")
-  bool show_utc_clock = false;             // Pin dedicated UTC World Clock row on Time App -> Clock tab
+  // Tier 2 + Tier 3 Device Preferences (defaults wired directly to generated protocol/latter_v3.json specs)
+  uint8_t wake_word_mode = kPrefDefaultWakeWordModeIdx;
+  uint8_t tap_to_wake = kPrefDefaultTapToWakeIdx;
+  uint8_t pickup_to_wake = kPrefDefaultPickupToWakeIdx;
+  uint8_t battery_screen_timeout = kPrefDefaultBatteryScreenTimeoutIdx;
+  uint8_t docked_idle_timeout = kPrefDefaultDockedIdleTimeoutIdx;
+  uint8_t battery_hibernate_timeout = kPrefDefaultBatteryHibernateTimeoutIdx;
+  uint8_t screensaver_mode = kPrefDefaultScreensaverModeIdx;
+  uint8_t screensaver_style = kPrefDefaultScreensaverStyleIdx;
+  bool screensaver_photo_clock = kPrefDefaultScreensaverPhotoClock;
+  uint8_t auto_brightness_mode = kPrefDefaultAutoBrightnessModeIdx;
+  uint8_t manual_brightness = static_cast<uint8_t>(kPrefDefaultManualBrightness);
+  uint8_t day_brightness = static_cast<uint8_t>(kPrefDefaultDayBrightness);
+  uint8_t night_brightness = static_cast<uint8_t>(kPrefDefaultNightBrightness);
+  uint8_t day_start_hour = static_cast<uint8_t>(kPrefDefaultDayStartHour);
+  uint8_t night_start_hour = static_cast<uint8_t>(kPrefDefaultNightStartHour);
+  uint8_t color_profile = kPrefDefaultColorProfileIdx;
+  uint8_t va_visual_profile = kPrefDefaultVaVisualProfileIdx;
+  uint8_t start_screen = kPrefDefaultStartScreenIdx;
+  uint8_t clock_face = kPrefDefaultClockFaceIdx;
+  uint8_t time_format = kPrefDefaultTimeFormatIdx;
+  uint8_t home_clock_tap_action = kPrefDefaultHomeClockTapActionIdx;
+  uint8_t home_date_tap_action = kPrefDefaultHomeDateTapActionIdx;
+  uint8_t calendar_lookahead_days = static_cast<uint8_t>(kPrefDefaultCalendarLookaheadDays);
+  uint8_t calendar_week_start = kPrefDefaultCalendarWeekStartIdx;
+  bool show_utc_clock = kPrefDefaultShowUtcClock;
   char local_clock_label[33]{};            // Optional user-defined label shown above local time (<= 32 bytes)
   char world_clocks_spec[260]{};           // Up to 4 semicolon-delimited '<label>|<iana>' World Clock entries
-  bool weather_background = true;
-  bool weather_app_background = true;
-  bool home_sun = true;
-  bool home_moon = true;
-  bool wake_greeting = true;
-  uint8_t album_art_style = 0;             // 0..3 ("Full Screen", "Letterbox", "Standard", "None")
-  uint8_t music_overlay_style = 1;         // 0..2 ("Art Only", "Art + Metadata", "Always Visible")
-  uint8_t album_sort_order = 0;            // 0..2 ("Alphabetical", "Newest on Top", "Oldest on Top")
-  uint8_t artist_album_sort_order = 0;     // 0..2 ("Oldest on Top", "Newest on Top", "Alphabetical")
-  uint8_t podcast_sort_order = 0;          // 0..1 ("Newest on Top", "Oldest on Top")
-  uint8_t ww_sens_okay_nabu = 1;           // 0..2 ("Slightly sensitive", "Moderately sensitive", "Very sensitive")
-  uint8_t ww_sens_hey_luna = 1;
-  uint8_t ww_sens_hey_jarvis = 1;
-  uint8_t ww_sens_hey_mycroft = 1;
-  uint8_t ww_sens_alexa = 1;
-  bool wake_screen_on_assist = true;
-  uint8_t alert_volume = 80;               // 20..100 (%)
-  uint8_t volume_step_size = 5;            // 1..10 (%)
+  bool weather_background = kPrefDefaultWeatherBackground;
+  bool weather_app_background = kPrefDefaultWeatherAppBackground;
+  bool home_sun = kPrefDefaultHomeSun;
+  bool home_moon = kPrefDefaultHomeMoon;
+  bool wake_greeting = kPrefDefaultWakeGreeting;
+  uint8_t album_art_style = kPrefDefaultAlbumArtStyleIdx;
+  uint8_t music_overlay_style = kPrefDefaultMusicOverlayStyleIdx;
+  uint8_t album_sort_order = kPrefDefaultAlbumSortOrderIdx;
+  uint8_t artist_album_sort_order = kPrefDefaultArtistAlbumSortOrderIdx;
+  uint8_t podcast_sort_order = kPrefDefaultPodcastSortOrderIdx;
+  uint8_t ww_sens_okay_nabu = kPrefDefaultWwSensOkayNabuIdx;
+  uint8_t ww_sens_hey_luna = kPrefDefaultWwSensHeyLunaIdx;
+  uint8_t ww_sens_hey_jarvis = kPrefDefaultWwSensHeyJarvisIdx;
+  uint8_t ww_sens_hey_mycroft = kPrefDefaultWwSensHeyMycroftIdx;
+  uint8_t ww_sens_alexa = kPrefDefaultWwSensAlexaIdx;
+  bool wake_screen_on_assist = kPrefDefaultWakeScreenOnAssist;
+  uint8_t alert_volume = static_cast<uint8_t>(kPrefDefaultAlertVolume);
+  uint8_t volume_step_size = static_cast<uint8_t>(kPrefDefaultVolumeStepSize);
   uint8_t speaker_volume_pct = 60;         // 10..100 (%) local speaker boot restore level
-  bool game_sound_effects = true;
+  bool game_sound_effects = kPrefDefaultGameSoundEffects;
   bool ble_beacon_enabled = false;         // Off until Latter enables native_ble_tracking
-  uint8_t ble_beacon_mode = 0;             // 0..2 ("Handheld Only", "Handheld + Screen Off", "Always")
-  bool home_screen_enabled = true;
-  uint8_t return_to_home_timeout = 3;      // 0..6 ("15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never")
+  uint8_t ble_beacon_mode = kPrefDefaultBleBeaconModeIdx;
+  bool home_screen_enabled = kPrefDefaultHomeScreenEnabled;
+  uint8_t return_to_home_timeout = kPrefDefaultReturnToHomeTimeoutIdx;
 
   // Two-way Latter Protocol v3 sync tracking
   uint32_t prefs_seq = 0;
@@ -244,90 +245,117 @@ struct PersistedDevicePrefs {
   };
   char tools_items[80]{};
   char games_items[64]{};
-  bool bedtime_active = false;
-  uint8_t bedtime_display = 0;             // 0..1 ("Screen Off", "Ambient Clock")
-  uint8_t bedtime_brightness = 15;         // 1..100 (%)
-  bool bedtime_schedule = false;
-  uint8_t bedtime_start_hour = 22;         // 0..23
-  uint8_t bedtime_end_hour = 7;            // 0..23
-  uint8_t camera_default_view = 0;         // 0..2 ("Grid", "Single", "Carousel")
-  uint8_t camera_carousel_interval = 1;    // 0..3 ("10s", "15s", "30s", "60s")
-  uint8_t camera_framing = 0;              // 0..1 ("Uncropped", "Fill")
-  uint8_t camera_stream_mode = 0;          // 0..2 ("Auto", "Low Bandwidth", "Snapshots")
-  uint8_t camera_doorbell_popup = 0;       // 0..1 ("Snapshot", "Live Video"; P4-only for Live Video)
-  bool do_not_disturb = false;             // Appended v3.0+ tail field: Do Not Disturb mode
-  uint8_t music_auto_open = 0;             // Appended v3.0+ tail field: 0..2 ("Now Playing", "Lyrics", "Off")
+  bool bedtime_active = kPrefDefaultBedtimeActive;
+  uint8_t bedtime_display = kPrefDefaultBedtimeDisplayIdx;
+  uint8_t bedtime_brightness = static_cast<uint8_t>(kPrefDefaultBedtimeBrightness);
+  bool bedtime_schedule = kPrefDefaultBedtimeSchedule;
+  uint8_t bedtime_start_hour = static_cast<uint8_t>(kPrefDefaultBedtimeStartHour);
+  uint8_t bedtime_end_hour = static_cast<uint8_t>(kPrefDefaultBedtimeEndHour);
+  uint8_t camera_default_view = kPrefDefaultCameraDefaultViewIdx;
+  uint8_t camera_carousel_interval = kPrefDefaultCameraCarouselIntervalIdx;
+  uint8_t camera_framing = kPrefDefaultCameraFramingIdx;
+  uint8_t camera_stream_mode = kPrefDefaultCameraStreamModeIdx;
+  uint8_t camera_doorbell_popup = kPrefDefaultCameraDoorbellPopupIdx;
+  bool do_not_disturb = kPrefDefaultDoNotDisturb;
+  uint8_t music_auto_open = kPrefDefaultMusicAutoOpenIdx;
   int32_t high_score_drop_four = 0;        // Appended v3.0+ tail field: Drop Four AI streak high score
-  uint8_t glass_style = 0;                 // Appended v3.0 GA tail field: 0..2 ("Auto", "Clear", "Dark")
+  uint8_t glass_style = kPrefDefaultGlassStyleIdx;
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr GlassStyle glass_style_enum() const noexcept {
     return static_cast<GlassStyle>((glass_style < kPrefOptsGlassStyle.size()) ? glass_style : kPrefDefaultGlassStyleIdx);
   }
   constexpr MusicAutoOpenMode music_auto_open_enum() const noexcept {
-    return static_cast<MusicAutoOpenMode>((music_auto_open < 3U) ? music_auto_open : 0U);
+    return static_cast<MusicAutoOpenMode>((music_auto_open < kPrefOptsMusicAutoOpen.size()) ? music_auto_open : kPrefDefaultMusicAutoOpenIdx);
   }
   constexpr WakeWordMode wake_word_mode_enum() const noexcept {
-    return static_cast<WakeWordMode>((wake_word_mode < 3U) ? wake_word_mode : 0U);
+    return static_cast<WakeWordMode>((wake_word_mode < kPrefOptsWakeWordMode.size()) ? wake_word_mode : kPrefDefaultWakeWordModeIdx);
   }
   constexpr TapWakeMode tap_to_wake_enum() const noexcept {
-    return static_cast<TapWakeMode>((tap_to_wake < 4U) ? tap_to_wake : 2U);
+    return static_cast<TapWakeMode>((tap_to_wake < kPrefOptsTapToWake.size()) ? tap_to_wake : kPrefDefaultTapToWakeIdx);
   }
   constexpr WakePolicyMode pickup_to_wake_enum() const noexcept {
-    return static_cast<WakePolicyMode>((pickup_to_wake < 3U) ? pickup_to_wake : 1U);
+    return static_cast<WakePolicyMode>((pickup_to_wake < kPrefOptsPickupToWake.size()) ? pickup_to_wake : kPrefDefaultPickupToWakeIdx);
   }
   constexpr ScreensaverMode screensaver_mode_enum() const noexcept {
-    return static_cast<ScreensaverMode>((screensaver_mode < 3U) ? screensaver_mode : 0U);
+    return static_cast<ScreensaverMode>((screensaver_mode < kPrefOptsScreensaverMode.size()) ? screensaver_mode : kPrefDefaultScreensaverModeIdx);
   }
   constexpr ScreensaverStyle screensaver_style_enum() const noexcept {
-    return static_cast<ScreensaverStyle>((screensaver_style < 6U) ? screensaver_style : 0U);
+    return static_cast<ScreensaverStyle>((screensaver_style < kPrefOptsScreensaverStyle.size()) ? screensaver_style : kPrefDefaultScreensaverStyleIdx);
   }
   constexpr AutoBrightnessMode auto_brightness_enum() const noexcept {
-    return static_cast<AutoBrightnessMode>((auto_brightness_mode < 4U) ? auto_brightness_mode : 1U);
+    return static_cast<AutoBrightnessMode>((auto_brightness_mode < kPrefOptsAutoBrightnessMode.size()) ? auto_brightness_mode : kPrefDefaultAutoBrightnessModeIdx);
   }
   constexpr ColorProfilePref color_profile_enum() const noexcept {
-    return static_cast<ColorProfilePref>((color_profile < 5U) ? color_profile : 0U);
+    return static_cast<ColorProfilePref>((color_profile < kPrefOptsColorProfile.size()) ? color_profile : kPrefDefaultColorProfileIdx);
   }
   constexpr VaVisualStyle va_style() const noexcept {
-    return static_cast<VaVisualStyle>((va_visual_profile < 5U) ? va_visual_profile : 0U);
+    return static_cast<VaVisualStyle>((va_visual_profile < kPrefOptsVaVisualProfile.size()) ? va_visual_profile : kPrefDefaultVaVisualProfileIdx);
   }
   constexpr ClockFaceStyle clock_face_style() const noexcept {
-    return static_cast<ClockFaceStyle>((clock_face < 3U) ? clock_face : 0U);
+    return static_cast<ClockFaceStyle>((clock_face < kPrefOptsClockFace.size()) ? clock_face : kPrefDefaultClockFaceIdx);
   }
   constexpr uint32_t battery_screen_timeout_ms() const noexcept {
     constexpr uint32_t kMs[6] = {10000U, 15000U, 30000U, 60000U, 120000U, 0U};
-    return kMs[(battery_screen_timeout < 6U) ? battery_screen_timeout : 2U];
+    static_assert(kPrefOptsBatteryScreenTimeout.size() == 6U);
+    return kMs[(battery_screen_timeout < kPrefOptsBatteryScreenTimeout.size())
+                   ? battery_screen_timeout
+                   : kPrefDefaultBatteryScreenTimeoutIdx];
   }
   constexpr uint32_t docked_idle_timeout_ms() const noexcept {
     constexpr uint32_t kMs[7] = {10000U, 15000U, 30000U, 60000U, 120000U, 300000U, 0U};
-    return kMs[(docked_idle_timeout < 7U) ? docked_idle_timeout : 3U];
+    static_assert(kPrefOptsDockedIdleTimeout.size() == 7U);
+    return kMs[(docked_idle_timeout < kPrefOptsDockedIdleTimeout.size())
+                   ? docked_idle_timeout
+                   : kPrefDefaultDockedIdleTimeoutIdx];
   }
   constexpr uint32_t screen_timeout_ms(bool docked_or_stationary) const noexcept {
     return docked_or_stationary ? docked_idle_timeout_ms() : battery_screen_timeout_ms();
   }
   constexpr uint32_t hibernate_delay_s() const noexcept {
     constexpr uint32_t kSec[5] = {300U, 600U, 900U, 1800U, 0U};
-    return kSec[(battery_hibernate_timeout < 5U) ? battery_hibernate_timeout : 2U];
+    static_assert(kPrefOptsBatteryHibernateTimeout.size() == 5U);
+    return kSec[(battery_hibernate_timeout < kPrefOptsBatteryHibernateTimeout.size())
+                    ? battery_hibernate_timeout
+                    : kPrefDefaultBatteryHibernateTimeoutIdx];
   }
   constexpr uint8_t manual_brightness_pct() const noexcept {
-    return (manual_brightness >= 1U && manual_brightness <= 100U) ? manual_brightness : 80U;
+    return (manual_brightness >= static_cast<uint8_t>(kPrefMinManualBrightness) &&
+            manual_brightness <= static_cast<uint8_t>(kPrefMaxManualBrightness))
+               ? manual_brightness
+               : static_cast<uint8_t>(kPrefDefaultManualBrightness);
   }
   constexpr uint8_t day_brightness_pct() const noexcept {
-    return (day_brightness >= 1U && day_brightness <= 100U) ? day_brightness : 90U;
+    return (day_brightness >= static_cast<uint8_t>(kPrefMinDayBrightness) &&
+            day_brightness <= static_cast<uint8_t>(kPrefMaxDayBrightness))
+               ? day_brightness
+               : static_cast<uint8_t>(kPrefDefaultDayBrightness);
   }
   constexpr uint8_t night_brightness_pct() const noexcept {
-    return (night_brightness >= 1U && night_brightness <= 100U) ? night_brightness : 35U;
+    return (night_brightness >= static_cast<uint8_t>(kPrefMinNightBrightness) &&
+            night_brightness <= static_cast<uint8_t>(kPrefMaxNightBrightness))
+               ? night_brightness
+               : static_cast<uint8_t>(kPrefDefaultNightBrightness);
   }
   constexpr uint8_t bedtime_brightness_pct() const noexcept {
-    return (bedtime_brightness >= 1U && bedtime_brightness <= 100U) ? bedtime_brightness : 15U;
+    return (bedtime_brightness >= static_cast<uint8_t>(kPrefMinBedtimeBrightness) &&
+            bedtime_brightness <= static_cast<uint8_t>(kPrefMaxBedtimeBrightness))
+               ? bedtime_brightness
+               : static_cast<uint8_t>(kPrefDefaultBedtimeBrightness);
   }
   constexpr uint32_t return_to_home_ms() const noexcept {
     constexpr uint32_t kMs[7] = {15000U, 30000U, 60000U, 120000U, 300000U, 600000U, 0U};
-    return kMs[(return_to_home_timeout < 7U) ? return_to_home_timeout : 3U];
+    static_assert(kPrefOptsReturnToHomeTimeout.size() == 7U);
+    return kMs[(return_to_home_timeout < kPrefOptsReturnToHomeTimeout.size())
+                   ? return_to_home_timeout
+                   : kPrefDefaultReturnToHomeTimeoutIdx];
   }
   constexpr uint32_t camera_carousel_interval_ms() const noexcept {
     constexpr uint32_t kMs[4] = {10000U, 15000U, 30000U, 60000U};
-    return kMs[(camera_carousel_interval < 4U) ? camera_carousel_interval : 1U];
+    static_assert(kPrefOptsCameraCarouselInterval.size() == 4U);
+    return kMs[(camera_carousel_interval < kPrefOptsCameraCarouselInterval.size())
+                   ? camera_carousel_interval
+                   : kPrefDefaultCameraCarouselIntervalIdx];
   }
 };
 
@@ -348,14 +376,10 @@ struct DevicePrefsState {
   uint32_t epoch = 0;
   uint32_t rev = 0;
   uint32_t last_effects = 0;
-  uint8_t weather_sim_condition = 0;  // Volatile; resets to "Live (Home Assistant)" on boot
+  uint8_t weather_sim_condition = kPrefDefaultWeatherSimConditionIdx;  // Volatile; resets to "Live (Home Assistant)" on boot
   bool loaded = false;
   bool nvs_save_pending = false;
   uint32_t nvs_dirty_since_ms = 0;
-  std::string tools_items = kDefaultToolsItems;
-  std::string games_items = kDefaultGamesItems;
-  bool weather_app_background = true;
-  bool do_not_disturb = false;
 };
 
 inline DevicePrefsState &device_prefs_state() {
@@ -372,7 +396,9 @@ inline PersistedDevicePrefs &device_prefs() {
   return persisted_prefs();
 }
 
-inline constexpr uint8_t kStartScreenTimeAppIdx = 2U;
+inline constexpr uint8_t kStartScreenTimeAppIdx =
+    static_cast<uint8_t>(find_pref_option_index(std::span<const std::string_view>{kPrefOptsStartScreen}, "Time App"));
+static_assert(kStartScreenTimeAppIdx == 2U, "Start screen Time App option index mismatch");
 
 inline constexpr uint8_t snap_calendar_lookahead_days(int v) noexcept {
   if (v <= 10) return 7U;
@@ -670,85 +696,106 @@ inline std::string_view effective_games_items_sv(const PersistedDevicePrefs &p =
 
 
 inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_prefs()) {
-  if (p.wake_word_mode >= 3) p.wake_word_mode = 0;
-  if (p.tap_to_wake >= 4) p.tap_to_wake = 2;
-  if (p.pickup_to_wake >= 3) p.pickup_to_wake = 1;
-  if (p.battery_screen_timeout >= 6) p.battery_screen_timeout = 2;
-  if (p.docked_idle_timeout >= 7) p.docked_idle_timeout = 3;
-  if (p.battery_hibernate_timeout >= 5) p.battery_hibernate_timeout = 2;
-  if (p.screensaver_mode >= 3) p.screensaver_mode = 0;
-  if (p.screensaver_style >= 6) p.screensaver_style = 0;
-  if (p.auto_brightness_mode >= 4) p.auto_brightness_mode = 1;
-  p.manual_brightness = static_cast<uint8_t>(std::clamp<int>(p.manual_brightness, 1, 100));
-  p.day_brightness = static_cast<uint8_t>(std::clamp<int>(p.day_brightness, 1, 100));
-  p.night_brightness = static_cast<uint8_t>(std::clamp<int>(p.night_brightness, 1, 100));
-  p.bedtime_brightness = static_cast<uint8_t>(std::clamp<int>(p.bedtime_brightness, 1, 100));
-  if (p.day_start_hour > 23) p.day_start_hour = 7;
-  if (p.night_start_hour > 23) p.night_start_hour = 20;
-  if (p.color_profile >= 5) p.color_profile = 0;
-  if (p.va_visual_profile >= 5) p.va_visual_profile = 0;
-  if (p.start_screen >= 13) p.start_screen = 0;
-  if (!p.home_screen_enabled && p.start_screen == 0) p.start_screen = kStartScreenTimeAppIdx;  // Single-app mode cannot start on Home -> Time App
-  if (p.return_to_home_timeout >= 7) p.return_to_home_timeout = 3;
-  if (p.clock_face >= 3) p.clock_face = 0;
-  if (p.time_format >= 2) p.time_format = 0;
-  if (p.home_clock_tap_action >= 2) p.home_clock_tap_action = 0;
-  if (p.home_date_tap_action >= 2) p.home_date_tap_action = 1;
+  auto clamp_opt = []<size_t N>(uint8_t &slot, const std::array<std::string_view, N> &opts,
+                                uint8_t def_idx) noexcept {
+    if (slot >= opts.size()) slot = def_idx;
+  };
+  auto clamp_num = [](uint8_t &slot, DevicePrefsField field, int32_t lo, int32_t hi) noexcept {
+    if (const auto *spec = find_pref_contract(field)) {
+      slot = static_cast<uint8_t>(clamp_pref_number(*spec, static_cast<int32_t>(slot)));
+    } else {
+      slot = static_cast<uint8_t>(std::clamp<int32_t>(slot, lo, hi));
+    }
+  };
+  auto clamp_hour = [](uint8_t &slot, int32_t max_h, int32_t def_h) noexcept {
+    if (slot > static_cast<uint8_t>(max_h)) slot = static_cast<uint8_t>(def_h);
+  };
+
+  clamp_opt(p.wake_word_mode, kPrefOptsWakeWordMode, kPrefDefaultWakeWordModeIdx);
+  clamp_opt(p.tap_to_wake, kPrefOptsTapToWake, kPrefDefaultTapToWakeIdx);
+  clamp_opt(p.pickup_to_wake, kPrefOptsPickupToWake, kPrefDefaultPickupToWakeIdx);
+  clamp_opt(p.battery_screen_timeout, kPrefOptsBatteryScreenTimeout, kPrefDefaultBatteryScreenTimeoutIdx);
+  clamp_opt(p.docked_idle_timeout, kPrefOptsDockedIdleTimeout, kPrefDefaultDockedIdleTimeoutIdx);
+  clamp_opt(p.battery_hibernate_timeout, kPrefOptsBatteryHibernateTimeout, kPrefDefaultBatteryHibernateTimeoutIdx);
+  clamp_opt(p.screensaver_mode, kPrefOptsScreensaverMode, kPrefDefaultScreensaverModeIdx);
+  clamp_opt(p.screensaver_style, kPrefOptsScreensaverStyle, kPrefDefaultScreensaverStyleIdx);
+  clamp_opt(p.auto_brightness_mode, kPrefOptsAutoBrightnessMode, kPrefDefaultAutoBrightnessModeIdx);
+  clamp_num(p.manual_brightness, DevicePrefsField::MANUAL_BRIGHTNESS, kPrefMinManualBrightness, kPrefMaxManualBrightness);
+  clamp_num(p.day_brightness, DevicePrefsField::DAY_BRIGHTNESS, kPrefMinDayBrightness, kPrefMaxDayBrightness);
+  clamp_num(p.night_brightness, DevicePrefsField::NIGHT_BRIGHTNESS, kPrefMinNightBrightness, kPrefMaxNightBrightness);
+  clamp_num(p.bedtime_brightness, DevicePrefsField::BEDTIME_BRIGHTNESS, kPrefMinBedtimeBrightness, kPrefMaxBedtimeBrightness);
+  clamp_hour(p.day_start_hour, kPrefMaxDayStartHour, kPrefDefaultDayStartHour);
+  clamp_hour(p.night_start_hour, kPrefMaxNightStartHour, kPrefDefaultNightStartHour);
+  clamp_opt(p.color_profile, kPrefOptsColorProfile, kPrefDefaultColorProfileIdx);
+  clamp_opt(p.va_visual_profile, kPrefOptsVaVisualProfile, kPrefDefaultVaVisualProfileIdx);
+  clamp_opt(p.start_screen, kPrefOptsStartScreen, kPrefDefaultStartScreenIdx);
+  if (!p.home_screen_enabled && p.start_screen == kPrefDefaultStartScreenIdx) {
+    p.start_screen = kStartScreenTimeAppIdx;  // Single-app mode cannot start on Home -> Time App
+  }
+  clamp_opt(p.return_to_home_timeout, kPrefOptsReturnToHomeTimeout, kPrefDefaultReturnToHomeTimeoutIdx);
+  clamp_opt(p.clock_face, kPrefOptsClockFace, kPrefDefaultClockFaceIdx);
+  clamp_opt(p.time_format, kPrefOptsTimeFormat, kPrefDefaultTimeFormatIdx);
+  clamp_opt(p.home_clock_tap_action, kPrefOptsHomeClockTapAction, kPrefDefaultHomeClockTapActionIdx);
+  clamp_opt(p.home_date_tap_action, kPrefOptsHomeDateTapAction, kPrefDefaultHomeDateTapActionIdx);
   p.calendar_lookahead_days = snap_calendar_lookahead_days(p.calendar_lookahead_days);
-  if (p.calendar_week_start >= 2) p.calendar_week_start = 0;
-  if (p.bedtime_display >= 2) p.bedtime_display = 0;
-  if (p.bedtime_start_hour > 23) p.bedtime_start_hour = 22;
-  if (p.bedtime_end_hour > 23) p.bedtime_end_hour = 7;
+  clamp_opt(p.calendar_week_start, kPrefOptsCalendarWeekStart, kPrefDefaultCalendarWeekStartIdx);
+  clamp_opt(p.bedtime_display, kPrefOptsBedtimeDisplay, kPrefDefaultBedtimeDisplayIdx);
+  clamp_hour(p.bedtime_start_hour, kPrefMaxBedtimeStartHour, kPrefDefaultBedtimeStartHour);
+  clamp_hour(p.bedtime_end_hour, kPrefMaxBedtimeEndHour, kPrefDefaultBedtimeEndHour);
   p.local_clock_label[sizeof(p.local_clock_label) - 1] = '\0';
   p.world_clocks_spec[sizeof(p.world_clocks_spec) - 1] = '\0';
   p.tools_items[sizeof(p.tools_items) - 1] = '\0';
   p.games_items[sizeof(p.games_items) - 1] = '\0';
   copy_bounded_cstr(p.tools_items, normalize_tools_items_csv(p.tools_items));
   copy_bounded_cstr(p.games_items, normalize_games_items_csv(p.games_items));
-  if (&p == &persisted_prefs()) {
-    device_prefs_state().tools_items = p.tools_items;
-    device_prefs_state().games_items = p.games_items;
-    device_prefs_state().weather_app_background = p.weather_app_background;
-    device_prefs_state().do_not_disturb = p.do_not_disturb;
-  }
-  if (p.album_art_style >= 4) p.album_art_style = 0;
-  if (p.music_overlay_style >= 3) p.music_overlay_style = 1;
-  if (p.music_auto_open >= 3) p.music_auto_open = 0;
-  if (p.album_sort_order >= 3) p.album_sort_order = 0;
-  if (p.artist_album_sort_order >= 3) p.artist_album_sort_order = 0;
-  if (p.podcast_sort_order >= 2) p.podcast_sort_order = 0;
-  if (p.ww_sens_okay_nabu >= 3) p.ww_sens_okay_nabu = 1;
-  if (p.ww_sens_hey_luna >= 3) p.ww_sens_hey_luna = 1;
-  if (p.ww_sens_hey_jarvis >= 3) p.ww_sens_hey_jarvis = 1;
-  if (p.ww_sens_hey_mycroft >= 3) p.ww_sens_hey_mycroft = 1;
-  if (p.ww_sens_alexa >= 3) p.ww_sens_alexa = 1;
-  p.alert_volume = static_cast<uint8_t>(std::clamp<int>(p.alert_volume, 20, 100));
-  p.volume_step_size = static_cast<uint8_t>(std::clamp<int>(p.volume_step_size, 1, 10));
+  clamp_opt(p.album_art_style, kPrefOptsAlbumArtStyle, kPrefDefaultAlbumArtStyleIdx);
+  clamp_opt(p.music_overlay_style, kPrefOptsMusicOverlayStyle, kPrefDefaultMusicOverlayStyleIdx);
+  clamp_opt(p.music_auto_open, kPrefOptsMusicAutoOpen, kPrefDefaultMusicAutoOpenIdx);
+  clamp_opt(p.album_sort_order, kPrefOptsAlbumSortOrder, kPrefDefaultAlbumSortOrderIdx);
+  clamp_opt(p.artist_album_sort_order, kPrefOptsArtistAlbumSortOrder, kPrefDefaultArtistAlbumSortOrderIdx);
+  clamp_opt(p.podcast_sort_order, kPrefOptsPodcastSortOrder, kPrefDefaultPodcastSortOrderIdx);
+  clamp_opt(p.ww_sens_okay_nabu, kPrefOptsWwSensOkayNabu, kPrefDefaultWwSensOkayNabuIdx);
+  clamp_opt(p.ww_sens_hey_luna, kPrefOptsWwSensHeyLuna, kPrefDefaultWwSensHeyLunaIdx);
+  clamp_opt(p.ww_sens_hey_jarvis, kPrefOptsWwSensHeyJarvis, kPrefDefaultWwSensHeyJarvisIdx);
+  clamp_opt(p.ww_sens_hey_mycroft, kPrefOptsWwSensHeyMycroft, kPrefDefaultWwSensHeyMycroftIdx);
+  clamp_opt(p.ww_sens_alexa, kPrefOptsWwSensAlexa, kPrefDefaultWwSensAlexaIdx);
+  clamp_num(p.alert_volume, DevicePrefsField::ALERT_VOLUME, kPrefMinAlertVolume, kPrefMaxAlertVolume);
+  clamp_num(p.volume_step_size, DevicePrefsField::VOLUME_STEP_SIZE, kPrefMinVolumeStepSize, kPrefMaxVolumeStepSize);
   p.speaker_volume_pct = static_cast<uint8_t>(std::clamp<int>(p.speaker_volume_pct, 10, 100));
-  if (p.ble_beacon_mode >= 3) p.ble_beacon_mode = 0;
-  if (p.camera_default_view >= 3) p.camera_default_view = 0;
-  if (p.camera_carousel_interval >= 4) p.camera_carousel_interval = 1;
-  if (p.camera_framing >= 2) p.camera_framing = 0;
-  if (p.camera_stream_mode >= kPrefOptsCameraStreamMode.size()) p.camera_stream_mode = kPrefDefaultCameraStreamModeIdx;
-  if (p.camera_doorbell_popup >= kPrefOptsCameraDoorbellPopup.size()) p.camera_doorbell_popup = kPrefDefaultCameraDoorbellPopupIdx;
-  if (p.glass_style >= kPrefOptsGlassStyle.size()) p.glass_style = kPrefDefaultGlassStyleIdx;
-#ifndef LATTER_HAS_HW_JPEG
-#define LATTER_HAS_HW_JPEG LATTER_CHIP_P4
-#endif
+  clamp_opt(p.ble_beacon_mode, kPrefOptsBleBeaconMode, kPrefDefaultBleBeaconModeIdx);
+  clamp_opt(p.camera_default_view, kPrefOptsCameraDefaultView, kPrefDefaultCameraDefaultViewIdx);
+  clamp_opt(p.camera_carousel_interval, kPrefOptsCameraCarouselInterval, kPrefDefaultCameraCarouselIntervalIdx);
+  clamp_opt(p.camera_framing, kPrefOptsCameraFraming, kPrefDefaultCameraFramingIdx);
+  clamp_opt(p.camera_stream_mode, kPrefOptsCameraStreamMode, kPrefDefaultCameraStreamModeIdx);
+  clamp_opt(p.camera_doorbell_popup, kPrefOptsCameraDoorbellPopup, kPrefDefaultCameraDoorbellPopupIdx);
+  clamp_opt(p.glass_style, kPrefOptsGlassStyle, kPrefDefaultGlassStyleIdx);
 #if !LATTER_HAS_HW_JPEG
-  p.camera_doorbell_popup = 0;  // Live Video doorbell popup requires hardware JPEG decode
+  constexpr uint8_t kDoorbellSnapshotIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsCameraDoorbellPopup}, "Snapshot"));
+  p.camera_doorbell_popup = kDoorbellSnapshotIdx;  // Live Video doorbell popup requires hardware JPEG decode
 #endif
 #if !LATTER_HAS_IMU || LATTER_IS_STATIONARY
-  p.pickup_to_wake = 2;  // Disabled
+  constexpr uint8_t kPickupDisabledIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsPickupToWake}, "Disabled"));
+  p.pickup_to_wake = kPickupDisabledIdx;  // Disabled
 #endif
 #if !LATTER_HAS_BATTERY || LATTER_IS_STATIONARY
-  p.battery_hibernate_timeout = 4;  // Disabled
+  constexpr uint8_t kHibernateDisabledIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsBatteryHibernateTimeout}, "Disabled"));
+  p.battery_hibernate_timeout = kHibernateDisabledIdx;  // Disabled
 #endif
+  constexpr uint8_t kClockAnalogIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsClockFace}, "Modern Analog"));
+  constexpr uint8_t kClockMinimalIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsClockFace}, "Minimal Digital"));
+  constexpr uint8_t kTime24hIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsTimeFormat}, "24-Hour"));
 #if !LATTER_ROUND_DISPLAY
-  if (p.clock_face == 1) p.clock_face = 0;  // Rectangular panels clamp Modern Analog -> Minimal Digital
+  if (p.clock_face == kClockAnalogIdx) p.clock_face = kClockMinimalIdx;  // Rectangular panels clamp Modern Analog -> Minimal Digital
 #endif
-  p.clock_face_digital = (p.clock_face != 1);
-  p.is_24h_format = (p.time_format == 1);
+  (void)kClockMinimalIdx;
+  p.clock_face_digital = (p.clock_face != kClockAnalogIdx);
+  p.is_24h_format = (p.time_format == kTime24hIdx);
 }
 
 inline void seed_hardware_sleep_defaults_for_traits(PersistedDevicePrefs &p, bool is_stationary,
@@ -845,7 +892,93 @@ bool tick_persisted_prefs_flush(uint32_t now_ms, uint32_t debounce_ms = 1500U);
 
 void seed_default_prefs_if_needed(PersistedDevicePrefs &p = persisted_prefs());
 
-const char *pref_key_name(PrefKey key);
+inline constexpr std::array<DevicePrefsField, static_cast<size_t>(PrefKey::COUNT)> kPrefKeyDeviceFields = {{
+    DevicePrefsField::WAKE_WORD_MODE,
+    DevicePrefsField::TAP_TO_WAKE,
+    DevicePrefsField::PICKUP_TO_WAKE,
+    DevicePrefsField::BATTERY_SCREEN_TIMEOUT,
+    DevicePrefsField::DOCKED_IDLE_TIMEOUT,
+    DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT,
+    DevicePrefsField::SCREENSAVER_MODE,
+    DevicePrefsField::SCREENSAVER_STYLE,
+    DevicePrefsField::AUTO_BRIGHTNESS_MODE,
+    DevicePrefsField::MANUAL_BRIGHTNESS,
+    DevicePrefsField::DAY_BRIGHTNESS,
+    DevicePrefsField::NIGHT_BRIGHTNESS,
+    DevicePrefsField::DAY_START_HOUR,
+    DevicePrefsField::NIGHT_START_HOUR,
+    DevicePrefsField::COLOR_PROFILE,
+    DevicePrefsField::VA_VISUAL_PROFILE,
+    DevicePrefsField::START_SCREEN,
+    DevicePrefsField::CLOCK_FACE,
+    DevicePrefsField::TIME_FORMAT,
+    DevicePrefsField::WEATHER_BACKGROUND,
+    DevicePrefsField::HOME_SUN,
+    DevicePrefsField::HOME_MOON,
+    DevicePrefsField::WAKE_GREETING,
+    DevicePrefsField::ALBUM_ART_STYLE,
+    DevicePrefsField::MUSIC_OVERLAY_STYLE,
+    DevicePrefsField::ALBUM_SORT_ORDER,
+    DevicePrefsField::ARTIST_ALBUM_SORT_ORDER,
+    DevicePrefsField::PODCAST_SORT_ORDER,
+    DevicePrefsField::WW_SENS_OKAY_NABU,
+    DevicePrefsField::WW_SENS_HEY_LUNA,
+    DevicePrefsField::WW_SENS_HEY_JARVIS,
+    DevicePrefsField::WW_SENS_HEY_MYCROFT,
+    DevicePrefsField::WW_SENS_ALEXA,
+    DevicePrefsField::WAKE_SCREEN_ON_ASSIST,
+    DevicePrefsField::ALERT_VOLUME,
+    DevicePrefsField::VOLUME_STEP_SIZE,
+    DevicePrefsField::GAME_SOUND_EFFECTS,
+    DevicePrefsField::BLE_BEACON_ENABLED,
+    DevicePrefsField::BLE_BEACON_MODE,
+    DevicePrefsField::HOME_SCREEN_ENABLED,
+    DevicePrefsField::RETURN_TO_HOME_TIMEOUT,
+    DevicePrefsField::HOME_CLOCK_TAP_ACTION,
+    DevicePrefsField::SHOW_UTC_CLOCK,
+    DevicePrefsField::WORLD_CLOCKS,
+    DevicePrefsField::ALARMS_SUMMARY,
+    DevicePrefsField::LOCAL_CLOCK_LABEL,
+    DevicePrefsField::TOOLS_ITEMS,
+    DevicePrefsField::GAMES_ITEMS,
+    DevicePrefsField::HOME_DATE_TAP_ACTION,
+    DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS,
+    DevicePrefsField::CALENDAR_WEEK_START,
+    DevicePrefsField::BEDTIME_ACTIVE,
+    DevicePrefsField::BEDTIME_DISPLAY,
+    DevicePrefsField::BEDTIME_SCHEDULE,
+    DevicePrefsField::BEDTIME_START_HOUR,
+    DevicePrefsField::BEDTIME_END_HOUR,
+    DevicePrefsField::BEDTIME_BRIGHTNESS,
+    DevicePrefsField::CAMERA_DEFAULT_VIEW,
+    DevicePrefsField::CAMERA_CAROUSEL_INTERVAL,
+    DevicePrefsField::CAMERA_FRAMING,
+    DevicePrefsField::CAMERA_STREAM_MODE,
+    DevicePrefsField::CAMERA_DOORBELL_POPUP,
+    DevicePrefsField::SCREENSAVER_PHOTO_CLOCK,
+    DevicePrefsField::WEATHER_APP_BACKGROUND,
+    DevicePrefsField::DO_NOT_DISTURB,
+    DevicePrefsField::MUSIC_AUTO_OPEN,
+    DevicePrefsField::GLASS_STYLE,
+}};
+
+inline constexpr const char *pref_key_name(PrefKey key) noexcept {
+  const size_t idx = static_cast<size_t>(key);
+  if (idx >= kPrefKeyDeviceFields.size()) return "";
+  if (key == PrefKey::BLE_BEACON_ENABLED) return "ble_beacon_enabled";
+  if (key == PrefKey::TOOLS_ITEMS) return "tools_items";
+  if (key == PrefKey::GAMES_ITEMS) return "games_items";
+  const DevicePrefsField field = kPrefKeyDeviceFields[idx];
+  for (const auto &spec : kPrefContractSpecs) {
+    if (spec.field == field) return spec.key.empty() ? "" : spec.key.data();
+  }
+  return "";
+}
+static_assert(std::string_view(pref_key_name(PrefKey::WAKE_WORD_MODE)) == "wake_word_mode");
+static_assert(std::string_view(pref_key_name(PrefKey::BLE_BEACON_ENABLED)) == "ble_beacon_enabled");
+static_assert(std::string_view(pref_key_name(PrefKey::TOOLS_ITEMS)) == "tools_items");
+static_assert(std::string_view(pref_key_name(PrefKey::GAMES_ITEMS)) == "games_items");
+static_assert(std::string_view(pref_key_name(PrefKey::GLASS_STYLE)) == "glass_style");
 std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = persisted_prefs());
 bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
                          PrefMask &changed_mask, uint32_t &effects_mask);

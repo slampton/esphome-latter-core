@@ -1,40 +1,20 @@
 # ==============================================================================
-# Latter Core Umbrella Module: Full Display Firmware
+# Latter Core Umbrella Module: Full Display + Audio + Touch Firmware
 # (modules/latter_display_firmware.yaml)
-# Single entry point included by devices/*.yaml and custom display builds.
-# Pulls in Latter Core OS (system_core, system_ui_sync, power_policy,
-# sleep_lifecycle, audio_pipeline, voice_assistant, audio_scripts,
-# display_pipeline, timers_and_fetchers) + Universal GUI.
+# Single entry point included by devices/*.yaml. Composes on top of
+# modules/latter_display_only_firmware.yaml (logger, safe_mode, system_core,
+# system_ui_sync, power_policy, sleep_lifecycle, motion_service,
+# display_pipeline, timers_and_fetchers, guis/universal/gui) and adds
+# full-duplex audio, Voice Assistant, and capacitive touch input.
 # ==============================================================================
 
 # Board-specific substitutions (font_*_size, art_resize, sendspin_art_resize,
 # sendspin_buffer_size, announcement_buffer_size, mww_internal_ram, audio_*,
 # api_reboot_timeout) and typed `latter_core:` hardware traits live strictly in boards/*.yaml.
 
-# Boot lines are usually logged before any API log viewer connects. Keep all warnings/errors
-# (captured automatically across every tag) plus the one-shot `latter` boot banner in a lean
-# 1 kB ring buffer (fixed buffer, no heap) for replay when a log viewer connects.
-# Steady state at the default INFO level is quiet: internal HAL/policy details log at DEBUG,
-# and [PROF:*] diagnostics emit only while the Telemetry Profiler is on ([PROF GATE], auto-off 24 h).
-logger:
-  level: INFO
-  boot_log_buffer_size: 1kB
-  boot_logs:
-    latter: INFO
-
-safe_mode:
-  boot_is_good_after: 60s
-
 packages:
-  latter_system:          !include system_core.yaml
-  latter_system_ui_sync:  !include system_ui_sync.yaml
-  latter_power_policy:    !include power_policy.yaml
-  latter_sleep_lifecycle: !include sleep_lifecycle.yaml
-  latter_motion_service:  !include motion_service.yaml
+  latter_display_base:    !include latter_display_only_firmware.yaml
   latter_audio_pipeline:  !include audio_pipeline.yaml
   latter_voice_assistant: !include voice_assistant.yaml
   latter_audio_scripts:   !include audio_scripts.yaml
-  latter_pipeline:        !include display_pipeline.yaml
-  latter_timers:          !include timers_and_fetchers.yaml
-  latter_gui:             !include ../guis/universal/gui.yaml
   latter_gui_touch:       !include ../guis/universal/gui_touch.yaml

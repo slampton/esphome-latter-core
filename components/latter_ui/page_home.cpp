@@ -644,13 +644,15 @@ void draw_home_activity_row_contents(
 
   const int card_w     = is_list_row ? layout().list_card_w : layout().home_activity_w();
   const int card_left  = SCREEN_CX - (card_w / 2), card_right = SCREEN_CX + (card_w / 2);
-  const int gx         = is_list_row ? (card_left + scale_x(18)) : (card_left + scale_x(28));
-  const int txt_x      = is_list_row ? (card_left + scale_x(33)) : (card_left + scale_x(48));
-  const int div1_x     = is_list_row ? (card_right - scale_x(44))
-                                     : (has_dropdown_ext ? (card_right - scale_x(108)) : (card_right - scale_x(56)));
-  const int act_bx     = is_list_row ? (card_right - scale_x(22))
-                                     : (has_dropdown_ext ? (card_right - scale_x(80))  : (card_right - scale_x(28)));
-  const int max_txt    = std::max(64, div1_x - txt_x - scale_x(8));
+  const int act_col_w  = scale_s(56);
+  const int drop_col_w = scale_s(52);
+  const int gx         = is_list_row ? (card_left + scale_s(18)) : (card_left + scale_s(28));
+  const int txt_x      = is_list_row ? (card_left + scale_s(33)) : (card_left + scale_s(48));
+  const int div1_x     = is_list_row ? (card_right - scale_s(44))
+                                     : (has_dropdown_ext ? (card_right - drop_col_w - act_col_w) : (card_right - act_col_w));
+  const int act_bx     = is_list_row ? (card_right - scale_s(22))
+                                     : (has_dropdown_ext ? (card_right - drop_col_w - act_col_w / 2) : (card_right - act_col_w / 2));
+  const int max_txt    = std::max(64, div1_x - txt_x - scale_s(8));
   const int btn_r      = is_list_row ? scale_s(13)
                                      : (is_two_row_card ? ((SCREEN_W < 380) ? 15 : scale_s(17))
                                                         : ((SCREEN_W < 380) ? 16 : scale_s(18)));
@@ -719,8 +721,10 @@ void render_home_activity_card_row(
   const int card_w = is_list_row ? layout().list_card_w : layout().home_activity_w();
   const int card_h = is_list_row ? layout().slot5_h : scale_y(68);
   const int card_right = cx + (card_w / 2);
-  const int div1_x = is_list_row ? (card_right - scale_x(44))
-                                 : (has_dropdown_ext ? (card_right - scale_x(108)) : (card_right - scale_x(56)));
+  const int act_col_w = scale_s(56);
+  const int drop_col_w = scale_s(52);
+  const int div1_x = is_list_row ? (card_right - scale_s(44))
+                                 : (has_dropdown_ext ? (card_right - drop_col_w - act_col_w) : (card_right - act_col_w));
   const int div_h = is_list_row ? scale_y(14) : scale_y(23);
   const UiColor surf_bg = render_card_box(it, cx - card_w / 2, pill_y - card_h / 2, card_w, card_h,
                                           card_bg, card_brd, kRadiusCardPx(), GlassVariant::Clear, col_white, true);
@@ -728,9 +732,9 @@ void render_home_activity_card_row(
                                   surf_bg, btn_bg, theme_secondary, col_white, 1.0f);
   fast_line(it, div1_x, pill_y - div_h, div1_x, pill_y + div_h, card_brd);
   if (has_dropdown_ext) {
-    const int div2_x = card_right - scale_x(52), drop_bx = card_right - scale_x(26);
+    const int div2_x = card_right - drop_col_w, drop_bx = card_right - drop_col_w / 2;
     fast_line(it, div2_x, pill_y - div_h, div2_x, pill_y + div_h, card_brd);
-    const int ch_w = scale_x(8), ch_h = scale_y(4);
+    const int ch_w = scale_s(8), ch_h = scale_s(4);
     for (int w = -1; w <= 1; w++) {
       fast_line(it, drop_bx - ch_w, pill_y - ch_h + w, drop_bx, pill_y + ch_h + w, col_white);
       fast_line(it, drop_bx + ch_w, pill_y - ch_h + w, drop_bx, pill_y + ch_h + w, col_white);
@@ -744,11 +748,13 @@ void draw_activity_card_chrome(
     float surf_alpha, float row_sep_a, UiColor card_bg, UiColor col_white) {
   const UiColor div_col = (surf_alpha >= 0.99f) ? kChromeCardBrdOn : lerp_color(card_bg, kChromeCardBrdOn, surf_alpha);
   const int card_right = cx + card_w / 2;
-  const int div2_x = card_right - scale_x(52);
-  const int div1_x = has_drop ? (card_right - scale_x(108)) : (card_right - scale_x(56));
+  const int act_col_w = scale_s(56);
+  const int drop_col_w = scale_s(52);
+  const int div2_x = card_right - drop_col_w;
+  const int div1_x = has_drop ? (card_right - drop_col_w - act_col_w) : (card_right - act_col_w);
 
   if (row_sep_a > 0.05f) {
-    const int sep_x0 = card_x0 + scale_x(18), sep_x1 = (has_drop ? div2_x : card_right) - scale_x(12);
+    const int sep_x0 = card_x0 + scale_s(18), sep_x1 = (has_drop ? div2_x : card_right) - scale_s(12);
     if (sep_x1 > sep_x0) {
       const UiColor sep_col = (row_sep_a >= 0.99f) ? kChromeCardBrdOn : lerp_color(card_bg, kChromeCardBrdOn, row_sep_a);
       fast_hline(it, sep_x0, cur_cy, sep_x1 - sep_x0 + 1, sep_col);
@@ -766,7 +772,7 @@ void draw_activity_card_chrome(
     const int col_h = std::max(scale_y(12), card_h / 2 - scale_y(10));
     fast_line(it, div2_x, cur_cy - col_h, div2_x, cur_cy + col_h, div_col);
     const UiColor chev_col = (surf_alpha >= 0.99f) ? col_white : lerp_color(card_bg, col_white, surf_alpha);
-    const int d_bx = card_right - scale_x(26), ch_w = scale_x(8), ch_h = scale_y(4);
+    const int d_bx = card_right - drop_col_w / 2, ch_w = scale_s(8), ch_h = scale_s(4);
     for (int w = -1; w <= 1; w++) {
       fast_line(it, d_bx - ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
       fast_line(it, d_bx + ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
@@ -1164,7 +1170,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     register_home_activity_hit_regions(frame_hits(), cx, step.target_cy, card_w, step.target_h,
                                        (step.target_rows >= 2) && (view.bottom >= 0), step.has_drop,
-                                       view.top, view.bottom, scale_x(56), scale_x(52));
+                                       view.top, view.bottom, scale_s(56), scale_s(52));
   } else if (step.draw_fade_out) {
     const int fade_h = step.card_h;
     const float fade_alpha = step.surf_alpha;

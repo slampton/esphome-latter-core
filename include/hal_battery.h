@@ -31,13 +31,7 @@
 
 #include "hal_manifest.h"
 #include "latter_prof.h"
-
-#ifndef LATTER_BATTERY_MAH
-#define LATTER_BATTERY_MAH 0
-#endif
-#ifndef LATTER_HAS_RTC
-#define LATTER_HAS_RTC 0
-#endif
+#include "latter_traits.h"
 
 #if defined(USE_ESP32) && defined(LATTER_HAS_BATTERY) && LATTER_HAS_BATTERY
 static_assert(LATTER_BATTERY_MAH >= 100 && LATTER_BATTERY_MAH <= 20000,

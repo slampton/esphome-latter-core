@@ -1,9 +1,6 @@
 #include "ui_cadence.h"
 #include "ui_compositor.h"
 #include "ui_layout.h"
-#if !LATTER_GUI_UNIVERSAL
-#include "ui_touch_engine.h"
-#endif
 #include "audio_router.h"
 #include "hal_display_lifecycle.h"
 #include "hal_panel_power.h"
@@ -1253,67 +1250,5 @@ CadenceScreensaverActions FrameCadenceController::step_screensaver_20ms(
   in.last_disp_end_ms = last_disp_update_end_ms();
   return evaluate_screensaver_20ms(in);
 }
-
-#if !LATTER_GUI_UNIVERSAL
-// Minimal no-op Universal App hook fallbacks when compiling Toolkit-only (`gui: none`).
-int &home_activity_overlay_page() {
-  static int pg = 0;
-  return pg;
-}
-int &snoozed_alarm_slot() noexcept { return runtime_state().alarms.snoozed_alarm_slot; }
-uint32_t &wake_greeting_start_ms() {
-  static uint32_t ms = 0U;
-  return ms;
-}
-bool &wake_greeting_latched() {
-  static bool lat = false;
-  return lat;
-}
-bool is_wake_greeting_visible(uint32_t, bool) { return false; }
-bool is_wake_greeting_fading(uint32_t, bool) { return false; }
-void dismiss_wake_greeting() { wake_greeting_start_ms() = 0U; }
-bool is_doorbell_or_intercom_active() { return false; }
-bool is_home_activity_carousel_animating(uint32_t) { return false; }
-bool is_home_activity_fading_out(uint32_t) { return false; }
-bool has_pending_home_activity_fade_settle(uint32_t) { return false; }
-bool home_activity_slide_active(uint32_t) { return false; }
-uint32_t home_activity_next_rotate_due_ms(uint32_t) { return 0U; }
-bool home_activity_band(int &, int &) { return false; }
-const HomeActivityItem *home_activity_rendered_items(int &out_count) {
-  out_count = 0;
-  return nullptr;
-}
-bool &weather_sim_dirty() {
-  static bool d = false;
-  return d;
-}
-bool evaluate_sky_has_motion(std::string_view, std::string_view, std::string_view, uint32_t) { return false; }
-bool weather_sky_motion_stepping(bool, uint32_t, uint32_t, bool) { return false; }
-DiceRollState &dice_state() {
-  static DiceRollState st{};
-  return st;
-}
-void trigger_dice_roll(uint32_t, uint32_t, uint32_t) {}
-CoinFlipState &coin_state() {
-  static CoinFlipState st{};
-  return st;
-}
-void trigger_coin_flip(uint32_t, uint32_t) {}
-int &pending_game_sfx() {
-  static int sfx = 0;
-  return sfx;
-}
-GameInputQueue &game_input() {
-  static GameInputQueue q{};
-  return q;
-}
-bool TouchGestureEngine::navigate_route(std::string_view, uint32_t) { return false; }
-DeviceUiCommandEffects TouchGestureEngine::clear_showcase(uint32_t) { return {}; }
-DeviceUiCommandEffects TouchGestureEngine::tick_showcase(uint32_t) { return {}; }
-DeviceUiCommandEffects TouchGestureEngine::execute_device_ui_command(std::string_view, uint32_t) { return {}; }
-DeviceUiCommandEffects TouchGestureEngine::execute_device_ui_command_impl_(std::string_view, uint32_t, bool) {
-  return {};
-}
-#endif
 
 }  // namespace latter_ui

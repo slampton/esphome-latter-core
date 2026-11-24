@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Zero-Privilege Diagnostic Outbox RPC Framing & PIN Wrap Crypto
+// Latter Core: Zero-Privilege Diagnostic Outbox RPC Framing & PIN Wrap Crypto
 // (include/latter_rpc.h)
 // Encodes Device -> Home Assistant RPC calls onto the bound "System: RPC Outbox"
 // text_sensor (<boot_hex>:<seq>:<part>/<total>|<json_slice>, <= 230 bytes/frame,

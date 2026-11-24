@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Pure C++20 State Enums, Capabilities & Protocol Primitives
+// Latter Core: Pure C++20 State Enums, Capabilities & Protocol Primitives
 // (include/state/state_common.h)
 // ==============================================================================
 
@@ -21,55 +21,12 @@
 #include <type_traits>
 #include <vector>
 
-#if __has_include("esphome/core/defines.h")
-#include "esphome/core/defines.h"
-#endif
+#include "latter_traits.h"
 #if __has_include("esphome/core/log.h")
 #include "esphome/core/log.h"
 #endif
-#if defined(ESP_PLATFORM) && __has_include(<sdkconfig.h>)
-#include <sdkconfig.h>
-#endif
 
 #include "latter_protocol.h"
-
-#ifndef LATTER_SLOT_COUNT
-#define LATTER_SLOT_COUNT 5
-#endif
-#ifndef LATTER_CARD_SLOT_COUNT
-#define LATTER_CARD_SLOT_COUNT 3
-#endif
-#ifndef LATTER_SCREEN_W
-#define LATTER_SCREEN_W 466
-#endif
-#ifndef LATTER_SCREEN_H
-#define LATTER_SCREEN_H 466
-#endif
-#ifndef LATTER_ROUND_DISPLAY
-#define LATTER_ROUND_DISPLAY 1
-#endif
-#ifndef LATTER_HAS_IMU
-#define LATTER_HAS_IMU 1
-#endif
-#ifndef LATTER_HAS_BATTERY
-#define LATTER_HAS_BATTERY 1
-#endif
-#ifndef LATTER_IS_STATIONARY
-#define LATTER_IS_STATIONARY 0
-#endif
-#ifndef LATTER_IS_WEARABLE
-#define LATTER_IS_WEARABLE 0
-#endif
-#ifndef LATTER_CHIP_P4
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-#define LATTER_CHIP_P4 1
-#else
-#define LATTER_CHIP_P4 0
-#endif
-#endif
-#ifndef LATTER_HAS_VIDEO_STREAM
-#define LATTER_HAS_VIDEO_STREAM 1
-#endif
 
 namespace latter_rpc {
 #ifndef LATTER_RPC_SLOT_CHANNEL_DEFINED
@@ -339,6 +296,23 @@ inline constexpr std::string_view utf8_safe_prefix(std::string_view sv, size_t m
     }
   }
   return sv.substr(0U, end);
+}
+
+inline std::string v3_escape_subfield(std::string_view sv) {
+  std::string out;
+  out.reserve(sv.size());
+  for (char ch : sv) {
+    if (ch == '\\') {
+      out += "\\\\";
+    } else if (ch == '|') {
+      out += "\\p";
+    } else if (ch == ';') {
+      out += "\\s";
+    } else {
+      out.push_back(ch);
+    }
+  }
+  return out;
 }
 
 inline std::string v3_unescape_subfield(std::string_view sv) {

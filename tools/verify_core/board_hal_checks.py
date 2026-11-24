@@ -424,26 +424,30 @@ def _verify_ota_and_api_security(failures: list[str]) -> None:
             "[OTA SECURITY] modules/system_*.yaml must define both ota http_request and esphome (id: ota_esphome)"
         )
     if (
-        len(re.findall(r"\bhandle_ota_begin\s*\(", sys_uncommented)) != EXPECTED_OTA_HOOK_CALLS
+        len(re.findall(r"\bscript\.execute\s*:\s*ota_on_begin\b", sys_uncommented)) != EXPECTED_OTA_HOOK_CALLS
+        or len(re.findall(r"\bhandle_ota_begin\s*\(", sys_uncommented)) != 1
         or len(re.findall(r"\bhandle_ota_progress\s*\(", sys_uncommented)) != EXPECTED_OTA_HOOK_CALLS
     ):
         failures.append(
-            "[OTA SECURITY] modules/system_*.yaml must wire handle_ota_begin and handle_ota_progress on both OTA platforms"
+            "[OTA SECURITY] modules/system_*.yaml must wire ota_on_begin (calling handle_ota_begin) "
+            "and handle_ota_progress on both OTA platforms"
         )
     val_txt = (ROOT / ".github" / "workflows" / "validate.yml").read_text(encoding="utf-8")
     if not re.search(r"(?m)^\s*ota:\s*\n\s*-\s*id:\s*!extend\s+ota_esphome\s*\n\s*encryption:\s*$", val_txt):
         failures.append(
             "[OTA SECURITY] .github/workflows/validate.yml wrapper must extend ota_esphome with Noise encryption:"
         )
-    base_uncommented = strip_yaml_comments((ROOT / "modules" / "base.yaml").read_text(encoding="utf-8"))
-    if not re.search(r"(?m)^\s*batch_delay:\s*0ms\b", base_uncommented):
-        failures.append("[API STANDARDS] modules/base.yaml must set batch_delay: 0ms under api:")
-    if not re.search(r"(?m)^\s*encryption:\s*$", base_uncommented):
-        failures.append("[API STANDARDS] modules/base.yaml must declare encryption: under api:")
-    if not re.search(r"(?m)^\s*outgoing_connection:\s*\n\s*delay:\s*\$\{api_outgoing_delay\}", base_uncommented):
-        failures.append("[API STANDARDS] modules/base.yaml must declare outgoing_connection: delay: ${api_outgoing_delay}")
-    if "id: latter_ping_action" not in base_uncommented:
-        failures.append("[API STANDARDS] modules/base.yaml must set id: latter_ping_action on latter_ping")
+    sys_core_uncommented = strip_yaml_comments((ROOT / "modules" / "system_core.yaml").read_text(encoding="utf-8"))
+    if not re.search(r"(?m)^\s*batch_delay:\s*0ms\b", sys_core_uncommented):
+        failures.append("[API STANDARDS] modules/system_core.yaml must set batch_delay: 0ms under api:")
+    if not re.search(r"(?m)^\s*encryption:\s*$", sys_core_uncommented):
+        failures.append("[API STANDARDS] modules/system_core.yaml must declare encryption: under api:")
+    if not re.search(r"(?m)^\s*outgoing_connection:\s*\n\s*delay:\s*\$\{api_outgoing_delay\}", sys_core_uncommented):
+        failures.append(
+            "[API STANDARDS] modules/system_core.yaml must declare outgoing_connection: delay: ${api_outgoing_delay}"
+        )
+    if "id: latter_ping_action" not in sys_core_uncommented:
+        failures.append("[API STANDARDS] modules/system_core.yaml must set id: latter_ping_action on latter_ping")
 
 
 def _check_ota_block_no_password(yrel: str, ytxt: str, failures: list[str]) -> None:

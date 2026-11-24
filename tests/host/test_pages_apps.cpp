@@ -31,7 +31,12 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
   LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") == std::string::npos);
   LATTER_CHECK(gui_yaml.find("rs.nav.gui_page == 7") != std::string::npos);
-  LATTER_CHECK(state_h.find("\"Full Screen\", \"Letterbox\", \"Standard\", \"None\"") != std::string::npos);
+  LATTER_CHECK(state_h.find("kPrefOptsAlbumArtStyle") != std::string::npos);
+  LATTER_CHECK(latter_core::kPrefOptsAlbumArtStyle.size() == 4U &&
+               latter_core::kPrefOptsAlbumArtStyle[0] == "Full Screen" &&
+               latter_core::kPrefOptsAlbumArtStyle[1] == "Letterbox" &&
+               latter_core::kPrefOptsAlbumArtStyle[2] == "Standard" &&
+               latter_core::kPrefOptsAlbumArtStyle[3] == "None");
 
   latter_ui::touch_router().note_tap(10000U);
   LATTER_CHECK(!latter_ui::touch_router().allow_tap(10080U, latter_ui::TOUCH_DEBOUNCE_BUTTON));

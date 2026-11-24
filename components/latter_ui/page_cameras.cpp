@@ -337,8 +337,8 @@ void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                           WidgetId::CAM_VIDEO_TAP, kHitTap);
   }
   if (btn_cnt > 0) {
-    ui::action_pill_row(it, act_y, act_h, std::min(kMaxContentColW, scale_x(376)),
-                        scale_x(104), scale_x(8), btns, btn_cnt, ctx.font_small, 12);
+    ui::action_pill_row(it, act_y, act_h, std::min(kMaxContentColW, scale_s(376)),
+                        scale_s(104), scale_s(8), btns, btn_cnt, ctx.font_small, 12);
   }
 
   if (!rs.intercom.cam_intercom_status.empty() &&
@@ -444,7 +444,7 @@ void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const int ctrl_pad = std::max(0, (ly.min_hit_px() - ctrl_h + 1) / 2);
   const int bot_hud_top = std::max(1, ctrl_y - ctrl_h / 2 - ctrl_pad - 1);
   frame_hits().add_rect(0, 0, SCREEN_W, bot_hud_top, WidgetId::CAM_VIDEO_TAP, kHitTap);
-  const int pause_w = std::max(96, scale_x(118));
+  const int pause_w = std::max(96, scale_s(118));
   ui::action_pill_centered(it, ctx.cx, pause_w, ctrl_y, ctrl_h,
                            rs.cameras.carousel_paused ? ctx.col_gold : ui::chrome_card_brd_on(),
                            rs.cameras.carousel_paused ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
@@ -453,7 +453,7 @@ void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                            WidgetId::CAM_CAROUSEL_PAUSE_BTN, kHitTap | kHitFocusSlot);
   if (car_cnt > 1) {
     const int btn_r = ctrl_h / 2;
-    const int gap = scale_x(12);
+    const int gap = scale_s(12);
     ui::icon_circle_button(it, ctx.cx - pause_w / 2 - gap - btn_r, ctrl_y, btn_r,
                            ui::chrome_card_bg_off(), ui::chrome_card_brd_on(), ctx.col_white,
                            draw_cam_chev_left, nullptr, WidgetId::CAM_PREV_BTN);
@@ -541,6 +541,7 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
   if (src == nullptr || src_w <= 0 || src_h <= 0 || dst_rect.w <= 0 || dst_rect.h <= 0) {
     return false;
   }
+  backdrop_active() = true;
 
   const CameraRect fit_r = compute_video_display_rect(dst_rect, src_w, src_h, fill);
   // Paint black letterbox strips inside dst_rect outside fit_r
@@ -673,7 +674,7 @@ void render_doorbell_ptt_banner(Rgb565Surface &it, const UiFrameContext &ctx,
   const auto &rs = runtime_state();
   const auto &ly = layout();
   const int bh = std::max(scale_y(44), ly.min_hit_px());
-  const int bw = ui::compute_uniform_stack_w(center_y, center_y, bh, scale_x(340), 16);
+  const int bw = ui::compute_uniform_stack_w(center_y, center_y, bh, std::min(kMaxContentColW, scale_s(340)), 16);
   const int bx0 = ctx.cx - bw / 2;
   const int by0 = center_y - bh / 2;
   const UiColor brd = rs.voice.vad_active ? ctx.col_green : ctx.col_gold;
@@ -681,15 +682,15 @@ void render_doorbell_ptt_banner(Rgb565Surface &it, const UiFrameContext &ctx,
   render_card_box(it, bx0, by0, bw, bh, ui::chrome_card_bg_on(), brd, bh / 2, GlassVariant::Clear);
 
   // Live VAD pulse indicator on left
-  const int dot_x = bx0 + scale_x(20);
+  const int dot_x = bx0 + scale_s(20);
   const bool pulse_hi = ((ctx.now_ms / 240U) % 2U) == 0U;
   const int dot_r = std::max(4, scale_s(rs.voice.vad_active && pulse_hi ? 7 : 5));
   fast_filled_circle_aa(it, dot_x, center_y, dot_r, brd);
 
   const char *msg = (SCREEN_W < 380) ? "Listening... Tap"
                                      : "Listening... (Tap to send)";
-  const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - scale_x(46)), ctx.font_small);
-  ui::shadow_print(it, bx0 + scale_x(34), center_y, ctx.font_small, ctx.col_white,
+  const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - scale_s(46)), ctx.font_small);
+  ui::shadow_print(it, bx0 + scale_s(34), center_y, ctx.font_small, ctx.col_white,
                    TextAlign::CENTER_LEFT, fit_msg.c_str());
 
   frame_hits().add_rect(bx0, by0, bw, bh, WidgetId::CAM_PTT_BANNER_STOP, kHitTap | kHitFocusSlot);

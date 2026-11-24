@@ -29,9 +29,7 @@
 #include "hal_link_report.h"
 #include "hal_panel_power.h"
 #include "ui_compositor.h"
-#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
-#endif
 #include "ui_touch_engine.h"
 
 #include <algorithm>
@@ -297,12 +295,10 @@ inline bool render_system_takeovers(esphome::display::Display &it, const UiFrame
   return render_system_takeovers(surf, ctx, st);
 }
 
-#if LATTER_GUI_UNIVERSAL
 inline void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx) {
   Rgb565Surface surf = make_esphome_surface(it);
   render_active_page(surf, ctx);
 }
-#endif
 
 inline void render_active_focus_overlay(esphome::display::Display &it, uint32_t now_ms,
                                         UiColor theme_primary, UiColor col_white) {
@@ -330,12 +326,10 @@ inline void render_offline_pill(esphome::display::Display &it, int cx, uint32_t 
   render_offline_pill(surf, cx, now_ms, font, text_c, tmp.ha_connected, tmp.ha_disconnect_ms);
 }
 
-#if LATTER_GUI_UNIVERSAL
 inline void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night) {
   Rgb565Surface surf = make_esphome_surface(it);
   render_static_day_night_sky_base(surf, cx, cy, is_night);
 }
-#endif
 
 template <typename DispT>
   requires(!std::is_pointer_v<DispT>)

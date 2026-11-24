@@ -77,7 +77,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112303") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112401") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"sdk\":") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"max_payload_bytes\"") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"beacon\":null") != std::string::npos);
@@ -360,8 +360,6 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
   LATTER_CHECK(std::string_view(kDefaultGamesItems) ==
                "blocks,snake,drop_four,marbles,archery,bricks,chomp");
-  LATTER_CHECK(device_prefs_state().tools_items == kDefaultToolsItems);
-  LATTER_CHECK(device_prefs_state().games_items == kDefaultGamesItems);
   LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
   LATTER_CHECK(std::string_view(device_prefs().games_items) == kDefaultGamesItems);
   LATTER_CHECK(persisted_prefs().home_date_tap_action == 1U);
@@ -418,8 +416,6 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK((eff & kPrefEffectNavPolicy) != 0U && (eff & kPrefEffectRedraw) != 0U);
   LATTER_CHECK(std::string_view(persisted_prefs().tools_items) == "dice,flashlight");
   LATTER_CHECK(std::string_view(persisted_prefs().games_items) == "blocks,snake,marbles,chomp");
-  LATTER_CHECK(device_prefs_state().tools_items == "dice,flashlight");
-  LATTER_CHECK(device_prefs_state().games_items == "blocks,snake,marbles,chomp");
   LATTER_CHECK(device_prefs_state().nvs_save_pending);
 
   V3ReduceContext rctx{};
@@ -1261,6 +1257,158 @@ void test_wave2_overhaul_contracts() {
   }
 }
 
+void test_wave2_reconnect_dirty_prefs_and_contract_wiring() {
+  using namespace latter_core;
+
+  // 1. Pref contract wiring: pref_key_name() covers all 67 PrefKey values and matches kPrefContractSpecs.
+  size_t contract_matched = 0U;
+  for (uint8_t k = 0; k < static_cast<uint8_t>(PrefKey::COUNT); ++k) {
+    const auto pk = static_cast<PrefKey>(k);
+    const std::string_view nm = pref_key_name(pk);
+    LATTER_CHECK(!nm.empty());
+    if (pk == PrefKey::BLE_BEACON_ENABLED || pk == PrefKey::TOOLS_ITEMS || pk == PrefKey::GAMES_ITEMS) {
+      LATTER_CHECK(find_pref_contract(nm) == nullptr);
+    } else {
+      const PrefContractSpec *spec = find_pref_contract(nm);
+      LATTER_CHECK(spec != nullptr && spec->key == nm);
+      ++contract_matched;
+    }
+  }
+  LATTER_CHECK(contract_matched == 64U);
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::BLE_BEACON_ENABLED)) == "ble_beacon_enabled");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::TOOLS_ITEMS)) == "tools_items");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::GAMES_ITEMS)) == "games_items");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::MANUAL_BRIGHTNESS)) == "manual_brightness");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::GLASS_STYLE)) == "glass_style");
+  // The single non-PersistedDevicePrefs contract spec is volatile weather_sim_condition.
+  LATTER_CHECK(kPrefContractSpecs.size() == 65U);
+  LATTER_CHECK(find_pref_contract("weather_sim_condition") != nullptr);
+
+  // Generated default & clamp wiring on PersistedDevicePrefs.
+  {
+    PersistedDevicePrefs def{};
+    LATTER_CHECK(def.manual_brightness == static_cast<uint8_t>(kPrefDefaultManualBrightness));
+    LATTER_CHECK(def.day_brightness == static_cast<uint8_t>(kPrefDefaultDayBrightness));
+    LATTER_CHECK(def.night_brightness == static_cast<uint8_t>(kPrefDefaultNightBrightness));
+    LATTER_CHECK(def.bedtime_brightness == static_cast<uint8_t>(kPrefDefaultBedtimeBrightness));
+    LATTER_CHECK(def.alert_volume == static_cast<uint8_t>(kPrefDefaultAlertVolume));
+    LATTER_CHECK(def.album_art_style == kPrefDefaultAlbumArtStyleIdx);
+    LATTER_CHECK(def.glass_style == kPrefDefaultGlassStyleIdx);
+    LATTER_CHECK(def.music_auto_open == kPrefDefaultMusicAutoOpenIdx);
+    LATTER_CHECK(def.do_not_disturb == kPrefDefaultDoNotDisturb);
+    def.manual_brightness = 250U;
+    def.day_brightness = 0U;
+    def.alert_volume = 1U;
+    clamp_prefs_to_capabilities(def);
+    LATTER_CHECK(def.manual_brightness == static_cast<uint8_t>(kPrefMaxManualBrightness));
+    LATTER_CHECK(def.day_brightness == static_cast<uint8_t>(kPrefMinDayBrightness));
+    LATTER_CHECK(def.alert_volume == static_cast<uint8_t>(kPrefMinAlertVolume));
+  }
+
+  // 2. P0 Reconnect Pref-Loss Fix: offline dirty prefs survive pre-hello pushes (even with in_seq > prefs_seq)
+  //    and stale post-hello pushes (in_seq <= prefs_seq), and only clear after hello completes with newer in_seq.
+  reset_all_v3_rev_guards();
+  auto &p = persisted_prefs();
+  p = PersistedDevicePrefs{};
+  device_prefs_state() = DevicePrefsState{};
+  hello_sync_state() = HelloSyncState{};
+
+  p.prefs_seq = 10U;
+  p.manual_brightness = 80U;
+  p.day_brightness = 70U;
+  p.time_format = 0U;  // 12-hour
+  p.dirty_mask.clear();
+
+  // Simulate offline on-device pref edits prior to reconnect.
+  p.manual_brightness = 35U;
+  p.time_format = 1U;  // 24-hour
+  p.dirty_mask |= pref_key_bit(PrefKey::MANUAL_BRIGHTNESS);
+  p.dirty_mask |= pref_key_bit(PrefKey::TIME_FORMAT);
+
+  // Case A: device_hello is in-flight; HA pushes a pre-hello snapshot with higher in_seq=12.
+  hello_sync_state().in_flight = true;
+  {
+    std::vector<std::string> tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "12";
+    tok[static_cast<size_t>(DevicePrefsField::MANUAL_BRIGHTNESS)] = "90";
+    tok[static_cast<size_t>(DevicePrefsField::TIME_FORMAT)] = "12-hour";
+    tok[static_cast<size_t>(DevicePrefsField::DAY_BRIGHTNESS)] = "60";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(201, 1, tok), eff, 1000U));
+    LATTER_CHECK(p.manual_brightness == 35U);
+    LATTER_CHECK(p.time_format == 1U);
+    LATTER_CHECK(p.day_brightness == 60U);
+    LATTER_CHECK((p.dirty_mask & pref_key_bit(PrefKey::MANUAL_BRIGHTNESS)).any());
+    LATTER_CHECK((p.dirty_mask & pref_key_bit(PrefKey::TIME_FORMAT)).any());
+    LATTER_CHECK(p.prefs_seq == 10U);
+  }
+
+  // Case B: device_hello is still in-flight; HA pushes an older in_seq=8 snapshot.
+  {
+    std::vector<std::string> tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "8";
+    tok[static_cast<size_t>(DevicePrefsField::MANUAL_BRIGHTNESS)] = "95";
+    tok[static_cast<size_t>(DevicePrefsField::TIME_FORMAT)] = "12-hour";
+    tok[static_cast<size_t>(DevicePrefsField::DAY_BRIGHTNESS)] = "55";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(201, 2, tok), eff, 1100U));
+    LATTER_CHECK(p.manual_brightness == 35U);
+    LATTER_CHECK(p.time_format == 1U);
+    LATTER_CHECK(p.day_brightness == 55U);
+    LATTER_CHECK((p.dirty_mask & pref_key_bit(PrefKey::MANUAL_BRIGHTNESS)).any());
+    LATTER_CHECK((p.dirty_mask & pref_key_bit(PrefKey::TIME_FORMAT)).any());
+    LATTER_CHECK(p.prefs_seq == 10U);
+  }
+
+  // Case C: hello finishes, but a stale push arrives with in_seq=10 <= p.prefs_seq.
+  hello_sync_state().in_flight = false;
+  {
+    std::vector<std::string> tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "10";
+    tok[static_cast<size_t>(DevicePrefsField::MANUAL_BRIGHTNESS)] = "88";
+    tok[static_cast<size_t>(DevicePrefsField::TIME_FORMAT)] = "12-hour";
+    tok[static_cast<size_t>(DevicePrefsField::DAY_BRIGHTNESS)] = "50";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(201, 3, tok), eff, 1200U));
+    LATTER_CHECK(p.manual_brightness == 35U);
+    LATTER_CHECK(p.time_format == 1U);
+    LATTER_CHECK(p.day_brightness == 50U);
+    LATTER_CHECK((p.dirty_mask & pref_key_bit(PrefKey::MANUAL_BRIGHTNESS)).any());
+    LATTER_CHECK((p.dirty_mask & pref_key_bit(PrefKey::TIME_FORMAT)).any());
+    LATTER_CHECK(p.prefs_seq == 10U);
+  }
+
+  // Case D: post-hello authoritative push arrives with in_seq=12 > p.prefs_seq (even matching Case A's in_seq!).
+  {
+    std::vector<std::string> tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "12";
+    tok[static_cast<size_t>(DevicePrefsField::MANUAL_BRIGHTNESS)] = "35";
+    tok[static_cast<size_t>(DevicePrefsField::TIME_FORMAT)] = "24-hour";
+    tok[static_cast<size_t>(DevicePrefsField::DAY_BRIGHTNESS)] = "65";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(201, 4, tok), eff, 1300U));
+    LATTER_CHECK(p.manual_brightness == 35U);
+    LATTER_CHECK(p.time_format == 1U);
+    LATTER_CHECK(p.day_brightness == 65U);
+    LATTER_CHECK(p.dirty_mask.empty());
+    LATTER_CHECK(p.prefs_seq == 12U);
+  }
+
+  // Case E: clean device (empty dirty_mask) during hello in_flight still accepts HA prefs and advances prefs_seq.
+  hello_sync_state().in_flight = true;
+  {
+    std::vector<std::string> tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "15";
+    tok[static_cast<size_t>(DevicePrefsField::MANUAL_BRIGHTNESS)] = "75";
+    uint32_t eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(201, 5, tok), eff, 1400U));
+    LATTER_CHECK(p.manual_brightness == 75U);
+    LATTER_CHECK(p.dirty_mask.empty());
+    LATTER_CHECK(p.prefs_seq == 15U);
+  }
+  hello_sync_state() = HelloSyncState{};
+}
+
 }  // namespace
 
 void run_state_prefs_nvs_tests() {
@@ -1272,6 +1420,7 @@ void run_state_prefs_nvs_tests() {
   test_ambient_light_brightness_d075();
   test_music_auto_open_and_lyrics_fallback_d080();
   test_wave2_overhaul_contracts();
+  test_wave2_reconnect_dirty_prefs_and_contract_wiring();
 }
 
 }  // namespace latter_test

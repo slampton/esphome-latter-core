@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK: Notification Banner, Intercom, Camera Records & Stream URLs
+// Latter Core: Notification Banner, Intercom, Camera Records & Stream URLs
 // (include/state/state_alerts_intercom.h)
 // ==============================================================================
 
@@ -128,7 +128,7 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
       }
     }
     out[idx].caps = parsed_caps;
-    out[idx].unlock_entity = (fc >= 5) ? std::string(f[4]) : "";
+    out[idx].unlock_entity = (fc >= 5) ? v3_unescape_subfield(f[4]) : "";
     ++idx;
   }
   return idx;
@@ -187,7 +187,11 @@ inline int parse_broadcast_phrases(const std::string &raw, std::vector<std::stri
                                    : std::string_view(raw).substr(start, sep - start);
     const std::string_view trimmed = trim_ascii_ws(rec);
     if (!trimmed.empty()) {
-      out.emplace_back(utf8_safe_prefix(trimmed, 64U));
+      const std::string unescaped = v3_unescape_subfield(trimmed);
+      const std::string_view cleaned = trim_ascii_ws(unescaped);
+      if (!cleaned.empty()) {
+        out.emplace_back(utf8_safe_prefix(cleaned, 64U));
+      }
     }
     if (sep == std::string::npos) break;
     start = sep + 1;

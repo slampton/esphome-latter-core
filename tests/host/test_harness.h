@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter Core SDK — Shared C++20 Multi-TU Host Test Harness (tests/host/test_harness.h)
+// Latter Core — Shared C++20 Multi-TU Host Test Harness (tests/host/test_harness.h)
 // Zero unity-build `#include "*.cpp"` hacks; links cleanly against compiled
 // latter_core + latter_ui TUs across all 5 canonical panel geometries.
 // ==============================================================================

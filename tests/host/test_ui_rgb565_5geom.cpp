@@ -605,7 +605,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  static_assert(LATTER_CORE_REV == 2026112303L, "LATTER_CORE_REV must match 2026112303L");
+  static_assert(LATTER_CORE_REV == 2026112401L, "LATTER_CORE_REV must match 2026112401L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);
@@ -964,24 +964,42 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
       };
     };
 
-    // Auto over dark backdrop -> stays crisp airy Clear
+    // Auto with !backdrop_active() -> short-circuits with zero PSRAM scan even over bright pixels
     persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Auto);
-    fix.fill(dark_hw);
+    fix.fill(bright_hw);
+    LATTER_CHECK(!backdrop_active());
     GlassBackdrop bd{};
     UiColor eff_tint{}, rim_col{};
     int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
     resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
                          GlassVariant::Clear, white_fg, -1, false,
                          bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
-    LATTER_CHECK(bd.valid);
+    LATTER_CHECK(!bd.valid && bd.sample_count == 0U);
     LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
+    const GlassBackdrop mean_off = sample_glass_mean(bx, by, bw, bh);
+    LATTER_CHECK(!mean_off.valid && mean_off.sample_count == 0U);
 
-    // Auto over bright backdrop -> smoothly darkens and achieves >= 4.5:1 WCAG AA contrast
-    fix.fill(bright_hw);
+    // Auto over active dark backdrop -> samples bounded pixels and stays crisp airy Clear
+    fix.fill(dark_hw);
+    backdrop_active() = true;
     resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
                          GlassVariant::Clear, white_fg, -1, false,
                          bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
-    LATTER_CHECK(bd.valid);
+    LATTER_CHECK(bd.valid && bd.sample_count > 0U && bd.sample_count <= 200U);
+    LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
+
+    // Wide card sample budget check (independent step_x / step_y keeps S3 PSRAM reads <= 192)
+    const int wide_w = std::min(kMaxContentColW, SCREEN_W - 8);
+    const GlassBackdrop wide_bd = sample_glass_backdrop((SCREEN_W - wide_w) / 2, by, wide_w, 44);
+    LATTER_CHECK(wide_bd.valid && wide_bd.sample_count > 0U && wide_bd.sample_count <= 192U);
+
+    // Auto over active bright backdrop -> smoothly darkens and achieves >= 4.5:1 WCAG AA contrast
+    fix.fill(bright_hw);
+    backdrop_active() = true;
+    resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, white_fg, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(bd.valid && bd.sample_count > 0U && bd.sample_count <= 200U);
     LATTER_CHECK(a_top > kGlassClearAlphaMaxQ8 && a_bot > kGlassClearAlphaQ8);
     const float fg_lum = relative_luminance(white_fg);
     LATTER_CHECK(contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bright_bg, eff_tint, a_top))) >= 4.5f);
@@ -991,17 +1009,19 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
     const UiColor auto_rendered = decode_px(fix.pixels[static_cast<size_t>(by + bh / 2) * SCREEN_W + (bx + bw / 2)]);
     LATTER_CHECK(contrast_ratio(fg_lum, relative_luminance(auto_rendered)) >= 4.5f);
 
-    // Clear over bright backdrop -> stays airy Clear (zero darkening)
+    // Clear over active bright backdrop -> stays airy Clear (zero darkening)
     persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Clear);
     fix.fill(bright_hw);
+    backdrop_active() = true;
     resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
                          GlassVariant::Clear, white_fg, -1, false,
                          bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
     LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
 
-    // Dark over bright backdrop -> ReadableDark with >= 4.5:1 WCAG AA contrast
+    // Dark over active bright backdrop -> ReadableDark with >= 4.5:1 WCAG AA contrast
     persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Dark);
     fix.fill(bright_hw);
+    backdrop_active() = true;
     resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
                          GlassVariant::Clear, white_fg, -1, false,
                          bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
@@ -1014,15 +1034,84 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
     persisted_prefs().glass_style = saved_gs;
   }
 
-  // 3. Camera scanline blitter scales cleanly across wide landscape widths (> 512 / >= 1024 px)
+  // 3. Camera scanline blitter scales cleanly across wide landscape widths and marks backdrop_active()
   {
     HostSurfaceFixture fix{};
     fix.fill(0U);
+    LATTER_CHECK(!backdrop_active());
     const uint16_t src_px[4] = {0xF800U, 0x07E0U, 0x001FU, 0xFFFFU};
     const CameraRect vp{0, 0, SCREEN_W, SCREEN_H};
     LATTER_CHECK(blit_rgb565_fitted_frame(fix.surf, src_px, 2, 2, vp, /*fill=*/true, /*clip_round_bezel=*/false));
+    LATTER_CHECK(backdrop_active());
     const uint16_t right_px = fix.pixels[static_cast<size_t>(SCREEN_CY) * SCREEN_W + static_cast<size_t>(SCREEN_W - 2)];
     LATTER_CHECK(right_px != 0U);
+    evict_registered_psram_caches();
+  }
+
+  // 4. Rendered Home Activity Card & Camera Single Action Pills hit-rect alignment (zero landscape crush)
+  {
+    HostSurfaceFixture fix{};
+    populate_rich_host_state(fix.ctx);
+    auto &rs = runtime_state();
+    // Add 3+ active items so the Activity Card renders with the [v] expand column.
+    rs.stopwatch.running = true;
+    rs.stopwatch.start_time_ms = 10000U;
+    rs.timers.slots[0].running = true;
+    rs.timers.slots[0].remaining_sec = 95;
+    rs.timers.slots[0].duration_sec = 120;
+    rs.timers.slots[0].target_ms = fix.ctx.now_ms + 95000U;
+    rs.timers.slots[1].running = true;
+    rs.timers.slots[1].remaining_sec = 240;
+    rs.timers.slots[1].duration_sec = 300;
+    rs.timers.slots[1].target_ms = fix.ctx.now_ms + 240000U;
+    rs.nav.gui_page = PageId::HOME;
+    rs.nav.home_subpage = 0;
+
+    fix.fill(0U);
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    const HitRegion *row0 = frame_hits().find_by_id(WidgetId::HOME_ACT_ROW_0);
+    const HitRegion *act0 = frame_hits().find_by_id(WidgetId::HOME_ACT_ACTION_0);
+    const HitRegion *exp = frame_hits().find_by_id(WidgetId::HOME_ACT_EXPAND);
+    LATTER_CHECK(row0 != nullptr && act0 != nullptr && exp != nullptr);
+    const int row0_w = row0->x1 - row0->x0 + 1;
+    const int act0_w = act0->x1 - act0->x0 + 1;
+    const int exp_w = exp->x1 - exp->x0 + 1;
+    LATTER_CHECK(act0_w == scale_s(56) && exp_w == scale_s(52));
+    LATTER_CHECK(row0->x1 + 1 == act0->x0 && act0->x1 + 1 == exp->x0);
+    LATTER_CHECK(row0_w + act0_w + exp_w == layout().home_activity_w());
+    const int text_avail = row0_w - scale_s(48) - scale_s(8);
+    LATTER_CHECK(text_avail >= ((SCREEN_W >= 466) ? 180 : 120));
+
+    // Camera Single HUD with 4 configured actions (Listen / Talk / Reply / Unlock)
+    rs.nav.gui_page = PageId::CAMERAS;
+    rs.cameras.tab = CamerasTab::SINGLE;
+    rs.cameras.hud_active = true;
+    rs.cameras.quick_reply_open = false;
+    fix.fill(0U);
+    frame_hits().clear();
+    render_cameras_page(fix.surf, fix.ctx);
+    const uint16_t cam_wids[4] = {
+        WidgetId::CAM_LISTEN_BTN, WidgetId::CAM_PTT_BTN,
+        WidgetId::CAM_REPLY_MENU_BTN, WidgetId::CAM_UNLOCK_BTN,
+    };
+    const HitRegion *prev_pill = nullptr;
+    int pill_found = 0;
+    for (uint16_t wid : cam_wids) {
+      const HitRegion *reg = frame_hits().find_by_id(wid);
+      if (reg == nullptr) continue;
+      ++pill_found;
+      const int pw = reg->x1 - reg->x0 + 1;
+      const int ph_padded = (reg->y1 - reg->y0 + 1) + 2 * static_cast<int>(reg->hit_pad);
+      LATTER_CHECK(reg->x0 >= 0 && reg->x1 < SCREEN_W);
+      LATTER_CHECK(pw >= ((SCREEN_W >= 720) ? 100 : 64));
+      LATTER_CHECK(ph_padded >= layout().min_hit_px());
+      if (prev_pill != nullptr) {
+        LATTER_CHECK(prev_pill->x1 < reg->x0);
+      }
+      prev_pill = reg;
+    }
+    LATTER_CHECK(pill_found >= 2);
     evict_registered_psram_caches();
   }
 }

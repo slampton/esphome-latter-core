@@ -457,10 +457,10 @@ void render_calendar_picker_drilldown(Rgb565Surface &it, const UiFrameContext &c
     hdr = "LOCATION";
     options[opt_cnt++] = "None (No Location)";
     if (rs.cal.draft_location.empty()) active_idx = 0;
-    std::string_view locs[kMaxCalendarLocations]{};
+    std::string locs[kMaxCalendarLocations]{};
     const int n_locs = parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
     for (int i = 0; i < n_locs && opt_cnt < 16; ++i) {
-      options[opt_cnt] = std::string(locs[i]);
+      options[opt_cnt] = std::move(locs[i]);
       if (rs.cal.draft_location == options[opt_cnt]) active_idx = opt_cnt;
       opt_cnt++;
     }

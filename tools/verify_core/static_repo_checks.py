@@ -1,4 +1,4 @@
-"""UTF-8/JSON/LF/Markdown checks, AGENTS.md budget, terminology, product options, and SDK/version lockstep."""
+"""UTF-8/JSON/LF/Markdown checks, AGENTS.md budget, terminology, product options, and core rev/version lockstep."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from .common import (
 
 NOISE_KEY_BYTES: Final[int] = 32
 AGENTS_MD_MAX_BYTES: Final[int] = 12000
-MIN_CORE_REV: Final[int] = 2026112303
+MIN_CORE_REV: Final[int] = 2026112401
 MAX_MAC_SUFFIX_BASE_NAME_LEN: Final[int] = 24
 REQUIRED_PRODUCT_OPTIONS: Final[tuple[str, ...]] = (
     "Minimal Digital",
@@ -229,7 +229,7 @@ def verify_terminology_and_yaml_globals(failures: list[str]) -> None:
     )
 
 
-def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
+def verify_core_rev_and_version_lockstep(failures: list[str]) -> None:
     """Verify LATTER_CORE_REV == LATTER_YAML_REV, ESPHome version pins, and v3.0.0 lockstep."""
     core_revs: list[int] = []
     yaml_revs: list[int] = []
@@ -260,18 +260,18 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
     if not bridge_h.is_file() or "VERSION_CODE(2026, 11, 0)" not in bridge_h.read_text(encoding="utf-8"):
         failures.append("[ESPHOME PIN LOCKSTEP] include/esphome_bridge.h must static_assert VERSION_CODE(2026, 11, 0)")
 
-    base_txt = (ROOT / "modules" / "base.yaml").read_text(encoding="utf-8")
-    if not re.search(r'(?m)^\s*latter_asset_ref:\s*"main"\s*$', base_txt):
-        failures.append('[ASSET REF LOCKSTEP] modules/base.yaml must define `latter_asset_ref: "main"`')
+    sys_core_txt = (ROOT / "modules" / "system_core.yaml").read_text(encoding="utf-8")
+    if not re.search(r'(?m)^\s*latter_asset_ref:\s*"main"\s*$', sys_core_txt):
+        failures.append('[ASSET REF LOCKSTEP] modules/system_core.yaml must define `latter_asset_ref: "main"`')
     for mod_rel in ("modules/audio_pipeline.yaml", "modules/voice_assistant.yaml"):
         mod_txt = (ROOT / mod_rel).read_text(encoding="utf-8")
         if "/esphome-latter-core/main/" in mod_txt:
             failures.append(
                 f"[ASSET REF LOCKSTEP] {mod_rel} hardcodes /esphome-latter-core/main/ (use ${{latter_asset_ref}})"
             )
-    m_ver = re.search(r'(?m)^\s*version:\s*"([^"]+)"', base_txt)
+    m_ver = re.search(r'(?m)^\s*version:\s*"([^"]+)"', sys_core_txt)
     if not m_ver:
-        failures.append("[VERSION LOCKSTEP] modules/base.yaml missing version substitution")
+        failures.append("[VERSION LOCKSTEP] modules/system_core.yaml missing version substitution")
     else:
         core_ver = m_ver.group(1)
         for path in sorted((ROOT / "devices").glob("*.yaml")) + sorted((ROOT / "examples").glob("*.yaml")):
@@ -279,7 +279,7 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
             if "version" in psubs:
                 failures.append(
                     f"[VERSION LOCKSTEP] {path.relative_to(ROOT).as_posix()} duplicates version "
-                    f"substitution ({psubs['version']!r}); single-source in modules/base.yaml"
+                    f"substitution ({psubs['version']!r}); single-source in modules/system_core.yaml"
                 )
         idx_txt = (ROOT / "index.html").read_text(encoding="utf-8")
         if f">v{core_ver}<" not in idx_txt:
@@ -441,4 +441,4 @@ def verify_static_repo_invariants(failures: list[str]) -> None:
     verify_encoding_and_hygiene(failures)
     verify_agents_md(failures)
     verify_terminology_and_yaml_globals(failures)
-    verify_sdk_and_version_lockstep(failures)
+    verify_core_rev_and_version_lockstep(failures)

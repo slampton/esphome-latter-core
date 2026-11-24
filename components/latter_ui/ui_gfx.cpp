@@ -489,7 +489,7 @@ uint8_t active_glass_style_raw() noexcept {
 
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   GlassBackdrop out;
-  if (w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
+  if (!backdrop_active() || w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
   const uint16_t *fb = active_frame_buf16();
   const int xs = std::max(0, x0);
   const int xe = std::min(SCREEN_W, x0 + w);
@@ -498,12 +498,15 @@ GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   if (fb == nullptr || xe <= xs || ye <= ys) return out;
   const float *lut = srgb_linear_lut();
   const int mode = active_frame_endian_mode();
-  const int step = std::max(3, h / 12);
+  const int step_x = std::max(4, w / 12);
+  const int step_y = std::max(3, h / 12);
+  const int x_start = xs + std::min(step_x / 2, (xe - xs - 1) / 2);
+  const int y_start = ys + std::min(step_y / 2, (ye - ys - 1) / 2);
   uint32_t cnt[32] = {0}, sr[32] = {0}, sg[32] = {0}, sb[32] = {0};
   uint32_t tr = 0, tg = 0, tb = 0, n = 0;
-  for (int y = ys + step / 2; y < ye; y += step) {
+  for (int y = y_start; y < ye; y += step_y) {
     const uint16_t *row = fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
-    for (int x = xs + step / 2; x < xe; x += step) {
+    for (int x = x_start; x < xe; x += step_x) {
       const uint16_t hw = row[x];
       const uint16_t p = (mode == 1 || mode < 0)
                              ? decode_hw_rgb565_mode<1>(hw)
@@ -547,13 +550,14 @@ GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
       static_cast<uint8_t>(tg / n),
       static_cast<uint8_t>(tb / n),
   };
+  out.sample_count = static_cast<uint16_t>(std::min<uint32_t>(n, 65535U));
   out.valid = true;
   return out;
 }
 
 GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h) {
   GlassBackdrop out;
-  if (w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
+  if (!backdrop_active() || w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
   const uint16_t *fb = active_frame_buf16();
   const int xs = std::max(0, x0);
   const int xe = std::min(SCREEN_W, x0 + w);
@@ -588,6 +592,7 @@ GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h) {
       static_cast<uint8_t>(tb / n),
   };
   out.bright = out.mean;
+  out.sample_count = static_cast<uint16_t>(std::min<uint32_t>(n, 65535U));
   out.valid = true;
   return out;
 }

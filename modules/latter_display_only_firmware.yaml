@@ -13,6 +13,11 @@
 #   latter_gui_touch: !include ../guis/universal/gui_touch.yaml
 # ==============================================================================
 
+# Boot lines are usually logged before any API log viewer connects. Keep all warnings/errors
+# (captured automatically across every tag) plus the one-shot `latter` boot banner in a lean
+# 1 kB ring buffer (fixed buffer, no heap) for replay when a log viewer connects.
+# Steady state at the default INFO level is quiet: internal HAL/policy details log at DEBUG,
+# and [PROF:*] diagnostics emit only while the Telemetry Profiler is on ([PROF GATE], auto-off 24 h).
 logger:
   level: INFO
   boot_log_buffer_size: 1kB
