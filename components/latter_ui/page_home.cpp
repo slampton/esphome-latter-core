@@ -8,6 +8,7 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -684,15 +685,18 @@ void draw_home_activity_row_contents(
     render_glass_circle(it, act_bx, row_y, btn_r, fg_btn, fg_sec);
   } else if (alpha > 0.01f && btn_r > 1) {
     const int d = 2 * btn_r + 1;
-    UiColor btn_eff;
+    GlassBackdrop btn_bd{};
+    UiColor btn_eff{}, btn_rim{};
     int raw_at = 0, raw_ab = 0, raw_rt = 0, raw_rb = 0;
-    resolve_glass_fill(GlassBackdrop{}, fg_btn, fg_sec, btn_eff, raw_at, raw_ab, raw_rt, raw_rb, -1, GlassVariant::Clear);
+    resolve_styled_glass(act_bx - btn_r, row_y - btn_r, d, d, fg_btn, fg_sec,
+                         GlassVariant::Clear, fg_sec, -1, false,
+                         btn_bd, btn_eff, btn_rim, raw_at, raw_ab, raw_rt, raw_rb);
     const int at = static_cast<int>(std::lround(static_cast<float>(raw_at) * alpha));
     const int ab = static_cast<int>(std::lround(static_cast<float>(raw_ab) * alpha));
     const int rt_a = static_cast<int>(std::lround(static_cast<float>(raw_rt) * alpha));
     const int rb_a = static_cast<int>(std::lround(static_cast<float>(raw_rb) * alpha));
     if (rt_a > 0 || rb_a > 0) {
-      fill_round_rect_glass(it, act_bx - btn_r, row_y - btn_r, d, d, static_cast<float>(btn_r) + 0.5f, kChromeGlassSheen, rt_a, rb_a, 1);
+      fill_round_rect_glass(it, act_bx - btn_r, row_y - btn_r, d, d, static_cast<float>(btn_r) + 0.5f, btn_rim, rt_a, rb_a, 1);
     }
     if ((at > 0 || ab > 0) && d > 2) {
       fill_round_rect_glass(it, act_bx - btn_r + 1, row_y - btn_r + 1, d - 2, d - 2,
@@ -778,15 +782,16 @@ bool draw_glass_activity_surface(
   const UiColor tint = kChromeGlassTint;
   const int card_r = std::min(box_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
   if (surf_alpha >= 0.995f) {
-    const GlassBackdrop anim_bd = sample_bd ? sample_glass_backdrop(card_x0, card_y0, card_w, box_h) : GlassBackdrop{};
-    render_glass_card(it, card_x0, card_y0, card_w, box_h, card_r, tint, -1, GlassVariant::Clear, col_white);
-    out_card_bg = tint;
-    if (sample_bd) {
-      UiColor eff_tint;
-      int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-      resolve_glass_fill(GlassBackdrop{}, tint, col_white, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, GlassVariant::Clear);
-      out_card_bg = anim_bd.valid ? mix_color_q8(anim_bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
-    }
+    GlassBackdrop bd{};
+    UiColor eff_tint{}, rim_col{};
+    int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+    resolve_styled_glass(card_x0, card_y0, card_w, box_h, tint, kChromeCardBorder,
+                         GlassVariant::Clear, col_white, -1, sample_bd,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r), rim_col, rim_top, rim_bot, 1);
+    fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, box_h - 2,
+                          std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
+    out_card_bg = (sample_bd && bd.valid) ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
     return true;
   }
 
@@ -794,16 +799,18 @@ bool draw_glass_activity_surface(
   const int sc_y0 = std::max(prev_clip_y0, card_y0), sc_y1 = std::min(prev_clip_y1, card_y0 + box_h - 1);
   if (sc_y0 > sc_y1) return false;
   set_clip_y_band(sc_y0, sc_y1);
-  const GlassBackdrop backdrop = sample_glass_backdrop(card_x0, card_y0, card_w, box_h);
-  UiColor eff_tint;
+  GlassBackdrop backdrop{};
+  UiColor eff_tint{}, rim_col{};
   int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-  resolve_glass_fill(GlassBackdrop{}, tint, col_white, eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot, -1, GlassVariant::Clear);
+  resolve_styled_glass(card_x0, card_y0, card_w, box_h, tint, kChromeCardBorder,
+                       GlassVariant::Clear, col_white, -1, true,
+                       backdrop, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
   const int a_top = static_cast<int>(std::lround(static_cast<float>(raw_a_top) * surf_alpha));
   const int a_bot = static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * surf_alpha));
   const int rim_top = static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * surf_alpha));
   const int rim_bot = static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * surf_alpha));
   if (rim_top > 0 || rim_bot > 0) {
-    fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r), kChromeGlassSheen, rim_top, rim_bot, 1);
+    fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r), rim_col, rim_top, rim_bot, 1);
   }
   if ((a_top > 0 || a_bot > 0) && card_w > 2 && box_h > 2) {
     fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, box_h - 2,
@@ -1225,9 +1232,26 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
     const int vis_count = std::min(4, dock_count - start_idx);
     const int dock_y = ly.dock_y, dock_r = ly.dock_r, dock_pad = std::max(0, ly.dock_hit_r() - dock_r);
+    const int dock_gutter_w = std::max(12, scale_s(26));
+    if (total_dock_pages > 1 && home_dock_page() > 0 && vis_count > 0) {
+      const int lx1 = win_xs[0] - dock_r - 6;
+      const int lx0 = std::max(0, lx1 - dock_gutter_w);
+      if (lx1 - lx0 >= 8) {
+        frame_hits().add_rect(lx0, dock_y - dock_r, lx1 - lx0, 2 * dock_r,
+                              WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
+      }
+    }
     for (int v = 0; v < vis_count; v++) {
       frame_hits().add_circle(win_xs[v], dock_y, dock_r, WidgetId::DOCK_SLOT_BASE + static_cast<uint16_t>(v),
                               kHitTap | kHitFocusSlot | kHitFocusCircle, static_cast<int16_t>(start_idx + v), dock_pad);
+    }
+    if (total_dock_pages > 1 && home_dock_page() + 1 < total_dock_pages && vis_count > 0) {
+      const int rx0 = win_xs[vis_count - 1] + dock_r + 6;
+      const int rx1 = std::min(SCREEN_W - 1, rx0 + dock_gutter_w);
+      if (rx1 - rx0 >= 8) {
+        frame_hits().add_rect(rx0, dock_y - dock_r, rx1 - rx0, 2 * dock_r,
+                              WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
+      }
     }
 
     const float anim_start = home_dock_anim().step_window(start_idx, now_ms);
@@ -1282,13 +1306,12 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         const bool show_tint = !item_unavail && (item_active || (has_accent && !item_off));
         const UiColor raw_bg = item_active ? ui::chrome_card_bg_on() : kChromeGlassTint;
         const UiColor raw_brd = show_tint ? accent_col : kChromeCardBorder;
-        GlassVariant eff_var = GlassVariant::Clear;
-        UiColor norm_tint, rim_col;
-        normalize_glass_chrome(raw_bg, raw_brd, eff_var, norm_tint, rim_col);
-        UiColor eff_tint;
+        GlassBackdrop dock_bd{};
+        UiColor eff_tint{}, rim_col{};
         int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-        resolve_glass_fill(GlassBackdrop{}, norm_tint, show_tint ? rim_col : kChromeGlassSheen,
-                           eff_tint, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot, -1, eff_var);
+        resolve_styled_glass(bx - dock_r, dock_y - dock_r, d, d, raw_bg, raw_brd,
+                             GlassVariant::Clear, show_tint ? accent_col : kChromeGlassSheen, -1, false,
+                             dock_bd, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
         const int a_top = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
         const int a_bot = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
         const int rim_boost_top = item_active ? 48 : (show_tint ? 32 : 0);

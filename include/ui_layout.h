@@ -21,7 +21,7 @@
 namespace latter_ui {
 
 inline int menu_scroll_shift(int span_px, uint32_t now_ms) {
-  const uint32_t start = menu_scroll_start_ms();
+  const uint32_t start = latter_core::menu_scroll_start_ms();
   const uint32_t elapsed = (now_ms >= start) ? (now_ms - start) : 0U;
   return menu_scroll_shift_elapsed(span_px, elapsed);
 }
@@ -242,13 +242,13 @@ struct UiLayout {
   }
 
   constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : std::min(kMaxContentColW, scale_x(316)); }
-  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_x(32); }
+  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_s(32); }
   constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
-  constexpr int light_bri_bar_w() const { return light_slider_card_w() - scale_x(16); }
+  constexpr int light_bri_bar_w() const { return light_slider_card_w() - scale_s(16); }
   constexpr int light_bri_bar_x0() const { return cx - (light_bri_bar_w() / 2); }
 
-  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - scale_x(34); }
-  constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - scale_x(22)); }
+  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - scale_s(34); }
+  constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - scale_s(22)); }
   constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : scale_x(42)); }
 
   constexpr int drag_start() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).slider_start_px; }
@@ -278,24 +278,6 @@ inline constexpr UiLayout layout() {
   return UiLayout{};
 }
 
-inline int hit_4col_stepper(int tx, int cx = SCREEN_CX) {
-  const int stride = (SCREEN_W < 380) ? 66 : scale_x(80);
-  if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
-  if (tx < cx - stride) return 0;
-  if (tx < cx)          return 1;
-  if (tx < cx + stride) return 2;
-  return 3;
-}
-
-inline int hit_4col_calc(int tx, int cx = SCREEN_CX) {
-  const int stride = (SCREEN_W < 380) ? 72 : scale_x(82);
-  if (tx < cx - stride * 2 || tx > cx + stride * 2) return -1;
-  if (tx < cx - stride) return 0;
-  if (tx < cx)          return 1;
-  if (tx < cx + stride) return 2;
-  return 3;
-}
-
 inline bool &home_activity_card_shown() {
   static bool shown = false;
   return shown;
@@ -322,56 +304,56 @@ inline constexpr int tools_launcher_page_count() noexcept {
 inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_game,
                               int music_overlay_mode, int area_subpage, bool area_picker,
                               int remote_subpage, int tools_subpage,
-                              const PersistedDevicePrefs &p = persisted_prefs()) {
-  const int anchor = resolve_anchor_dock_app(p);
-  if (anchor == PageId::HOME) return gui_page == PageId::HOME;
-  if (anchor == PageId::PINNED) return gui_page == PageId::PINNED;
-  if (anchor == PageId::CLOCK) return gui_page == PageId::CLOCK;
-  if (anchor == PageId::TIME) {
-    return gui_page == PageId::TIME &&
-           timer_view_slot() == 0 &&
-           runtime_state().alarms.edit_idx == 0;
+                              const latter_core::PersistedDevicePrefs &p = latter_core::persisted_prefs()) {
+  const int anchor = latter_core::resolve_anchor_dock_app(p);
+  if (anchor == latter_core::PageId::HOME) return gui_page == latter_core::PageId::HOME;
+  if (anchor == latter_core::PageId::PINNED) return gui_page == latter_core::PageId::PINNED;
+  if (anchor == latter_core::PageId::CLOCK) return gui_page == latter_core::PageId::CLOCK;
+  if (anchor == latter_core::PageId::TIME) {
+    return gui_page == latter_core::PageId::TIME &&
+           latter_core::timer_view_slot() == 0 &&
+           latter_core::runtime_state().alarms.edit_idx == 0;
   }
-  if (anchor == PageId::MUSIC) {
-    return gui_page == PageId::MUSIC &&
-           runtime_state().music.drilldown == MusicDrilldown::NONE &&
-           runtime_state().music.takeover == MusicTakeover::NONE &&
+  if (anchor == latter_core::PageId::MUSIC) {
+    return gui_page == latter_core::PageId::MUSIC &&
+           latter_core::runtime_state().music.drilldown == latter_core::MusicDrilldown::NONE &&
+           latter_core::runtime_state().music.takeover == latter_core::MusicTakeover::NONE &&
            music_overlay_mode == 0;
   }
-  if (anchor == PageId::HOME_HUB) {
-    return gui_page == PageId::HOME_HUB;
+  if (anchor == latter_core::PageId::HOME_HUB) {
+    return gui_page == latter_core::PageId::HOME_HUB;
   }
-  if (anchor == PageId::CAMERAS) {
-    return gui_page == PageId::CAMERAS && !runtime_state().cameras.quick_reply_open;
+  if (anchor == latter_core::PageId::CAMERAS) {
+    return gui_page == latter_core::PageId::CAMERAS && !latter_core::runtime_state().cameras.quick_reply_open;
   }
-  if (anchor == PageId::AREA) {
-    if (runtime_state().area.active_area_id.empty()) {
-      return gui_page == PageId::AREA &&
+  if (anchor == latter_core::PageId::AREA) {
+    if (latter_core::runtime_state().area.active_area_id.empty()) {
+      return gui_page == latter_core::PageId::AREA &&
              (area_subpage == AreaSubpage::OVERVIEW || area_subpage == AreaSubpage::PICKER);
     }
-    return gui_page == PageId::AREA && area_subpage == AreaSubpage::OVERVIEW && !area_picker;
+    return gui_page == latter_core::PageId::AREA && area_subpage == AreaSubpage::OVERVIEW && !area_picker;
   }
-  if (anchor == PageId::REMOTE) return gui_page == PageId::REMOTE && remote_subpage == 0;
-  if (anchor == PageId::WEATHER) return gui_page == PageId::WEATHER;
-  if (anchor == PageId::GAMES) return gui_page == PageId::GAMES && active_game == 0;
-  if (anchor == PageId::TOOLS) {
-    return gui_page == PageId::TOOLS && tools_subpage == ToolsSubpage::LAUNCHER;
+  if (anchor == latter_core::PageId::REMOTE) return gui_page == latter_core::PageId::REMOTE && remote_subpage == 0;
+  if (anchor == latter_core::PageId::WEATHER) return gui_page == latter_core::PageId::WEATHER;
+  if (anchor == latter_core::PageId::GAMES) return gui_page == latter_core::PageId::GAMES && active_game == 0;
+  if (anchor == latter_core::PageId::TOOLS) {
+    return gui_page == latter_core::PageId::TOOLS && tools_subpage == latter_core::ToolsSubpage::LAUNCHER;
   }
-  if (anchor == PageId::CALENDAR) {
-    return gui_page == PageId::CALENDAR &&
-           runtime_state().cal.drilldown == CalDrilldown::NONE &&
-           !runtime_state().cal.delete_confirm_open;
+  if (anchor == latter_core::PageId::CALENDAR) {
+    return gui_page == latter_core::PageId::CALENDAR &&
+           latter_core::runtime_state().cal.drilldown == latter_core::CalDrilldown::NONE &&
+           !latter_core::runtime_state().cal.delete_confirm_open;
   }
-  if (anchor == PageId::SYSTEM) return gui_page == PageId::SYSTEM && system_menu_mode == 0;
+  if (anchor == latter_core::PageId::SYSTEM) return gui_page == latter_core::PageId::SYSTEM && system_menu_mode == 0;
   return false;
 }
 
-inline bool is_on_anchor_root(const DeviceRuntimeState &rt = runtime_state(),
-                              const PersistedDevicePrefs &p = persisted_prefs()) {
-  if (resolve_anchor_dock_app(p) == PageId::MUSIC) {
-    return rt.nav.gui_page == PageId::MUSIC &&
-           rt.music.drilldown == MusicDrilldown::NONE &&
-           rt.music.takeover == MusicTakeover::NONE &&
+inline bool is_on_anchor_root(const latter_core::DeviceRuntimeState &rt = latter_core::runtime_state(),
+                              const latter_core::PersistedDevicePrefs &p = latter_core::persisted_prefs()) {
+  if (latter_core::resolve_anchor_dock_app(p) == latter_core::PageId::MUSIC) {
+    return rt.nav.gui_page == latter_core::PageId::MUSIC &&
+           rt.music.drilldown == latter_core::MusicDrilldown::NONE &&
+           rt.music.takeover == latter_core::MusicTakeover::NONE &&
            rt.music.overlay_mode == 0;
   }
   return is_on_anchor_root(rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game,
@@ -384,97 +366,100 @@ inline bool is_on_anchor_root(const DeviceRuntimeState &rt = runtime_state(),
 inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int music_overlay_mode,
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
-  if (gui_page == PageId::HOME || gui_page == PageId::CLOCK || alert_ringing) return false;
-  if (runtime_state().nav.shortcut_confirm.open || runtime_state().nav.quick_actions_open) return false;
-  if (gui_page == PageId::TIME && (timer_view_slot() > 0 || alarm_edit_idx > 0)) {
+  if (gui_page == latter_core::PageId::HOME || gui_page == latter_core::PageId::CLOCK || alert_ringing) return false;
+  if (latter_core::runtime_state().nav.shortcut_confirm.open || latter_core::runtime_state().nav.quick_actions_open) {
     return false;
   }
-  if (gui_page == PageId::CAMERAS && runtime_state().cameras.quick_reply_open) {
+  if (gui_page == latter_core::PageId::TIME && (latter_core::timer_view_slot() > 0 || alarm_edit_idx > 0)) {
     return false;
   }
-  if (gui_page == PageId::SYSTEM && system_menu_mode > 0) return false;
-  if (gui_page == PageId::GAMES && active_game > 0) return false;
-  if (gui_page == PageId::MUSIC &&
-      (runtime_state().music.drilldown != MusicDrilldown::NONE ||
-       runtime_state().music.takeover != MusicTakeover::NONE ||
+  if (gui_page == latter_core::PageId::CAMERAS && latter_core::runtime_state().cameras.quick_reply_open) {
+    return false;
+  }
+  if (gui_page == latter_core::PageId::SYSTEM && system_menu_mode > 0) return false;
+  if (gui_page == latter_core::PageId::GAMES && active_game > 0) return false;
+  if (gui_page == latter_core::PageId::MUSIC &&
+      (latter_core::runtime_state().music.drilldown != latter_core::MusicDrilldown::NONE ||
+       latter_core::runtime_state().music.takeover != latter_core::MusicTakeover::NONE ||
        music_overlay_mode > 0)) {
     return false;
   }
-  if (gui_page == PageId::AREA && (area_subpage > 0 || area_picker)) {
-    const bool root_picker = !persisted_prefs().home_screen_enabled &&
-                             resolve_anchor_dock_app() == PageId::AREA &&
-                             runtime_state().area.active_area_id.empty() &&
+  if (gui_page == latter_core::PageId::AREA && (area_subpage > 0 || area_picker)) {
+    const bool root_picker = !latter_core::persisted_prefs().home_screen_enabled &&
+                             latter_core::resolve_anchor_dock_app() == latter_core::PageId::AREA &&
+                             latter_core::runtime_state().area.active_area_id.empty() &&
                              area_subpage == AreaSubpage::PICKER;
     if (!root_picker) return false;
   }
-  if (gui_page == PageId::REMOTE && remote_subpage > 0) return false;
-  if (gui_page == PageId::TOOLS && tools_subpage > 0) {
+  if (gui_page == latter_core::PageId::REMOTE && remote_subpage > 0) return false;
+  if (gui_page == latter_core::PageId::TOOLS && tools_subpage > 0) {
     return false;
   }
-  if (gui_page == PageId::CALENDAR &&
-      (runtime_state().cal.drilldown != CalDrilldown::NONE ||
-       runtime_state().cal.delete_confirm_open)) {
+  if (gui_page == latter_core::PageId::CALENDAR &&
+      (latter_core::runtime_state().cal.drilldown != latter_core::CalDrilldown::NONE ||
+       latter_core::runtime_state().cal.delete_confirm_open)) {
     return false;
   }
-  if (!persisted_prefs().home_screen_enabled &&
+  if (!latter_core::persisted_prefs().home_screen_enabled &&
       is_on_anchor_root(gui_page, system_menu_mode, active_game, music_overlay_mode,
                         area_subpage, area_picker, remote_subpage, tools_subpage,
-                        persisted_prefs())) {
+                        latter_core::persisted_prefs())) {
     return false;
   }
   return true;
 }
 
-inline bool can_go_home(const DeviceRuntimeState &rt = runtime_state()) {
-  if (rt.nav.gui_page == PageId::HOME || rt.nav.gui_page == PageId::CLOCK ||
+inline bool can_go_home(const latter_core::DeviceRuntimeState &rt = latter_core::runtime_state()) {
+  if (rt.nav.gui_page == latter_core::PageId::HOME || rt.nav.gui_page == latter_core::PageId::CLOCK ||
       rt.alarms.ringing || rt.timers.ringing || rt.alarms.find_my_active) {
     return false;
   }
   if (rt.nav.shortcut_confirm.open || rt.nav.quick_actions_open) return false;
-  if (rt.nav.gui_page == PageId::TIME && (rt.timers.view_slot > 0 || rt.alarms.edit_idx > 0)) {
+  if (rt.nav.gui_page == latter_core::PageId::TIME && (rt.timers.view_slot > 0 || rt.alarms.edit_idx > 0)) {
     return false;
   }
-  if (rt.nav.gui_page == PageId::CAMERAS && rt.cameras.quick_reply_open) {
+  if (rt.nav.gui_page == latter_core::PageId::CAMERAS && rt.cameras.quick_reply_open) {
     return false;
   }
-  if (rt.nav.gui_page == PageId::SYSTEM && rt.nav.system_menu_mode > 0) return false;
-  if (rt.nav.gui_page == PageId::GAMES && rt.nav.active_game > 0) return false;
-  if (rt.nav.gui_page == PageId::MUSIC &&
-      (rt.music.drilldown != MusicDrilldown::NONE ||
-       rt.music.takeover != MusicTakeover::NONE ||
+  if (rt.nav.gui_page == latter_core::PageId::SYSTEM && rt.nav.system_menu_mode > 0) return false;
+  if (rt.nav.gui_page == latter_core::PageId::GAMES && rt.nav.active_game > 0) return false;
+  if (rt.nav.gui_page == latter_core::PageId::MUSIC &&
+      (rt.music.drilldown != latter_core::MusicDrilldown::NONE ||
+       rt.music.takeover != latter_core::MusicTakeover::NONE ||
        rt.music.overlay_mode > 0)) {
     return false;
   }
   const bool area_picker = (rt.area.browse_mode == "areas");
-  if (rt.nav.gui_page == PageId::AREA && (rt.nav.area_subpage > 0 || area_picker)) {
-    const bool root_picker = !persisted_prefs().home_screen_enabled &&
-                             resolve_anchor_dock_app() == PageId::AREA &&
+  if (rt.nav.gui_page == latter_core::PageId::AREA && (rt.nav.area_subpage > 0 || area_picker)) {
+    const bool root_picker = !latter_core::persisted_prefs().home_screen_enabled &&
+                             latter_core::resolve_anchor_dock_app() == latter_core::PageId::AREA &&
                              rt.area.active_area_id.empty() &&
                              rt.nav.area_subpage == AreaSubpage::PICKER;
     if (!root_picker) return false;
   }
-  if (rt.nav.gui_page == PageId::REMOTE && rt.nav.remote_subpage > 0) return false;
-  if (rt.nav.gui_page == PageId::TOOLS && rt.nav.tools_subpage > 0) return false;
-  if (rt.nav.gui_page == PageId::CALENDAR &&
-      (rt.cal.drilldown != CalDrilldown::NONE || rt.cal.delete_confirm_open)) {
+  if (rt.nav.gui_page == latter_core::PageId::REMOTE && rt.nav.remote_subpage > 0) return false;
+  if (rt.nav.gui_page == latter_core::PageId::TOOLS && rt.nav.tools_subpage > 0) return false;
+  if (rt.nav.gui_page == latter_core::PageId::CALENDAR &&
+      (rt.cal.drilldown != latter_core::CalDrilldown::NONE || rt.cal.delete_confirm_open)) {
     return false;
   }
-  if (!persisted_prefs().home_screen_enabled && is_on_anchor_root(rt, persisted_prefs())) {
+  if (!latter_core::persisted_prefs().home_screen_enabled &&
+      is_on_anchor_root(rt, latter_core::persisted_prefs())) {
     return false;
   }
   return true;
 }
 
 inline bool music_art_only(int gui_page, bool overlay_always_visible, bool hud_active) {
-  const auto &m = runtime_state().music;
-  if (gui_page != PageId::MUSIC ||
-      m.drilldown != MusicDrilldown::NONE ||
-      m.takeover != MusicTakeover::NONE ||
+  const auto &m = latter_core::runtime_state().music;
+  if (gui_page != latter_core::PageId::MUSIC ||
+      m.drilldown != latter_core::MusicDrilldown::NONE ||
+      m.takeover != latter_core::MusicTakeover::NONE ||
       hud_active) {
     return false;
   }
-  if (m.view == MusicView::NOW_PLAYING) return !overlay_always_visible;
-  return m.view == MusicView::LYRICS || m.view == MusicView::INFO;
+  if (m.view == latter_core::MusicView::NOW_PLAYING) return !overlay_always_visible;
+  return m.view == latter_core::MusicView::LYRICS || m.view == latter_core::MusicView::INFO;
 }
 
 inline int get_home_dock_start_index(int total_count, int page) {
@@ -504,7 +489,7 @@ inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int o
   out_has_left_arrow = false;
   out_has_right_arrow = false;
   if (total_count <= 0) return;
-  const int start_idx = get_mode_bar_start_index(total_count, win_start);
+  const int start_idx = latter_core::get_mode_bar_start_index(total_count, win_start);
   const int vis_count = std::min(4, total_count - start_idx);
   bool dl = false, dr = false;
   get_home_dock_window_xs(vis_count, 0, cx, out_xs, dl, dr);

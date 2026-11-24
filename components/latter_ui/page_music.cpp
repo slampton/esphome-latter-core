@@ -9,6 +9,7 @@
 #include <vector>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -537,7 +538,8 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
       row_idx, visible_rows, content_top, content_bot, has_leading_play, has_pips,
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
 
-  const std::string clean_primary = sanitize_utf8_for_font(std::string(primary_txt != nullptr ? primary_txt : ""));
+  const std::string clean_primary = sanitize_utf8_for_font(
+      std::string(primary_txt != nullptr ? primary_txt : ""), ctx.font_small);
 
   if (!register_hits) {
     const std::string fit_p = fit_text_to_width_font(clean_primary, std::max(40, g.card_w - scale_x(24)), ctx.font_small);
@@ -797,7 +799,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
     const int strip_span = band_safe_span_for(
         strip_cy, strip_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
     const int strip_w = std::clamp(std::min(ly.list_card_w, strip_span), 180, SCREEN_W - 24);
-    const int gap = scale_x(6);
+    const int gap = scale_s(6);
     const int pw = (strip_w - 2 * gap) / 3;
     const int sx0 = ctx.cx - strip_w / 2;
 

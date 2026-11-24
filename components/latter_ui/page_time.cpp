@@ -10,6 +10,7 @@
 #include <string_view>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 

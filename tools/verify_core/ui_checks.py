@@ -11,6 +11,7 @@ from .common import (
     ROOT,
     collect_yaml_include_chain,
     extract_substitutions,
+    parse_latter_core_flags,
     strip_cpp_comments,
     strip_cpp_strings_and_comments,
     strip_yaml_comments,
@@ -301,19 +302,16 @@ def _collect_board_font_metrics(failures: list[str]) -> dict[str, dict[str, int]
         dev = _device_yaml_for_board(bf.stem)
         # Resolve effective font sizes through ESPHome's real package merge chain (hal -> latter_firmware -> device).
         bsubs = extract_substitutions(collect_yaml_include_chain(dev) if dev else [bf])
-        m_ppi = re.search(r"-DLATTER_PANEL_PPI=(\d+)", btxt)
-        m_w = re.search(r"-DLATTER_SCREEN_W=(\d+)", btxt)
-        m_h = re.search(r"-DLATTER_SCREEN_H=(\d+)", btxt)
-        m_rnd = re.search(r"-DLATTER_ROUND_DISPLAY=(\d+)", btxt)
-        m_wear = re.search(r"-DLATTER_IS_WEARABLE=(\d+)", btxt)
-        m_cr = re.search(r"-DLATTER_CORNER_R=(\d+)", btxt)
-        if not (m_ppi and m_w and m_h):
+        bflags = parse_latter_core_flags(btxt)
+        if not all(k in bflags for k in ("LATTER_PANEL_PPI", "LATTER_SCREEN_W", "LATTER_SCREEN_H")):
             continue
-        w_px, h_px, ppi = int(m_w.group(1)), int(m_h.group(1)), int(m_ppi.group(1))
-        is_rnd = bool(m_rnd and int(m_rnd.group(1)) != 0)
-        is_wear = bool(m_wear and int(m_wear.group(1)) != 0)
+        w_px = int(bflags["LATTER_SCREEN_W"])
+        h_px = int(bflags["LATTER_SCREEN_H"])
+        ppi = int(bflags["LATTER_PANEL_PPI"])
+        is_rnd = int(bflags.get("LATTER_ROUND_DISPLAY", "0")) != 0
+        is_wear = int(bflags.get("LATTER_IS_WEARABLE", "0")) != 0
         default_rect_cr = WEARABLE_DEFAULT_CORNER_R if is_wear else RECT_DEFAULT_CORNER_R
-        eff_cr = int(m_cr.group(1)) if m_cr else (w_px // 2 if is_rnd else default_rect_cr)
+        eff_cr = int(bflags["LATTER_CORNER_R"]) if "LATTER_CORNER_R" in bflags else (w_px // 2 if is_rnd else default_rect_cr)
         if "font_small_size" not in bsubs or "font_micro_size" not in bsubs:
             failures.append(f"[FONT MM] {bf.name}: missing effective font_small_size/font_micro_size substitution")
             continue

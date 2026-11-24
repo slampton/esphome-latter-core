@@ -36,7 +36,7 @@
 namespace latter_rpc {
 
 static constexpr size_t kMaxRpcFrameBytes = 230;
-static constexpr size_t kMaxRpcSlices = 16;
+static constexpr size_t kMaxRpcSlices = 32;
 static constexpr size_t kRpcQueueCapacity = 64;
 static constexpr uint32_t kMinInterFrameMs = 35U;
 
@@ -268,12 +268,6 @@ inline PinSessionState &pin_session_state() noexcept {
 }
 
 }  // namespace detail
-
-inline void sha256(const uint8_t *data, size_t len, uint8_t out[32]) noexcept {
-  detail::Sha256Ctx ctx;
-  ctx.update(data, len);
-  ctx.finish(out);
-}
 
 inline void hmac_sha256(
     const uint8_t *key, size_t key_len,

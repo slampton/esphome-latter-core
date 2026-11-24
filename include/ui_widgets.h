@@ -17,20 +17,6 @@ namespace latter_ui {
 // ------------------------------------------------------------------------------
 // 1. Shared Frosted-Glass Chrome, Headers, Mode Bars & Navigation Primitives
 // ------------------------------------------------------------------------------
-void render_pill_button(Rgb565Surface &it, int x1, int x2, int y_mid, int r,
-                        UiColor border_c, UiColor bg_c,
-                        const char *label, UiColor text_c,
-                        UiFontView font,
-                        GlassVariant variant = GlassVariant::Clear);
-
-UiColor render_modern_card(Rgb565Surface &it, int cx_card, int cy_card,
-                           int w, int h, int r,
-                           UiColor bg_c, UiColor border_c,
-                           const char *label, UiColor text_c,
-                           UiFontView font,
-                           GlassVariant variant = GlassVariant::Clear,
-                           bool sample_surface = false);
-
 UiColor render_card_box(Rgb565Surface &it, int x0, int y0, int w, int h,
                         UiColor bg_c, UiColor border_c, int r = 10,
                         GlassVariant variant = GlassVariant::Clear,
@@ -49,14 +35,6 @@ inline UiColor render_glass_circle(Rgb565Surface &it, int cx_btn, int cy_btn, in
                                    GlassVariant variant,
                                    UiColor ref_text = kChromeGlassSheen) {
   return render_glass_circle(it, cx_btn, cy_btn, r, bg_c, border_c, 0, variant, ref_text);
-}
-
-inline UiColor render_glass_ring(Rgb565Surface &it, int cx_btn, int cy_btn,
-                                 int outer_r, int inner_hole_r,
-                                 UiColor bg_c, UiColor border_c,
-                                 GlassVariant variant = GlassVariant::Clear,
-                                 UiColor ref_text = kChromeGlassSheen) {
-  return render_glass_circle(it, cx_btn, cy_btn, outer_r, bg_c, border_c, inner_hole_r, variant, ref_text);
 }
 
 void render_scroll_chevron(Rgb565Surface &it, int x, int y, bool is_up,
@@ -136,7 +114,6 @@ UiColor chrome_card_bg_off();
 UiColor chrome_card_brd_on();
 UiColor chrome_card_brd_off();
 UiColor chrome_danger_bg();
-UiColor chrome_modal_bg();
 UiColor chrome_key_bg();
 UiColor chrome_key_brd();
 UiColor chrome_wheel_inner_ring();
@@ -178,7 +155,6 @@ void draw_icon_mic(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool s
 void draw_icon_lightbulb(Rgb565Surface &it, int cx, int cy, int r, UiColor col,
                          bool shadow = false, bool is_on = true);
 void draw_icon_ceiling_fan(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
-void draw_icon_curtains(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_blinds_slats(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool is_open = false, bool shadow = false);
 void draw_icon_switch_pill(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool is_on = true, bool shadow = false);
 void draw_icon_sparkle(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
@@ -186,7 +162,6 @@ void draw_icon_bento_grid(Rgb565Surface &it, int cx, int cy, int r, UiColor col,
 void draw_icon_droplet(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_intercom_handset(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_bell(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
-void draw_icon_thumbtack(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_play_pause(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_hamburger(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_grid_2x2(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
@@ -201,8 +176,8 @@ void draw_icon_sun(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool s
 void draw_icon_crescent_moon(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_wind(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
 void draw_icon_arrow_v(Rgb565Surface &it, int cx, int cy, int r, bool is_up, UiColor col, bool shadow = false);
-const char *route_icon_slug(RouteId route) noexcept;
-void draw_route_icon(Rgb565Surface &it, RouteId route, int cx, int cy, int r,
+const char *route_icon_slug(latter_core::RouteId route) noexcept;
+void draw_route_icon(Rgb565Surface &it, latter_core::RouteId route, int cx, int cy, int r,
                      UiColor col, UiColor cut_c, bool shadow = false);
 
 // ------------------------------------------------------------------------------
@@ -318,17 +293,17 @@ void labeled_action_row(Rgb565Surface &it, int cx, int cy, int w, int h,
                         TileDrawIconFn draw_icon_fn = nullptr, void *icon_ctx = nullptr,
                         UiColor icon_c = UiColor::WHITE);
 
-inline UiColor resolve_shortcut_accent_color(ShortcutAccent accent,
+inline UiColor resolve_shortcut_accent_color(latter_core::ShortcutAccent accent,
                                              const UiFrameContext &ctx,
                                              UiColor fallback) noexcept {
   switch (accent) {
-    case ShortcutAccent::PRIMARY: return ctx.theme_primary;
-    case ShortcutAccent::GOLD:    return ctx.col_gold;
-    case ShortcutAccent::GREEN:   return ctx.col_green;
-    case ShortcutAccent::RED:     return ctx.col_red;
-    case ShortcutAccent::ORANGE:  return ctx.col_orange;
-    case ShortcutAccent::DEFAULT:
-    default:                      return fallback;
+    case latter_core::ShortcutAccent::PRIMARY: return ctx.theme_primary;
+    case latter_core::ShortcutAccent::GOLD:    return ctx.col_gold;
+    case latter_core::ShortcutAccent::GREEN:   return ctx.col_green;
+    case latter_core::ShortcutAccent::RED:     return ctx.col_red;
+    case latter_core::ShortcutAccent::ORANGE:  return ctx.col_orange;
+    case latter_core::ShortcutAccent::DEFAULT:
+    default:                                   return fallback;
   }
 }
 
@@ -362,18 +337,6 @@ void toggle_card_row(Rgb565Surface &it, int cx, int y_mid, int w, int h,
                      const char *label, bool is_on, UiFontView font,
                      UiColor active_col, UiColor text_on, UiColor text_off,
                      uint16_t widget_id = WidgetId::NONE, int16_t param = 0);
-
-void pill_button(Rgb565Surface &it, int x1, int x2, int y_mid, int r,
-                 UiColor border_c, UiColor bg_c,
-                 const char *label, UiColor text_c, UiFontView font,
-                 uint16_t widget_id = WidgetId::NONE, uint8_t flags = kHitTap,
-                 int16_t param = 0, GlassVariant variant = GlassVariant::Clear);
-
-void pill_button_box(Rgb565Surface &it, int x0, int w, int y_mid, int r,
-                     UiColor border_c, UiColor bg_c,
-                     const char *label, UiColor text_c, UiFontView font,
-                     uint16_t widget_id = WidgetId::NONE, uint8_t flags = kHitTap,
-                     int16_t param = 0, GlassVariant variant = GlassVariant::Clear);
 
 void stepper_row(Rgb565Surface &it, int cx, int y_top, int h,
                  const char *const labels[4], UiFontView font,

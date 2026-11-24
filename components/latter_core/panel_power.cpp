@@ -3,10 +3,10 @@
 #include "esphome/core/defines.h"
 
 #ifdef USE_I2C
-namespace latter_ui {
+namespace latter_core {
 
 void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
-#if defined(USE_ESP32) && LATTER_HAS_TOUCH && LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
+#if defined(USE_ESP32) && LATTER_DRV_TOUCH_FT5X06 && LATTER_HAS_TOUCH && LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
   if (bus == nullptr) return;
   static int s_last_sleep = -1;
   const int want = sleep ? 1 : 0;
@@ -15,10 +15,11 @@ void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
   if (sleep && s_last_sleep == want) return;
   // FocalTech FT6336 / FT3168 (I2C 0x38): REG 0x86 = 0x01 enables auto-entry to low-power monitor scan
   // (~0.15 mA vs ~2.5 mA active) while keeping INT active for tap-to-wake; 0x00 keeps active scan.
-  // Non-FocalTech boards (e.g., CST9217 @ 0x5A) disable 0x38 writes after 3 consecutive probe NACKs.
+  // Verify REG 0xA3 CIPHER chip ID before ever writing 0x38 so non-FocalTech chips (AHT20, PCA9554A) are safe.
   static uint8_t s_probe_fail_count = 0;
   static bool s_focaltech_confirmed = false;
-  if (!s_focaltech_confirmed && s_probe_fail_count >= 3U) {
+  static bool s_focaltech_rejected = false;
+  if (s_focaltech_rejected || (!s_focaltech_confirmed && s_probe_fail_count >= 3U)) {
     s_last_sleep = want;
     return;
   }
@@ -28,6 +29,16 @@ void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
     if (bus->write_readv(0x38, &chip_reg, 1, &chip_id, 1) != esphome::i2c::ERROR_OK) {
       ++s_probe_fail_count;
       s_last_sleep = -1;
+      return;
+    }
+    if (!is_known_focaltech_chip_id(chip_id)) {
+      s_focaltech_rejected = true;
+      s_last_sleep = want;
+#ifdef ESP_LOGW
+      ESP_LOGW("touch",
+               "I2C 0x38 reg 0xA3 returned unexpected chip ID 0x%02X (not FocalTech); disabling touch monitor writes",
+               static_cast<unsigned>(chip_id));
+#endif
       return;
     }
     s_focaltech_confirmed = true;
@@ -54,5 +65,5 @@ void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep) {
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core
 #endif  // USE_I2C

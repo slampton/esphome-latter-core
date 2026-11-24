@@ -13,7 +13,7 @@
 #include <esp_heap_caps.h>
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 struct AlertBannerState {
   bool active = false;
@@ -374,4 +374,4 @@ inline std::string build_camera_snapshot_url(std::string_view base_snap_url,
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

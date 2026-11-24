@@ -4,7 +4,9 @@
 // ==============================================================================
 
 #include "ui_touch_engine.h"
+#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
+#endif
 #include "ui_touch_recognizer.h"
 #include "audio_router.h"
 #include "hal_display_lifecycle.h"
@@ -30,6 +32,7 @@
 #endif
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -120,10 +123,10 @@ inline HomeActivityItem *touch_activity_fallback_scratch() {
 }
 
 inline void do_send_intercom_broadcast() {
-  latter_actions::emit_intercom_broadcast(runtime_state().intercom.broadcast_message);
+  latter_core::emit_intercom_broadcast(runtime_state().intercom.broadcast_message);
 }
 void do_select_active_area_latter() {
-  latter_actions::emit_set_active_area(runtime_state().area.active_area_id);
+  latter_core::emit_set_active_area(runtime_state().area.active_area_id);
 }
 
 void stop_broadcast_dictation_if_active(DeviceRuntimeState &rs,
@@ -240,7 +243,7 @@ inline void submit_calendar_draft_event(DeviceRuntimeState &rs,
     char e_date[12];
     format_ymd_iso(ev_ymd, s_date);
     format_ymd_iso(add_days_ymd(ev_ymd, 1), e_date);
-    latter_actions::emit_calendar_create_event(
+    latter_core::emit_calendar_create_event(
         cal_ent, title_sv, true, s_date, e_date, rs.cal.draft_location, rrule_sv);
   } else {
     const int s_min = std::clamp<int>(rs.cal.draft_start_min, 0, 1425);
@@ -255,7 +258,7 @@ inline void submit_calendar_draft_event(DeviceRuntimeState &rs,
     char e_dt[32];
     std::snprintf(s_dt, sizeof(s_dt), "%sT%02d:%02d:00", s_date, s_min / 60, s_min % 60);
     std::snprintf(e_dt, sizeof(e_dt), "%sT%02d:%02d:00", e_date, eff_e_min / 60, eff_e_min % 60);
-    latter_actions::emit_calendar_create_event(
+    latter_core::emit_calendar_create_event(
         cal_ent, title_sv, false, s_dt, e_dt, rs.cal.draft_location, rrule_sv);
   }
 
@@ -307,7 +310,7 @@ void ensure_calendar_window_for_ymd(int32_t anchor_ymd,
   format_ymd_iso(want_start, s_iso);
   format_ymd_iso(want_end, e_iso);
   store.loading = true;
-  latter_actions::emit_calendar_fetch_window(s_iso, e_iso, lookahead);
+  latter_core::emit_calendar_fetch_window(s_iso, e_iso, lookahead);
 }
 
 void stop_calendar_dictation_if_active(DeviceRuntimeState &rs,
@@ -403,12 +406,12 @@ void enter_cameras_app(int target_tab, std::string_view focus_entity, bool start
 
 inline void do_save_custom_color_to_latter() {
   save_persisted_prefs();
-  latter_actions::emit_save_custom_color_rgb(persisted_prefs().custom_theme_rgb);
+  latter_core::emit_save_custom_color_rgb(persisted_prefs().custom_theme_rgb);
 }
 
 inline void do_remote_select_slot(int slot_num) {
   if (!remote_state().slots_summary.empty()) {
-    latter_actions::emit_remote_action(slot_num, "select_slot");
+    latter_core::emit_remote_action(slot_num, "select_slot");
   }
 }
 
@@ -782,7 +785,9 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       else if (route_id == RouteId::TOOLS_COIN_FLIP) sub = ToolsSubpage::COIN_FLIP;
       rs.nav.tools_subpage = sub;
       if (sub == ToolsSubpage::FLASHLIGHT) rt.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
+#if LATTER_GUI_UNIVERSAL
       else if (sub == ToolsSubpage::CALCULATOR) reset_calculator_state();
+#endif
       rt.apply_power_policy();
       mark_dirty_full();
       rt.schedule_disp();
@@ -994,7 +999,7 @@ bool TouchGestureEngine::handle_down_takeovers_(TouchGestureEngine &eng, int tx,
             (rs.alarms.ringing_idx >= 1 && rs.alarms.ringing_idx <= 3) ? rs.alarms.ringing_idx : 1;
         rs.alarms.snooze_until = (rt.time_epoch > 0) ? (rt.time_epoch + 300U) : ((now_ms / 1000U) + 300U);
         rs.alarms.ringing = false;
-        latter_actions::check_and_emit_timer_alarm_state(now_ms);
+        latter_core::check_and_emit_timer_alarm_state(now_ms);
         last_screen_wake_ms() = now_ms;
         rt.cmd(UiHostCmd::STOP_ALARM_SOUND);
         mark_dirty_full();
@@ -1006,13 +1011,13 @@ bool TouchGestureEngine::handle_down_takeovers_(TouchGestureEngine &eng, int tx,
           auto &ap = prefs.alarms[rs.alarms.ringing_idx - 1];
           if (ap.recurrence == 3) {
             ap.enabled = false;
-            latter_actions::sync_local_alarms_edit(now_ms);
+            latter_core::sync_local_alarms_edit(now_ms);
           }
         }
         rs.alarms.ringing = false;
         rs.alarms.snooze_until = 0;
         snoozed_alarm_slot() = 0;
-        latter_actions::check_and_emit_timer_alarm_state(now_ms);
+        latter_core::check_and_emit_timer_alarm_state(now_ms);
         last_screen_wake_ms() = now_ms;
         rt.cmd(UiHostCmd::STOP_ALARM_SOUND);
         rt.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
@@ -1025,7 +1030,7 @@ bool TouchGestureEngine::handle_down_takeovers_(TouchGestureEngine &eng, int tx,
       rs.timers.ringing = false;
       rs.timers.va_timer_name.clear();
       sync_multi_timer_state();
-      latter_actions::check_and_emit_timer_alarm_state(now_ms);
+      latter_core::check_and_emit_timer_alarm_state(now_ms);
       last_screen_wake_ms() = now_ms;
       rt.cmd(UiHostCmd::STOP_ALARM_SOUND);
       rt.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
@@ -1251,11 +1256,28 @@ bool TouchGestureEngine::handle_tap_nav_and_takeovers_(
       const std::string lbl = sc.line1;
       sc.clear();
       if (!ent_id.empty() && !act.empty()) {
-        latter_actions::emit_shortcut_action(ent_id, act);
+        latter_core::emit_shortcut_action(ent_id, act);
         TouchGestureEngine::apply_optimistic_shortcut_feedback_(ent_id, act, lbl, rs, now_rel);
       }
       mark_dirty_full();
       rt_.schedule_disp();
+    }
+    return true;
+  }
+
+  if (rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
+      (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT)) {
+    if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+      ShortcutItem *dock_items = dock_items_scratch();
+      const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
+      const int total_pages = std::max(1, (dock_cnt + 3) / 4);
+      const int next_pg = std::clamp(
+          home_dock_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1), 0, total_pages - 1);
+      if (next_pg != home_dock_page()) {
+        home_dock_page() = next_pg;
+        mark_dirty_band(dock_dirty_band_y0(), SCREEN_H - 1);
+        rt_.schedule_disp();
+      }
     }
     return true;
   }
@@ -1314,7 +1336,7 @@ void TouchGestureEngine::handle_home_activity_action_(const HomeActivityItem *it
         s.target_ms = now_ms + static_cast<uint32_t>(s.remaining_sec) * 1000U;
       }
       sync_multi_timer_state();
-      latter_actions::check_and_emit_timer_alarm_state(now_ms);
+      latter_core::check_and_emit_timer_alarm_state(now_ms);
       rt.apply_power_policy();
     } else if (kind == 2) {
       if (rs.stopwatch.running) {
@@ -1324,7 +1346,7 @@ void TouchGestureEngine::handle_home_activity_action_(const HomeActivityItem *it
         rs.stopwatch.running = true;
         rs.stopwatch.start_time_ms = now_ms - rs.stopwatch.elapsed_ms;
       }
-      latter_actions::check_and_emit_timer_alarm_state(now_ms);
+      latter_core::check_and_emit_timer_alarm_state(now_ms);
     } else if (kind == 3) {
       const uint32_t intent_ts = TouchGestureEngine::now_or_hal_ms_(now_ms);
       audio_session().set_play_intent(MusicPlayIntent::HomeQuickToggle, intent_ts);
@@ -1339,7 +1361,7 @@ void TouchGestureEngine::handle_home_activity_action_(const HomeActivityItem *it
           rs.alarms.snooze_until = 0;
           snoozed_alarm_slot() = 0;
         }
-        latter_actions::sync_local_alarms_edit(now_ms);
+        latter_core::sync_local_alarms_edit(now_ms);
       }
     } else if (kind == 6) {
       auto &ac = area_ctx_state();
@@ -1439,14 +1461,14 @@ void TouchGestureEngine::handle_home_activity_action_(const HomeActivityItem *it
 void TouchGestureEngine::do_fetch_area_browse_() {
   const auto &rs = runtime_state();
   const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
-  latter_actions::emit_area_browse_entities(
+  latter_core::emit_area_browse_entities(
       rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
 }
 
 void TouchGestureEngine::do_fetch_area_list_browse_() {
   const auto &rs = runtime_state();
   const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
-  latter_actions::emit_area_browse_list(rs.area.active_area_id, page, LATTER_SLOT_COUNT);
+  latter_core::emit_area_browse_list(rs.area.active_area_id, page, LATTER_SLOT_COUNT);
 }
 void TouchGestureEngine::enter_home_hub_tab_(int target_tab, bool /*expand_cam*/, DeviceRuntimeState &rs,
                         const UiTouchRuntime &rt, uint32_t now_ms) {
@@ -1496,6 +1518,7 @@ const HomeActivityItem *TouchGestureEngine::resolve_home_activities_(uint32_t no
   const HomeActivityItem *act_items = home_activity_rendered_items(out_count);
   if (out_count > 0) return act_items;
   HomeActivityItem *fallback_items = touch_activity_fallback_scratch();
+#if LATTER_GUI_UNIVERSAL
   const auto &ms_hm = media_state();
   const bool m_play = is_music_playing_effective(
       !ms_hm.is_local, rt.local_mp_playing, ms_hm.state, now_ms);
@@ -1510,6 +1533,12 @@ const HomeActivityItem *TouchGestureEngine::resolve_home_activities_(uint32_t no
       prefs.alarms[2].hour, prefs.alarms[2].minute, prefs.alarms[2].enabled,
       fallback_items, rt.time_hour, rt.time_minute, calendar_state().summary,
       rt.time_day_of_week);
+#else
+  (void)now_ms;
+  (void)rs;
+  (void)prefs;
+  (void)rt;
+#endif
   return fallback_items;
 }
 
@@ -1594,7 +1623,7 @@ bool TouchGestureEngine::handle_tap_home_area_(
           const PrefKey pk = (item_idx == 4) ? PrefKey::HOME_SUN : PrefKey::HOME_MOON;
           const bool next_v = (item_idx == 4) ? !prefs.home_sun : !prefs.home_moon;
           uint32_t eff = 0U;
-          if (latter_actions::record_local_pref_edit(pk, next_v ? "1" : "0", now_rel, eff)) {
+          if (latter_core::record_local_pref_edit(pk, next_v ? "1" : "0", now_rel, eff)) {
             device_prefs_state().last_effects |= eff;
             rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
           }
@@ -2062,7 +2091,7 @@ void TouchGestureEngine::dispatch_music_play_item_(const std::string &media_id, 
   m.feedback_timer = now_ms;
   m.hud_active = true;
   m.hud_timer = now_ms;
-  latter_actions::emit_media_play_item(spk, media_id, media_type, enqueue, radio_mode);
+  latter_core::emit_media_play_item(spk, media_id, media_type, enqueue, radio_mode);
 }
 std::string TouchGestureEngine::resolve_music_speaker_entity_(const DeviceRuntimeState &rs) {
   const auto &ms = media_state();
@@ -2090,7 +2119,7 @@ int TouchGestureEngine::fetch_music_browse_for_current_view_(const DeviceRuntime
   const std::string_view pod_opt(pref_podcast_sort_order_cstr());
   const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
   const int psize = music_browse_page_size_for(rs.music.view, rs.music.drilldown, mode_s);
-  return latter_actions::emit_music_browse(
+  return latter_core::emit_music_browse(
       mode_s, page, search_sv, rs.music.active_speaker_entity,
       media_state().last_speaker, alb_sort, art_sort, pod_sort, psize, now_ms);
 }
@@ -2193,7 +2222,7 @@ bool TouchGestureEngine::handle_music_back_step_(DeviceRuntimeState &rs, const U
 void request_music_lyrics_refresh(const std::string &track_key, const std::string &speaker_entity,
                                   uint32_t now_ms) {
   cancel_core_timeout(kTimeoutMusicPeerBrowseId);
-  latter_actions::emit_music_lyrics_fetch(track_key, speaker_entity, now_ms);
+  latter_core::emit_music_lyrics_fetch(track_key, speaker_entity, now_ms);
 }
 
 void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
@@ -2359,19 +2388,19 @@ bool TouchGestureEngine::handle_tap_music_(
                  (ms.media_caps & kMediaCapShuffleSet) != 0U &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         ms.shuffle = !ms.shuffle;
-        latter_actions::emit_media_shuffle_toggle(spk);
+        latter_core::emit_media_shuffle_toggle(spk);
         rt_.schedule_disp();
       } else if (wid == WidgetId::MUSIC_REPEAT_BTN &&
                  (ms.media_caps & kMediaCapRepeatSet) != 0U &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         ms.repeat_mode = static_cast<uint8_t>((ms.repeat_mode + 1U) % 3U);
         ms.repeat = (ms.repeat_mode != 0U);
-        latter_actions::emit_media_repeat_cycle(spk);
+        latter_core::emit_media_repeat_cycle(spk);
         rt_.schedule_disp();
       } else if (wid == WidgetId::MUSIC_FAVORITE_BTN &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         ms.favorite = !ms.favorite;
-        latter_actions::emit_media_favorite_toggle("", spk);
+        latter_core::emit_media_favorite_toggle("", spk);
         m.action_feedback = ms.favorite ? "Saved to Favorites" : "Removed Favorite";
         m.feedback_timer = now_rel;
         rt_.schedule_disp();
@@ -2386,7 +2415,7 @@ bool TouchGestureEngine::handle_tap_music_(
             music_queue_cleared() = false;
             m.action_feedback = "Playing: " + m.action_sheet_name;
             m.feedback_timer = now_rel;
-            latter_actions::emit_media_queue_play(qid, spk);
+            latter_core::emit_media_queue_play(qid, spk);
           } else if (m.action_sheet_slot >= 0) {
             rt_.cmd(UiHostCmd::PLAY_MUSIC_SLOT, m.action_sheet_slot + 1);
           }
@@ -2396,16 +2425,16 @@ bool TouchGestureEngine::handle_tap_music_(
                     wid == WidgetId::MUSIC_ACTION_MOVE_DOWN ||
                     wid == WidgetId::MUSIC_ACTION_REMOVE_QUEUE) && !qid.empty()) {
           if (wid == WidgetId::MUSIC_ACTION_PLAY_NEXT) {
-            latter_actions::emit_media_queue_move(qid, "next", spk);
+            latter_core::emit_media_queue_move(qid, "next", spk);
             m.action_feedback = "Moved Next";
           } else if (wid == WidgetId::MUSIC_ACTION_MOVE_UP) {
-            latter_actions::emit_media_queue_move(qid, -1, spk);
+            latter_core::emit_media_queue_move(qid, -1, spk);
             m.action_feedback = "Moved Up";
           } else if (wid == WidgetId::MUSIC_ACTION_MOVE_DOWN) {
-            latter_actions::emit_media_queue_move(qid, 1, spk);
+            latter_core::emit_media_queue_move(qid, 1, spk);
             m.action_feedback = "Moved Down";
           } else {
-            latter_actions::emit_media_queue_delete(qid, spk);
+            latter_core::emit_media_queue_delete(qid, spk);
             m.action_feedback = "Removed from Queue";
           }
           m.feedback_timer = now_rel;
@@ -2535,7 +2564,7 @@ bool TouchGestureEngine::handle_tap_music_(
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       ms.muted = !ms.muted;
       m.hud_timer = now_rel;
-      latter_actions::emit_media_mute_toggle(spk);
+      latter_core::emit_media_mute_toggle(spk);
       rt_.schedule_disp();
     }
     return true;
@@ -2576,7 +2605,7 @@ bool TouchGestureEngine::handle_tap_music_(
           m.lyrics.target_scroll_px = -1;
           m.hud_timer = now_rel;
           audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, now_rel);
-          latter_actions::emit_media_seek(static_cast<int>(t_ms / 1000));
+          latter_core::emit_media_seek(static_cast<int>(t_ms / 1000));
           rt_.schedule_disp();
         }
         return true;
@@ -2660,14 +2689,14 @@ bool TouchGestureEngine::handle_tap_music_(
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       ms.shuffle = !ms.shuffle;
       m.hud_timer = now_rel;
-      latter_actions::emit_media_shuffle_toggle(spk);
+      latter_core::emit_media_shuffle_toggle(spk);
       rt_.schedule_disp();
     } else if (wid == WidgetId::MUSIC_REPEAT_BTN && (ms.media_caps & kMediaCapRepeatSet) != 0U &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       ms.repeat_mode = static_cast<uint8_t>((ms.repeat_mode + 1U) % 3U);
       ms.repeat = (ms.repeat_mode != 0U);
       m.hud_timer = now_rel;
-      latter_actions::emit_media_repeat_cycle(spk);
+      latter_core::emit_media_repeat_cycle(spk);
       rt_.schedule_disp();
     } else if (wid == WidgetId::MUSIC_QUEUE_CLEAR &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -2690,7 +2719,7 @@ bool TouchGestureEngine::handle_tap_music_(
         music_queue_cleared() = false;
         m.action_feedback = "Playing: " + sl.name;
         m.feedback_timer = now_rel;
-        latter_actions::emit_media_queue_play(sl.queue_item_id, spk);
+        latter_core::emit_media_queue_play(sl.queue_item_id, spk);
         return_now_playing_dirty();
       } else if (!sl.id.empty() && sl.type != "text") {
         rt_.cmd(UiHostCmd::PLAY_MUSIC_SLOT, si + 1);
@@ -2904,7 +2933,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
             static constexpr int kMSteps[4] = {-5, -1, 1, 5};
             ap.minute = static_cast<uint8_t>((static_cast<int>(ap.minute) + 60 + kMSteps[col]) % 60);
           }
-          latter_actions::sync_local_alarms_edit(now_ms);
+          latter_core::sync_local_alarms_edit(now_ms);
           rt.schedule_disp();
         }
         return true;
@@ -2912,7 +2941,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
       if (wid == WidgetId::ALARM_RECUR_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
         gest.active = false;
         ap.recurrence = static_cast<uint8_t>((ap.recurrence + 1) % 4);
-        latter_actions::sync_local_alarms_edit(now_ms);
+        latter_core::sync_local_alarms_edit(now_ms);
         rt.schedule_disp();
       }
       return true;
@@ -2930,7 +2959,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
           rs.stopwatch.running = false;
           rs.stopwatch.elapsed_ms = now_ms - rs.stopwatch.start_time_ms;
         }
-        latter_actions::check_and_emit_timer_alarm_state(now_ms);
+        latter_core::check_and_emit_timer_alarm_state(now_ms);
         rt.schedule_disp();
         return true;
       }
@@ -2945,7 +2974,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
       if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
         gest.active = false;
         rs.stopwatch.reset();
-        latter_actions::check_and_emit_timer_alarm_state(now_ms);
+        latter_core::check_and_emit_timer_alarm_state(now_ms);
         rt.schedule_disp();
       }
     }
@@ -3010,7 +3039,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         char d_str[8];
         std::snprintf(d_str, sizeof(d_str), "%u", static_cast<unsigned>(next_d));
         uint32_t eff = 0U;
-        if (latter_actions::record_local_pref_edit(PrefKey::CALENDAR_LOOKAHEAD_DAYS, d_str, now_ms, eff)) {
+        if (latter_core::record_local_pref_edit(PrefKey::CALENDAR_LOOKAHEAD_DAYS, d_str, now_ms, eff)) {
           device_prefs_state().last_effects |= eff;
           rt.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
         }
@@ -3116,7 +3145,7 @@ bool TouchGestureEngine::handle_tap_time_cal_(
           rs.alarms.snooze_until = 0;
           snoozed_alarm_slot() = 0;
         }
-        latter_actions::sync_local_alarms_edit(now_rel);
+        latter_core::sync_local_alarms_edit(now_rel);
         rt_.schedule_disp();
       } else if (wid >= WidgetId::ALARM_CARD_BASE && wid < WidgetId::ALARM_CARD_BASE + 3 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -3151,7 +3180,7 @@ bool TouchGestureEngine::handle_tap_time_cal_(
             (static_cast<int>(ev.cal_idx) < src_cnt) ? std::string_view(sources[ev.cal_idx].entity_id)
                                                      : std::string_view{};
         if (!ent_sv.empty() && ev.uid[0] != '\0') {
-          latter_actions::emit_calendar_delete_event(ent_sv, ev.uid, ev.recurrence_id);
+          latter_core::emit_calendar_delete_event(ent_sv, ev.uid, ev.recurrence_id);
           rs.cal.feedback_text = "Event deleted";
           rs.cal.feedback_ms = now_rel;
         }
@@ -3709,7 +3738,7 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
       }
     }
   } else if (rs.cameras.tab == CamerasTab::SETTINGS) {
-#if LATTER_CHIP_P4
+#if LATTER_HAS_HW_JPEG
     if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       rs.cameras.settings_page = (wid == WidgetId::CHEVRON_UP) ? 0 : 1;
@@ -3721,16 +3750,16 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
     if (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5 &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       const int r_idx = static_cast<int>(wid - WidgetId::CAM_SETTINGS_ROW_BASE);
-      auto cycle_opt = [&]<size_t N>(UiSelectId sid, const char *const (&opts)[N], uint8_t cur_val) {
+      auto cycle_opt = [&]<size_t N>(UiSelectId sid, const std::array<std::string_view, N> &opts, uint8_t cur_val) {
         const uint8_t next_v = static_cast<uint8_t>((cur_val + 1U) % static_cast<uint8_t>(N));
         rt_.set_select_opt(sid, opts[next_v], true);
       };
-      if (r_idx == 0) cycle_opt(UiSelectId::CAMERA_DEFAULT_VIEW, kCameraDefaultViewOpts, prefs.camera_default_view);
-      else if (r_idx == 1) cycle_opt(UiSelectId::CAMERA_CAROUSEL_INTERVAL, kCameraCarouselIntervalOpts, prefs.camera_carousel_interval);
-      else if (r_idx == 2) cycle_opt(UiSelectId::CAMERA_FRAMING, kCameraFramingOpts, prefs.camera_framing);
-      else if (r_idx == 3) cycle_opt(UiSelectId::CAMERA_STREAM_MODE, kCameraStreamModeOpts, prefs.camera_stream_mode);
-#if LATTER_CHIP_P4
-      else if (r_idx == 4) cycle_opt(UiSelectId::CAMERA_DOORBELL_POPUP, kCameraDoorbellPopupOpts, prefs.camera_doorbell_popup);
+      if (r_idx == 0) cycle_opt(UiSelectId::CAMERA_DEFAULT_VIEW, kPrefOptsCameraDefaultView, prefs.camera_default_view);
+      else if (r_idx == 1) cycle_opt(UiSelectId::CAMERA_CAROUSEL_INTERVAL, kPrefOptsCameraCarouselInterval, prefs.camera_carousel_interval);
+      else if (r_idx == 2) cycle_opt(UiSelectId::CAMERA_FRAMING, kPrefOptsCameraFraming, prefs.camera_framing);
+      else if (r_idx == 3) cycle_opt(UiSelectId::CAMERA_STREAM_MODE, kPrefOptsCameraStreamMode, prefs.camera_stream_mode);
+#if LATTER_HAS_HW_JPEG
+      else if (r_idx == 4) cycle_opt(UiSelectId::CAMERA_DOORBELL_POPUP, kPrefOptsCameraDoorbellPopup, prefs.camera_doorbell_popup);
 #endif
       mark_dirty_full();
       rt_.schedule_disp();
@@ -3884,7 +3913,7 @@ void TouchGestureEngine::do_remote_send_key_(int key_idx, int target_slot, bool 
   }
   rs.remote.feedback_timer = TouchGestureEngine::now_or_hal_ms_(now_override_ms);
   if (!remote_state().slots_summary.empty()) {
-    latter_actions::emit_remote_action(slot_1based, act, cmd);
+    latter_core::emit_remote_action(slot_1based, act, cmd);
   }
 }
 
@@ -4226,7 +4255,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
         rs.stopwatch.running = false;
         rs.stopwatch.elapsed_ms = now_ms - rs.stopwatch.start_time_ms;
       }
-      latter_actions::check_and_emit_timer_alarm_state(now_ms);
+      latter_core::check_and_emit_timer_alarm_state(now_ms);
       rt.schedule_disp();
       return true;
     }
@@ -4241,7 +4270,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
     }
     if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
       rs.stopwatch.reset();
-      latter_actions::check_and_emit_timer_alarm_state(now_ms);
+      latter_core::check_and_emit_timer_alarm_state(now_ms);
       rt.schedule_disp();
     }
     return true;
@@ -4274,11 +4303,18 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
 
   if (sub == ToolsSubpage::CALCULATOR) {
     if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+#if LATTER_GUI_UNIVERSAL
       reset_calculator_state();
+#endif
       exit_tool_subpage(false);
     } else if (wid >= WidgetId::CALC_KEY_BASE && wid < WidgetId::CALC_KEY_BASE + 20 &&
                touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+#if LATTER_GUI_UNIVERSAL
       handle_calculator_keypad_tap(tx, ty);
+#else
+      (void)tx;
+      (void)ty;
+#endif
       rt.schedule_disp();
     }
     return true;
@@ -4316,11 +4352,16 @@ bool TouchGestureEngine::handle_tap_system_tools_(
                                      : ((mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page);
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int target_pg = (cur_pg == 1) ? 2 : 1;
-        rs.nav.menu_scroll_active = true;
-        rs.nav.menu_scroll_dir = (target_pg == 2) ? 1 : -1;
-        rs.nav.menu_scroll_target_page = target_pg;
-        rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        const int max_pg = (mode == 2) ? 3 : 2;
+        const int target_pg = (wid == WidgetId::CHEVRON_DOWN)
+                                  ? std::min(max_pg, cur_pg + 1)
+                                  : std::max(1, cur_pg - 1);
+        if (target_pg != cur_pg) {
+          rs.nav.menu_scroll_active = true;
+          rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
+          rs.nav.menu_scroll_target_page = target_pg;
+          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        }
       } else if (mode == 0 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int item_idx = (rs.nav.system_dashboard_page == 1) ? hit->param : (hit->param + 3);
@@ -4402,7 +4443,8 @@ bool TouchGestureEngine::handle_tap_system_tools_(
             rt_.schedule_disp();
           }
         } else if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
-          const int item_idx = (rs.nav.display_menu_page == 1) ? hit->param : (hit->param + 5);
+          const int clamped_pg = std::clamp(rs.nav.display_menu_page, 1, 3);
+          const int item_idx = (clamped_pg - 1) * 5 + hit->param;
           const std::string_view ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
           if (item_idx == 0) {
             if (prefs.home_screen_enabled) {
@@ -4442,12 +4484,18 @@ bool TouchGestureEngine::handle_tap_system_tools_(
               mark_dirty_full();
             }
           } else if (item_idx == 4) {
+            const std::string next_gs = cycle_option(
+                rt_.select_opt(UiSelectId::GLASS_STYLE),
+                {"Auto", "Clear", "Dark"});
+            rt_.set_select_opt(UiSelectId::GLASS_STYLE, next_gs);
+            mark_dirty_full();
+          } else if (item_idx == 5) {
             const std::string next_m =
                 cycle_option(ab, {"Disabled", "Sun Synchronized", "Time Schedule", "Ambient Light"});
             rs.nav.ambient_bri_override_pct = -1;
             rt_.set_select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE, next_m, true);
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
-          } else if (item_idx == 6 && ab == "Time Schedule") {
+          } else if (item_idx == 7 && ab == "Time Schedule") {
             const int dh = static_cast<int>(rt_.num_val(UiNumberId::DAY_START_HOUR));
             const int nh = static_cast<int>(rt_.num_val(UiNumberId::NIGHT_START_HOUR));
             int nxt_dh = 7, nxt_nh = 22;
@@ -4457,7 +4505,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
             rt_.set_num_val(UiNumberId::DAY_START_HOUR, static_cast<float>(nxt_dh));
             rt_.set_num_val(UiNumberId::NIGHT_START_HOUR, static_cast<float>(nxt_nh));
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
-          } else if (item_idx == 9) {
+          } else if (item_idx == 10) {
             rt_.sw_toggle(UiSwitchId::SCREENSAVER_PHOTO_CLOCK);
           }
           rt_.schedule_disp();
@@ -4534,7 +4582,9 @@ bool TouchGestureEngine::handle_tap_system_tools_(
       if (target_sub > 0) {
         rs.nav.tools_subpage = target_sub;
         if (target_sub == ToolsSubpage::FLASHLIGHT) rt_.cmd(UiHostCmd::FLASHLIGHT_FULL_BRIGHTNESS);
+#if LATTER_GUI_UNIVERSAL
         else if (target_sub == ToolsSubpage::CALCULATOR) reset_calculator_state();
+#endif
         rt_.apply_power_policy();
         mark_dirty_full();
         rt_.schedule_disp();

@@ -1,5 +1,6 @@
 #include "ui_gfx.h"
 #include "ui_dirty_band.h"
+#include "state/state_prefs.h"
 
 #include <algorithm>
 #include <atomic>
@@ -35,6 +36,7 @@
 #endif
 
 namespace latter_ui {
+using namespace latter_core;
 
 // 1. Retryable PSRAM / Host Heap Helpers
 void *ui_psram_malloc(size_t bytes) noexcept {
@@ -173,11 +175,7 @@ bool fb_clear_init() {
   fb_clear_log_heap("before install");
   async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
   cfg.backlog = kFbClearChunks + 1;
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
   esp_err_t err = esp_async_memcpy_install_gdma_axi(&cfg, &st.mcp);
-#else
-  esp_err_t err = esp_async_memcpy_install_gdma_ahb(&cfg, &st.mcp);
-#endif
 #if defined(CONFIG_CACHE_L2_CACHE_LINE_128B)
   st.align = 128;
 #else
@@ -485,6 +483,10 @@ UiColor mix_color_q8(UiColor c_under, UiColor c_over, int a) {
   };
 }
 
+uint8_t active_glass_style_raw() noexcept {
+  return static_cast<uint8_t>(latter_core::persisted_prefs().glass_style_enum());
+}
+
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   GlassBackdrop out;
   if (w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
@@ -646,42 +648,13 @@ int glass_alpha_for_text(UiColor tint, UiColor backdrop, UiColor text, int min_a
   return 248;
 }
 
-int glass_alpha_smooth(int &state, int target, uint32_t dt_ms) {
-  if (state <= 0 || target >= state) {
-    state = target;
-  } else {
-    const uint32_t clamped_dt = std::min<uint32_t>(dt_ms, 250U);
-    const int fall = (clamped_dt == 0U)
-                         ? 0
-                         : std::max(1, static_cast<int>((static_cast<uint32_t>(kGlassAlphaFallQ8) * clamped_dt + 8U) / 16U));
-    state = std::max(target, state - fall);
-  }
-  return state;
-}
-
 void resolve_glass_fill(const GlassBackdrop &bd, UiColor tint, UiColor ref_text,
                         UiColor &out_tint, int &out_a_top, int &out_a_bot,
                         int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8,
                         GlassVariant variant) {
+  const uint8_t g_style = active_glass_style_raw();
   const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
-  const bool is_readable_dark = (variant == GlassVariant::ReadableDark);
-
-  if (!is_readable_dark) {
-    const int frost_q8 = dark_tint ? (is_semantic_glass_color(tint) ? 32 : 54) : 0;
-    out_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
-    const int base_a = (explicit_alpha_q8 >= 0) ? explicit_alpha_q8 : kGlassClearAlphaQ8;
-    const int da = dark_tint ? 12 : 0;
-    out_a_top = std::min(256, base_a + da);
-    out_a_bot = std::max(0, base_a - (da * 2) / 3);
-    out_rim_top = std::min(256, kGlassSheenTopQ8 + 18);
-    out_rim_bot = std::min(256, kGlassSheenBotQ8 + 12);
-    return;
-  }
-
-  const int bg_lvl = bd.valid
-                         ? ((static_cast<int>(bd.mean.r) + static_cast<int>(bd.mean.g) + static_cast<int>(bd.mean.b)) / 3)
-                         : 0;
-  out_tint = tint;
+  const bool is_readable_dark = (variant == GlassVariant::ReadableDark) || (g_style == 2U);
 
   const float raw_fg_lum = relative_luminance(ref_text);
   const UiColor contrast_fg =
@@ -689,6 +662,71 @@ void resolve_glass_fill(const GlassBackdrop &bd, UiColor tint, UiColor ref_text,
           ? kChromeGlassSheen
           : ((raw_fg_lum < 0.18f) ? kChromeMuted : ref_text);
   const float fg_lum = relative_luminance(contrast_fg);
+
+  if (!is_readable_dark) {
+    const int frost_q8 = dark_tint ? (is_semantic_glass_color(tint) ? 32 : 54) : 0;
+    const UiColor clear_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
+    const int base_a = (explicit_alpha_q8 >= 0) ? explicit_alpha_q8 : kGlassClearAlphaQ8;
+    const int da = dark_tint ? 12 : 0;
+    const int clear_a_top = std::min(256, base_a + da);
+    const int clear_a_bot = std::max(0, base_a - (da * 2) / 3);
+    const int clear_rim_top = std::min(256, kGlassSheenTopQ8 + 18);
+    const int clear_rim_bot = std::min(256, kGlassSheenBotQ8 + 12);
+
+    // GlassStyle::Auto (0): stay crisp Clear over dark backdrops, smoothly morph toward
+    // WCAG >= 4.5:1 ReadableDark contrast over bright skies, wallpapers, or album art.
+    if (g_style == 0U && bd.valid && explicit_alpha_q8 < 0) {
+      const float c_top = contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, clear_tint, clear_a_top)));
+      const float c_bot = contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, clear_tint, clear_a_bot)));
+      const float c_min = std::min(c_top, c_bot);
+      if (c_min < kGlassTextContrast) {
+        const UiColor dark_base = is_semantic_glass_color(tint)
+                                      ? mix_color_q8(kChromeModalBg, tint, kGlassSemanticWashMaxQ8)
+                                      : kChromeModalBg;
+        const float t = std::clamp((kGlassTextContrast - c_min) / (kGlassTextContrast - 2.5f), 0.0f, 1.0f);
+        const int t_q8 = static_cast<int>(std::lround(t * 256.0f));
+        UiColor adapt_tint = mix_color_q8(clear_tint, dark_base, t_q8);
+        int need_a = glass_alpha_for_text(adapt_tint, bd.bright, contrast_fg, kGlassClearAlphaQ8);
+        if (contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, adapt_tint, need_a))) <
+            kGlassTextContrastMin) {
+          adapt_tint = dark_base;
+          need_a = glass_alpha_for_text(adapt_tint, bd.bright, contrast_fg, kGlassClearAlphaQ8);
+        }
+        out_tint = adapt_tint;
+        out_a_top = std::min(256, need_a + 10);
+        out_a_bot = std::max(kGlassAlphaMinQ8, need_a - 6);
+        if (contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, out_tint, out_a_bot))) <
+            kGlassTextContrastMin) {
+          out_a_bot = need_a;
+        }
+        if (contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bd.bright, out_tint, out_a_top))) <
+            kGlassTextContrastMin) {
+          out_a_top = need_a;
+        }
+        out_rim_top = std::min(256, kGlassSheenTopQ8 + 12);
+        out_rim_bot = std::min(256, kGlassSheenBotQ8 + 8);
+        return;
+      }
+    }
+
+    out_tint = clear_tint;
+    out_a_top = clear_a_top;
+    out_a_bot = clear_a_bot;
+    out_rim_top = clear_rim_top;
+    out_rim_bot = clear_rim_bot;
+    return;
+  }
+
+  const int bg_lvl = bd.valid
+                         ? ((static_cast<int>(bd.mean.r) + static_cast<int>(bd.mean.g) + static_cast<int>(bd.mean.b)) / 3)
+                         : 0;
+  // If caller forced GlassStyle::Dark via direct resolve_glass_fill without Dark normalization,
+  // ensure dark neutral base so white text achieves >= 4.5:1 over bright backdrops.
+  out_tint = (variant == GlassVariant::ReadableDark)
+                 ? tint
+                 : (is_semantic_glass_color(tint)
+                        ? mix_color_q8(kChromeModalBg, tint, kGlassSemanticWashMaxQ8)
+                        : kChromeModalBg);
 
   int base_a = explicit_alpha_q8;
   if (base_a < 0) {
@@ -709,15 +747,25 @@ void resolve_glass_fill(const GlassBackdrop &bd, UiColor tint, UiColor ref_text,
   out_rim_bot = std::min(256, kGlassSheenBotQ8 + (rim_boost * 2) / 3);
 }
 
-UiColor sample_glass_surface_color(int x0, int y0, int w, int h, UiColor tint, GlassVariant variant) {
-  const GlassBackdrop bd = sample_glass_backdrop(x0, y0, w, h);
-  GlassVariant eff_var = variant;
-  UiColor norm_tint, rim_col;
-  normalize_glass_chrome(tint, kChromeCardBorder, eff_var, norm_tint, rim_col);
-  UiColor eff_tint;
-  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
-  return bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
+void resolve_styled_glass(int x0, int y0, int w, int h,
+                          UiColor caller_bg, UiColor caller_brd,
+                          GlassVariant explicit_variant, UiColor ref_text,
+                          int explicit_alpha_q8, bool sample_surface,
+                          GlassBackdrop &out_bd, UiColor &out_tint, UiColor &out_rim,
+                          int &out_a_top, int &out_a_bot, int &out_rim_top, int &out_rim_bot) {
+  const uint8_t g_style = active_glass_style_raw();
+  GlassVariant eff_var =
+      (explicit_variant == GlassVariant::ReadableDark || g_style == 2U)
+          ? GlassVariant::ReadableDark
+          : GlassVariant::Clear;
+  UiColor norm_tint{};
+  normalize_glass_chrome(caller_bg, caller_brd, eff_var, norm_tint, out_rim);
+  const bool need_bd = (eff_var == GlassVariant::ReadableDark) || (g_style == 0U && explicit_alpha_q8 < 0);
+  out_bd = need_bd
+               ? sample_glass_backdrop(x0, y0, w, h)
+               : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
+  resolve_glass_fill(out_bd, norm_tint, ref_text, out_tint, out_a_top, out_a_bot,
+                     out_rim_top, out_rim_bot, explicit_alpha_q8, eff_var);
 }
 
 void fill_round_rect_aa_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
@@ -996,37 +1044,27 @@ void append_utf8_cp(std::string &out, uint32_t cp) {
   } else if (cp <= 0x7FF) {
     out.push_back(static_cast<char>(0xC0 | ((cp >> 6) & 0x1F)));
     out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
-  } else if (cp <= 0xFFFF) {
-    out.push_back(static_cast<char>(0xE0 | ((cp >> 12) & 0x0F)));
-    out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
-    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else if (cp <= 0xFFFFU) {
+    out.push_back(static_cast<char>(0xE0U | ((cp >> 12) & 0x0FU)));
+    out.push_back(static_cast<char>(0x80U | ((cp >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+  } else if (cp <= 0x10FFFFU) {
+    out.push_back(static_cast<char>(0xF0U | ((cp >> 18) & 0x07U)));
+    out.push_back(static_cast<char>(0x80U | ((cp >> 12) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | ((cp >> 6) & 0x3FU)));
+    out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
   }
 }
 
-bool is_supported_font_cp(uint32_t cp) {
-  if (cp >= 0x20 && cp <= 0x7E) return true;
-  if (cp >= 0xA1 && cp <= 0xFF && cp != 0xAD) return true;
-  switch (cp) {
-    case 0x0100: case 0x0101: case 0x0102: case 0x0103: case 0x0104: case 0x0105:
-    case 0x0106: case 0x0107: case 0x010C: case 0x010D: case 0x010E: case 0x010F:
-    case 0x0110: case 0x0111: case 0x0112: case 0x0113: case 0x0116: case 0x0117:
-    case 0x0118: case 0x0119: case 0x011A: case 0x011B: case 0x011E: case 0x011F:
-    case 0x012A: case 0x012B: case 0x012E: case 0x012F: case 0x0130: case 0x0131:
-    case 0x0136: case 0x0137: case 0x0139: case 0x013A: case 0x013B: case 0x013C:
-    case 0x013D: case 0x013E: case 0x0141: case 0x0142: case 0x0143: case 0x0144:
-    case 0x0145: case 0x0146: case 0x0147: case 0x0148: case 0x014C: case 0x014D:
-    case 0x0150: case 0x0151: case 0x0152: case 0x0153: case 0x0154: case 0x0155:
-    case 0x0158: case 0x0159: case 0x015A: case 0x015B: case 0x015E: case 0x015F:
-    case 0x0160: case 0x0161: case 0x0162: case 0x0163: case 0x0164: case 0x0165:
-    case 0x016A: case 0x016B: case 0x016E: case 0x016F: case 0x0170: case 0x0171:
-    case 0x0172: case 0x0173: case 0x0178: case 0x0179: case 0x017A: case 0x017B:
-    case 0x017C: case 0x017D: case 0x017E:
-    case 0x2013: case 0x2014: case 0x2018: case 0x2019: case 0x201C: case 0x201D:
-    case 0x2022: case 0x2026: case 0x20AC: case 0x2122:
-      return true;
-    default:
-      return false;
+bool font_supports_cp(const UiFontView &font, uint32_t cp) noexcept {
+  if (cp >= 0xD800U && cp <= 0xDFFFU) return false;
+  if (cp > 0x10FFFFU) return false;
+  if (cp >= 0x80U && cp <= 0x9FU) return false;
+  if (font.find_glyph_fn != nullptr && font.handle != nullptr) {
+    UiGlyphData glyph{};
+    return font.find_glyph(cp, glyph);
   }
+  return (cp >= 0x20U && cp <= 0x7EU) || (cp >= 0xA1U && cp != 0xADU);
 }
 
 constexpr int kTextCacheEntries = 32;
@@ -1193,7 +1231,7 @@ void rasterize_glyph_pixels(uint16_t *fb, const UiFontView &font, const char *te
 
 }  // namespace
 
-std::string sanitize_utf8_for_font(const std::string &str) {
+std::string sanitize_utf8_for_font(const std::string &str, UiFontView font) {
   if (str.empty()) return str;
   std::string out;
   out.reserve(str.size());
@@ -1221,7 +1259,7 @@ std::string sanitize_utf8_for_font(const std::string &str) {
         cp = (static_cast<uint32_t>(b0 & 0x0F) << 12) |
              (static_cast<uint32_t>(b1 & 0x3F) << 6) |
              static_cast<uint32_t>(b2 & 0x3F);
-        if (cp >= 0x800) len = 3;
+        if (cp >= 0x800 && !(cp >= 0xD800U && cp <= 0xDFFFU)) len = 3;
       }
     } else if ((b0 & 0xF8) == 0xF0 && i + 3 < n) {
       const unsigned char b1 = static_cast<unsigned char>(str[i + 1]);
@@ -1232,7 +1270,7 @@ std::string sanitize_utf8_for_font(const std::string &str) {
              (static_cast<uint32_t>(b1 & 0x3F) << 12) |
              (static_cast<uint32_t>(b2 & 0x3F) << 6) |
              static_cast<uint32_t>(b3 & 0x3F);
-        if (cp >= 0x10000) len = 4;
+        if (cp >= 0x10000U && cp <= 0x10FFFFU) len = 4;
       }
     }
     if (len == 0) {
@@ -1249,7 +1287,8 @@ std::string sanitize_utf8_for_font(const std::string &str) {
     } else if (cp == 0x2010 || cp == 0x2011 || cp == 0x2012 || cp == 0x2212 || cp == 0xFF0D) {
       out.push_back('-');
     } else if (cp == 0x2015) {
-      append_utf8_cp(out, 0x2014);
+      if (font_supports_cp(font, 0x2014U)) append_utf8_cp(out, 0x2014U);
+      else out.push_back('-');
     } else if (cp == 0x02B9 || cp == 0x02BB || cp == 0x02BC || cp == 0x201A || cp == 0x2032 ||
                cp == 0x2039 || cp == 0x203A || cp == 0xFF07) {
       out.push_back('\'');
@@ -1259,11 +1298,23 @@ std::string sanitize_utf8_for_font(const std::string &str) {
       out.push_back('!');
     } else if (cp == 0xFF1F) {
       out.push_back('?');
-    } else if (is_supported_font_cp(cp)) {
+    } else if (font_supports_cp(font, cp)) {
       append_utf8_cp(out, cp);
+    } else if (cp == 0x2018U || cp == 0x2019U) {
+      out.push_back('\'');
+    } else if (cp == 0x201CU || cp == 0x201DU) {
+      out.push_back('"');
+    } else if (cp == 0x2013U || cp == 0x2014U) {
+      out.push_back('-');
+    } else if (cp == 0x2026U) {
+      out.append("...");
     }
   }
   return out;
+}
+
+std::string sanitize_utf8_for_font(const std::string &str) {
+  return sanitize_utf8_for_font(str, UiFontView{});
 }
 
 std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFontView font) {
@@ -1271,6 +1322,7 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
 
   struct FitCacheEntry {
     const void *font_ptr = nullptr;
+    UiFontView::FindGlyphFn glyph_fn = nullptr;
     int16_t font_h = 0;
     int max_w = 0;
     size_t raw_len = 0;
@@ -1286,13 +1338,13 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
   const void *fptr = font.handle;
   for (int i = 0; i < 16; i++) {
     const auto &e = cache[i];
-    if (e.font_ptr == fptr && e.font_h == font.height && e.max_w == max_w &&
-        e.raw_len == raw_str.size() && e.fnv_hash == h && e.raw_key == raw_str) {
+    if (e.font_ptr == fptr && e.glyph_fn == font.find_glyph_fn && e.font_h == font.height &&
+        e.max_w == max_w && e.raw_len == raw_str.size() && e.fnv_hash == h && e.raw_key == raw_str) {
       return e.fitted;
     }
   }
 
-  const std::string str = sanitize_utf8_for_font(raw_str);
+  const std::string str = sanitize_utf8_for_font(raw_str, font);
   if (str.empty()) return "";
   int w = 0, x_off = 0, base = 0, text_h = 0;
   font.measure(str.c_str(), &w, &x_off, &base, &text_h);
@@ -1300,29 +1352,41 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
   if (w <= max_w) {
     result = str;
   } else {
-    std::string cur = str;
-    if (cur.length() > 32) {
-      while (cur.length() > 30) {
-        while (!cur.empty() && (static_cast<unsigned char>(cur.back()) & 0xC0) == 0x80) cur.pop_back();
-        if (!cur.empty()) cur.pop_back();
+    // Binary search on valid UTF-8 codepoint boundaries (zero arbitrary byte cliff,
+    // zero mid-multibyte slicing).
+    const size_t n = str.size();
+    size_t lo = 0;
+    size_t hi = n;
+    size_t best = 0;
+    std::string cand;
+    cand.reserve(n + 2U);
+    while (lo < hi) {
+      size_t mid = lo + (hi - lo) / 2U;
+      if (mid == lo) {
+        mid = lo + 1U;
       }
-    }
-    result = "..";
-    while (!cur.empty()) {
-      const std::string test_str = cur + "..";
-      font.measure(test_str.c_str(), &w, &x_off, &base, &text_h);
+      while (mid < hi && (static_cast<unsigned char>(str[mid]) & 0xC0U) == 0x80U) {
+        ++mid;
+      }
+      if (mid >= hi) break;
+      cand.assign(str, 0, mid);
+      cand.append("..");
+      font.measure(cand.c_str(), &w, &x_off, &base, &text_h);
       if (w <= max_w) {
-        result = test_str;
-        break;
+        best = mid;
+        lo = mid;
+      } else {
+        hi = mid;
       }
-      while (!cur.empty() && (static_cast<unsigned char>(cur.back()) & 0xC0) == 0x80) cur.pop_back();
-      if (!cur.empty()) cur.pop_back();
     }
+    result.assign(str, 0, best);
+    result.append("..");
   }
 
   auto &slot = cache[next_slot & 15U];
   next_slot = static_cast<uint8_t>((next_slot + 1U) & 15U);
   slot.font_ptr = fptr;
+  slot.glyph_fn = font.find_glyph_fn;
   slot.font_h = font.height;
   slot.max_w = max_w;
   slot.raw_len = raw_str.size();
@@ -1825,12 +1889,12 @@ ArtCanvasCache *g_art_canvas_entries = nullptr;
 
 // Retryable allocation — never permanently latches nullptr on transient OOM.
 ArtCanvasCache *art_canvas_entries() {
-  if constexpr (kArtCacheEntries <= 0) {
+  if constexpr (kArtCacheActiveSlots <= 0) {
     return nullptr;
   }
   if (g_art_canvas_entries == nullptr) {
     g_art_canvas_entries = static_cast<ArtCanvasCache *>(
-        ui_psram_calloc(static_cast<size_t>(kArtCacheEntries), sizeof(ArtCanvasCache)));
+        ui_psram_calloc(static_cast<size_t>(kArtCacheActiveSlots), sizeof(ArtCanvasCache)));
   }
   return g_art_canvas_entries;
 }
@@ -1911,7 +1975,7 @@ ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool
 
 void art_canvas_drop(const void *data) {
   if (g_art_canvas_entries == nullptr || data == nullptr) return;
-  for (int i = 0; i < kArtCacheEntries; i++) {
+  for (int i = 0; i < kArtCacheActiveSlots; i++) {
     ArtCanvasCache &e = g_art_canvas_entries[i];
     if (e.data != data) continue;
     ui_psram_free(e.px);
@@ -1923,7 +1987,7 @@ void art_canvas_drop(const void *data) {
 
 void art_canvas_drop_all() noexcept {
   if (g_art_canvas_entries == nullptr) return;
-  for (int i = 0; i < kArtCacheEntries; i++) {
+  for (int i = 0; i < kArtCacheActiveSlots; i++) {
     ArtCanvasCache &e = g_art_canvas_entries[i];
     if (e.px != nullptr) {
       ui_psram_free(e.px);
@@ -1934,27 +1998,28 @@ void art_canvas_drop_all() noexcept {
   }
 }
 
-UiColor sample_image_ambient_tint_view(ArtImageView img, UiColor base_bg) {
-  if (img.data == nullptr || img.width < 16 || img.height < 16) return base_bg;
-  uint32_t sum_r = 0, sum_g = 0, sum_b = 0;
-  for (int gy = 1; gy <= 4; gy++) {
-    const int sy = (img.height * gy) / 5;
-    const uint16_t *row = img.data + static_cast<size_t>(sy) * static_cast<size_t>(img.width);
-    for (int gx = 1; gx <= 4; gx++) {
-      const uint16_t p = row[(img.width * gx) / 5];
-      sum_r += (p & 0xF800U) >> 8;
-      sum_g += (p & 0x07E0U) >> 3;
-      sum_b += (p & 0x001FU) << 3;
+namespace {
+constexpr size_t kMaxPsramCacheEvictors = 8U;
+PsramCacheEvictorFn g_psram_cache_evictors[kMaxPsramCacheEvictors]{};
+size_t g_psram_cache_evictor_count = 0U;
+}  // namespace
+
+bool register_psram_cache_evictor(PsramCacheEvictorFn fn) noexcept {
+  if (fn == nullptr) return false;
+  for (size_t i = 0; i < g_psram_cache_evictor_count; ++i) {
+    if (g_psram_cache_evictors[i] == fn) return true;
+  }
+  if (g_psram_cache_evictor_count >= kMaxPsramCacheEvictors) return false;
+  g_psram_cache_evictors[g_psram_cache_evictor_count++] = fn;
+  return true;
+}
+
+void evict_registered_psram_caches() noexcept {
+  for (size_t i = 0; i < g_psram_cache_evictor_count; ++i) {
+    if (g_psram_cache_evictors[i] != nullptr) {
+      g_psram_cache_evictors[i]();
     }
   }
-  const uint8_t avg_r = static_cast<uint8_t>(sum_r >> 4);
-  const uint8_t avg_g = static_cast<uint8_t>(sum_g >> 4);
-  const uint8_t avg_b = static_cast<uint8_t>(sum_b >> 4);
-  return UiColor{
-      static_cast<uint8_t>(std::min(68, static_cast<int>(base_bg.r) + (avg_r >> 3))),
-      static_cast<uint8_t>(std::min(74, static_cast<int>(base_bg.g) + (avg_g >> 3))),
-      static_cast<uint8_t>(std::min(88, static_cast<int>(base_bg.b) + (avg_b >> 3))),
-  };
 }
 
 bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, int cx,
@@ -1995,7 +2060,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
 
   ArtCanvasCache *hit = nullptr;
   ArtCanvasCache *victim = &entries[0];
-  for (int i = 0; i < kArtCacheEntries; i++) {
+  for (int i = 0; i < kArtCacheActiveSlots; i++) {
     ArtCanvasCache &e = entries[i];
     if (e.px != nullptr && e.data == src_data && e.w == src_w && e.h == src_h &&
         e.sample == sample && e.mode == mode) {
@@ -2014,13 +2079,14 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
   if (hit == nullptr) {
     const bool full_rect_overwrite = full_bleed && (LATTER_ROUND_DISPLAY == 0);
     if (victim->px == nullptr) {
-#if !LATTER_CHIP_P4
-      sky_base_cache_drop();
-#endif
       const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
+      const size_t frame_bytes = px_count * sizeof(uint16_t);
+      if (LATTER_CHIP_P4 == 0 || frame_bytes > 1536U * 1024U) {
+        evict_registered_psram_caches();
+      }
       victim->px = static_cast<uint16_t *>(
           full_rect_overwrite
-              ? ui_psram_malloc(px_count * sizeof(uint16_t))
+              ? ui_psram_malloc(frame_bytes)
               : ui_psram_calloc(px_count, sizeof(uint16_t)));
     }
     if (victim->px == nullptr) {

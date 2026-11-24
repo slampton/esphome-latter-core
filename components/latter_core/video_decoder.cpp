@@ -53,7 +53,7 @@
 #define LATTER_VIDEO_HAS_ROM_TJPGD 0
 #endif
 
-namespace latter_ui::video_detail {
+namespace latter_core::video_detail {
 
 #if LATTER_VIDEO_ESP32_DEC
 
@@ -503,4 +503,4 @@ bool video_decoder_decode_frame(VideoDecoderContext *, const uint8_t *, size_t,
 
 #endif  // LATTER_VIDEO_ESP32_DEC
 
-}  // namespace latter_ui::video_detail
+}  // namespace latter_core::video_detail

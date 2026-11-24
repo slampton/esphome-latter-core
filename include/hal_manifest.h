@@ -20,14 +20,39 @@
 #include <sdkconfig.h>
 #endif
 
-#ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026112302L
+#ifndef LATTER_CORE_REV
+#define LATTER_CORE_REV 2026112303L
 #endif
 
 // Canonical Display Geometry & Hardware Capability Constants (LATTER_* standard)
+#ifdef USE_ESP32
+#ifndef LATTER_BOARD_ID
+#error "Missing required board trait LATTER_BOARD_ID (configure latter_core: board_id)"
+#endif
+#ifndef LATTER_SCREEN_W
+#error "Missing required board trait LATTER_SCREEN_W (configure latter_core: display: width)"
+#endif
+#ifndef LATTER_SCREEN_H
+#error "Missing required board trait LATTER_SCREEN_H (configure latter_core: display: height)"
+#endif
+#ifndef LATTER_PANEL_PPI
+#error "Missing required board trait LATTER_PANEL_PPI (configure latter_core: display: ppi)"
+#endif
+#else
 #ifndef LATTER_BOARD_ID
 #define LATTER_BOARD_ID "generic_esp32"
 #endif
+#ifndef LATTER_SCREEN_W
+#define LATTER_SCREEN_W 466
+#endif
+#ifndef LATTER_SCREEN_H
+#define LATTER_SCREEN_H 466
+#endif
+#ifndef LATTER_PANEL_PPI
+#define LATTER_PANEL_PPI 266
+#endif
+#endif
+
 #ifndef LATTER_BLE_MINOR
 #define LATTER_BLE_MINOR 1
 #endif
@@ -36,12 +61,6 @@
 #endif
 #ifndef LATTER_CARD_SLOT_COUNT
 #define LATTER_CARD_SLOT_COUNT 3
-#endif
-#ifndef LATTER_SCREEN_W
-#define LATTER_SCREEN_W 466
-#endif
-#ifndef LATTER_SCREEN_H
-#define LATTER_SCREEN_H 466
 #endif
 #ifndef LATTER_ROUND_DISPLAY
 #define LATTER_ROUND_DISPLAY 1
@@ -97,7 +116,11 @@
 #define LATTER_HAS_HW_JPEG LATTER_CHIP_P4
 #endif
 #ifndef LATTER_PSRAM_MB
+#if defined(USE_ESP32) && !defined(CONFIG_SPIRAM)
+#define LATTER_PSRAM_MB 0
+#else
 #define LATTER_PSRAM_MB (LATTER_CHIP_P4 ? 32 : 8)
+#endif
 #endif
 #ifndef LATTER_ART_CACHE_ENTRIES
 #define LATTER_ART_CACHE_ENTRIES (LATTER_CHIP_P4 ? 3 : 1)
@@ -108,9 +131,6 @@
 #else
 #define LATTER_PANEL_IPS 0
 #endif
-#endif
-#ifndef LATTER_PANEL_PPI
-#define LATTER_PANEL_PPI 266
 #endif
 #ifndef LATTER_AUDIO_OUT_RATE
 #define LATTER_AUDIO_OUT_RATE 48000
@@ -136,6 +156,12 @@
 #ifndef LATTER_BACKLIGHT_DUTY_MAX_PM
 #define LATTER_BACKLIGHT_DUTY_MAX_PM 1000
 #endif
+#ifndef LATTER_BACKLIGHT_EN_INVERTED
+#define LATTER_BACKLIGHT_EN_INVERTED 0
+#endif
+#ifndef LATTER_BACKLIGHT_CUSTOM
+#define LATTER_BACKLIGHT_CUSTOM 0
+#endif
 #ifndef LATTER_PWR_KEY_DEEP_SLEEP_WAKE
 #define LATTER_PWR_KEY_DEEP_SLEEP_WAKE 0
 #endif
@@ -145,10 +171,49 @@
 #ifndef LATTER_PMU_TS_DISABLE
 #define LATTER_PMU_TS_DISABLE 0
 #endif
+// Explicit driver-identity macros (default 0 unless opted in via latter_core: drivers:).
+// Hardware-specific I2C writes gate on these rather than generic LATTER_HAS_* flags.
+#ifndef LATTER_DRV_PMU_AXP2101
+#define LATTER_DRV_PMU_AXP2101 0
+#endif
+#ifndef LATTER_DRV_RTC_PCF85063
+#define LATTER_DRV_RTC_PCF85063 0
+#endif
+#ifndef LATTER_DRV_IMU_QMI8658
+#define LATTER_DRV_IMU_QMI8658 0
+#endif
+#ifndef LATTER_DRV_CODEC_ES8311
+#define LATTER_DRV_CODEC_ES8311 0
+#endif
+#ifndef LATTER_DRV_TOUCH_FT5X06
+#define LATTER_DRV_TOUCH_FT5X06 0
+#endif
 
-namespace latter_ui {
+namespace latter_core {
 
 inline constexpr int kManifestProtocolContractVersion = 3;
+
+inline constexpr const char *detect_chip_name() noexcept {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+  return "ESP32-P4";
+#elif defined(CONFIG_IDF_TARGET_ESP32S3)
+  return "ESP32-S3";
+#elif defined(CONFIG_IDF_TARGET_ESP32S2)
+  return "ESP32-S2";
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
+  return "ESP32-C6";
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+  return "ESP32-C3";
+#elif defined(CONFIG_IDF_TARGET_ESP32)
+  return "ESP32";
+#elif LATTER_CHIP_P4
+  return "ESP32-P4";
+#elif LATTER_SOC_S3
+  return "ESP32-S3";
+#else
+  return "ESP32-S3";
+#endif
+}
 
 // PMIC telemetry shared by the PMU driver and the profiler.
 struct PmuTelemetry {
@@ -183,7 +248,12 @@ inline std::string build_hardware_manifest_json() {
   const int disp_w = LATTER_HAS_DISPLAY ? LATTER_SCREEN_W : 0;
   const int disp_h = LATTER_HAS_DISPLAY ? LATTER_SCREEN_H : 0;
   const char *shape = !LATTER_HAS_DISPLAY ? "none" : (LATTER_ROUND_DISPLAY ? "circle" : "square");
-  const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
+  const char *chip = detect_chip_name();
+#if defined(USE_ESP32) && !defined(CONFIG_SPIRAM)
+  const int psram_mb = 0;
+#else
+  const int psram_mb = static_cast<int>(LATTER_PSRAM_MB);
+#endif
   const int video_hw_jpeg = (LATTER_HAS_VIDEO_STREAM && LATTER_HAS_HW_JPEG) ? 1 : 0;
   const int video_max_w = LATTER_HAS_VIDEO_STREAM ? (LATTER_SCREEN_W & ~15) : 0;
   const int video_max_h = LATTER_HAS_VIDEO_STREAM ? (LATTER_SCREEN_H & ~15) : 0;
@@ -195,11 +265,19 @@ inline std::string build_hardware_manifest_json() {
   if (LATTER_HAS_AUDIO) {
     std::snprintf(audio_buf, sizeof(audio_buf),
                   "{\"out_rate\":%d,\"out_ch\":%d,\"out_bits\":%d,\"in_rate\":%d}",
-                  (int)LATTER_AUDIO_OUT_RATE, (int)LATTER_AUDIO_OUT_CH,
-                  (int)LATTER_AUDIO_OUT_BITS, (int)LATTER_AUDIO_IN_RATE);
+                  static_cast<int>(LATTER_AUDIO_OUT_RATE), static_cast<int>(LATTER_AUDIO_OUT_CH),
+                  static_cast<int>(LATTER_AUDIO_OUT_BITS), static_cast<int>(LATTER_AUDIO_IN_RATE));
   } else {
     std::snprintf(audio_buf, sizeof(audio_buf), "0");
   }
+  char beacon_buf[112];
+#if defined(USE_LATTER_BEACON)
+  std::snprintf(beacon_buf, sizeof(beacon_buf),
+                "{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d}",
+                static_cast<int>(LATTER_BLE_MINOR));
+#else
+  std::snprintf(beacon_buf, sizeof(beacon_buf), "null");
+#endif
   char buf[1024];
   const int len = std::snprintf(
       buf, sizeof(buf),
@@ -209,51 +287,25 @@ inline std::string build_hardware_manifest_json() {
       "\"imu\":%d,\"battery\":%d,\"has_rtc\":%d,\"stationary\":%d,\"wearable\":%d,"
       "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
       "\"video\":{\"hw_jpeg\":%d,\"max_w\":%d,\"max_h\":%d,\"max_fps\":%d,\"grid_fps\":%d},"
-      "\"slot_count\":%d,\"card_slot_count\":%d,\"max_payload_bytes\":2048,"
-      "\"beacon\":{\"uuid\":\"4C415454-4552-434F-5245-000000000220\",\"major\":1,\"minor\":%d},"
-      "\"sdk\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
-      kManifestProtocolContractVersion, LATTER_BOARD_ID, (unsigned long)device_boot_id(),
+      "\"slot_count\":%d,\"card_slot_count\":%d,"
+      "\"beacon\":%s,"
+      "\"core_rev\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
+      kManifestProtocolContractVersion, LATTER_BOARD_ID, static_cast<unsigned long>(device_boot_id()),
       disp_w, disp_h, shape,
-      (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
-      audio_buf, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
-      (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY, (int)LATTER_HAS_RTC,
-      (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
-      (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
+      static_cast<int>(LATTER_HAS_DISPLAY), static_cast<int>(LATTER_HAS_TOUCH),
+      audio_buf, static_cast<int>(LATTER_HAS_MIC), static_cast<int>(LATTER_HAS_SPEAKER),
+      static_cast<int>(LATTER_HAS_IMU), static_cast<int>(LATTER_HAS_BATTERY), static_cast<int>(LATTER_HAS_RTC),
+      static_cast<int>(LATTER_IS_STATIONARY), static_cast<int>(LATTER_IS_WEARABLE),
+      static_cast<int>(LATTER_PANEL_IPS), chip, psram_mb,
       video_hw_jpeg, video_max_w, video_max_h, video_max_fps, video_grid_fps,
-      (int)LATTER_SLOT_COUNT, (int)LATTER_CARD_SLOT_COUNT, (int)LATTER_BLE_MINOR,
-      (long)LATTER_SDK_REV, last_reset_reason(), (int)crash_record_present(), (int)firmware_rolled_back());
+      static_cast<int>(LATTER_SLOT_COUNT), static_cast<int>(LATTER_CARD_SLOT_COUNT),
+      beacon_buf,
+      static_cast<long>(LATTER_CORE_REV), last_reset_reason(),
+      static_cast<int>(crash_record_present()), static_cast<int>(firmware_rolled_back()));
   if (len < 0 || static_cast<size_t>(len) >= sizeof(buf)) {
     return "{}";
   }
   return std::string(buf, static_cast<size_t>(len));
 }
 
-// Compact <=230-byte Hardware Manifest v2 state JSON
-inline std::string build_hardware_manifest_state_json() {
-  const int disp_w = LATTER_HAS_DISPLAY ? LATTER_SCREEN_W : 0;
-  const int disp_h = LATTER_HAS_DISPLAY ? LATTER_SCREEN_H : 0;
-  const char *shape = !LATTER_HAS_DISPLAY ? "none" : (LATTER_ROUND_DISPLAY ? "circle" : "square");
-  const char *chip = LATTER_CHIP_P4 ? "ESP32-P4" : "ESP32-S3";
-  char buf[256];
-  const int len = std::snprintf(
-      buf, sizeof(buf),
-      "{\"v\":2,\"contract\":%d,\"board\":\"%s\","
-      "\"w\":%d,\"h\":%d,\"shape\":\"%s\","
-      "\"display\":%d,\"touch\":%d,\"audio\":%d,\"mic\":%d,\"spk\":%d,"
-      "\"imu\":%d,\"battery\":%d,\"has_rtc\":%d,\"stationary\":%d,\"wearable\":%d,"
-      "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,\"minor\":%d}",
-      kManifestProtocolContractVersion, LATTER_BOARD_ID,
-      disp_w, disp_h, shape,
-      (int)LATTER_HAS_DISPLAY, (int)LATTER_HAS_TOUCH,
-      (int)LATTER_HAS_AUDIO, (int)LATTER_HAS_MIC, (int)LATTER_HAS_SPEAKER,
-      (int)LATTER_HAS_IMU, (int)LATTER_HAS_BATTERY, (int)LATTER_HAS_RTC,
-      (int)LATTER_IS_STATIONARY, (int)LATTER_IS_WEARABLE,
-      (int)LATTER_PANEL_IPS, chip, (int)LATTER_PSRAM_MB,
-      (int)LATTER_BLE_MINOR);
-  if (len < 0 || static_cast<size_t>(len) >= sizeof(buf)) {
-    return "{}";
-  }
-  return std::string(buf, static_cast<size_t>(len));
-}
-
-}  // namespace latter_ui
+}  // namespace latter_core

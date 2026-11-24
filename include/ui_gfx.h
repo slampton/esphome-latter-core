@@ -575,7 +575,6 @@ static constexpr float kGlassTextContrastMin = 4.5f;
 static constexpr int kGlassBrightPercent = 3;
 static constexpr int kGlassSheenTopQ8 = 92;
 static constexpr int kGlassSheenBotQ8 = 28;
-static constexpr int kGlassAlphaFallQ8 = 4;
 
 struct GlassBackdrop {
   UiColor bright{};
@@ -587,6 +586,7 @@ const float *srgb_linear_lut();
 float relative_luminance(UiColor c);
 float contrast_ratio(float la, float lb);
 UiColor mix_color_q8(UiColor c_under, UiColor c_over, int a);
+uint8_t active_glass_style_raw() noexcept;
 GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h);
 GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h);
 bool is_semantic_glass_color(UiColor c);
@@ -595,14 +595,16 @@ void normalize_glass_chrome(UiColor caller_bg, UiColor caller_brd,
                             UiColor &out_rim_tint);
 int glass_alpha_for_text(UiColor tint, UiColor backdrop, UiColor text,
                          int min_alpha_q8 = kGlassAlphaMinQ8);
-int glass_alpha_smooth(int &state, int target, uint32_t dt_ms = 16U);
 void resolve_glass_fill(const GlassBackdrop &bd, UiColor tint, UiColor ref_text,
                         UiColor &out_tint, int &out_a_top, int &out_a_bot,
                         int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8 = -1,
                         GlassVariant variant = GlassVariant::Clear);
-UiColor sample_glass_surface_color(int x0, int y0, int w, int h,
-                                   UiColor tint = kChromeGlassTint,
-                                   GlassVariant variant = GlassVariant::Clear);
+void resolve_styled_glass(int x0, int y0, int w, int h,
+                          UiColor caller_bg, UiColor caller_brd,
+                          GlassVariant explicit_variant, UiColor ref_text,
+                          int explicit_alpha_q8, bool sample_surface,
+                          GlassBackdrop &out_bd, UiColor &out_tint, UiColor &out_rim,
+                          int &out_a_top, int &out_a_bot, int &out_rim_top, int &out_rim_bot);
 
 void fill_round_rect_glass_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
                                 UiColor tint, int a_top, int a_bot, int hole = 0);
@@ -621,7 +623,10 @@ inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
                               UiColor ref_text = kChromeGlassSheen) {
   if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
   r = std::max(2, std::min(r, std::min(w, h) / 2));
-  GlassVariant eff_var = variant;
+  GlassVariant eff_var =
+      (variant == GlassVariant::ReadableDark || active_glass_style_raw() == 2U)
+          ? GlassVariant::ReadableDark
+          : GlassVariant::Clear;
   UiColor norm_tint, rim_col;
   normalize_glass_chrome(tint, kChromeCardBorder, eff_var, norm_tint, rim_col);
   UiColor eff_tint;
@@ -636,9 +641,14 @@ inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
                               GlassVariant variant = GlassVariant::Clear,
                               UiColor ref_text = kChromeGlassSheen) {
   if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
-  const GlassBackdrop bd =
-      (variant == GlassVariant::ReadableDark) ? sample_glass_backdrop(x0, y0, w, h) : GlassBackdrop{};
-  render_glass_card(it, x0, y0, w, h, r, tint, alpha_q8, bd, variant, ref_text);
+  r = std::max(2, std::min(r, std::min(w, h) / 2));
+  GlassBackdrop bd{};
+  UiColor eff_tint{}, rim_col{};
+  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+  resolve_styled_glass(x0, y0, w, h, tint, kChromeCardBorder, variant, ref_text, alpha_q8, false,
+                       bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
+  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
 }
 
 inline bool &backdrop_active() {
@@ -664,6 +674,7 @@ struct TextCacheEntry {
   char text[96];
 };
 
+std::string sanitize_utf8_for_font(const std::string &str, UiFontView font);
 std::string sanitize_utf8_for_font(const std::string &str);
 std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFontView font);
 int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *text);
@@ -780,6 +791,39 @@ inline constexpr int kArtDimMenu = 2;
 inline constexpr int kArtDimLyrics = 3;
 inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 
+// PSRAM byte-budgeted cache sizing so large landscape displays (e.g. 1280x800 = 2 MB/frame)
+// never blow up PSRAM by blindly multiplying 3 * W * H * 2.
+inline constexpr size_t art_cache_psram_budget_bytes(int psram_mb) noexcept {
+  if (psram_mb >= 16) return 3584U * 1024U;
+  if (psram_mb >= 4) return 1024U * 1024U;
+  return 0U;
+}
+
+inline constexpr int compute_art_cache_slot_budget(int w, int h, int psram_mb,
+                                                   int max_slots) noexcept {
+  if (w <= 0 || h <= 0 || max_slots <= 0) return 0;
+  const size_t frame_bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * sizeof(uint16_t);
+  const size_t budget = art_cache_psram_budget_bytes(psram_mb);
+  if (frame_bytes == 0U || budget < frame_bytes) return 0;
+  const size_t by_budget = budget / frame_bytes;
+  return (by_budget < static_cast<size_t>(max_slots)) ? static_cast<int>(by_budget) : max_slots;
+}
+
+inline constexpr int kArtCacheActiveSlots =
+    compute_art_cache_slot_budget(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB, kArtCacheEntries);
+
+inline constexpr size_t sky_cache_psram_budget_bytes(int psram_mb) noexcept {
+  if (psram_mb >= 16) return 2304U * 1024U;
+  if (psram_mb >= 4) return 1024U * 1024U;
+  return 0U;
+}
+
+inline constexpr bool sky_base_cache_allowed(int w, int h, int psram_mb) noexcept {
+  if (w <= 0 || h <= 0) return false;
+  const size_t frame_bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * sizeof(uint16_t);
+  return frame_bytes <= sky_cache_psram_budget_bytes(psram_mb);
+}
+
 struct ArtRect {
   int x0, y0, w, h;
 };
@@ -789,10 +833,9 @@ void art_letterbox_bounds(bool show_metadata, bool show_controls, int &out_y0, i
 ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool apply_scrim);
 void art_canvas_drop(const void *data);
 void art_canvas_drop_all() noexcept;
-void sky_base_cache_drop() noexcept;
-void weather_cloud_cache_drop() noexcept;
-void game_arena_drop() noexcept;
-UiColor sample_image_ambient_tint_view(ArtImageView img, UiColor base_bg = kChromeGlassTint);
+using PsramCacheEvictorFn = void (*)() noexcept;
+bool register_psram_cache_evictor(PsramCacheEvictorFn fn) noexcept;
+void evict_registered_psram_caches() noexcept;
 bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,
                                   bool show_metadata, int dim_level = 0);
@@ -806,16 +849,6 @@ inline void release_art(ImageT *img) {
   if (img == nullptr) return;
   art_canvas_drop(img->get_data_start());
   img->release();
-}
-
-inline UiColor sample_image_ambient_tint(ArtImageView img, UiColor base_bg = kChromeGlassTint) {
-  return sample_image_ambient_tint_view(img, base_bg);
-}
-
-template <typename ImageT>
-  requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
-inline UiColor sample_image_ambient_tint(ImageT *img, UiColor base_bg = kChromeGlassTint) {
-  return sample_image_ambient_tint_view(make_art_view(img), base_bg);
 }
 
 template <typename DisplayT>
@@ -889,11 +922,11 @@ inline bool frame_base(DisplayT &it, UiColor c) {
 
 struct ProfLap {
   uint64_t t = 0;
-  ProfLap() : t(profiler_enabled() ? prof_now_us() : 0) {}
-  void mark(ProfSect sect) {
+  ProfLap() : t(latter_core::profiler_enabled() ? latter_core::prof_now_us() : 0) {}
+  void mark(latter_core::ProfSect sect) {
     if (t == 0) return;
-    const uint64_t now = prof_now_us();
-    prof_sect_us()[static_cast<size_t>(sect)] += static_cast<uint32_t>(now - t);
+    const uint64_t now = latter_core::prof_now_us();
+    latter_core::prof_sect_us()[static_cast<size_t>(sect)] += static_cast<uint32_t>(now - t);
     t = now;
   }
 };

@@ -10,6 +10,7 @@
 #include <vector>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 

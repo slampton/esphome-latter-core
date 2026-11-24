@@ -14,7 +14,7 @@
   - `epoch` (`u32`, non-zero): Generated randomly when the Home Assistant coordinator starts. If `in_epoch != cur_epoch`, the device accepts the frame unconditionally and updates `cur_epoch` and `cur_rev`.
   - `rev` (`u32`, `>= 1`): Monotonic per-domain revision counter bumped only when that domain's body fields change. Frames with `rev == 0` are rejected; within the same `epoch`, frames with `in_rev <= cur_rev` are ignored.
   - Parsers accept any frame with `n >= kProtocolMinRequiredFields` (`3`), defaulting missing trailing fields to `""` and logging a warning on field-count mismatch.
-  - On ESPHome API reconnect (`on_client_connected` from Home Assistant), the device calls `latter_ui::reset_all_v3_rev_guards()` and sends `device_hello`.
+  - On ESPHome API reconnect (`on_client_connected` from Home Assistant), the device calls `latter_core::reset_all_v3_rev_guards()` and sends `device_hello`.
 
 ### Header Fields (All Domains)
 
@@ -158,7 +158,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `device_prefs` (`DevicePrefsField`, `72` total fields)
+### `device_prefs` (`DevicePrefsField`, `73` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -233,6 +233,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `69` | `weather_app_background` | `DevicePrefsField::WEATHER_APP_BACKGROUND` | `bool` | 1 = show live animated weather sky background in the Sky & Weather app, else 0 |
 | `70` | `do_not_disturb` | `DevicePrefsField::DO_NOT_DISTURB` | `bool` | 1 = Do Not Disturb active, else 0 |
 | `71` | `music_auto_open` | `DevicePrefsField::MUSIC_AUTO_OPEN` | `string` | Auto-open Music view when default speaker starts playing (Now Playing|Lyrics|Off) |
+| `72` | `glass_style` | `DevicePrefsField::GLASS_STYLE` | `string` | Glass chrome surface style (Auto|Clear|Dark); Auto adapts contrast over bright backdrops |
 
 ### `shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -285,22 +286,74 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `set_device_prefs` | `base_seq`, `changes` | Persist on-device settings edits back to the Device subentry and increment prefs_seq |
 | `timer_alarm_state` | `timer_running`, `timer_paused`, `remaining_sec`, `ringing`, `stopwatch_running`, `stopwatch_paused`, `stopwatch_elapsed_sec` | Report on-device countdown timer, stopwatch, and alarm ringing state transitions to Home Assistant |
 
-## 5. Public Home Assistant Services (`latter.<service>`)
+## 5. Declarative Device Preferences (`device_pref_specs`, `65` entries)
 
-| Service | Canonical Fields | Description |
-| :--- | :--- | :--- |
-| `latter.notify` | `target_device`, `title`, `message`, `priority`, `duration`, `chime`, `announce`, `camera_entity` | Show an on-screen notification, with an optional chime and an optional camera snapshot, on a specific device, the devices in occupied Areas ('occupied_areas'), the devices assigned to a person ('person.<slug>'), or all displays ('all'). |
-| `latter.intercom_broadcast` | `target_device`, `message`, `media_url`, `target_speakers`, `tts_entity` | Broadcast a TTS announcement or recorded audio clip to configured broadcast speakers, explicitly chosen speakers, the speakers in occupied Areas ('occupied_areas'), or the speakers in a person's current Area ('person.<slug>'), automatically excluding the calling Device and Latter displays in Bedtime Mode or Do Not Disturb. |
-| `latter.set_active_area` | `area_id`, `target_device` | Switch the active area context by area_id or area name. The device's speaker follows to the new area when the device's "Media follows this Device" setting is on. On roaming devices with Voice Follows Me enabled, this also moves the device's Home Assistant Area so area-aware Assist commands target it. |
-| `latter.set_active_speaker` | `entity_id`, `transfer_queue`, `target_device` | Change the active target media_player for the ESPHome device and optionally transfer the active playback queue. |
-| `latter.reset_device` | `target_device`, `device_settings`, `latter_options` | Reset a Latter device. Device settings erases everything saved on the device (its settings and the Wi-Fi driver's cached data) and restarts it; Wi-Fi credentials and the API key are compiled into the firmware, so it rejoins Home Assistant unchanged. Latter options puts this device's Latter options back to the defaults it got when it was added, keeping its ESPHome binding and its Music Assistant player link. |
-| `latter.navigate` | `target_device`, `route`, `wake` | Navigate one or more Latter displays to a canonical UI page or subpage, optionally keeping sleeping displays dark (and always switching silently during Bedtime Mode). |
+Pure wire and behavioral preference contracts compiled into `include/latter_protocol.h` (`kPrefContractSpecs`). Studio/HA presentation metadata lives in `ha-latter/custom_components/latter/studio_contract.json`.
 
-## 6. Latter Studio Control-Plane Contract
-
-- **Studio Wire Revision (`studio_rev`)**: `47`
-- **Allowed Device Actions**: `restart`, `find_my`, `activate_screensaver`, `deactivate_screensaver`, `wake_screen`, `screen_off`, `set_profiler_on`, `set_profiler_off`, `request_telemetry`, `trigger_va`, `dismiss_ringing`, `cancel_timer`, `reset_stopwatch`
-- **System WebSocket Commands (`latter/system/command`)**: `set_ble_scanner_offset`, `set_area_fusion`, `set_area_illuminance`, `calibrate_area_illuminance`, `capture_ble_area_signature`, `clear_ble_area_signature`, `send_announcement`, `check_system_updates`, `clear_internal_logs`, `remove_device`, `add_latter_device`, `ignore_discovered_device`, `unignore_discovered_device`, `add_ble_device`, `create_device_group`, `delete_device_group`, `update_group_baseline`, `apply_batch_device_setting`, `test_doorbell_speaker`, `mint_camera_preview_url`, `delete_photo`, `create_photo_collection`, `rename_photo_collection`, `delete_photo_collection`, `update_photo_metadata`, `bulk_update_photos`, `browse_media_folder`, `import_media_photos`, `save_system_config`, `rotate_signing_key`, `set_security_pin`
-- **Device WebSocket Commands (`latter/device/command`)**: `esphome_entity_action`, `device_action`, `set_device_photo_pool`, `save_device_config`
-- **Canonical World Clock Zones**: `50` standard `UTC-12:00`..`UTC+14:00` zones
-- **Declarative `device_prefs` Specs**: `64` typed preference descriptors
+| Key | Domain | Default | Options / Bounds | Capability |
+| :--- | :---: | :--- | :--- | :---: |
+| `wake_word_mode` | `select` | `Docked Only` | `Docked Only` \| `Always On` \| `Disabled` | `mic` |
+| `tap_to_wake` | `select` | `Docked Only` | `Single Tap` \| `Double Tap` \| `Docked Only` \| `Disabled` | `display` |
+| `pickup_to_wake` | `select` | `Docked Only` | `Always On` \| `Docked Only` \| `Disabled` | `display_imu` |
+| `battery_screen_timeout` | `select` | `30s` | `10s` \| `15s` \| `30s` \| `1 min` \| `2 min` \| `Never` | `display_battery` |
+| `docked_idle_timeout` | `select` | `1 min` | `10s` \| `15s` \| `30s` \| `1 min` \| `2 min` \| `5 min` \| `Never` | `display` |
+| `battery_hibernate_timeout` | `select` | `15 min` | `5 min` \| `10 min` \| `15 min` \| `30 min` \| `Disabled` | `display_battery` |
+| `screensaver_mode` | `select` | `Docked Only` | `Docked Only` \| `Always` \| `Never` | `display` |
+| `screensaver_style` | `select` | `Ambient Clock` | `Ambient Clock` \| `Photo Frame` \| `Aurora` \| `Starfield` \| `Digital Rain` \| `Fireworks` | `display` |
+| `auto_brightness_mode` | `select` | `Sun Synchronized` | `Disabled` \| `Sun Synchronized` \| `Time Schedule` \| `Ambient Light` | `display` |
+| `manual_brightness` | `number` | `80` | `1..100` (step `1`) | `display` |
+| `day_brightness` | `number` | `90` | `1..100` (step `1`) | `display` |
+| `night_brightness` | `number` | `35` | `1..100` (step `1`) | `display` |
+| `day_start_hour` | `number` | `7` | `0..23` (step `1`) | `display` |
+| `night_start_hour` | `number` | `20` | `0..23` (step `1`) | `display` |
+| `color_profile` | `select` | `Steel Blue` | `Steel Blue` \| `Pink` \| `Blue` \| `Green` \| `Custom` | `display` |
+| `va_visual_profile` | `select` | `Nebula` | `Nebula` \| `Solaris` \| `Rings` \| `Light Bar` \| `Dot Wave` | `display` |
+| `home_screen_enabled` | `switch` | `true` | `0` \| `1` | `display` |
+| `start_screen` | `select` | `Home` | `Home` \| `Pinned` \| `Time App` \| `Calendar` \| `Clock Face` \| `Media` \| `Home Hub` \| `Area Controls` \| `Remote` \| `Weather` \| `Cameras` \| `Games` \| `Tools` | `display` |
+| `return_to_home_timeout` | `select` | `2 min` | `15s` \| `30s` \| `1 min` \| `2 min` \| `5 min` \| `10 min` \| `Never` | `display` |
+| `clock_face` | `select` | `Minimal Digital` | `Minimal Digital` \| `Modern Analog` \| `Hybrid Digital` | `display` |
+| `time_format` | `select` | `12-Hour (AM/PM)` | `12-Hour (AM/PM)` \| `24-Hour` | `display` |
+| `weather_background` | `switch` | `true` | `0` \| `1` | `display` |
+| `home_sun` | `switch` | `true` | `0` \| `1` | `display` |
+| `home_moon` | `switch` | `true` | `0` \| `1` | `display` |
+| `wake_greeting` | `switch` | `true` | `0` \| `1` | `display` |
+| `album_art_style` | `select` | `Full Screen` | `Full Screen` \| `Letterbox` \| `Standard` \| `None` | `display` |
+| `music_overlay_style` | `select` | `Art + Metadata` | `Art Only` \| `Art + Metadata` \| `Always Visible` | `display` |
+| `music_auto_open` | `select` | `Now Playing` | `Now Playing` \| `Lyrics` \| `Off` | `display` |
+| `album_sort_order` | `select` | `Alphabetical` | `Alphabetical` \| `Newest on Top` \| `Oldest on Top` | `display` |
+| `artist_album_sort_order` | `select` | `Oldest on Top` | `Oldest on Top` \| `Newest on Top` \| `Alphabetical` | `display` |
+| `podcast_sort_order` | `select` | `Newest on Top` | `Newest on Top` \| `Oldest on Top` | `display` |
+| `ww_sens_okay_nabu` | `select` | `Moderately sensitive` | `Slightly sensitive` \| `Moderately sensitive` \| `Very sensitive` | `mic` |
+| `ww_sens_hey_luna` | `select` | `Moderately sensitive` | `Slightly sensitive` \| `Moderately sensitive` \| `Very sensitive` | `mic` |
+| `ww_sens_hey_jarvis` | `select` | `Moderately sensitive` | `Slightly sensitive` \| `Moderately sensitive` \| `Very sensitive` | `mic` |
+| `ww_sens_hey_mycroft` | `select` | `Moderately sensitive` | `Slightly sensitive` \| `Moderately sensitive` \| `Very sensitive` | `mic` |
+| `ww_sens_alexa` | `select` | `Moderately sensitive` | `Slightly sensitive` \| `Moderately sensitive` \| `Very sensitive` | `mic` |
+| `wake_screen_on_assist` | `switch` | `true` | `0` \| `1` | `display` |
+| `alert_volume` | `number` | `80` | `20..100` (step `5`) | `speaker` |
+| `volume_step_size` | `number` | `5` | `1..10` (step `1`) | `speaker` |
+| `game_sound_effects` | `switch` | `true` | `0` \| `1` | `display` |
+| `ble_beacon_mode` | `select` | `Handheld Only` | `Handheld Only` \| `Handheld + Screen Off` \| `Always` | `beacon_battery` |
+| `weather_sim_condition` | `select` | `Live (Home Assistant)` | `Live (Home Assistant)` \| `Clear Night` \| `Sunny / Clear Day` \| `Partly Cloudy (Day)` \| `Partly Cloudy (Night)` \| `Cloudy / Overcast (Day)` \| `Cloudy / Overcast (Night)` \| `Fog / Mist (Day)` \| `Fog / Mist (Night)` \| `Rainy (Day)` \| `Rainy (Night)` \| `Pouring / Heavy Rain` \| `Snow (Day)` \| `Snow (Night)` \| `Thunderstorm (Day)` \| `Thunderstorm (Night)` \| `Windy` | `display` |
+| `home_clock_tap_action` | `select` | `Time App` | `Time App` \| `Clock Face` | `display` |
+| `home_date_tap_action` | `select` | `Overview` | `Day View` \| `Overview` | `display` |
+| `local_clock_label` | `text` | *(empty)* | *(freeform string)* | `display` |
+| `show_utc_clock` | `switch` | `false` | `0` \| `1` | `display` |
+| `world_clocks` | `text` | *(empty)* | *(freeform string)* | `display` |
+| `alarms_summary` | `text` | `07:00\|0\|1;08:30\|0\|2;09:00\|0\|2` | *(freeform string)* | `display` |
+| `calendar_lookahead_days` | `number` | `30` | `7..60` (step `1`) | `display` |
+| `calendar_week_start` | `select` | `Sunday` | `Sunday` \| `Monday` | `display` |
+| `bedtime_active` | `switch` | `false` | `0` \| `1` | `display` |
+| `bedtime_display` | `select` | `Screen Off` | `Screen Off` \| `Ambient Clock` | `display` |
+| `bedtime_schedule` | `switch` | `false` | `0` \| `1` | `display` |
+| `bedtime_start_hour` | `number` | `22` | `0..23` (step `1`) | `display` |
+| `bedtime_end_hour` | `number` | `7` | `0..23` (step `1`) | `display` |
+| `bedtime_brightness` | `number` | `15` | `1..100` (step `1`) | `display` |
+| `camera_default_view` | `select` | `Grid` | `Grid` \| `Single` \| `Carousel` | `display` |
+| `camera_carousel_interval` | `select` | `15s` | `10s` \| `15s` \| `30s` \| `60s` | `display` |
+| `camera_framing` | `select` | `Uncropped` | `Uncropped` \| `Fill` | `display` |
+| `camera_stream_mode` | `select` | `Auto` | `Auto` \| `Low Bandwidth` \| `Snapshots` | `display` |
+| `camera_doorbell_popup` | `select` | `Snapshot` | `Snapshot` \| `Live Video` | `hw_jpeg` |
+| `screensaver_photo_clock` | `switch` | `false` | `0` \| `1` | `display` |
+| `weather_app_background` | `switch` | `true` | `0` \| `1` | `display` |
+| `do_not_disturb` | `switch` | `false` | `0` \| `1` | `display_or_audio` |
+| `glass_style` | `select` | `Auto` | `Auto` \| `Clear` \| `Dark` | `display` |

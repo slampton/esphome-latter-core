@@ -225,16 +225,6 @@ inline void apply_custom_rgb_harmony_slots(uint32_t rgb, UiThemeSlot out_primary
   out_secondary.assign(kChromeCustomSecondary);
 }
 
-inline uint32_t parse_hex_rgb(const std::string &hex_str, uint32_t fallback = 0x3898FFU) {
-  std::string s = hex_str;
-  if (!s.empty() && s[0] == '#') s = s.substr(1);
-  if (s.size() != 6) return fallback;
-  char *endptr = nullptr;
-  const unsigned long val = std::strtoul(s.c_str(), &endptr, 16);
-  if (endptr == s.c_str()) return fallback;
-  return static_cast<uint32_t>(val & 0xFFFFFFUL);
-}
-
 inline std::string format_hex_rgb(uint32_t rgb) {
   char buf[12];
   std::snprintf(buf, sizeof(buf), "#%06lX", static_cast<unsigned long>(rgb & 0xFFFFFFUL));

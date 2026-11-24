@@ -14,6 +14,7 @@
 #include <string_view>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -1556,11 +1557,12 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
                            double moon_cycle, int cel_cx, int cel_cy, bool show_celestial) {
   uint16_t *fb = active_frame_buf16();
   auto &cache = sky_base_cache();
-  if (fb != nullptr && cache.px == nullptr) {
-#if !LATTER_CHIP_P4
-    art_canvas_drop_all();
-#endif
+  if (fb != nullptr && cache.px == nullptr &&
+      sky_base_cache_allowed(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB)) {
     const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
+    if (LATTER_CHIP_P4 == 0 || bytes > 1536U * 1024U) {
+      art_canvas_drop_all();
+    }
     cache.px = static_cast<uint16_t *>(ui_psram_malloc(bytes));
     cache.valid = false;
   }
@@ -1671,6 +1673,16 @@ void sky_base_cache_drop() noexcept {
   cache.valid = false;
   lunar_disc_cache_drop();
 }
+
+namespace {
+struct WeatherPsramEvictorRegistrar {
+  WeatherPsramEvictorRegistrar() noexcept {
+    register_psram_cache_evictor(&sky_base_cache_drop);
+    register_psram_cache_evictor(&weather_cloud_cache_drop);
+  }
+};
+const WeatherPsramEvictorRegistrar kWeatherPsramEvictorRegistrar{};
+}  // namespace
 
 bool &weather_sim_dirty() {
   static bool dirty = true;

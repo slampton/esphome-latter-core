@@ -56,38 +56,49 @@ substitutions:
   i2s_din_pin: GPIO11
   i2s_dout_pin: GPIO9
 
-esphome:
-  build_flags:
-    - '-DLATTER_BOARD_ID=\"waveshare_p4_86_panel\"'
-    - "-DLATTER_BLE_MINOR=5"
-    - "-DLATTER_SCREEN_W=720"
-    - "-DLATTER_SCREEN_H=720"
-    - "-DLATTER_ROUND_DISPLAY=0"
-    - "-DLATTER_HAS_DISPLAY=1"
-    - "-DLATTER_HAS_TOUCH=1"
-    - "-DLATTER_HAS_AUDIO=1"
-    - "-DLATTER_HAS_IMU=0"
-    - "-DLATTER_HAS_BATTERY=0"
-    - "-DLATTER_HAS_RTC=0"
-    - "-DLATTER_C6_RESET_PIN=54"  # C6 CHIP_PU (esp32_hosted reset_pin)
-    - "-DLATTER_IS_STATIONARY=1"
-    - "-DLATTER_IS_WEARABLE=0"
-    - "-DLATTER_PANEL_IPS=1"
-    - "-DLATTER_PANEL_PPI=254"
-    - "-DLATTER_CHIP_P4=1"
-    - "-DLATTER_PSRAM_MB=32"
-    - "-DLATTER_BACKLIGHT_PIN=26"
-    - "-DLATTER_BACKLIGHT_EN_PIN=33"
-    - "-DLATTER_BACKLIGHT_INVERTED=1"
-    - "-DLATTER_BACKLIGHT_PWM_HZ=5000"
-    - "-DLATTER_BACKLIGHT_PWM_BITS=12"
-    - "-DLATTER_BACKLIGHT_DUTY_MIN_PM=480"
-    - "-DLATTER_BACKLIGHT_DUTY_MAX_PM=1000"
-    - "-DLATTER_DSI_IRAM_SAFE=1"
-    - "-DLATTER_AUDIO_OUT_RATE=48000"
-    - "-DLATTER_AUDIO_OUT_CH=1"
-    - "-DLATTER_AUDIO_OUT_BITS=16"
-    - "-DLATTER_AUDIO_IN_RATE=16000"
+latter_core:
+  board_id: waveshare_p4_86_panel
+  ble_minor: 5
+  gui: universal
+  chip: esp32p4
+  psram_mb: 32
+  display:
+    width: 720
+    height: 720
+    ppi: 254
+    round: false
+    ips: true
+    dsi_iram_safe: true
+  backlight:
+    pin: 26
+    en_pin: 33
+    inverted: true
+    pwm_hz: 5000
+    pwm_bits: 12
+    duty_min_pm: 480
+    duty_max_pm: 1000
+  power:
+    c6_reset_pin: 54  # C6 CHIP_PU (esp32_hosted reset_pin)
+  audio:
+    out_rate: 48000
+    out_channels: 1
+    out_bits: 16
+    in_rate: 16000
+  capabilities:
+    display: true
+    touch: true
+    audio: true
+    imu: false
+    battery: false
+    rtc: false
+    stationary: true
+    wearable: false
+  drivers:
+    pmu_axp2101: false
+    rtc_pcf85063: false
+    imu_qmi8658: false
+    codec_es8311: true
+    touch_ft5x06: false
 
 esp32:
   flash_size: 32MB
@@ -107,6 +118,7 @@ i2c:
 
 packages:
   latter_chip: !include ../modules/hal/chip_esp32p4.yaml
+  latter_radio: !include ../modules/hal/radio_esp32c6_sdio.yaml
   latter_audio_hal: !include ../modules/hal/audio_es8311_es7210_duplex.yaml
 
 switch:

@@ -1,7 +1,218 @@
 # ==============================================================================
 # Latter Core Module: Audio Arbitration, Voice, Alarm/SFX & Dictation Scripts
 # (modules/audio_scripts.yaml)
+# Binds latter_core::runtime_state().audio hooks at boot priority 850 so shared
+# modules (system_core, system_ui_sync, power_policy, sleep_lifecycle,
+# timers_and_fetchers, gui.yaml) never hardcode audio entity/script IDs on
+# audio-less (LATTER_HAS_AUDIO=0) display-only builds.
 # ==============================================================================
+
+esphome:
+  on_boot:
+    - priority: 850
+      then:
+        - lambda: |-
+            auto &au = latter_core::runtime_state().audio;
+            au.is_mww_running = +[]() -> bool { return id(mww).is_running(); };
+            au.is_va_running = +[]() -> bool { return id(va).is_running(); };
+            au.is_local_mp_playing = +[]() -> bool {
+              return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING;
+            };
+            au.is_local_mp_paused = +[]() -> bool {
+              return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PAUSED;
+            };
+            au.is_local_mp_announcing = +[]() -> bool {
+              return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;
+            };
+            au.is_local_mp_not_idle = +[]() -> bool {
+              return id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_IDLE;
+            };
+            au.local_mp_volume = +[]() -> float { return id(latter_media_player).volume; };
+            au.is_speaker_enabled = +[]() -> bool { return id(speaker_enable).state; };
+            au.is_speaker_busy = +[]() -> bool {
+              return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                     id(media_mixing_input).is_running() ||
+                     id(announcement_mixing_input).is_running() ||
+                     id(sound_mixing_input).is_running();
+            };
+            au.is_tts_active = +[]() -> bool {
+              return (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
+                     id(announcement_mixing_input).is_running();
+            };
+            au.is_announcement_running = +[]() -> bool { return id(announcement_mixing_input).is_running(); };
+            au.is_busy_for_pm = +[]() -> bool {
+              return id(speaker_enable).state || id(mww).is_running() ||
+                     id(announcement_mixing_input).is_running() ||
+                     latter_core::audio_arbitrator().has_pending_work() ||
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+            };
+            au.is_resume_music_running = +[]() -> bool { return id(resume_music_after_va).is_running(); };
+            au.get_local_album_art = +[](const uint16_t *&data, int &w, int &h) -> bool {
+              const auto av = latter_ui::make_art_view(id(album_art));
+              data = av.data;
+              w = av.width;
+              h = av.height;
+              return av.valid();
+            };
+            au.primary_wake_word = +[]() -> std::string {
+              return latter_core::primary_wake_word_name(id(mww));
+            };
+            au.on_api_client_authenticated = +[](const std::string &ci, const std::string &ca) {
+              latter_core::on_api_client_authenticated(id(va), ci, ca);
+            };
+            au.on_clean_disconnect_hibernate = +[]() {
+              latter_core::clean_disconnect_api_before_hibernate(id(va));
+            };
+            au.on_boot_init = +[]() {
+              id(latter_mic_i2s).add_data_callback([](const microphone::AudioCapture &c) {
+                if (c.stream_info.get_bits_per_sample() == 16) latter_core::echo_meter_feed(c.data.data(), c.data.size());
+              });
+              id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
+              const float sv = static_cast<float>(latter_core::persisted_prefs().speaker_volume_pct);
+              if (sv >= 10.0f && sv <= 100.0f) {
+                const float target_v = std::clamp(sv / 100.0f, 0.10f, 1.00f);
+                id(latter_media_player).volume = target_v;
+                id(latter_media_player).make_call().set_volume(target_v).perform();
+              }
+              latter_core::speaker_volume_boot_synced() = true;
+              id(mute_speaker_path).execute();
+              id(apply_wake_word_sensitivities).execute();
+            };
+            au.on_prepare_hibernate = +[]() {
+              if (id(mww).is_running()) id(mww).stop();
+              latter_core::abort_voice_assistant(id(va));
+              id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
+              id(hal_set_dac_mute).execute(true);
+              id(speaker_enable).turn_off();
+            };
+            au.on_turn_screen_off = +[](bool usb_connected) {
+              const bool local_audio_playing =
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              const std::string_view ww_mode = latter_core::pref_wake_word_mode_cstr();
+              const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && usb_connected);
+              id(sync_wake_word_state).execute();
+              if (!local_audio_playing) {
+                id(mute_speaker_path).execute();
+                if (!ww_active) {
+                  id(hal_set_audio_codecs_standby).execute(true);
+                }
+              }
+            };
+            au.on_wake_active = +[]() {
+              if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
+                  !id(speaker_enable).state) {
+                id(enable_speaker_path).execute();
+              }
+            };
+            au.on_usb_unplugged_screen_off = +[]() {
+              const bool local_audio_playing =
+                  id(speaker_enable).state || id(announcement_mixing_input).is_running() ||
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+              if (std::string_view(latter_core::pref_wake_word_mode_cstr()) != "Always On" && !local_audio_playing) {
+                id(hal_set_audio_codecs_standby).execute(true);
+              }
+            };
+            au.apply_wake_word_sensitivities = +[]() { id(apply_wake_word_sensitivities).execute(); };
+            au.sync_wake_word_state = +[]() { id(sync_wake_word_state).execute(); };
+            au.stop_mww = +[]() {
+              if (id(mww).is_running()) id(mww).stop();
+            };
+            au.cycle_primary_wake_word = +[]() { latter_core::cycle_primary_wake_word(id(va), id(mww)); };
+            au.start_va = +[]() { id(start_voice_assistant).execute(); };
+            au.toggle_va = +[]() { id(toggle_voice_assistant).execute(); };
+            au.cancel_va = +[]() { id(cancel_voice_assistant).execute(); };
+            au.abort_va = +[]() { latter_core::abort_voice_assistant(id(va)); };
+            au.preempt_va_for_alert = +[]() { id(preempt_va_for_alert).execute(); };
+            au.play_alarm_sound = +[]() { id(play_alarm_sound).execute(); };
+            au.stop_alarm_sound = +[]() { id(stop_alarm_sound).execute(); };
+            au.play_game_sfx = +[](int sfx_id) { id(play_game_sfx).execute(sfx_id); };
+            au.enable_speaker_for_game = +[]() {
+              id(enable_speaker_path).execute();
+              id(hal_set_dac_mute).execute(false);
+            };
+            au.mute_speaker_path = +[]() {
+              id(hal_set_dac_mute).execute(true);
+              id(speaker_enable).turn_off();
+            };
+            au.resume_music_after_va = +[]() { id(resume_music_after_va).execute(); };
+            au.media_idle_finish = +[]() { id(media_idle_finish).execute(); };
+            au.set_local_volume = +[](float vol_0_to_1, bool update_player, bool un_duck) {
+              id(latter_media_player).volume = vol_0_to_1;
+              if (update_player) {
+                id(latter_media_player).make_call().set_volume(vol_0_to_1).perform();
+              }
+              id(physical_speaker).set_volume(latter_core::media_dac_volume(vol_0_to_1));
+              if (un_duck) {
+                id(media_mixing_input).apply_ducking(0.0f, 0);
+              }
+            };
+            au.pause_local_mp = +[]() {
+              id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
+            };
+            au.stop_local_mp = +[]() {
+              id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).perform();
+            };
+            au.clear_local_track_meta = +[]() {
+              auto &m = latter_core::runtime_state().music;
+              m.last_sendspin_title.clear();
+              m.last_sendspin_artist.clear();
+              m.last_sendspin_album.clear();
+              id(track_title).publish_state("");
+              id(track_artist).publish_state("");
+              id(track_album).publish_state("");
+            };
+            au.stop_doorbell_audio = +[]() { id(stop_doorbell_audio).execute(); };
+            au.start_doorbell_ptt = +[]() { id(start_doorbell_ptt).execute(); };
+            au.start_calendar_dictation = +[]() { id(start_calendar_dictation).execute(); };
+            au.start_broadcast_dictation = +[]() { id(start_broadcast_dictation).execute(); };
+            au.tick_1s_supervisor = +[](uint32_t now_ms, bool wifi_connected) {
+              auto &rs = latter_core::runtime_state();
+              // On-Board Wake Word (micro_wake_word) Power & Bus Supervisor
+              static bool ww_model_initialized = false;
+              if (!ww_model_initialized && now_ms > 12000U && wifi_connected) {
+                ww_model_initialized = true;
+                id(apply_wake_word_sensitivities).execute();
+                id(sync_wake_word_state).execute();
+              } else if (now_ms > 12500U && !rs.voice.active && !rs.voice.tts_received) {
+                const bool va_busy = id(va).is_running() || !rs.voice.status_text.empty() ||
+                                     id(announcement_mixing_input).is_running();
+                const bool media_busy = latter_core::audio_arbitrator().media_idle_debounce_active() || rs.voice.resume_music_after ||
+                                        id(media_mixing_input).is_running() ||
+                                        (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                        (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                                        (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+                const bool alert_or_tool_busy = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+                                                (rs.nav.active_game > 0) ||
+                                                latter_core::cam_call_active() || latter_core::cam_listen_active() ||
+                                                latter_core::cam_intercom_ptt_active();
+                const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress || !wifi_connected;
+                const bool should_ww_run = latter_core::wake_word_should_run(
+                    latter_core::pref_wake_word_mode_cstr(),
+                    rs.hw_usb_connected,
+                    va_busy, media_busy, alert_or_tool_busy, sys_busy);
+                if (should_ww_run != id(mww).is_running()) {
+                  id(sync_wake_word_state).execute();
+                }
+              }
+
+              // Voice Assistant Stuck-Open Watchdog (auto-recovers mic/speaker if HA drops mid-session >35s)
+              static uint32_t va_stuck_since_ms = 0;
+              if (rs.voice.active || !rs.voice.status_text.empty()) {
+                if (va_stuck_since_ms == 0U) va_stuck_since_ms = now_ms;
+                else if ((now_ms - va_stuck_since_ms > 35000U) &&
+                         !id(va).is_running() && !id(announcement_mixing_input).is_running()) {
+                  ESP_LOGW("va", "Voice Assistant watchdog triggered (>35s idle): resetting session & mic");
+                  va_stuck_since_ms = 0;
+                  id(cancel_voice_assistant).execute();
+                }
+              } else {
+                va_stuck_since_ms = 0;
+              }
+            };
 
 script:
   - id: va_tts_drain_and_finish
@@ -10,14 +221,14 @@ script:
       - wait_until:
           condition:
             lambda: |-
-              const auto &v = latter_ui::runtime_state().voice;
+              const auto &v = latter_core::runtime_state().voice;
               return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
                      (!v.active && !v.tts_received);
           timeout: 60s
       - wait_until:
           condition:
             lambda: |-
-              const auto &v = latter_ui::runtime_state().voice;
+              const auto &v = latter_core::runtime_state().voice;
               return !id(announcement_mixing_input).is_running() ||
                      (!v.active && !v.tts_received);
           timeout: !lambda 'return (${announcement_buffer_s} + 2) * 1000;'
@@ -29,21 +240,21 @@ script:
             - script.execute: mute_speaker_path
             - script.stop: va_tts_drain_and_finish
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          latter_ui::log_audio_profile("VA_DRAIN_FINISH");
-          latter_ui::audio_arbitrator().cancel_echo_gate();
+          auto &rs = latter_core::runtime_state();
+          latter_core::log_audio_profile("VA_DRAIN_FINISH");
+          latter_core::audio_arbitrator().cancel_echo_gate();
           id(latter_mic).set_mute_state(false);
           const bool was_va_session = rs.voice.active;
           rs.voice.vad_active = false;
           rs.voice.status_text = "";
           rs.voice.tts_received = false;
           rs.voice.active = false;
-          latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::Idle);
+          latter_core::audio_session().note_va_phase(latter_core::AudioSessionPhase::Idle);
           if (was_va_session) {
             rs.nav.gui_page = rs.voice.return_page;
           }
           if (rs.nav.gui_page == 2) id(fetch_remote_art_debounced).execute();
-          latter_ui::radio_boost_until_ms() = 0;
+          latter_core::radio_boost_until_ms() = 0;
           id(apply_power_policy).execute();
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - delay: 160ms
@@ -89,17 +300,17 @@ script:
             if (opt == "Very sensitive") return high_c;
             return med_c;
           };
-          const auto &prefs = latter_ui::persisted_prefs();
+          const auto &prefs = latter_core::persisted_prefs();
           id(okay_nabu).set_probability_cutoff(
-              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_okay_nabu), 247, 237, 224));
+              apply_cutoffs(latter_core::pref_ww_sens_cstr(prefs.ww_sens_okay_nabu), 247, 237, 224));
           id(hey_luna).set_probability_cutoff(
-              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_luna), 248, 239, 226));
+              apply_cutoffs(latter_core::pref_ww_sens_cstr(prefs.ww_sens_hey_luna), 248, 239, 226));
           id(hey_jarvis).set_probability_cutoff(
-              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis), 247, 237, 224));
+              apply_cutoffs(latter_core::pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis), 247, 237, 224));
           id(hey_mycroft).set_probability_cutoff(
-              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_hey_mycroft), 248, 239, 226));
+              apply_cutoffs(latter_core::pref_ww_sens_cstr(prefs.ww_sens_hey_mycroft), 248, 239, 226));
           id(alexa).set_probability_cutoff(
-              apply_cutoffs(latter_ui::pref_ww_sens_cstr(prefs.ww_sens_alexa), 247, 237, 224));
+              apply_cutoffs(latter_core::pref_ww_sens_cstr(prefs.ww_sens_alexa), 247, 237, 224));
 
   - id: sync_wake_word_state
     mode: restart
@@ -107,11 +318,11 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               // Media pauses the wake word on every board until on-device echo cancellation exists.
               const bool va_busy = rs.voice.active || id(va).is_running() || !rs.voice.status_text.empty() ||
                                    rs.voice.tts_received || id(announcement_mixing_input).is_running();
-              const bool media_busy = (latter_ui::audio_arbitrator().media_idle_debounce_active() ||
+              const bool media_busy = (latter_core::audio_arbitrator().media_idle_debounce_active() ||
                                       rs.voice.resume_music_after ||
                                       id(media_mixing_input).is_running() ||
                                       (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
@@ -119,14 +330,14 @@ script:
                                       (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING));
               const bool alert_or_tool_busy = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
                                               (rs.nav.active_game > 0) ||
-                                              latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                                              latter_ui::cam_intercom_ptt_active() ||
-                                              latter_ui::cal_dictation_active() ||
-                                              latter_ui::broadcast_dictation_active();
+                                              latter_core::cam_call_active() || latter_core::cam_listen_active() ||
+                                              latter_core::cam_intercom_ptt_active() ||
+                                              latter_core::cal_dictation_active() ||
+                                              latter_core::broadcast_dictation_active();
               const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress ||
                                     !id(wifi_ctrl).is_connected() || (millis() < 12000U);
-              return latter_ui::wake_word_should_run(
-                  latter_ui::pref_wake_word_mode_cstr(),
+              return latter_core::wake_word_should_run(
+                  latter_core::pref_wake_word_mode_cstr(),
                   rs.hw_usb_connected,
                   va_busy, media_busy, alert_or_tool_busy, sys_busy);
           then:
@@ -143,7 +354,7 @@ script:
                   - if:
                       condition:
                         lambda: |-
-                          const auto &rs = latter_ui::runtime_state();
+                          const auto &rs = latter_core::runtime_state();
                           return !id(mww).is_running() &&
                                  !rs.voice.active && !id(va).is_running() &&
                                  !id(media_mixing_input).is_running() &&
@@ -158,12 +369,12 @@ script:
                             timeout: 100ms
                         - lambda: |-
                             id(hal_set_audio_codecs_standby).execute(false);
-                            if (latter_ui::audio_session().phase() == latter_ui::AudioSessionPhase::Idle) {
-                              latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::WakeWordArmed);
+                            if (latter_core::audio_session().phase() == latter_core::AudioSessionPhase::Idle) {
+                              latter_core::audio_session().note_va_phase(latter_core::AudioSessionPhase::WakeWordArmed);
                             }
                             ESP_LOGD("mww", "Wake word detection ARMED (primary='%s', mode='%s')",
-                                     esphome::voice_assistant::primary_wake_word_name(id(mww)).c_str(),
-                                     latter_ui::pref_wake_word_mode_cstr());
+                                     latter_core::primary_wake_word_name(id(mww)).c_str(),
+                                     latter_core::pref_wake_word_mode_cstr());
           else:
             - if:
                 condition:
@@ -171,39 +382,39 @@ script:
                 then:
                   - micro_wake_word.stop:
                   - lambda: |-
-                      if (latter_ui::audio_session().phase() == latter_ui::AudioSessionPhase::WakeWordArmed) {
-                        latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::Idle);
+                      if (latter_core::audio_session().phase() == latter_core::AudioSessionPhase::WakeWordArmed) {
+                        latter_core::audio_session().note_va_phase(latter_core::AudioSessionPhase::Idle);
                       }
                       ESP_LOGD("mww", "Wake word detection PAUSED (mode='%s', usb=%d)",
-                               latter_ui::pref_wake_word_mode_cstr(),
-                               (int)latter_ui::runtime_state().hw_usb_connected);
+                               latter_core::pref_wake_word_mode_cstr(),
+                               (int)latter_core::runtime_state().hw_usb_connected);
 
   - id: trigger_va_from_wake_word
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          latter_ui::audio_arbitrator().cancel_echo_gate();
-          latter_ui::request_radio_boost(millis(), 15000U);
+          auto &rs = latter_core::runtime_state();
+          latter_core::audio_arbitrator().cancel_echo_gate();
+          latter_core::request_radio_boost(millis(), 15000U);
           id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);
           id(va_restore_display).stop();
-          latter_ui::va_display_restore().capture(rs.nav.display_power_state,
+          latter_core::va_display_restore().capture(rs.nav.display_power_state,
               id(display_brightness).current_values.is_on(), millis(), true);
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-            if (latter_ui::persisted_prefs().wake_screen_on_assist) {
-              latter_ui::note_wake_reason(latter_ui::WakeReason::VOICE);
+            if (latter_core::persisted_prefs().wake_screen_on_assist) {
+              latter_core::note_wake_reason(latter_core::WakeReason::VOICE);
               id(wake_to_active_state).execute();
             }
           } else {
-            latter_ui::display_lifecycle().note_activity(millis());
+            latter_core::display_lifecycle().note_activity(millis());
           }
           rs.voice.tts_received = false;
       - script.execute: mute_speaker_path
       - script.wait: mute_speaker_path
       - voice_assistant.start:
-          wake_word: !lambda 'return latter_ui::runtime_state().voice.last_detected_wake_word;'
+          wake_word: !lambda 'return latter_core::runtime_state().voice.last_detected_wake_word;'
 
   - id: preempt_va_for_alert
     mode: restart
@@ -213,20 +424,20 @@ script:
       - script.stop: va_restore_display
       - script.stop: resume_music_after_va
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           const uint32_t now_ms = millis();
-          latter_ui::audio_arbitrator().cancel_echo_gate();
-          latter_ui::audio_arbitrator().cancel_media_idle_debounce();
-          latter_ui::audio_arbitrator().cancel_announce_stall_check();
-          latter_ui::audio_session().preempt_for_alert(now_ms);
-          latter_ui::audio_session().set_paused_for_va(false, now_ms);
-          latter_ui::va_display_restore().armed = false;
+          latter_core::audio_arbitrator().cancel_echo_gate();
+          latter_core::audio_arbitrator().cancel_media_idle_debounce();
+          latter_core::audio_arbitrator().cancel_announce_stall_check();
+          latter_core::audio_session().preempt_for_alert(now_ms);
+          latter_core::audio_session().set_paused_for_va(false, now_ms);
+          latter_core::va_display_restore().armed = false;
           id(latter_mic).set_mute_state(false);
-          if (latter_ui::broadcast_dictation_active()) {
-            latter_ui::cancel_broadcast_dictation("", now_ms);
+          if (latter_core::broadcast_dictation_active()) {
+            latter_core::cancel_broadcast_dictation("", now_ms);
           }
           if (rs.voice.active || id(va).is_running() || rs.voice.tts_received || !rs.voice.status_text.empty()) {
-            esphome::voice_assistant::abort_voice_assistant(id(va));
+            latter_core::abort_voice_assistant(id(va));
             rs.voice.intercom_turn = false;
             rs.voice.was_cancelled = true;
             rs.voice.status_text = "";
@@ -234,7 +445,7 @@ script:
             rs.voice.vad_active = false;
             rs.voice.active = false;
             rs.nav.gui_page = (rs.voice.return_page >= 0) ? rs.voice.return_page : rs.nav.gui_page;
-            latter_ui::radio_boost_until_ms() = 0;
+            latter_core::radio_boost_until_ms() = 0;
           }
       - if:
           condition:
@@ -266,17 +477,17 @@ script:
             - script.execute: enable_speaker_path
             - script.wait: enable_speaker_path
       - lambda: |-
-          const auto &rs = latter_ui::runtime_state();
-          const float alert_pct = static_cast<float>(latter_ui::persisted_prefs().alert_volume);
+          const auto &rs = latter_core::runtime_state();
+          const float alert_pct = static_cast<float>(latter_core::persisted_prefs().alert_volume);
           const float alert_v = rs.alarms.find_my_active
               ? 0.90f
-              : latter_ui::alarm_output_volume(alert_pct, id(latter_media_player).volume);
+              : latter_core::alarm_output_volume(alert_pct, id(latter_media_player).volume);
           id(physical_speaker).set_volume(alert_v);
           id(hal_set_dac_mute).execute(false);
       - while:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               return rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
           then:
             - if:
@@ -287,7 +498,7 @@ script:
                   - media_player.play_media:
                       id: latter_sound_player
                       media_url: !lambda |-
-                        return std::string(latter_ui::runtime_state().alarms.find_my_active
+                        return std::string(latter_core::runtime_state().alarms.find_my_active
                                                ? "audio-file://sound_find_my"
                                                : "audio-file://sound_alarm");
             - wait_until:
@@ -306,7 +517,7 @@ script:
     parameters:
       sfx_id: int
     then:
-      - lambda: 'latter_ui::audio_arbitrator().cancel_media_idle_debounce();'
+      - lambda: 'latter_core::audio_arbitrator().cancel_media_idle_debounce();'
       - if:
           condition:
             lambda: 'return !id(speaker_enable).state || !id(physical_speaker).is_running();'
@@ -314,8 +525,8 @@ script:
             - script.execute: enable_speaker_path
             - script.wait: enable_speaker_path
       - lambda: |-
-          const float alert_pct = static_cast<float>(latter_ui::persisted_prefs().alert_volume);
-          const float sfx_v = latter_ui::alarm_output_volume(alert_pct, id(latter_media_player).volume);
+          const float alert_pct = static_cast<float>(latter_core::persisted_prefs().alert_volume);
+          const float sfx_v = latter_core::alarm_output_volume(alert_pct, id(latter_media_player).volume);
           id(physical_speaker).set_volume(sfx_v);
           id(hal_set_dac_mute).execute(false);
       - media_player.play_media:
@@ -336,18 +547,18 @@ script:
                   lambda: 'return !id(sound_mixing_input).is_running();'
                 timeout: 4s
             - lambda: |-
-                const auto &rs = latter_ui::runtime_state();
+                const auto &rs = latter_core::runtime_state();
                 if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
                     !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active) {
                   float v = id(latter_media_player).volume;
                   if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                  id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+                  id(physical_speaker).set_volume(latter_core::media_dac_volume(v));
                 }
       - if:
           condition:
-            lambda: 'return latter_ui::runtime_state().nav.active_game == 0;'
+            lambda: 'return latter_core::runtime_state().nav.active_game == 0;'
           then:
-            - lambda: 'latter_ui::audio_arbitrator().arm_media_idle_debounce(millis());'
+            - lambda: 'latter_core::audio_arbitrator().arm_media_idle_debounce(millis());'
 
   - id: stop_alarm_sound
     mode: restart
@@ -371,7 +582,7 @@ script:
             - lambda: |-
                 float v = id(latter_media_player).volume;
                 if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+                id(physical_speaker).set_volume(latter_core::media_dac_volume(v));
                 id(hal_set_dac_mute).execute(false);
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
@@ -382,7 +593,7 @@ script:
             - if:
                 condition:
                   lambda: |-
-                    const auto &v = latter_ui::runtime_state().voice;
+                    const auto &v = latter_core::runtime_state().voice;
                     return v.resume_music_after && !v.active && !v.tts_received;
                 then:
                   - script.execute: resume_music_after_va
@@ -390,10 +601,10 @@ script:
                   - if:
                       condition:
                         lambda: |-
-                          const auto &rs = latter_ui::runtime_state();
+                          const auto &rs = latter_core::runtime_state();
                           return !rs.voice.active && !rs.voice.tts_received &&
                                  !id(va).is_running() && !id(announcement_mixing_input).is_running() &&
-                                 !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
+                                 !latter_core::cam_call_active() && !latter_core::cam_listen_active() &&
                                  (rs.nav.active_game == 0);
                       then:
                         - script.execute: mute_speaker_path
@@ -406,7 +617,7 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               return (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
                      (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_ANNOUNCING) &&
                      (id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
@@ -415,8 +626,8 @@ script:
                      !rs.voice.active &&
                      !rs.voice.tts_received &&
                      !id(announcement_mixing_input).is_running() &&
-                     !latter_ui::cam_call_active() &&
-                     !latter_ui::cam_listen_active() &&
+                     !latter_core::cam_call_active() &&
+                     !latter_core::cam_listen_active() &&
                      !rs.alarms.ringing &&
                      !rs.timers.ringing &&
                      !rs.alarms.find_my_active &&
@@ -426,9 +637,9 @@ script:
             - script.wait: mute_speaker_path
             - script.execute: sync_wake_word_state
             - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                latter_ui::audio_session().note_local_playback_stopped();
-                const std::string_view ww_mode(latter_ui::pref_wake_word_mode_cstr());
+                auto &rs = latter_core::runtime_state();
+                latter_core::audio_session().note_local_playback_stopped();
+                const std::string_view ww_mode(latter_core::pref_wake_word_mode_cstr());
                 const bool ww_act = (ww_mode == "Always On") || (ww_mode == "Docked Only" && rs.hw_usb_connected);
                 if (!ww_act) {
                   id(hal_set_audio_codecs_standby).execute(true);
@@ -437,8 +648,8 @@ script:
                   if (rs.nav.sleep_start_time == 0) rs.nav.sleep_start_time = millis();
                 }
                 if (rs.nav.display_power_state == 0 &&
-                    !latter_ui::area_ctx_state().wallpaper_url.empty() &&
-                    latter_ui::area_ctx_state().wallpaper_url != rs.music.loaded_wallpaper_url) {
+                    !latter_core::area_ctx_state().wallpaper_url.empty() &&
+                    latter_core::area_ctx_state().wallpaper_url != rs.music.loaded_wallpaper_url) {
                   id(fetch_wallpaper_debounced).execute();
                 }
                 id(apply_power_policy).execute();
@@ -449,7 +660,7 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &v = latter_ui::runtime_state().voice;
+              const auto &v = latter_core::runtime_state().voice;
               return v.active || !v.status_text.empty() || id(va).is_running();
           then:
             - script.stop: start_voice_assistant
@@ -462,22 +673,22 @@ script:
                 format: "Assist pipeline not connected to Home Assistant yet; ignoring VA start"
             - script.stop: start_voice_assistant
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          latter_ui::audio_arbitrator().cancel_echo_gate();
-          latter_ui::request_radio_boost(millis(), 15000U);
+          auto &rs = latter_core::runtime_state();
+          latter_core::audio_arbitrator().cancel_echo_gate();
+          latter_core::request_radio_boost(millis(), 15000U);
           id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);
           id(va_restore_display).stop();
-          latter_ui::va_display_restore().capture(rs.nav.display_power_state,
+          latter_core::va_display_restore().capture(rs.nav.display_power_state,
               id(display_brightness).current_values.is_on(), millis(), true);
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-            if (latter_ui::persisted_prefs().wake_screen_on_assist) {
-              latter_ui::note_wake_reason(latter_ui::WakeReason::VOICE);
+            if (latter_core::persisted_prefs().wake_screen_on_assist) {
+              latter_core::note_wake_reason(latter_core::WakeReason::VOICE);
               id(wake_to_active_state).execute();
             }
           } else {
-            latter_ui::display_lifecycle().note_activity(millis());
+            latter_core::display_lifecycle().note_activity(millis());
           }
           if (!rs.voice.active) {
             rs.voice.return_page = rs.nav.gui_page;
@@ -487,10 +698,10 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               return !rs.voice.resume_music_after &&
                      ((id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                      (!rs.music.active_speaker_entity.empty() && latter_ui::media_state().state == "playing"));
+                      (!rs.music.active_speaker_entity.empty() && latter_core::media_state().state == "playing"));
           then:
             - script.execute: pause_all_music
             - delay: 160ms
@@ -504,7 +715,7 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &v = latter_ui::runtime_state().voice;
+              const auto &v = latter_core::runtime_state().voice;
               return v.active || !v.status_text.empty() || id(va).is_running();
           then:
             - script.execute: cancel_voice_assistant
@@ -516,12 +727,12 @@ script:
     then:
       - script.stop: va_tts_drain_and_finish
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          latter_ui::audio_arbitrator().cancel_echo_gate();
-          latter_ui::audio_arbitrator().cancel_media_idle_debounce();
-          latter_ui::audio_arbitrator().cancel_announce_stall_check();
-          esphome::voice_assistant::abort_voice_assistant(id(va));
-          latter_ui::audio_session().note_va_phase(latter_ui::AudioSessionPhase::Idle);
+          auto &rs = latter_core::runtime_state();
+          latter_core::audio_arbitrator().cancel_echo_gate();
+          latter_core::audio_arbitrator().cancel_media_idle_debounce();
+          latter_core::audio_arbitrator().cancel_announce_stall_check();
+          latter_core::abort_voice_assistant(id(va));
+          latter_core::audio_session().note_va_phase(latter_core::AudioSessionPhase::Idle);
           id(latter_mic).set_mute_state(false);
           rs.voice.intercom_turn = false;
           rs.voice.was_cancelled = true;
@@ -552,10 +763,10 @@ script:
             lambda: 'return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_IDLE;'
           timeout: 450ms
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          latter_ui::audio_arbitrator().cancel_media_idle_debounce();
-          latter_ui::audio_arbitrator().cancel_echo_gate();
-          esphome::voice_assistant::abort_voice_assistant(id(va));
+          auto &rs = latter_core::runtime_state();
+          latter_core::audio_arbitrator().cancel_media_idle_debounce();
+          latter_core::audio_arbitrator().cancel_echo_gate();
+          latter_core::abort_voice_assistant(id(va));
           id(latter_mic).set_mute_state(false);
           rs.voice.intercom_turn = false;
           rs.voice.was_cancelled = true;
@@ -564,7 +775,7 @@ script:
           rs.voice.vad_active = false;
           rs.voice.active = false;
           rs.nav.gui_page = rs.voice.return_page;
-          latter_ui::radio_boost_until_ms() = 0;
+          latter_core::radio_boost_until_ms() = 0;
           id(apply_power_policy).execute();
       - delay: 25ms
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
@@ -576,19 +787,19 @@ script:
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          const auto &ms = latter_ui::media_state();
+          auto &rs = latter_core::runtime_state();
+          const auto &ms = latter_core::media_state();
           bool local_active = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
           bool remote_active = (!rs.music.active_speaker_entity.empty() && !ms.is_local && (ms.state == "playing"));
           if (local_active || remote_active) {
             rs.voice.resume_music_after = true;
-            latter_ui::audio_session().set_paused_for_va(true, millis());
+            latter_core::audio_session().set_paused_for_va(true, millis());
           }
           ESP_LOGD("audio", "pause_all_music: local=%d, remote=%d -> va_resume_music_after=%d",
                    local_active, remote_active, rs.voice.resume_music_after);
       - if:
           condition:
-            lambda: 'return latter_ui::runtime_state().voice.resume_music_after;'
+            lambda: 'return latter_core::runtime_state().voice.resume_music_after;'
           then:
             - media_player.pause: latter_media_player
             - speaker.stop: media_mixing_input
@@ -596,7 +807,7 @@ script:
                 id: media_mixing_input
                 decibel_reduction: 50
                 duration: 0.1s
-            - lambda: 'latter_actions::emit_media_command("pause");'
+            - lambda: 'latter_core::emit_media_command("pause");'
 
   - id: resume_music_after_va
     mode: restart
@@ -604,33 +815,33 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               return rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active;
           then:
             - script.stop: resume_music_after_va
       - if:
           condition:
-            lambda: 'return latter_ui::runtime_state().voice.resume_music_after;'
+            lambda: 'return latter_core::runtime_state().voice.resume_music_after;'
           then:
             - lambda: |-
-                auto &rs = latter_ui::runtime_state();
+                auto &rs = latter_core::runtime_state();
                 const uint32_t now_ms = millis();
-                latter_ui::audio_arbitrator().arm_media_idle_debounce(now_ms);
+                latter_core::audio_arbitrator().arm_media_idle_debounce(now_ms);
                 rs.voice.resume_music_after = false;
-                latter_ui::audio_session().set_play_intent(latter_ui::MusicPlayIntent::AutoResumeAfterVa, now_ms);
-                latter_ui::audio_session().set_paused_for_va(false, now_ms);
+                latter_core::audio_session().set_play_intent(latter_core::MusicPlayIntent::AutoResumeAfterVa, now_ms);
+                latter_core::audio_session().set_paused_for_va(false, now_ms);
                 ESP_LOGD("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)",
                          rs.music.active_speaker_entity.c_str(), rs.voice.was_cancelled);
             - if:
                 condition:
                   lambda: |-
-                    return !latter_ui::runtime_state().music.active_speaker_entity.empty() &&
-                           !latter_ui::media_state().is_local;
+                    return !latter_core::runtime_state().music.active_speaker_entity.empty() &&
+                           !latter_core::media_state().is_local;
                 then:
                   - lambda: |-
-                      latter_ui::runtime_state().voice.was_cancelled = false;
+                      latter_core::runtime_state().voice.was_cancelled = false;
                       id(apply_power_policy).execute();
-                      latter_actions::emit_media_command("play");
+                      latter_core::emit_media_command("play");
                       id(hal_set_dac_mute).execute(true);
                   - script.execute: mute_speaker_path
                   - script.execute: sync_wake_word_state
@@ -640,7 +851,7 @@ script:
                   - if:
                       condition:
                         lambda: |-
-                          const auto &rs = latter_ui::runtime_state();
+                          const auto &rs = latter_core::runtime_state();
                           return !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active;
                       then:
                         - mixer_speaker.apply_ducking:
@@ -654,30 +865,30 @@ script:
                         - lambda: |-
                             float v = id(latter_media_player).volume;
                             if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                            id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
-                  - lambda: 'latter_actions::emit_media_command("play");'
+                            id(physical_speaker).set_volume(latter_core::media_dac_volume(v));
+                  - lambda: 'latter_core::emit_media_command("play");'
                   - if:
                       condition:
-                        lambda: 'return latter_ui::runtime_state().voice.was_cancelled;'
+                        lambda: 'return latter_core::runtime_state().voice.was_cancelled;'
                       then:
-                        - lambda: 'latter_ui::runtime_state().voice.was_cancelled = false;'
+                        - lambda: 'latter_core::runtime_state().voice.was_cancelled = false;'
                         - delay: 700ms
                   - lambda: 'id(hal_set_dac_mute).execute(false);'
           else:
-            - lambda: 'latter_ui::audio_session().set_paused_for_va(false, millis());'
+            - lambda: 'latter_core::audio_session().set_paused_for_va(false, millis());'
             - if:
                 condition:
                   lambda: |-
-                    const auto &rs = latter_ui::runtime_state();
+                    const auto &rs = latter_core::runtime_state();
                     return id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING &&
                            !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active;
                 then:
                   - lambda: |-
-                      latter_ui::runtime_state().voice.was_cancelled = false;
+                      latter_core::runtime_state().voice.was_cancelled = false;
                       id(apply_power_policy).execute();
                       float v = id(latter_media_player).volume;
                       if (std::isnan(v) || v <= 0.0f) v = 0.60f;
-                      id(physical_speaker).set_volume(latter_ui::media_dac_volume(v));
+                      id(physical_speaker).set_volume(latter_core::media_dac_volume(v));
                       id(hal_set_dac_mute).execute(false);
                   - mixer_speaker.apply_ducking:
                       id: media_mixing_input
@@ -690,11 +901,11 @@ script:
                   - script.execute: sync_wake_word_state
                 else:
                   - lambda: |-
-                      latter_ui::runtime_state().voice.was_cancelled = false;
+                      latter_core::runtime_state().voice.was_cancelled = false;
                       id(apply_power_policy).execute();
                   - if:
                       condition:
-                        lambda: 'return !latter_ui::cam_call_active() && !latter_ui::cam_listen_active();'
+                        lambda: 'return !latter_core::cam_call_active() && !latter_core::cam_listen_active();'
                       then:
                         - script.execute: mute_speaker_path
                         - script.execute: sync_wake_word_state
@@ -709,9 +920,9 @@ script:
       - if:
           condition:
             lambda: |-
-              return !latter_ui::runtime_state().voice.active &&
-                     !latter_ui::cam_call_active() &&
-                     !latter_ui::cam_listen_active();
+              return !latter_core::runtime_state().voice.active &&
+                     !latter_core::cam_call_active() &&
+                     !latter_core::cam_listen_active();
           then:
             - script.execute: va_tts_drain_and_finish
 
@@ -729,7 +940,7 @@ script:
       - if:
           condition:
             lambda: |-
-              const bool ok = latter_ui::intercom_session().begin_ptt(
+              const bool ok = latter_core::intercom_session().begin_ptt(
                   millis(), id(va).get_api_connection() != nullptr);
               latter_ui::schedule_disp_update(&id(disp1));
               return !ok;
@@ -739,7 +950,7 @@ script:
       - script.stop: va_tts_drain_and_finish
       - script.execute: stop_doorbell_audio
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.voice.intercom_turn = true;
           id(sync_camera_stream).execute();
           id(hal_set_audio_codecs_standby).execute(false);
@@ -755,7 +966,7 @@ script:
           condition:
             lambda: |-
               if (id(va).get_api_connection() == nullptr || id(va).is_running()) {
-                latter_ui::cancel_calendar_dictation("Assist pipeline offline", millis());
+                latter_core::cancel_calendar_dictation("Assist pipeline offline", millis());
                 latter_ui::schedule_disp_update(&id(disp1));
                 return true;
               }
@@ -768,9 +979,9 @@ script:
           then:
             - micro_wake_word.stop:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.voice.intercom_turn = true;
-          latter_ui::request_radio_boost(millis(), 12000U);
+          latter_core::request_radio_boost(millis(), 12000U);
           id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);
@@ -785,7 +996,7 @@ script:
           condition:
             lambda: |-
               if (id(va).get_api_connection() == nullptr || id(va).is_running()) {
-                latter_ui::cancel_broadcast_dictation("Assist pipeline offline", millis());
+                latter_core::cancel_broadcast_dictation("Assist pipeline offline", millis());
                 latter_ui::schedule_disp_update(&id(disp1));
                 return true;
               }
@@ -798,9 +1009,9 @@ script:
           then:
             - micro_wake_word.stop:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.voice.intercom_turn = true;
-          latter_ui::request_radio_boost(millis(), 12000U);
+          latter_core::request_radio_boost(millis(), 12000U);
           id(apply_power_policy).execute();
           id(hal_set_audio_codecs_standby).execute(false);
           id(latter_mic).set_mute_state(false);

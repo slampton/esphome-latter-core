@@ -1,10 +1,14 @@
+#include "ui_compositor.h"
+#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
+#endif
 #include "hal_video_stream.h"
 
 #include <algorithm>
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                  const SystemTakeoverState &st) {
@@ -29,7 +33,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
   const int cam_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
   const int cam_idx = has_cam_ent ? find_camera_index_by_entity(cams, cam_cnt, st.notif_camera_entity.sv()) : -1;
   const CameraRecord *cam_rec = (cam_idx >= 0) ? &cams[cam_idx] : nullptr;
-  const bool can_audio = (cam_rec != nullptr) && cam_rec->has_audio();
+  const bool can_audio = (LATTER_HAS_SPEAKER != 0) && (cam_rec != nullptr) && cam_rec->has_audio();
   const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) && (cam_rec != nullptr) && cam_rec->has_talkback();
   const bool can_reply = (cam_rec != nullptr) && cam_rec->show_reply();
   const bool can_unlock = (cam_rec != nullptr) && cam_rec->has_unlock();
@@ -60,6 +64,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     }
 
     bool drew_live = false;
+#if LATTER_GUI_UNIVERSAL
     const uint16_t *v_px = nullptr;
     int v_w = 0, v_h = 0;
     if (video_client().acquire_frame(v_px, v_w, v_h)) {
@@ -74,6 +79,10 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     if (!drew_live) {
       render_camera_video_placeholder(it, ctx, vp, nullptr, "Connecting live video...", accent_c);
     }
+#else
+    (void)drew_live;
+    fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, st.col_black);
+#endif
 
     const UiColor ring_c = (is_crit && !pulse) ? ui::chrome_danger_bg() : accent_c;
     render_bezel_alert_border(it, cx, cy, ring_c);
@@ -86,7 +95,9 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
       const int ptt_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 62);
       const int ptt_top = std::max(1, ptt_y - ly.min_hit_px() / 2 - scale_y(8));
       frame_hits().add_rect(0, 0, SCREEN_W, ptt_top, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
+#if LATTER_GUI_UNIVERSAL
       render_doorbell_ptt_banner(it, ctx, ptt_y);
+#endif
       return;
     }
 
@@ -94,7 +105,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     const int btn_h = std::max(38, scale_y(40));
     const int row2_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 54 : 38);
     const int row1_y = row2_y - btn_h - scale_y(12);
-    const int gap = scale_x(8);
+    const int gap = scale_s(8);
 
     ui::ActionPillSpec r1[4]{};
     int r1_cnt = 0;
@@ -124,9 +135,9 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     const int media_tap_h = std::max(1, top_btn_y - btn_h / 2 - btn_pad - 1);
     frame_hits().add_rect(0, 0, SCREEN_W, media_tap_h, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
     const int stack_row_w = ui::compute_uniform_stack_w(
-        (r1_cnt > 0) ? row1_y : row2_y, row2_y, btn_h, scale_x(376), 14);
+        (r1_cnt > 0) ? row1_y : row2_y, row2_y, btn_h, std::min(kMaxContentColW, scale_s(376)), 14);
     if (r1_cnt > 0) {
-      ui::action_pill_row(it, row1_y, btn_h, stack_row_w, scale_x(104), gap,
+      ui::action_pill_row(it, row1_y, btn_h, stack_row_w, scale_s(104), gap,
                           r1, r1_cnt, ctx.font_small, 14);
     }
 
@@ -136,8 +147,8 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
         {"Dismiss", WidgetId::NOTIF_DISMISS_BTN, accent_c,
          ui::chrome_card_bg_off(), st.col_white, 0, nullptr},
     };
-    ui::action_pill_row(it, row2_y, btn_h, std::min(stack_row_w, scale_x(276)),
-                        scale_x(132), gap, r2, 2, ctx.font_small, 16);
+    ui::action_pill_row(it, row2_y, btn_h, std::min(stack_row_w, scale_s(276)),
+                        scale_s(132), gap, r2, 2, ctx.font_small, 16);
     return;
   }
 
@@ -171,6 +182,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     }
     const CameraRect snap_vp{cx - snap_w / 2, snap_top, snap_w, snap_h};
 
+#if LATTER_GUI_UNIVERSAL
     if (cam_ready) {
       blit_rgb565_fitted_frame(it, ctx.camera_snapshot_art.data,
                                ctx.camera_snapshot_art.width, ctx.camera_snapshot_art.height,
@@ -178,6 +190,10 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     } else {
       render_camera_video_placeholder(it, ctx, snap_vp, nullptr, "Loading camera snapshot...", accent_c);
     }
+#else
+    (void)cam_ready;
+    fill_rect_row_major(it, snap_vp.x0, snap_vp.y0, snap_vp.w, snap_vp.h, st.col_black);
+#endif
 
     render_bezel_alert_border(it, cx, cy, ring_c);
     render_page_header(it, cx, fit_title, ctx.font_small, st.col_white);
@@ -211,8 +227,8 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     sb[sb_cnt++] = {"Dismiss", WidgetId::NOTIF_DISMISS_BTN, accent_c,
                     ui::chrome_card_bg_off(), st.col_white, 0, nullptr};
 
-    ui::action_pill_row(it, btn_y, btn_h, std::min(kMaxContentColW, scale_x(348)),
-                        scale_x(112), scale_x(8), sb, sb_cnt, ctx.font_small, 14);
+    ui::action_pill_row(it, btn_y, btn_h, std::min(kMaxContentColW, scale_s(348)),
+                        scale_s(112), scale_s(8), sb, sb_cnt, ctx.font_small, 14);
     return;
   }
 
@@ -233,7 +249,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
   }
 
   const int dis_h = std::max(44, scale_y(48));
-  const int dis_w = std::min(kMaxContentColW, scale_x(216));
+  const int dis_w = std::min(kMaxContentColW, scale_s(216));
   ui::action_pill_centered(it, cx, dis_w, scale_y(336), dis_h,
                            accent_c, ui::chrome_card_bg_off(), "Dismiss", st.col_white,
                            ctx.font_small, WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);

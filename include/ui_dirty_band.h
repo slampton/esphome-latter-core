@@ -57,16 +57,8 @@ inline constexpr int music_metadata_band_y0_for(int /*screen_h*/) noexcept { ret
 inline constexpr int music_metadata_band_y1_for(int screen_h) noexcept {
   return scale_y_for(136, screen_h);
 }
-inline constexpr int music_progress_band_y0_for(int screen_h) noexcept {
-  return scale_y_for(74, screen_h);
-}
-inline constexpr int music_progress_band_y1_for(int screen_h) noexcept {
-  return scale_y_for(136, screen_h);
-}
 inline constexpr int music_metadata_band_y0() noexcept { return 0; }
 inline constexpr int music_metadata_band_y1() noexcept { return music_metadata_band_y1_for(SCREEN_H); }
-inline constexpr int music_progress_band_y0() noexcept { return music_progress_band_y0_for(SCREEN_H); }
-inline constexpr int music_progress_band_y1() noexcept { return music_progress_band_y1_for(SCREEN_H); }
 void mark_music_progress_dirty_band(int y0 = 0, int y1 = music_metadata_band_y1_for(SCREEN_H));
 
 constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_pg,

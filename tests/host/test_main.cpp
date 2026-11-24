@@ -8,6 +8,7 @@ namespace {
 
 void test_music_app_v3_d059() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   reset_all_v3_rev_guards();
 
@@ -201,10 +202,10 @@ void test_music_app_v3_d059() {
   {
     MockRpcOutbox mbox{};
     latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-    (void)latter_actions::emit_music_lyrics_fetch("Midnight City|M83", "media_player.office", 1000U, &mbox);
-    latter_actions::emit_media_play_item("media_player.office", "library://track/42", "track", "next", false, &mbox);
-    latter_actions::emit_media_queue_play("q_item_7", "media_player.office", &mbox);
-    latter_actions::emit_media_seek(20, &mbox);
+    (void)latter_core::emit_music_lyrics_fetch("Midnight City|M83", "media_player.office", 1000U, &mbox);
+    latter_core::emit_media_play_item("media_player.office", "library://track/42", "track", "next", false, &mbox);
+    latter_core::emit_media_queue_play("q_item_7", "media_player.office", &mbox);
+    latter_core::emit_media_seek(20, &mbox);
 
     uint32_t pump_ms = 1100U;
     while (latter_rpc::has_pending_frames()) {
@@ -234,42 +235,42 @@ void test_music_app_v3_d059() {
     };
     check_single_chunk(
         [](MockRpcOutbox *b) {
-          (void)latter_actions::emit_music_browse(
+          (void)latter_core::emit_music_browse(
               "speakers", 1, "", "media_player.pocket_assistant_music", "media_player.garage_hifi",
               "name", "year", "newest", 4, 2000U, b);
         },
         "\"last_speaker\":\"media_player.garage_hifi\"", "\"album_sort\"");
     check_single_chunk(
         [](MockRpcOutbox *b) {
-          (void)latter_actions::emit_music_browse(
+          (void)latter_core::emit_music_browse(
               "active_queue", 1, "", "media_player.pocket_assistant_music", "media_player.garage_hifi",
               "name", "year", "newest", 4, 2000U, b);
         },
         "\"mode\":\"active_queue\"", "\"last_speaker\"");
     check_single_chunk(
         [](MockRpcOutbox *b) {
-          (void)latter_actions::emit_music_browse(
+          (void)latter_core::emit_music_browse(
               "album", 1, "", "media_player.pocket_assistant_music", "media_player.garage_hifi",
               "year_desc", "year", "newest", 5, 2000U, b);
         },
         "\"album_sort\":\"year_desc\"", "\"podcast_sort\"");
     check_single_chunk(
         [](MockRpcOutbox *b) {
-          (void)latter_actions::emit_music_browse(
+          (void)latter_core::emit_music_browse(
               "artist_albums", 1, "Fugazi", "media_player.pocket_assistant_music", "",
               "name", "name", "newest", 5, 2000U, b);
         },
         "\"artist_album_sort\":\"name\"", "\"album_sort\"");
     check_single_chunk(
         [](MockRpcOutbox *b) {
-          (void)latter_actions::emit_music_browse(
+          (void)latter_core::emit_music_browse(
               "podcast_episodes", 1, "library://podcast/9", "media_player.pocket_assistant_music", "",
               "name", "year", "oldest", 5, 2000U, b);
         },
         "\"podcast_sort\":\"oldest\"", "\"artist_album_sort\"");
     check_single_chunk(
         [](MockRpcOutbox *b) {
-          (void)latter_actions::emit_music_lyrics_fetch(
+          (void)latter_core::emit_music_lyrics_fetch(
               "Waiting Room|Fugazi", "media_player.pocket_assistant_music", 2000U, b);
         },
         "\"search\":\"Waiting Room|Fugazi\"", "\"album_sort\"");
@@ -308,7 +309,7 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(te_src.find("MUSIC_ROW_PLAY_BASE") != std::string::npos);
 
     LATTER_CHECK(lay_src.find("std::abs(new_start - target_start) > 9") != std::string::npos);
-    LATTER_CHECK(sys_yaml.find("rs.music.view == latter_ui::MusicView::SETTINGS") != std::string::npos);
+    LATTER_CHECK(sys_yaml.find("rs.music.view == latter_core::MusicView::SETTINGS") != std::string::npos);
     LATTER_CHECK(wid_chr_src.find("draw_icon_play_pause(") != std::string::npos);
     LATTER_CHECK(wid_chr_src.find("draw_icon_hamburger(") != std::string::npos);
 
@@ -530,6 +531,7 @@ size_t count_non_empty_records(std::string_view sv, char sep) noexcept {
 
 std::string build_verify_wire_dump() {
   using namespace latter_ui;
+  using namespace latter_core;
   const auto &prefs = persisted_prefs();
   const auto &ms = media_state();
   const auto &wx = weather_state();
@@ -574,8 +576,8 @@ std::string build_verify_wire_dump() {
 
   std::string out;
   out.reserve(4096U);
-  out += "{\"ok\":true,\"sdk_rev\":";
-  out += std::to_string(LATTER_SDK_REV);
+  out += "{\"ok\":true,\"core_rev\":";
+  out += std::to_string(LATTER_CORE_REV);
 
   out += ",\"prefs\":{\"prefs_seq\":";
   out += std::to_string(prefs.prefs_seq);
@@ -768,6 +770,7 @@ std::string build_verify_wire_dump() {
 
 int run_verify_wire_cli() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   reset_all_v3_rev_guards();
   reset_calendar_window_store();
@@ -906,7 +909,7 @@ int run_verify_wire_cli() {
         if (key_name == pref_key_name(pk)) {
           PrefMask chg{};
           uint32_t eff = 0U;
-          applied = set_pref_by_key_str(persisted_prefs(), pk, val_str, false, chg, eff);
+          applied = set_pref_by_key_str(persisted_prefs(), pk, val_str, chg, eff);
           persisted_prefs().dirty_mask |= chg;
           break;
         }

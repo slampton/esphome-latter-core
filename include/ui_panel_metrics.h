@@ -248,6 +248,8 @@ struct UiPanelLayout {
 
 using PanelLayoutMetrics = UiPanelLayout;
 
+static constexpr int kMaxContentColW = 480;
+
 inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
                                                     bool is_wearable, int ppi) {
   UiPanelLayout L{};
@@ -256,6 +258,7 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.cx = w / 2;
   L.cy = h / 2;
   L.is_round = is_round;
+  const int min_dim = (w < h) ? w : h;
   L.hdr_y = is_round ? scale_min_for(48, h) : (is_wearable ? 36 : ((h > 520) ? 48 : 28));
   L.sub_hdr_y = is_round ? scale_min_for(76, h) : (is_wearable ? 64 : ((h > 520) ? 88 : 56));
   L.back_y = is_round ? scale_min_for(426, h) : (h - scale_y_for(28, h));
@@ -264,12 +267,12 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.app_dock_y = is_round ? scale_min_for(369, h) : (h - scale_y_for(66, h));
   L.dock_pips_y = is_round ? scale_min_for(404, h) : (h - scale_y_for(27, h));
   L.app_dock_pips_y = is_round ? scale_min_for(408, h) : (h - scale_y_for(27, h));
-  L.dock_r = (w < 360) ? 24 : ((w > 520) ? 40 : 27);
+  L.dock_r = (min_dim < 360) ? 24 : ((min_dim > 520) ? std::min(44, scale_s_for(26, min_dim)) : 27);
   L.celestial_x = is_round ? scale_min_for(100, w) : ((w < 380) ? 44 : (is_wearable ? 68 : ((w > 520) ? 118 : 78)));
   L.celestial_y = is_round ? scale_min_for(92, h) : ((w < 380) ? 72 : ((h > 520) ? 118 : 78));
   L.battery_cx = is_round ? L.cx : (is_wearable ? (w - 68) : ((w < 380) ? (w - 36) : ((w > 520) ? (w - 86) : (w - 58))));
   L.battery_y = is_round ? scale_min_for(435, h) : (is_wearable ? 43 : ((w < 380) ? 24 : ((h > 520) ? 42 : 28)));
-  L.list_card_w = (w < 380) ? (w - 88) : ((w > 520) ? ((w * 276) / 466) : 276);
+  L.list_card_w = (w < 380) ? (w - 88) : ((w > 520) ? std::min(kMaxContentColW, (w * 276) / 466) : 276);
   L.list_card_left = L.cx - (L.list_card_w / 2);
   L.slot5_stride = (h > 520) ? ((h * 63) / 466) : 63;
   L.slot5_h = (h > 520) ? ((h * 44) / 466) : 44;
@@ -339,8 +342,6 @@ inline constexpr void compute_vertical_page_pips_x(
   out_min_hit_h = min_hit;
 }
 
-static constexpr int kMaxContentColW = 480;
-
 inline constexpr int radius_card_for(int min_dim) noexcept {
   return scale_s_for(12, min_dim);
 }
@@ -352,23 +353,24 @@ inline constexpr int radius_key_for(int min_dim) noexcept {
 inline constexpr void compute_mode_bar_slot_xs(int vis_count, int w, bool is_round,
                                                int out_xs[4]) noexcept {
   const int cx = w / 2;
+  const int eff_w = (w > 720) ? 720 : w;
   if (vis_count <= 0) return;
   if (vis_count == 1) {
     out_xs[0] = cx;
   } else if (vis_count == 2) {
-    out_xs[0] = cx - scale_x_for(44, w);
-    out_xs[1] = cx + scale_x_for(44, w);
+    out_xs[0] = cx - scale_x_for(44, eff_w);
+    out_xs[1] = cx + scale_x_for(44, eff_w);
   } else if (vis_count == 3) {
-    out_xs[0] = cx - scale_x_for(84, w);
+    out_xs[0] = cx - scale_x_for(84, eff_w);
     out_xs[1] = cx;
-    out_xs[2] = cx + scale_x_for(84, w);
+    out_xs[2] = cx + scale_x_for(84, eff_w);
   } else if (is_round) {
     out_xs[0] = scale_w_for(112, w);
     out_xs[1] = scale_w_for(193, w);
     out_xs[2] = scale_w_for(274, w);
     out_xs[3] = scale_w_for(355, w);
   } else {
-    const int stride = (w < 380) ? 74 : scale_x_for(98, w);
+    const int stride = (eff_w < 380) ? 74 : scale_x_for(98, eff_w);
     out_xs[0] = cx - (stride * 3) / 2;
     out_xs[1] = cx - (stride / 2);
     out_xs[2] = cx + (stride / 2);

@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace latter_ui {
+namespace latter_core {
 
 enum class DisplayPowerState : uint8_t {
   Active = 0,
@@ -192,4 +192,4 @@ inline bool battery_motion_allowed(bool usb_on, uint32_t now_ms, uint32_t last_t
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

@@ -20,6 +20,7 @@ size_t count_nonzero_pixels(const std::vector<uint16_t> &px) noexcept {
 
 void test_icon_provider_contract_and_state_resolver() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // Item 5 Foundation: Provider-agnostic dispatch seam in ui_mdi.h
   LATTER_CHECK(has_icon("mdi:lightbulb"));
@@ -75,6 +76,7 @@ void test_icon_provider_contract_and_state_resolver() {
 
 void test_all_builtin_route_icons_solid() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // Verify every canonical route in kShortcutRoutes plus SETTINGS_ROOT resolves to a valid solid icon.
   size_t route_count = 0;
@@ -122,6 +124,7 @@ void test_all_builtin_route_icons_solid() {
 
 void test_shortcut_record_parsing_and_ui_sig() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // Legacy 7-column route & entity records default cleanly to GLASS + DEFAULT
   {
@@ -265,6 +268,7 @@ void test_shortcut_record_parsing_and_ui_sig() {
 
 void test_outline_solid_helpers_and_5geom_shortcut_rendering() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   HostSurfaceFixture fix{};
 

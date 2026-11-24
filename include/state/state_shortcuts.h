@@ -7,7 +7,7 @@
 
 #include "state/state_common.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 // Protocol v3 shortcuts state (App Dock + Pinned App universal shortcut engine).
 enum class ShortcutKind : uint8_t {
@@ -189,4 +189,4 @@ inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

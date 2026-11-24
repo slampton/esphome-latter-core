@@ -148,6 +148,7 @@ struct UiFontView {
   int16_t height{0};
   int16_t baseline{0};
   uint8_t bpp{1};
+  bool is_external_font{false};
   MeasureFn measure_fn{nullptr};
   FindGlyphFn find_glyph_fn{nullptr};
 
@@ -161,6 +162,7 @@ struct UiFontView {
   UiFontView(FontT *f) noexcept {
     if (f == nullptr) return;
     handle = static_cast<const void *>(f);
+    is_external_font = true;
     int w = 0, xo = 0, bs = 0, h = 0;
     f->measure("Ag", &w, &xo, &bs, &h);
     height = static_cast<int16_t>(h > 0 ? h : 16);
@@ -339,6 +341,128 @@ inline void compute_text_bounds(int x, int y, const char *text, const UiFontView
   if (height != nullptr) *height = h;
 }
 
+inline uint32_t utf8_next_cp(const char *&p) noexcept {
+  const unsigned char b0 = static_cast<unsigned char>(*p++);
+  if (b0 < 0x80U) return b0;
+  if ((b0 & 0xE0U) == 0xC0U && p[0] != 0) {
+    const unsigned char b1 = static_cast<unsigned char>(*p++);
+    return ((static_cast<uint32_t>(b0 & 0x1FU) << 6) | static_cast<uint32_t>(b1 & 0x3FU));
+  }
+  if ((b0 & 0xF0U) == 0xE0U && p[0] != 0 && p[1] != 0) {
+    const unsigned char b1 = static_cast<unsigned char>(*p++);
+    const unsigned char b2 = static_cast<unsigned char>(*p++);
+    return ((static_cast<uint32_t>(b0 & 0x0FU) << 12) |
+            (static_cast<uint32_t>(b1 & 0x3FU) << 6) |
+            static_cast<uint32_t>(b2 & 0x3FU));
+  }
+  if ((b0 & 0xF8U) == 0xF0U && p[0] != 0 && p[1] != 0 && p[2] != 0) {
+    const unsigned char b1 = static_cast<unsigned char>(*p++);
+    const unsigned char b2 = static_cast<unsigned char>(*p++);
+    const unsigned char b3 = static_cast<unsigned char>(*p++);
+    return ((static_cast<uint32_t>(b0 & 0x07U) << 18) |
+            (static_cast<uint32_t>(b1 & 0x3FU) << 12) |
+            (static_cast<uint32_t>(b2 & 0x3FU) << 6) |
+            static_cast<uint32_t>(b3 & 0x3FU));
+  }
+  return b0;
+}
+
+template <typename NativeDispT>
+inline void render_fallback_glyphs(NativeDispT &disp, int x, int y, const UiFontView &font,
+                                   UiColor color, UiTextAlign align, const char *text,
+                                   UiColor background, int cy0, int cy1) {
+  if (text == nullptr || *text == '\0' || font.find_glyph_fn == nullptr) return;
+  const int disp_w = disp.get_width();
+  const int disp_h = disp.get_height();
+  const int eff_cy0 = std::max(0, cy0);
+  const int eff_cy1 = std::min(disp_h - 1, cy1);
+  if (disp_w <= 0 || eff_cy1 < eff_cy0) return;
+
+  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
+  compute_text_bounds(x, y, text, font, align, &x_start, &y_start, &text_w, &text_h);
+  if (text_h > 0 && (y_start + text_h <= eff_cy0 || y_start > eff_cy1)) return;
+
+  const int bpp = std::clamp(font.get_bpp(), 1, 4);
+  const int bpp_max = (1 << bpp) - 1;
+  UiColor lut[16]{};
+  const float diff_r = static_cast<float>(color.r) - static_cast<float>(background.r);
+  const float diff_g = static_cast<float>(color.g) - static_cast<float>(background.g);
+  const float diff_b = static_cast<float>(color.b) - static_cast<float>(background.b);
+  const float diff_w = static_cast<float>(color.w) - static_cast<float>(background.w);
+  for (int lv = 1; lv <= bpp_max; ++lv) {
+    if (lv == bpp_max) {
+      lut[lv] = color;
+    } else {
+      const float on = static_cast<float>(lv) / static_cast<float>(bpp_max);
+      lut[lv] = UiColor{
+          static_cast<uint8_t>(diff_r * on + static_cast<float>(background.r)),
+          static_cast<uint8_t>(diff_g * on + static_cast<float>(background.g)),
+          static_cast<uint8_t>(diff_b * on + static_cast<float>(background.b)),
+          static_cast<uint8_t>(diff_w * on + static_cast<float>(background.w)),
+      };
+    }
+  }
+
+  int x_at = x_start;
+  for (const char *p = text; *p != '\0';) {
+    const uint32_t cp = utf8_next_cp(p);
+    UiGlyphData glyph{};
+    if (!font.find_glyph(cp, glyph)) {
+      x_at += std::max(4, font.get_height() / 3);
+      continue;
+    }
+    if (glyph.data != nullptr && glyph.width > 0 && glyph.height > 0) {
+      const uint8_t *data = glyph.data;
+      const int gx0 = x_at + glyph.offset_x;
+      const int gy0 = y_start + glyph.offset_y;
+      uint8_t bitmask = 0;
+      uint8_t pixel_data = 0;
+      for (int gy = 0; gy < glyph.height; ++gy) {
+        const int py = gy0 + gy;
+        const bool row_vis = (py >= eff_cy0 && py <= eff_cy1);
+        int run_x = 0;
+        int run_len = 0;
+        auto flush_run = [&]() {
+          if (run_len <= 0) return;
+          if constexpr (requires(NativeDispT &d, UiColor c) { d.horizontal_line(0, 0, 1, c); }) {
+            disp.horizontal_line(run_x, py, run_len, color);
+          } else {
+            for (int k = 0; k < run_len; ++k) disp.draw_pixel_at(run_x + k, py, color);
+          }
+          run_len = 0;
+        };
+        for (int gx = 0; gx < glyph.width; ++gx) {
+          uint8_t pixel = 0;
+          for (int bit = 0; bit < bpp; ++bit) {
+            if (bitmask == 0) {
+              pixel_data = *data++;
+              bitmask = 0x80U;
+            }
+            pixel <<= 1;
+            if ((pixel_data & bitmask) != 0U) pixel |= 1U;
+            bitmask >>= 1;
+          }
+          if (!row_vis) continue;
+          const int px = gx0 + gx;
+          if (px < 0 || px >= disp_w) continue;
+          if (bpp == 1) {
+            if (pixel != 0) {
+              if (run_len == 0) run_x = px;
+              ++run_len;
+            } else {
+              flush_run();
+            }
+          } else if (pixel != 0) {
+            disp.draw_pixel_at(px, py, lut[pixel]);
+          }
+        }
+        if (bpp == 1) flush_run();
+      }
+    }
+    x_at += glyph.advance;
+  }
+}
+
 inline constexpr uint16_t bswap16_u16(uint16_t v) noexcept {
   return static_cast<uint16_t>((v >> 8) | (v << 8));
 }
@@ -445,6 +569,12 @@ struct Rgb565Surface {
     if constexpr (requires(NativeDispT &d, UiColor c) { d.draw_pixel_at(0, 0, c); }) {
       fallback_pixel_fn = +[](void *raw, int x, int y, UiColor c) {
         static_cast<NativeDispT *>(raw)->draw_pixel_at(x, y, c);
+      };
+      fallback_print_fn = +[](void *raw, int x, int y, const UiFontView &font,
+                              UiColor color, UiTextAlign align, const char *text,
+                              UiColor background, int cy0, int cy1) {
+        render_fallback_glyphs(*static_cast<NativeDispT *>(raw), x, y, font, color,
+                               align, text, background, cy0, cy1);
       };
     }
     if constexpr (requires(NativeDispT &d, UiColor c) { d.horizontal_line(0, 0, 1, c); }) {

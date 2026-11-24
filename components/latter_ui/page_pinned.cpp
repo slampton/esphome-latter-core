@@ -6,6 +6,7 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 

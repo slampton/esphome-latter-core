@@ -10,32 +10,33 @@ esphome:
     - priority: 800
       then:
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_core::runtime_state();
             rs.on_v3_domain_pushed = +[](std::string_view sv_dom) {
               const uint32_t now_ms = millis();
-              latter_ui::V3ReduceContext ctx{};
+              const auto &au = latter_core::runtime_state().audio;
+              latter_core::V3ReduceContext ctx{};
               ctx.now_ms = now_ms;
               ctx.friendly_name = "${friendly_name}";
-              ctx.local_mp_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-              ctx.local_mp_paused = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PAUSED);
-              ctx.local_album_art_w = id(album_art).get_width();
+              ctx.local_mp_playing = au.local_mp_playing();
+              ctx.local_mp_paused = au.local_mp_paused();
+              ctx.local_album_art_w = au.local_album_art_w();
               ctx.remote_art_fetch_running = id(fetch_remote_art_debounced).is_running();
               ctx.last_touch_ms = latter_ui::touch_gesture().last_touch_ms;
               ctx.pin_pad_open = latter_ui::ui::pin_pad_state().open;
 
-              const auto eff = latter_ui::v3_domain_reducer().reduce(sv_dom, ctx);
+              const auto eff = latter_core::v3_domain_reducer().reduce(sv_dom, ctx);
               (void)eff.area_changed;
               if (eff.wake_from_screensaver) {
-                latter_ui::note_wake_reason(latter_ui::WakeReason::MEDIA);
+                latter_core::note_wake_reason(latter_core::WakeReason::MEDIA);
                 id(wake_to_active_state).execute();
               }
               if (eff.mark_dirty_full) {
                 latter_ui::mark_dirty_full();
               }
               if (eff.fetch_area_browse) {
-                const auto &rs = latter_ui::runtime_state();
+                const auto &rs = latter_core::runtime_state();
                 const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES);
-                latter_actions::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
+                latter_core::emit_area_browse_entities(rs.area.active_area_id, rs.area.domain_filter, page, LATTER_CARD_SLOT_COUNT);
               }
               if (eff.fetch_on_demand_camera) {
                 id(fetch_on_demand_camera).execute();
@@ -44,13 +45,13 @@ esphome:
                 id(apply_theme_preset).execute();
               }
               if (eff.alert_triggered) {
-                id(preempt_va_for_alert).execute();
-                latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+                au.preempt_va_for_alert_now();
+                latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
                 id(wake_to_active_state).execute();
                 if (eff.alert_sfx_id > 0) {
-                  id(play_game_sfx).execute(eff.alert_sfx_id);
+                  au.play_sfx(eff.alert_sfx_id);
                 }
-                if (latter_ui::runtime_state().cameras.doorbell_live_popup_active) {
+                if (latter_core::runtime_state().cameras.doorbell_live_popup_active) {
                   id(sync_camera_stream).execute();
                 } else if (eff.fetch_alert_camera) {
                   id(fetch_camera_snapshot).execute();
@@ -70,13 +71,13 @@ esphome:
               if (eff.stop_screensaver_photo_fetch) {
                 id(fetch_screensaver_photo_now).stop();
                 id(fetch_screensaver_photo_debounced).stop();
-                latter_ui::runtime_state().music.screensaver_photo_failed = false;
+                latter_core::runtime_state().music.screensaver_photo_failed = false;
               }
               if (eff.release_screensaver_photo_art) {
                 latter_ui::release_art(id(screensaver_photo_art));
               }
               if (eff.fetch_screensaver_photo) {
-                latter_ui::runtime_state().music.screensaver_photo_failed = false;
+                latter_core::runtime_state().music.screensaver_photo_failed = false;
                 id(fetch_screensaver_photo_debounced).execute();
               }
               if (eff.weather_sim_dirty) {
@@ -86,8 +87,7 @@ esphome:
                 latter_ui::record_ambient_frame_ms(0);
               }
               if (eff.sync_local_volume) {
-                id(latter_media_player).volume = eff.local_volume_0_to_1;
-                id(physical_speaker).set_volume(latter_ui::media_dac_volume(eff.local_volume_0_to_1));
+                au.sync_local_volume(eff.local_volume_0_to_1, /*update_player=*/false, /*un_duck=*/false);
               }
               if (eff.stop_remote_art_fetch) {
                 id(fetch_remote_art_debounced).stop();
@@ -99,7 +99,7 @@ esphome:
                 id(fetch_remote_art_debounced).execute();
               }
               if (eff.fetch_music_lyrics) {
-                latter_actions::emit_music_lyrics_fetch("", "", now_ms);
+                latter_core::emit_music_lyrics_fetch("", "", now_ms);
               }
               if (eff.navigate_home_from_remote) {
                 id(sync_ui_touch_runtime).execute();
@@ -109,11 +109,11 @@ esphome:
                 latter_ui::touch_engine().navigate_to_start_screen(now_ms);
               }
               if (eff.sync_display_brightness) {
-                latter_ui::runtime_state().nav.ambient_bri_ramp_pending = eff.sync_display_brightness_smooth;
+                latter_core::runtime_state().nav.ambient_bri_ramp_pending = eff.sync_display_brightness_smooth;
                 id(sync_display_brightness).execute();
               }
               if (eff.ensure_anim_poller) {
-                latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
               }
               if (eff.throttled_disp_update) {
                 id(throttled_disp_update).execute();
@@ -135,26 +135,26 @@ esphome:
               } else if (sv_cmd == "activate_screensaver") {
                 id(trigger_screensaver_now).execute();
               } else if (sv_cmd == "deactivate_screensaver") {
-                auto &r = latter_ui::runtime_state();
+                auto &r = latter_core::runtime_state();
                 r.nav.last_pub_display_power_state = -1;
                 if (r.nav.display_power_state != 0) {
-                  latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+                  latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
                   id(wake_to_active_state).execute();
                 } else {
                   id(publish_display_state).execute();
                 }
               } else if (sv_cmd == "wake_screen") {
-                auto &r = latter_ui::runtime_state();
+                auto &r = latter_core::runtime_state();
                 r.nav.last_pub_display_power_state = -1;
                 if (r.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-                  latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+                  latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
                   id(wake_to_active_state).execute();
                 } else {
                   id(sync_display_brightness).execute();
                   id(publish_display_state).execute();
                 }
               } else if (sv_cmd == "screen_off") {
-                latter_ui::runtime_state().nav.last_pub_display_power_state = -1;
+                latter_core::runtime_state().nav.last_pub_display_power_state = -1;
                 id(turn_screen_off).execute();
               } else if (sv_cmd.size() > 15U && sv_cmd.substr(0, 15) == "set_screen_bri:") {
                 int parsed_pct = 0;
@@ -170,20 +170,20 @@ esphome:
                 }
                 if (ok_pct && !pct_sv.empty()) {
                   const int pct = std::clamp(parsed_pct, 1, 100);
-                  auto &r = latter_ui::runtime_state();
-                  if (latter_ui::persisted_prefs().auto_brightness_enum() ==
-                      latter_ui::AutoBrightnessMode::Disabled) {
+                  auto &r = latter_core::runtime_state();
+                  if (latter_core::persisted_prefs().auto_brightness_enum() ==
+                      latter_core::AutoBrightnessMode::Disabled) {
                     r.nav.ambient_bri_override_pct = -1;
                     uint32_t bri_eff = 0U;
-                    (void)latter_actions::record_local_pref_edit(
-                        latter_ui::PrefKey::MANUAL_BRIGHTNESS, std::to_string(pct), now_ms, bri_eff);
+                    (void)latter_core::record_local_pref_edit(
+                        latter_core::PrefKey::MANUAL_BRIGHTNESS, std::to_string(pct), now_ms, bri_eff);
                   } else {
                     r.nav.ambient_bri_override_pct = static_cast<int8_t>(pct);
                   }
                   r.nav.last_pub_display_power_state = -1;
                   r.nav.last_pub_display_bri_pct = -1;
                   if (r.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-                    latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+                    latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
                     id(wake_to_active_state).execute();
                   } else {
                     id(sync_display_brightness).execute();
@@ -191,9 +191,9 @@ esphome:
                   id(publish_display_state).execute();
                 }
               } else if (sv_cmd == "set_profiler_on") {
-                latter_ui::profiler_start(now_ms);
+                latter_core::profiler_start(now_ms);
                 id(ble_ctrl).set_profile_logging(true);
-                auto &fr = latter_ui::flight_recorder();
+                auto &fr = latter_core::flight_recorder();
                 fr.window_frames = 0;
                 fr.window_render_us = 0;
                 fr.max_render_us = 0;
@@ -201,56 +201,56 @@ esphome:
                 fr.last_summary_ms = now_ms;
                 LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '${name}' (screen=%dx%d, auto_off=24h)",
                                  latter_ui::SCREEN_W, latter_ui::SCREEN_H);
-                latter_ui::log_boot_summary();
-                (void)latter_ui::link_report_log_line(now_ms, latter_ui::last_reset_reason());
-                latter_ui::log_heap_summary();
-                const auto &r = latter_ui::runtime_state();
-                latter_ui::log_power_and_mem_profile(
+                latter_core::log_boot_summary();
+                (void)latter_core::link_report_log_line(now_ms, latter_core::last_reset_reason());
+                latter_core::log_heap_summary();
+                const auto &r = latter_core::runtime_state();
+                latter_core::log_power_and_mem_profile(
                     "PROFILER_ON", r.nav.display_power_state, r.hw_usb_connected, r.hw_batt_charging,
-                    r.hw_batt_level, r.hw_batt_voltage, id(speaker_enable).state,
-                    id(mww).is_running(), r.voice.active,
-                    id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+                    r.hw_batt_level, r.hw_batt_voltage, r.audio.speaker_enabled(),
+                    r.audio.mww_running(), r.voice.active,
+                    r.audio.local_mp_playing(),
                     id(ble_ctrl).is_active(), r.nav.active_game, r.nav.sleep_start_time);
                 id(publish_device_telemetry).execute();
               } else if (sv_cmd == "set_profiler_off") {
                 LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler off");
-                latter_ui::profiler_stop();
+                latter_core::profiler_stop();
                 id(ble_ctrl).set_profile_logging(false);
                 id(publish_device_telemetry).execute();
               } else if (sv_cmd == "request_telemetry") {
-                auto &r = latter_ui::runtime_state();
+                auto &r = latter_core::runtime_state();
                 r.nav.last_pub_display_power_state = -1;
                 r.nav.last_pub_display_bri_pct = -1;
                 id(publish_device_telemetry).execute();
                 id(publish_display_state).execute();
               } else if (sv_cmd == "trigger_va") {
-                id(start_voice_assistant).execute();
+                latter_core::runtime_state().audio.start_va_now();
               } else if (sv_cmd == "dismiss_ringing") {
-                if (latter_ui::runtime_state().alert.active) {
+                if (latter_core::runtime_state().alert.active) {
                   id(dismiss_notification).execute();
                 }
-                const auto eff = latter_actions::handle_device_cmd_dismiss_ringing(now_ms);
-                if (eff.stop_sound) id(stop_alarm_sound).execute();
+                const auto eff = latter_core::handle_device_cmd_dismiss_ringing(now_ms);
+                if (eff.stop_sound) latter_core::runtime_state().audio.stop_alarm();
                 if (eff.sync_brightness) id(sync_display_brightness).execute();
                 if (eff.apply_power) id(apply_power_policy).execute();
-                latter_ui::display_lifecycle().note_activity(now_ms);
-                if (latter_ui::runtime_state().nav.display_power_state != 2) {
+                latter_core::display_lifecycle().note_activity(now_ms);
+                if (latter_core::runtime_state().nav.display_power_state != 2) {
                   if (eff.mark_dirty_full) latter_ui::mark_dirty_full();
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (sv_cmd == "cancel_timer") {
-                const auto eff = latter_actions::handle_device_cmd_cancel_timer(now_ms);
-                if (eff.stop_sound) id(stop_alarm_sound).execute();
+                const auto eff = latter_core::handle_device_cmd_cancel_timer(now_ms);
+                if (eff.stop_sound) latter_core::runtime_state().audio.stop_alarm();
                 if (eff.sync_brightness) id(sync_display_brightness).execute();
                 if (eff.apply_power) id(apply_power_policy).execute();
-                if (latter_ui::runtime_state().nav.display_power_state != 2) {
+                if (latter_core::runtime_state().nav.display_power_state != 2) {
                   if (eff.mark_dirty_full) latter_ui::mark_dirty_full();
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
               } else if (sv_cmd == "reset_stopwatch") {
-                const auto eff = latter_actions::handle_device_cmd_reset_stopwatch(now_ms);
+                const auto eff = latter_core::handle_device_cmd_reset_stopwatch(now_ms);
                 if (eff.apply_power) id(apply_power_policy).execute();
-                if (latter_ui::runtime_state().nav.display_power_state != 2) {
+                if (latter_core::runtime_state().nav.display_power_state != 2) {
                   if (eff.mark_dirty_full) latter_ui::mark_dirty_full();
                   latter_ui::schedule_disp_update(&id(disp1));
                 }
@@ -266,33 +266,33 @@ script:
     mode: single
     then:
       - lambda: |-
-          const auto &rs = latter_ui::runtime_state();
+          const auto &rs = latter_core::runtime_state();
           auto &rt = latter_ui::touch_engine().runtime();
           rt.usb_connected = rs.hw_usb_connected;
           rt.panel_is_on = id(display_brightness).current_values.is_on();
-          rt.local_mp_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          rt.local_mp_volume = id(latter_media_player).volume;
+          rt.local_mp_playing = rs.audio.local_mp_playing();
+          rt.local_mp_volume = rs.audio.local_mp_volume_or(0.0f);
 
   - id: sync_ui_touch_runtime
     mode: single
     then:
       - lambda: |-
-          const auto &rs = latter_ui::runtime_state();
+          const auto &rs = latter_core::runtime_state();
           if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
-            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+            latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
           }
           auto &rt = latter_ui::touch_engine().runtime();
           rt.friendly_name = "${friendly_name}";
           rt.fw_version = "${version}";
-          rt.fw_latest_version = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
+          rt.fw_latest_version = latter_core::fw_update_latest_version(&id(latter_firmware_update));
           rt.usb_connected = rs.hw_usb_connected;
           rt.panel_is_on = id(display_brightness).current_values.is_on();
-          rt.local_mp_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          rt.local_mp_volume = id(latter_media_player).volume;
-          rt.album_art_w = id(album_art).get_width();
-          rt.track_title = id(track_title).state;
-          rt.track_artist = id(track_artist).state;
-          rt.track_album = id(track_album).state;
+          rt.local_mp_playing = rs.audio.local_mp_playing();
+          rt.local_mp_volume = rs.audio.local_mp_volume_or(0.0f);
+          rt.album_art_w = rs.audio.local_album_art_w();
+          rt.track_title = rs.music.last_sendspin_title;
+          rt.track_artist = rs.music.last_sendspin_artist;
+          rt.track_album = rs.music.last_sendspin_album;
           auto now_t = id(ha_time).now();
           if (!now_t.is_valid()) now_t = id(sntp_time).now();
           rt.time_valid = now_t.is_valid();
@@ -310,20 +310,21 @@ script:
 
             rt.exec_cmd = +[](latter_ui::UiHostCmd cmd, int arg0, int arg1) {
               using C = latter_ui::UiHostCmd;
+              const auto &au = latter_core::runtime_state().audio;
               switch (cmd) {
                 case C::SCHEDULE_DISP_UPDATE: latter_ui::schedule_disp_update(&id(disp1)); break;
                 case C::SCHEDULE_BAND_DISP_UPDATE: latter_ui::schedule_band_disp_update(&id(disp1), arg0, arg1); break;
                 case C::WAKE_TO_ACTIVE: id(wake_to_active_state).execute(); break;
                 case C::APPLY_POWER_POLICY: id(apply_power_policy).execute(); break;
-                case C::CANCEL_VOICE_ASSISTANT: id(cancel_voice_assistant).execute(); break;
-                case C::ABORT_VOICE_ASSISTANT: esphome::voice_assistant::abort_voice_assistant(id(va)); break;
-                case C::CYCLE_PRIMARY_WAKE_WORD: esphome::voice_assistant::cycle_primary_wake_word(id(va), id(mww)); break;
-                case C::SYNC_WAKE_WORD_STATE: id(sync_wake_word_state).execute(); break;
+                case C::CANCEL_VOICE_ASSISTANT: au.cancel_va_now(); break;
+                case C::ABORT_VOICE_ASSISTANT: au.abort_va_now(); break;
+                case C::CYCLE_PRIMARY_WAKE_WORD: au.cycle_primary_ww(); break;
+                case C::SYNC_WAKE_WORD_STATE: au.sync_wake_word(); break;
                 case C::DISMISS_NOTIFICATION: id(dismiss_notification).execute(); break;
-                case C::STOP_ALARM_SOUND: id(stop_alarm_sound).execute(); break;
+                case C::STOP_ALARM_SOUND: au.stop_alarm(); break;
                 case C::SYNC_DISPLAY_BRIGHTNESS: id(sync_display_brightness).execute(); break;
                 case C::FLASHLIGHT_FULL_BRIGHTNESS: {
-                  const auto &rs_fl = latter_ui::runtime_state();
+                  const auto &rs_fl = latter_core::runtime_state();
                   if (rs_fl.showcase.is_active(millis()) && rs_fl.showcase.brightness_override_pct > 0U) {
                     id(sync_display_brightness).execute();
                   } else {
@@ -331,49 +332,44 @@ script:
                   }
                   break;
                 }
-                case C::PAUSE_LOCAL_MEDIA_PLAYER: id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform(); break;
+                case C::PAUSE_LOCAL_MEDIA_PLAYER: au.pause_local_mp_now(); break;
                 case C::TOGGLE_HA_MUSIC: {
-                  const bool loc_play = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-                  const auto hw_act = latter_ui::media_toggle_playback(loc_play, millis());
-                  if (hw_act == latter_ui::LocalMediaHwAction::PauseLocalPlayer) {
-                    id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
-                  } else if (hw_act == latter_ui::LocalMediaHwAction::StopLocalMww && id(mww).is_running()) {
-                    id(mww).stop();
+                  const auto hw_act = latter_core::media_toggle_playback(au.local_mp_playing(), millis());
+                  if (hw_act == latter_core::LocalMediaHwAction::PauseLocalPlayer) {
+                    au.pause_local_mp_now();
+                  } else if (hw_act == latter_core::LocalMediaHwAction::StopLocalMww && au.mww_running()) {
+                    au.stop_mww_now();
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 }
                 case C::STOP_HA_MUSIC:
-                  if (latter_ui::media_stop_playback(millis())) {
-                    id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_PAUSE).perform();
+                  if (latter_core::media_stop_playback(millis())) {
+                    au.pause_local_mp_now();
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 case C::CLEAR_HA_MUSIC_QUEUE: {
-                  const bool stop_loc = latter_ui::media_clear_queue(millis());
-                  id(track_title).publish_state("");
-                  id(track_artist).publish_state("");
-                  id(track_album).publish_state("");
+                  const bool stop_loc = latter_core::media_clear_queue(millis());
+                  au.clear_local_track_meta_now();
                   if (stop_loc) {
-                    id(latter_media_player).make_call().set_command(media_player::MEDIA_PLAYER_COMMAND_STOP).perform();
+                    au.stop_local_mp_now();
                   }
                   latter_ui::release_art(id(remote_album_art));
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 }
                 case C::MUSIC_STEP_VOLUME: {
-                  const float new_vol = latter_ui::media_step_volume(arg0, id(latter_media_player).volume, millis(), true);
+                  const float new_vol = latter_core::media_step_volume(arg0, au.local_mp_volume_or(0.0f), millis(), true);
                   if (new_vol > 0.0f) {
-                    id(latter_media_player).make_call().set_volume(new_vol).perform();
-                    id(physical_speaker).set_volume(latter_ui::media_dac_volume(new_vol));
-                    id(media_mixing_input).apply_ducking(0.0f, 0);
+                    au.sync_local_volume(new_vol, /*update_player=*/true, /*un_duck=*/true);
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 }
                 case C::PLAY_MUSIC_SLOT:
-                  if (latter_ui::media_play_slot(arg0, millis()) && id(mww).is_running()) {
-                    id(mww).stop();
+                  if (latter_core::media_play_slot(arg0, millis()) && au.mww_running()) {
+                    au.stop_mww_now();
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
@@ -381,31 +377,28 @@ script:
                 case C::SPEAKER_TRANSFER_TO_TARGET:
                 case C::SPEAKER_CONTROL_TARGET: {
                   const bool xfer = (cmd == C::SPEAKER_TRANSFER_TO_TARGET);
-                  const bool loc_play = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-                  const bool loc_pause = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PAUSED);
-                  if (latter_ui::speaker_activate_selected(xfer, loc_play, loc_pause, millis())) {
-                    id(hal_set_dac_mute).execute(true);
-                    id(speaker_enable).turn_off();
+                  if (latter_core::speaker_activate_selected(xfer, au.local_mp_playing(), au.local_mp_paused(), millis())) {
+                    au.mute_speaker_now();
                   }
                   id(fetch_remote_art_debounced).execute();
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 }
                 case C::SPEAKER_JOIN_TARGET:
-                  if (latter_ui::speaker_join_target(millis()) && id(mww).is_running()) {
-                    id(mww).stop();
+                  if (latter_core::speaker_join_target(millis()) && au.mww_running()) {
+                    au.stop_mww_now();
                   }
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 case C::SPEAKER_UNJOIN_TARGET:
-                  latter_ui::speaker_unjoin_target("${friendly_name}", millis());
+                  latter_core::speaker_unjoin_target("${friendly_name}", millis());
                   latter_ui::release_art(id(remote_album_art));
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 case C::TRIGGER_SCREENSAVER_NOW: id(trigger_screensaver_now).execute(); break;
                 case C::START_HIBERNATION_COUNTDOWN: id(start_hibernation_countdown).execute(); break;
                 case C::START_INSTANT_HIBERNATION:
-                  latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::KEY;
+                  latter_core::battery_model().hib_reason = latter_core::HibernateReason::KEY;
                   id(start_instant_hibernation).execute();
                   break;
                 case C::TURN_SCREEN_OFF: id(turn_screen_off).execute(); break;
@@ -418,28 +411,26 @@ script:
                 case C::RELEASE_CAMERA_ART: latter_ui::release_art(id(camera_snapshot_art)); break;
                 case C::SYNC_CAMERA_STREAM: id(sync_camera_stream).execute(); break;
                 case C::STOP_CAMERA_STREAM: id(stop_camera_stream).execute(); break;
-                case C::STOP_DOORBELL_AUDIO: id(stop_doorbell_audio).execute(); break;
-                case C::START_DOORBELL_PTT: id(start_doorbell_ptt).execute(); break;
-                case C::START_CALENDAR_DICTATION: id(start_calendar_dictation).execute(); break;
-                case C::START_BROADCAST_DICTATION: id(start_broadcast_dictation).execute(); break;
+                case C::STOP_DOORBELL_AUDIO: au.stop_doorbell_audio_now(); break;
+                case C::START_DOORBELL_PTT: au.start_doorbell_ptt_now(); break;
+                case C::START_CALENDAR_DICTATION: au.start_calendar_dictation_now(); break;
+                case C::START_BROADCAST_DICTATION: au.start_broadcast_dictation_now(); break;
                 case C::APPLY_DEVICE_PREFS_EFFECTS: id(apply_device_prefs_effects).execute(); break;
                 case C::NOTIFY_WEATHER_SIM_CHANGED:
-                  latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                  latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 case C::SET_LOCAL_SPEAKER_VOL_PCT: {
                   const float target_v = static_cast<float>(std::clamp(arg0, 10, 100)) * 0.01f;
-                  id(latter_media_player).volume = target_v;
-                  id(latter_media_player).make_call().set_volume(target_v).perform();
-                  id(physical_speaker).set_volume(latter_ui::media_dac_volume(target_v));
-                  if (latter_ui::runtime_state().nav.display_power_state == 0) {
+                  au.sync_local_volume(target_v, /*update_player=*/true, /*un_duck=*/false);
+                  if (latter_core::runtime_state().nav.display_power_state == 0) {
                     latter_ui::schedule_disp_update(&id(disp1));
                   }
                   break;
                 }
                 case C::ENSURE_UI_ANIM_POLLER:
-                  if (latter_ui::runtime_state().nav.display_power_state == 0) {
-                    latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                  if (latter_core::runtime_state().nav.display_power_state == 0) {
+                    latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
                   }
                   break;
               }
@@ -466,19 +457,19 @@ script:
           if (eff.mark_dirty_full) {
             latter_ui::mark_dirty_full();
           }
-          const auto &rs_eff = latter_ui::runtime_state();
+          const auto &rs_eff = latter_core::runtime_state();
           if (eff.turn_screen_off) {
             id(turn_screen_off).execute();
           } else if (eff.enter_screensaver) {
             id(trigger_screensaver_now).execute();
           } else if (eff.wake_display) {
-            latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+            latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
             id(wake_to_active_state).execute();
           } else if (eff.refresh_screensaver_in_place && rs_eff.nav.display_power_state == 1) {
             if (eff.apply_power) id(apply_power_policy).execute();
-            const auto &ac_ss = latter_ui::area_ctx_state();
+            const auto &ac_ss = latter_core::area_ctx_state();
             const std::string_view ss_st =
-                latter_ui::effective_screensaver_style_cstr(latter_ui::persisted_prefs(), rs_eff, now_eff_ms);
+                latter_core::effective_screensaver_style_cstr(latter_core::persisted_prefs(), rs_eff, now_eff_ms);
             const bool ss_has_art =
                 (id(screensaver_photo_art).get_width() > 0 && !ac_ss.screensaver_photo_url.empty()) ||
                 latter_ui::can_reuse_wallpaper_for_photo_frame(
@@ -499,7 +490,7 @@ script:
             if (eff.sync_brightness) id(sync_display_brightness).execute();
             if (eff.fetch_screensaver_photo) id(fetch_screensaver_photo_now).execute();
             if (eff.ensure_anim_poller && rs_eff.nav.display_power_state == 0) {
-              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
             }
             if (eff.schedule_disp && rs_eff.nav.display_power_state != 2) {
               latter_ui::schedule_disp_update(&id(disp1));
@@ -510,7 +501,7 @@ script:
     mode: single
     then:
       - lambda: |-
-          if (!latter_ui::runtime_state().showcase.active) return;
+          if (!latter_core::runtime_state().showcase.active) return;
           id(sync_ui_touch_runtime).execute();
           const uint32_t now_eff_ms = millis();
           const auto eff = latter_ui::touch_engine().tick_showcase(now_eff_ms);
@@ -524,19 +515,19 @@ script:
           if (eff.mark_dirty_full) {
             latter_ui::mark_dirty_full();
           }
-          const auto &rs_eff = latter_ui::runtime_state();
+          const auto &rs_eff = latter_core::runtime_state();
           if (eff.turn_screen_off) {
             id(turn_screen_off).execute();
           } else if (eff.enter_screensaver) {
             id(trigger_screensaver_now).execute();
           } else if (eff.wake_display) {
-            latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+            latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
             id(wake_to_active_state).execute();
           } else if (eff.refresh_screensaver_in_place && rs_eff.nav.display_power_state == 1) {
             if (eff.apply_power) id(apply_power_policy).execute();
-            const auto &ac_ss = latter_ui::area_ctx_state();
+            const auto &ac_ss = latter_core::area_ctx_state();
             const std::string_view ss_st =
-                latter_ui::effective_screensaver_style_cstr(latter_ui::persisted_prefs(), rs_eff, now_eff_ms);
+                latter_core::effective_screensaver_style_cstr(latter_core::persisted_prefs(), rs_eff, now_eff_ms);
             const bool ss_has_art =
                 (id(screensaver_photo_art).get_width() > 0 && !ac_ss.screensaver_photo_url.empty()) ||
                 latter_ui::can_reuse_wallpaper_for_photo_frame(
@@ -557,7 +548,7 @@ script:
             if (eff.sync_brightness) id(sync_display_brightness).execute();
             if (eff.fetch_screensaver_photo) id(fetch_screensaver_photo_now).execute();
             if (eff.ensure_anim_poller && rs_eff.nav.display_power_state == 0) {
-              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
             }
             if (eff.schedule_disp && rs_eff.nav.display_power_state != 2) {
               latter_ui::schedule_disp_update(&id(disp1));
@@ -568,31 +559,31 @@ script:
     mode: restart
     then:
       - lambda: |-
-          const uint32_t eff = latter_ui::device_prefs_state().last_effects;
-          latter_ui::device_prefs_state().last_effects = 0;
-          const auto &rs = latter_ui::runtime_state();
-          const auto &p = latter_ui::persisted_prefs();
-          if (eff & latter_ui::kPrefEffectWakeWordSync) {
-            id(sync_wake_word_state).execute();
-            if (std::string_view(latter_ui::pref_wake_word_mode_cstr(p)) == "Disabled" &&
-                id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING &&
+          const uint32_t eff = latter_core::device_prefs_state().last_effects;
+          latter_core::device_prefs_state().last_effects = 0;
+          const auto &rs = latter_core::runtime_state();
+          const auto &p = latter_core::persisted_prefs();
+          if (eff & latter_core::kPrefEffectWakeWordSync) {
+            rs.audio.sync_wake_word();
+            if (std::string_view(latter_core::pref_wake_word_mode_cstr(p)) == "Disabled" &&
+                !rs.audio.local_mp_playing() &&
                 !rs.voice.active) {
-              id(media_idle_finish).execute();
+              rs.audio.media_idle_finish_now();
             }
           }
-          if (eff & latter_ui::kPrefEffectWakeWordSens) {
-            id(apply_wake_word_sensitivities).execute();
+          if (eff & latter_core::kPrefEffectWakeWordSens) {
+            rs.audio.apply_ww_sensitivities();
           }
-          if (eff & latter_ui::kPrefEffectThemePreset) {
+          if (eff & latter_core::kPrefEffectThemePreset) {
             id(apply_theme_preset).execute();
           }
-          if (eff & latter_ui::kPrefEffectBrightness) {
-            latter_ui::runtime_state().nav.ambient_bri_override_pct = -1;
+          if (eff & latter_core::kPrefEffectBrightness) {
+            latter_core::runtime_state().nav.ambient_bri_override_pct = -1;
             id(sync_display_brightness).execute();
           }
-          if (eff & latter_ui::kPrefEffectScreensaverChange) {
+          if (eff & latter_core::kPrefEffectScreensaverChange) {
             if (rs.nav.display_power_state == 1 && !p.bedtime_active) {
-              if (!latter_ui::screensaver_allowed_for_power(
+              if (!latter_core::screensaver_allowed_for_power(
                       p.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected)) {
                 #if LATTER_IS_STATIONARY
                 id(wake_to_active_state).execute();
@@ -602,9 +593,9 @@ script:
               } else {
                 id(apply_power_policy).execute();
                 id(sync_display_brightness).execute();
-                if (std::string_view(latter_ui::effective_screensaver_style_cstr(p, rs, millis())) == "Photo Frame" &&
-                    !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
-                  latter_ui::runtime_state().music.screensaver_photo_failed = false;
+                if (std::string_view(latter_core::effective_screensaver_style_cstr(p, rs, millis())) == "Photo Frame" &&
+                    !latter_core::area_ctx_state().screensaver_photo_url.empty()) {
+                  latter_core::runtime_state().music.screensaver_photo_failed = false;
                   id(fetch_screensaver_photo_now).execute();
                 }
                 latter_ui::mark_dirty_full();
@@ -612,11 +603,11 @@ script:
               }
             }
           }
-          if (eff & latter_ui::kPrefEffectBedtime) {
+          if (eff & latter_core::kPrefEffectBedtime) {
             const uint32_t now_bt_ms = millis();
             if (p.bedtime_active) {
               if (rs.nav.display_power_state == 1) {
-                if (std::string_view(latter_ui::pref_bedtime_display_cstr(p)) == "Screen Off") {
+                if (std::string_view(latter_core::pref_bedtime_display_cstr(p)) == "Screen Off") {
                   id(turn_screen_off).execute();
                 } else {
                   id(sync_display_brightness).execute();
@@ -626,16 +617,16 @@ script:
               } else if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
                 id(sync_display_brightness).execute();
                 const uint32_t last_t = latter_ui::touch_gesture().last_touch_ms;
-                const bool untouched_15s = (last_t == 0U) || (now_bt_ms - last_t >= latter_ui::kBedtimeIdleTimeoutMs);
-                const bool busy_now = rs.voice.active || id(va).is_running() || rs.voice.tts_received ||
+                const bool untouched_15s = (last_t == 0U) || (now_bt_ms - last_t >= latter_core::kBedtimeIdleTimeoutMs);
+                const bool busy_now = rs.voice.active || rs.audio.va_running() || rs.voice.tts_received ||
                                       rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
                                       rs.alert.active || rs.stopwatch.running || (rs.nav.active_game != 0) ||
-                                      latter_ui::is_camera_view_active(rs) ||
+                                      latter_core::is_camera_view_active(rs) ||
                                       (rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7));
                 if (untouched_15s && !busy_now) {
                   id(enter_standby_state).execute();
                 } else {
-                  latter_ui::display_lifecycle().note_activity(now_bt_ms);
+                  latter_core::display_lifecycle().note_activity(now_bt_ms);
                 }
               }
             } else {
@@ -648,16 +639,16 @@ script:
               #else
               if (rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
                 if (rs.nav.display_power_state == 1 &&
-                    !latter_ui::screensaver_allowed_for_power(
+                    !latter_core::screensaver_allowed_for_power(
                         p.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected)) {
                   id(turn_screen_off).execute();
                 } else {
                   id(apply_power_policy).execute();
                   id(sync_display_brightness).execute();
                   if (rs.nav.display_power_state == 1 &&
-                      std::string_view(latter_ui::effective_screensaver_style_cstr(p, rs, millis())) == "Photo Frame" &&
-                      !latter_ui::area_ctx_state().screensaver_photo_url.empty()) {
-                    latter_ui::runtime_state().music.screensaver_photo_failed = false;
+                      std::string_view(latter_core::effective_screensaver_style_cstr(p, rs, millis())) == "Photo Frame" &&
+                      !latter_core::area_ctx_state().screensaver_photo_url.empty()) {
+                    latter_core::runtime_state().music.screensaver_photo_failed = false;
                     id(fetch_screensaver_photo_now).execute();
                   }
                 }
@@ -665,18 +656,18 @@ script:
               #endif
             }
           }
-          if (eff & latter_ui::kPrefEffectSleepTimer) {
+          if (eff & latter_core::kPrefEffectSleepTimer) {
             if (rs.nav.display_power_state == 0) {
-              latter_ui::display_lifecycle().note_activity(millis());
+              latter_core::display_lifecycle().note_activity(millis());
             }
           }
-          if (eff & latter_ui::kPrefEffectPowerPolicy) {
+          if (eff & latter_core::kPrefEffectPowerPolicy) {
             id(apply_power_policy).execute();
           }
-          if (eff & latter_ui::kPrefEffectNavPolicy) {
-            const bool cam_busy = latter_ui::cam_call_active() ||
-                                  latter_ui::cam_listen_active() ||
-                                  latter_ui::cam_intercom_ptt_active();
+          if (eff & latter_core::kPrefEffectNavPolicy) {
+            const bool cam_busy = latter_core::cam_call_active() ||
+                                  latter_core::cam_listen_active() ||
+                                  latter_core::cam_intercom_ptt_active();
             if (!p.home_screen_enabled && !cam_busy && !latter_ui::is_on_anchor_root(rs, p)) {
               id(sync_ui_touch_runtime).execute();
               latter_ui::touch_engine().navigate_to_start_screen(millis());
@@ -684,14 +675,14 @@ script:
               latter_ui::mark_dirty_full();
             }
           }
-          if ((eff & latter_ui::kPrefEffectRedraw) && rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
-            if (latter_ui::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active)) {
+          if ((eff & latter_core::kPrefEffectRedraw) && rs.nav.display_power_state != 2 && !rs.nav.is_hibernating) {
+            if (latter_core::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active)) {
               id(sync_camera_stream).execute();
             }
             latter_ui::weather_sim_dirty() = true;
             latter_ui::record_ambient_frame_ms(0);
             if (rs.nav.display_power_state == 0) {
-              latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+              latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
             }
             latter_ui::schedule_disp_update(&id(disp1));
           }
@@ -711,27 +702,26 @@ script:
     then:
       - script.stop: fetch_camera_snapshot
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           auto &ab = rs.alert;
           ab.active = false;
           ab.camera_url = "";
           ab.camera_entity = "";
           ab.loaded_camera_url = "";
           rs.cameras.doorbell_live_popup_active = false;
-          if (!latter_ui::is_camera_view_active(rs)) {
-            latter_ui::video_client().stop();
+          if (!latter_core::is_camera_view_active(rs)) {
+            latter_core::video_client().stop();
           }
           if (rs.voice.resume_music_after && !rs.voice.active && !rs.voice.tts_received &&
               !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active) {
-            id(resume_music_after_va).execute();
+            rs.audio.resume_music_after_va_now();
           }
       - lambda: |-
           latter_ui::release_art(id(camera_snapshot_art));
           const uint32_t now_ms = millis();
-          latter_ui::audio_arbitrator().arm_media_idle_debounce(now_ms);
-      - script.execute: sync_wake_word_state
-      - lambda: |-
-          latter_ui::display_lifecycle().note_activity(millis());
+          latter_core::audio_arbitrator().arm_media_idle_debounce(now_ms);
+          latter_core::runtime_state().audio.sync_wake_word();
+          latter_core::display_lifecycle().note_activity(now_ms);
           latter_ui::schedule_disp_update(&id(disp1));
 
   - id: throttled_disp_update
@@ -741,16 +731,16 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               return rs.nav.display_power_state == 0 &&
                      (rs.nav.gui_page == 1 || rs.nav.gui_page == 2) &&
                      !rs.voice.active &&
                      (millis() - latter_ui::last_disp_update_ms() >= 90U);
           then:
             - lambda: |-
-                const auto &rs = latter_ui::runtime_state();
+                const auto &rs = latter_core::runtime_state();
                 if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
-                  latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                  latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
                 }
                 latter_ui::schedule_anim_disp_update(&id(disp1));
 
@@ -759,9 +749,9 @@ script:
     then:
       - lambda: |-
           latter_ui::apply_effective_theme_preset(
-              latter_ui::runtime_state(), latter_ui::persisted_prefs(), millis(),
+              latter_core::runtime_state(), latter_core::persisted_prefs(), millis(),
               id(theme_primary), id(theme_secondary));
-          if (latter_ui::runtime_state().nav.display_power_state == 0) {
+          if (latter_core::runtime_state().nav.display_power_state == 0) {
             latter_ui::schedule_disp_update(&id(disp1));
           }
 
@@ -769,21 +759,21 @@ script:
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           const uint32_t now_bri_ms = millis();
           if (rs.nav.display_power_state == 0 && rs.nav.standby_entered_ms != 0) {
-            latter_ui::note_wake_from_standby(now_bri_ms);
+            latter_core::note_wake_from_standby(now_bri_ms);
           } else if (rs.nav.display_power_state == 1 && rs.nav.standby_entered_ms == 0) {
             rs.nav.standby_entered_ms = (now_bri_ms != 0) ? now_bri_ms : 1U;
           }
-          const auto &prefs = latter_ui::persisted_prefs();
-          const auto &ac_bri = latter_ui::area_ctx_state();
+          const auto &prefs = latter_core::persisted_prefs();
+          const auto &ac_bri = latter_core::area_ctx_state();
           auto now = id(ha_time).now();
           if (!now.is_valid()) now = id(sntp_time).now();
           const bool smooth_ramp = rs.nav.ambient_bri_ramp_pending;
           rs.nav.ambient_bri_ramp_pending = false;
-          const auto bri_tgt = latter_ui::resolve_active_brightness_target(
-              prefs, latter_ui::weather_state().sun_state,
+          const auto bri_tgt = latter_core::resolve_active_brightness_target(
+              prefs, latter_core::weather_state().sun_state,
               now.is_valid(), now.is_valid() ? now.hour : 12,
               ac_bri.area_ambient_pct, rs.nav.ambient_bri_override_pct);
           float b_target = static_cast<float>(bri_tgt.pct) * 0.01f;
@@ -797,7 +787,7 @@ script:
                 latter_ui::can_reuse_wallpaper_for_photo_frame(
                     ac_bri.screensaver_photo_url, rs.music.loaded_wallpaper_url,
                     id(home_wallpaper_art).get_width() > 0);
-            const float target_bri = latter_ui::resolve_effective_panel_brightness(
+            const float target_bri = latter_core::resolve_effective_panel_brightness(
                 rs, prefs, b_target, photo_frame_art_active, now_bri_ms);
             const auto &cv = id(display_brightness).current_values;
             if (!cv.is_on() || std::fabs(cv.get_brightness() - target_bri) >= 0.005f) {
@@ -813,15 +803,15 @@ script:
     mode: restart
     then:
       - lambda: |-
-          if (!latter_ui::link_state().ha_connected) return;
-          auto &rs = latter_ui::runtime_state();
-          const auto &prefs = latter_ui::persisted_prefs();
+          if (!latter_core::link_state().ha_connected) return;
+          auto &rs = latter_core::runtime_state();
+          const auto &prefs = latter_core::persisted_prefs();
           auto now = id(ha_time).now();
           if (!now.is_valid()) now = id(sntp_time).now();
-          const auto bri_tgt = latter_ui::resolve_active_brightness_target(
-              prefs, latter_ui::weather_state().sun_state,
+          const auto bri_tgt = latter_core::resolve_active_brightness_target(
+              prefs, latter_core::weather_state().sun_state,
               now.is_valid(), now.is_valid() ? now.hour : 12,
-              latter_ui::area_ctx_state().area_ambient_pct,
+              latter_core::area_ctx_state().area_ambient_pct,
               rs.nav.ambient_bri_override_pct);
           const int pwr = std::clamp<int>(rs.nav.display_power_state, 0, 2);
           const int bri_pct = std::clamp<int>(bri_tgt.pct, 1, 100);
@@ -831,7 +821,7 @@ script:
           }
           rs.nav.last_pub_display_power_state = pwr;
           rs.nav.last_pub_display_bri_pct = bri_pct;
-          latter_actions::emit_display_state(pwr, bri_pct, pwr == 1);
+          latter_core::emit_display_state(pwr, bri_pct, pwr == 1);
 
   - id: apply_default_start_page
     then:
@@ -843,12 +833,12 @@ script:
     mode: restart
     then:
       - lambda: |-
-          latter_ui::menu_scroll_start_ms() = millis();
-          latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+          latter_core::menu_scroll_start_ms() = millis();
+          latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
           latter_ui::schedule_anim_disp_update(&id(disp1));
       - delay: !lambda 'return latter_ui::kMotionMs;'
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.nav.menu_scroll_active = false;
           if (rs.nav.gui_page == 4 && rs.nav.system_menu_mode == 1) {
             rs.nav.sleep_menu_page = rs.nav.menu_scroll_target_page;
@@ -856,16 +846,16 @@ script:
             rs.nav.display_menu_page = rs.nav.menu_scroll_target_page;
           } else if (rs.nav.gui_page == 4 && rs.nav.system_menu_mode == 0) {
             rs.nav.system_dashboard_page = rs.nav.menu_scroll_target_page;
-          } else if (rs.nav.gui_page == 2 && rs.music.view == latter_ui::MusicView::SETTINGS) {
+          } else if (rs.nav.gui_page == 2 && rs.music.view == latter_core::MusicView::SETTINGS) {
             rs.music.settings_page = rs.nav.menu_scroll_target_page;
           } else if (rs.nav.gui_page == 3 && rs.nav.active_game == 0) {
-            const int g_cnt = latter_ui::active_games_launcher_count(latter_ui::device_prefs());
+            const int g_cnt = latter_core::active_games_launcher_count(latter_core::device_prefs());
             rs.nav.game_carousel_idx =
                 (g_cnt > 0) ? std::clamp(rs.nav.menu_scroll_target_page, 0, g_cnt - 1) : 0;
           } else if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 0) {
-            const int t_pgs = std::max(1, latter_ui::active_tools_launcher_page_count(latter_ui::device_prefs()));
+            const int t_pgs = std::max(1, latter_core::active_tools_launcher_page_count(latter_core::device_prefs()));
             rs.nav.tools_menu_page = std::clamp(rs.nav.menu_scroll_target_page, 0, t_pgs - 1);
-          } else if (rs.nav.gui_page == latter_ui::PageId::PINNED) {
+          } else if (rs.nav.gui_page == latter_core::PageId::PINNED) {
             rs.nav.pinned_menu_page = rs.nav.menu_scroll_target_page;
           }
           latter_ui::schedule_disp_update(&id(disp1));

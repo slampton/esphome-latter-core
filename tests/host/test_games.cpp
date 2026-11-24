@@ -6,6 +6,7 @@ namespace {
 
 void render_games_frame(HostSurfaceFixture &fix, uint32_t now_ms) {
   using namespace latter_ui;
+  using namespace latter_core;
   fix.ctx.now_ms = now_ms;
   fix.fill(0U);
   reset_clip_y_band();
@@ -17,6 +18,7 @@ void render_games_frame(HostSurfaceFixture &fix, uint32_t now_ms) {
 
 void assert_all_hits_valid_7mm(const HostSurfaceFixture &fix) {
   using namespace latter_ui;
+  using namespace latter_core;
   const auto &ht = frame_hits();
   LATTER_CHECK(ht.dropped_count == 0U);
   LATTER_CHECK(ht.count > 0U && ht.count <= FrameHitTable::kMaxRegions);
@@ -44,6 +46,7 @@ void assert_all_hits_valid_7mm(const HostSurfaceFixture &fix) {
 
 void setup_touch_runtime_for_games(uint32_t now_ms) {
   using namespace latter_ui;
+  using namespace latter_core;
   auto &eng = touch_engine();
   eng.runtime() = UiTouchRuntime{};
   eng.runtime().panel_is_on = true;
@@ -60,6 +63,7 @@ void setup_touch_runtime_for_games(uint32_t now_ms) {
 
 void test_game_input_queue() {
   using namespace latter_ui;
+  using namespace latter_core;
   auto &q = game_input();
   q.clear();
   LATTER_CHECK(q.count == 0U && q.held_cmd == GameInputCmd::NONE);
@@ -90,6 +94,7 @@ void test_game_input_queue() {
 
 void test_launcher_and_marbles_universal() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   game_arena_drop();
   HostSurfaceFixture fix{};
@@ -149,6 +154,7 @@ void test_launcher_and_marbles_universal() {
 #if !LATTER_HAS_IMU
 void test_blocks_logic_and_e2e() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // 1. Pure SRS placement, wall kicks, line clears & Guideline scoring
   int8_t board[20][10]{};
@@ -269,6 +275,7 @@ void test_blocks_logic_and_e2e() {
 
 void test_snake_logic_and_e2e() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // 1. Pure 2-deep turn queue + 180-degree reversal guard
   int8_t tq[2]{0, 0};
@@ -332,6 +339,7 @@ void test_snake_logic_and_e2e() {
 
 void test_drop_four_logic_and_e2e() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // 1. Pure 4-in-a-row win detection (H, V, Diag down-right, Diag up-right)
   uint8_t b[6][7]{};

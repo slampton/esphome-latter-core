@@ -4,7 +4,9 @@
 // ==============================================================================
 
 #include "ui_touch_engine.h"
+#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
+#endif
 #include "ui_touch_recognizer.h"
 #include "audio_router.h"
 #include "hal_display_lifecycle.h"
@@ -26,6 +28,7 @@
 #include <vector>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -38,7 +41,7 @@ inline void update_light_inspector_hex(float hue_deg, float sat) {
 
 void do_execute_alarm_action() {
   auto &ar = runtime_state().area;
-  latter_actions::emit_alarm_action(ar.alarm_service, ar.target_code);
+  latter_core::emit_alarm_action(ar.alarm_service, ar.target_code);
   latter_rpc::secure_zero_string(ar.target_code);
   ar.target_code.clear();
 }
@@ -83,7 +86,7 @@ void apply_optimistic_area_entity_dispatch(
 
 void TouchGestureEngine::do_execute_area_action_() {
   auto &ar = runtime_state().area;
-  latter_actions::emit_area_action(
+  latter_core::emit_area_action(
       ar.target_entity_id, ar.target_action, ar.target_level, ar.active_area_id, ar.target_code);
   latter_rpc::secure_zero_string(ar.target_code);
   ar.target_code.clear();
@@ -162,7 +165,7 @@ void TouchGestureEngine::activate_shortcut_item_(const ShortcutItem &item, Short
     return;
   }
 
-  latter_actions::emit_shortcut_action(item.target, item.action);
+  latter_core::emit_shortcut_action(item.target, item.action);
   TouchGestureEngine::apply_optimistic_shortcut_feedback_(item.target, item.action, item.label, rs, now_ms);
   rt.schedule_disp();
 }
@@ -251,7 +254,7 @@ bool TouchGestureEngine::handle_pin_pad_tap(int tx, int ty, uint32_t now_ms) {
         do_execute_alarm_action();
       } else if (target == ui::PinPadTargetKind::SHORTCUT_ACTION) {
         if (!rs.nav.pending_shortcut_entity_id.empty() && !rs.nav.pending_shortcut_action.empty()) {
-          latter_actions::emit_shortcut_action(
+          latter_core::emit_shortcut_action(
               rs.nav.pending_shortcut_entity_id, rs.nav.pending_shortcut_action, pin_str);
           TouchGestureEngine::apply_optimistic_shortcut_feedback_(
               rs.nav.pending_shortcut_entity_id, rs.nav.pending_shortcut_action,
@@ -709,7 +712,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
         rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
       } else {
         remote_vol_pct() = next_pct;
-        latter_actions::emit_media_volume(TouchGestureEngine::resolve_music_speaker_entity_(rs), "set", next_pct);
+        latter_core::emit_media_volume(TouchGestureEngine::resolve_music_speaker_entity_(rs), "set", next_pct);
       }
       gest.tap_cancelled = true;
       rt_.schedule_disp();
@@ -1080,14 +1083,15 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 5. Page 4: System Animated 2-Page Vertical Menus (Modes 0, 1, 2)
+  // 5. Page 4: System Animated Multi-Page Vertical Menus (Modes 0, 1, 2)
   if (rs.nav.gui_page == PageId::SYSTEM && !rs.nav.menu_scroll_active &&
       (rs.nav.system_menu_mode == 0 || rs.nav.system_menu_mode == 1 || rs.nav.system_menu_mode == 2) &&
       v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
     const int cur_pg = (rs.nav.system_menu_mode == 0)
                            ? rs.nav.system_dashboard_page
                            : ((rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page);
-    return step_anim_v_pager(cur_pg, 1, 2, PageId::SYSTEM);
+    const int max_pg = (rs.nav.system_menu_mode == 2) ? 3 : 2;
+    return step_anim_v_pager(cur_pg, 1, max_pg, PageId::SYSTEM);
   }
 
   // 6. Page 5: Weather & Sky (Unified Canvas + Mode Bar Horizontal Wrapping Swipe)
@@ -1227,7 +1231,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       return false;
     }
     if (rs.cameras.tab == CamerasTab::SETTINGS && v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
-#if LATTER_CHIP_P4
+#if LATTER_HAS_HW_JPEG
       bool changed = false;
       rs.cameras.settings_page = step_v_pager(rs.cameras.settings_page, 0, 1, false, PageId::CAMERAS, changed);
       if (changed) mark_dirty_full();
@@ -1527,7 +1531,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
       remote_vol_pct() = next_pct;
       if (now_u - last_music_vol_drag_ms_ >= 120U) {
         last_music_vol_drag_ms_ = now_u;
-        latter_actions::emit_media_volume(TouchGestureEngine::resolve_music_speaker_entity_(rs), "set", next_pct);
+        latter_core::emit_media_volume(TouchGestureEngine::resolve_music_speaker_entity_(rs), "set", next_pct);
       }
       if (now_u - last_disp_update_ms() >= 42U) rt_.schedule_disp();
     }
@@ -1761,6 +1765,11 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
     return;
   }
 
+  const auto can_escape_clock = [&]() noexcept -> bool {
+    return rs.nav.gui_page == PageId::CLOCK &&
+           (persisted_prefs().home_screen_enabled || !is_on_anchor_root(rs));
+  };
+
   if (act == "home") {
     if (rs.nav.quick_actions_open) {
       rs.nav.quick_actions_open = false;
@@ -1769,7 +1778,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
       rt_.schedule_disp();
       return;
     }
-    if (can_go_home(rs)) {
+    if (can_go_home(rs) || can_escape_clock()) {
       ui_focus_index() = 0;
       navigate_home(now_in);
     }
@@ -1812,7 +1821,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
       activate_ui_focus(now_in);
       return;
     }
-    if (can_go_home(rs)) {
+    if (can_go_home(rs) || can_escape_clock()) {
       ui_focus_index() = 0;
       navigate_home(now_in);
     }
@@ -1841,7 +1850,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
         } else {
           ap.minute = static_cast<uint8_t>((static_cast<int>(ap.minute) + 60 + (step % 60)) % 60);
         }
-        latter_actions::sync_local_alarms_edit(now_in);
+        latter_core::sync_local_alarms_edit(now_in);
         rt_.schedule_disp();
         return;
       }
@@ -1874,7 +1883,7 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
         rs.alarms.ringing = false;
         rs.timers.ringing = false;
         rs.alarms.find_my_active = false;
-        latter_actions::check_and_emit_timer_alarm_state(now_in);
+        latter_core::check_and_emit_timer_alarm_state(now_in);
         rt_.cmd(UiHostCmd::STOP_ALARM_SOUND);
         mark_dirty_full();
         rt_.schedule_disp();
@@ -1901,6 +1910,20 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
     const HitRegion *foc = frame_hits().focus_at(ui_focus_index());
     if (foc != nullptr) {
       on_touch_down(foc->cx(), foc->cy(), now_in);
+      if (touch_gesture().active) on_touch_up(now_in);
+      activate_ui_focus(now_in);
+    } else if (can_escape_clock()) {
+      ui_focus_index() = 0;
+      if (persisted_prefs().home_screen_enabled) {
+        rs.nav.gui_page = PageId::HOME;
+        rs.nav.home_subpage = 0;
+        mark_dirty_full();
+        rt_.schedule_disp();
+      } else {
+        navigate_home(now_in);
+      }
+    } else if (rs.nav.gui_page == PageId::TOOLS && rs.nav.tools_subpage == ToolsSubpage::FLASHLIGHT) {
+      on_touch_down(SCREEN_CX, SCREEN_CY, now_in);
       if (touch_gesture().active) on_touch_up(now_in);
       activate_ui_focus(now_in);
     }
@@ -1954,7 +1977,7 @@ bool TouchGestureEngine::allow_active_touch_down_(TouchGestureEngine &eng, int t
   }
 
   if (now_ms - last_screen_wake_ms() < TOUCH_DEBOUNCE_WAKE) {
-    if (latter_ui::profiler_enabled()) {
+    if (latter_core::profiler_enabled()) {
       LATTER_PROF_LOGI("[PROF:TOUCH_BLOCKED] x=%d y=%d page=%d reason=WAKE_DEBOUNCE",
                        tx, ty, rs.nav.gui_page);
     }
@@ -2020,6 +2043,7 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::WW_SENS_HEY_MYCROFT: return pref_ww_sens_cstr(p.ww_sens_hey_mycroft);
     case S::WW_SENS_ALEXA: return pref_ww_sens_cstr(p.ww_sens_alexa);
     case S::THEME_PALETTE: return pref_color_profile_cstr(p);
+    case S::GLASS_STYLE: return pref_glass_style_cstr(p);
     case S::PICKUP_WAKE_MODE: return pref_pickup_to_wake_cstr(p);
     case S::DISPLAY_OFF_TIMEOUT: return pref_battery_screen_timeout_cstr(p);
     case S::SCREENSAVER_MODE: return pref_screensaver_mode_cstr(p);
@@ -2047,19 +2071,21 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
   using K = PrefKey;
   const uint32_t now_ms = TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms());
   if (sid == S::WEATHER_SIM_CONDITION) {
-    const int idx = find_opt_index(kWeatherSimOpts, opt);
+    const int idx = find_pref_option_index(kPrefOptsWeatherSimCondition, opt);
     if (idx >= 0) {
       device_prefs_state().weather_sim_condition = static_cast<uint8_t>(idx);
       if (opt != "Live (Home Assistant)" && !persisted_prefs().weather_background) {
         uint32_t bg_eff = 0U;
-        latter_actions::record_local_pref_edit(K::WEATHER_BACKGROUND, "1", now_ms, bg_eff);
+        latter_core::record_local_pref_edit(K::WEATHER_BACKGROUND, "1", now_ms, bg_eff);
       }
       if (link_state().ha_connected) {
         std::string chg = "weather_sim_condition=";
         chg.append(opt.data(), opt.size());
-        latter_actions::emit_set_device_prefs(persisted_prefs().prefs_seq, chg);
+        latter_core::emit_set_device_prefs(persisted_prefs().prefs_seq, chg);
       }
+#if LATTER_GUI_UNIVERSAL
       night_meteor_epoch_initialized() = false;
+#endif
       weather_sim_dirty() = true;
       record_ambient_frame_ms(0U);
       cmd(UiHostCmd::NOTIFY_WEATHER_SIM_CHANGED);
@@ -2084,6 +2110,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::WW_SENS_HEY_MYCROFT: pk = K::WW_SENS_HEY_MYCROFT; break;
     case S::WW_SENS_ALEXA: pk = K::WW_SENS_ALEXA; break;
     case S::THEME_PALETTE: pk = K::COLOR_PROFILE; break;
+    case S::GLASS_STYLE: pk = K::GLASS_STYLE; break;
     case S::PICKUP_WAKE_MODE: pk = K::PICKUP_TO_WAKE; break;
     case S::DISPLAY_OFF_TIMEOUT: pk = K::BATTERY_SCREEN_TIMEOUT; break;
     case S::SCREENSAVER_MODE: pk = K::SCREENSAVER_MODE; break;
@@ -2105,7 +2132,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
   }
   if (pk == K::COUNT) return;
   uint32_t eff = 0U;
-  if (latter_actions::record_local_pref_edit(pk, opt, now_ms, eff)) {
+  if (latter_core::record_local_pref_edit(pk, opt, now_ms, eff)) {
     device_prefs_state().last_effects |= eff;
     cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }
@@ -2148,7 +2175,7 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
   if (pk == K::COUNT) return;
   const uint32_t now_ms = TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms());
   uint32_t eff = 0U;
-  if (latter_actions::record_local_pref_edit(pk, next_val ? "1" : "0", now_ms, eff)) {
+  if (latter_core::record_local_pref_edit(pk, next_val ? "1" : "0", now_ms, eff)) {
     device_prefs_state().last_effects |= eff;
     cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }
@@ -2208,7 +2235,7 @@ void UiTouchRuntime::set_num_val(UiNumberId nid, float val) const {
   const int n = std::snprintf(buf, sizeof(buf), "%d", cl_val);
   if (n <= 0) return;
   uint32_t eff = 0U;
-  if (latter_actions::record_local_pref_edit(pk, std::string_view(buf, static_cast<size_t>(n)), now_ms, eff)) {
+  if (latter_core::record_local_pref_edit(pk, std::string_view(buf, static_cast<size_t>(n)), now_ms, eff)) {
     device_prefs_state().last_effects |= eff;
     cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
   }

@@ -17,8 +17,7 @@ DEPENDENCIES = ["i2c", "latter_core"]
 CONF_PROTOCOL = "protocol"
 CONF_ACTIVE_POLL_INTERVAL = "active_poll_interval"
 
-latter_ui_ns = cg.global_ns.namespace("latter_ui")
-TouchHalProtocol = latter_ui_ns.enum("TouchHalProtocol", is_class=True)
+TouchHalProtocol = latter_core_ns.enum("TouchHalProtocol", is_class=True)
 
 LatterTouchscreen = latter_core_ns.class_(
     "LatterTouchscreen",

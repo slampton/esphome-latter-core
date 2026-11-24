@@ -25,7 +25,7 @@
 #include <esp_attr.h>
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 enum class TouchHalProtocol : uint8_t {
   FT6336 = 0,
@@ -226,7 +226,7 @@ inline TouchWakeBridge &touch_wake_bridge() noexcept {
   return s_bridge;
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core
 
 #if defined(USE_TOUCHSCREEN) && defined(USE_I2C) && \
     __has_include("esphome/components/touchscreen/touchscreen.h") && \
@@ -236,7 +236,7 @@ inline TouchWakeBridge &touch_wake_bridge() noexcept {
 #include "esphome/core/gpio.h"
 #include "esphome/core/helpers.h"
 
-namespace esphome::latter_core {
+namespace latter_core {
 
 struct LatterTouchIrqStore {
   std::atomic<bool> irq_pending{false};
@@ -248,11 +248,11 @@ struct LatterTouchIrqStore {
 #endif
 };
 
-class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice {
+class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::esphome::i2c::I2CDevice {
  public:
-  void set_protocol(::latter_ui::TouchHalProtocol proto);
-  void set_interrupt_pin(InternalGPIOPin *pin) { this->interrupt_pin_ = pin; }
-  void set_reset_pin(GPIOPin *pin) { this->reset_pin_ = pin; }
+  void set_protocol(TouchHalProtocol proto);
+  void set_interrupt_pin(::esphome::InternalGPIOPin *pin) { this->interrupt_pin_ = pin; }
+  void set_reset_pin(::esphome::GPIOPin *pin) { this->reset_pin_ = pin; }
   void set_active_poll_ms(uint16_t ms);
 
   float get_setup_priority() const override;
@@ -267,11 +267,11 @@ class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice
   void service_once_(uint32_t now);
   void update_touches() override;
 
-  ::latter_ui::TouchHalProtocol protocol_{::latter_ui::TouchHalProtocol::FT6336};
-  InternalGPIOPin *interrupt_pin_{nullptr};
-  GPIOPin *reset_pin_{nullptr};
+  TouchHalProtocol protocol_{TouchHalProtocol::FT6336};
+  ::esphome::InternalGPIOPin *interrupt_pin_{nullptr};
+  ::esphome::GPIOPin *reset_pin_{nullptr};
   LatterTouchIrqStore irq_store_{};
-  HighFrequencyLoopRequester touch_hf_{};
+  ::esphome::HighFrequencyLoopRequester touch_hf_{};
   uint32_t last_edge_snapshot_{0};
   uint32_t last_service_ms_{0};
   uint16_t active_poll_ms_{10};
@@ -287,5 +287,5 @@ class LatterTouchscreen : public touchscreen::Touchscreen, public i2c::I2CDevice
   bool wake_pulse_active_{false};
 };
 
-}  // namespace esphome::latter_core
+}  // namespace latter_core
 #endif

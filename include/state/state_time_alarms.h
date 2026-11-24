@@ -9,7 +9,7 @@
 #include "state/state_prefs.h"
 #include "state/state_areas.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 struct MultiTimerSlot {
   std::string id = "";
@@ -473,4 +473,4 @@ inline constexpr bool alarm_editor_blink_dim(uint32_t now_ms, uint32_t last_inpu
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

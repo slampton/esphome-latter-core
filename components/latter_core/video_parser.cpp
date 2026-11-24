@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-namespace latter_ui {
+namespace latter_core {
 
 std::string extract_multipart_boundary(std::string_view input) {
   std::string_view sv = video_trim_sv(input);
@@ -345,4 +345,4 @@ size_t MjpegFrameParser::feed_impl_(const uint8_t *data, size_t len, FrameCallba
   return delivered;
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

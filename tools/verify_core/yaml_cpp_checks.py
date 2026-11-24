@@ -117,9 +117,9 @@ struct AppStub { void feed_wdt() {} void safe_reboot() {} };
 inline AppStub App;
 
 #ifndef USE_I2C
-namespace latter_ui {
+namespace latter_core {
 template <typename... Args> inline void hal_set_touch_sleep_mode(Args &&...) {}
-}  // namespace latter_ui
+}  // namespace latter_core
 #endif
 
 namespace audio {
@@ -241,8 +241,8 @@ inline esphome::latter_beacon::LatterBeacon &beacon_id_singleton() {
   static esphome::latter_beacon::LatterBeacon b(u);
   return b;
 }
-inline esphome::latter_core::LatterLoopProbe &loop_probe_singleton() {
-  static esphome::latter_core::LatterLoopProbe p;
+inline ::latter_core::LatterLoopProbe &loop_probe_singleton() {
+  static ::latter_core::LatterLoopProbe p;
   return p;
 }
 inline esphome::i2c::I2CBus &i2c_bus_singleton() { static esphome::i2c::I2CBus b; return b; }
@@ -502,6 +502,42 @@ def _verify_dangling_yaml_ids(failures: list[str]) -> None:
                     reported_ids.add(key)
                     failures.append(f"[DANGLING SCRIPT ID] {prel} (in {target.name}) calls undefined script '{s_id}'")
 
+    disp_only = ROOT / "modules" / "latter_display_only_firmware.yaml"
+    if disp_only.is_file():
+        chain = collect_yaml_include_chain(disp_only)
+        merged = "\n".join(strip_yaml_comments(p.read_text(encoding="utf-8")) for p in chain)
+        defined_ids = set(
+            re.findall(r"(?m)^\s*-?\s*id\s*:\s*(?:!extend\s+|!remove\s+)?([A-Za-z_][A-Za-z0-9_]*)\b", merged)
+        ) | {
+            "disp1",
+            "bus_internal",
+            "boot_button",
+            "wifi_ctrl",
+            "ble_ctrl",
+            "latter_firmware_update",
+            "hal_release_deep_sleep_holds",
+            "hal_enter_hardware_hibernate",
+        }
+        for p in chain:
+            prel = p.relative_to(ROOT).as_posix()
+            pclean = strip_cpp_strings_and_comments(strip_yaml_comments_keep_lines(p.read_text(encoding="utf-8")))
+            for m_id in re.finditer(r"\bid\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)", pclean):
+                ident = m_id.group(1)
+                key = (disp_only.name, prel, ident)
+                if ident not in defined_ids and key not in reported_ids:
+                    reported_ids.add(key)
+                    failures.append(
+                        f"[DANGLING DISPLAY-ONLY ID] {prel} (in {disp_only.name}) references undefined id({ident})"
+                    )
+            for m_sc in re.finditer(r"(?m)^\s*-?\s*script\.(?:execute|stop|wait)\s*:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$", pclean):
+                s_id = m_sc.group(1)
+                key = (disp_only.name, prel, s_id)
+                if s_id not in defined_ids and key not in reported_ids:
+                    reported_ids.add(key)
+                    failures.append(
+                        f"[DANGLING DISPLAY-ONLY SCRIPT] {prel} (in {disp_only.name}) calls undefined script '{s_id}'"
+                    )
+
 
 def write_yaml_lambdas_syntax_harness(out_cpp: Path) -> int:
     """Generate a host C++20 translation unit compiling standalone-header YAML action lambdas."""
@@ -668,7 +704,6 @@ def _sanitize_full_lambda_cpp(code: str) -> str:
         "fw_release_summary",
         "batt_charge_state",
         "sys_link_report",
-        "latter_hardware_manifest",
     }
     flt_ids = {
         "latter_wifi_signal",
@@ -805,7 +840,7 @@ class _FullYamlState:
             if self.hook in ("on_client_connected", "on_client_disconnected"):
                 self.active_vars, self.in_vars = [], False
         m_ot = re.match(r"^\s*(on_touch|on_update|on_release)\s*:\s*$", stripped)
-        if m_ot and self.rel.endswith("gui.yaml"):
+        if m_ot and self.rel.endswith(("gui.yaml", "gui_touch.yaml")):
             self.on_touch = m_ot.group(1)
         return self._step_vars(stripped, ind)
 
@@ -829,7 +864,7 @@ class _FullYamlState:
         return False
 
     def resolve_params(self) -> list[tuple[str, str]]:
-        if self.rel.endswith("gui.yaml"):
+        if self.rel.endswith(("gui.yaml", "gui_touch.yaml")):
             gui_map: dict[str, list[tuple[str, str]]] = {
                 "on_touch": [("touch", "TouchPointStub"), ("touches", "std::vector<TouchPointStub>")],
                 "on_update": [("touches", "std::vector<TouchPointStub>")],
@@ -851,8 +886,10 @@ class _FullYamlState:
 def write_yaml_full_lambdas_syntax_harness(out_cpp: Path, *, include_hal_boards: bool = False) -> int:
     """Generate a host C++20 TU compiling all block & inline YAML lambdas (including `id(...)` calls)."""
     yaml_files = [
-        p for p in sorted((ROOT / "modules").glob("*.yaml")) if p.name != "latter_display_firmware.yaml"
-    ] + [ROOT / "guis" / "universal" / "gui.yaml"]
+        p
+        for p in sorted((ROOT / "modules").glob("*.yaml"))
+        if p.name not in {"latter_display_firmware.yaml", "latter_display_only_firmware.yaml"}
+    ] + [ROOT / "guis" / "universal" / "gui.yaml", ROOT / "guis" / "universal" / "gui_touch.yaml"]
     if include_hal_boards:
         yaml_files.extend(sorted((ROOT / "modules" / "hal").glob("*.yaml")))
         yaml_files.extend(sorted((ROOT / "boards").glob("*.yaml")))

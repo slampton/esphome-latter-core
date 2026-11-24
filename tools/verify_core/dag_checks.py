@@ -111,7 +111,8 @@ def verify_flat_component_sources(failures: list[str]) -> None:
 
 
 def _check_ui_header_boundaries(failures: list[str]) -> None:
-    """Keep `include/ui_*.h` host-compilable: only `ui_esphome_display.h` may include `esphome/*` or `hal_*.h`."""
+    """Keep `include/ui_*.h` host-compilable: only `ui_esphome_display.h` may include `esphome/*` or `hal_*.h`
+    (with guarded `esphome/core/defines.h` permitted in `ui_panel_traits.h` for `latter_core:` trait macros)."""
     for hdr in sorted((ROOT / "include").glob("ui_*.h")):
         if hdr.name == "ui_esphome_display.h":
             continue
@@ -119,10 +120,13 @@ def _check_ui_header_boundaries(failures: list[str]) -> None:
         clean = strip_cpp_comments(hdr.read_text(encoding="utf-8"))
         incs = [m.group(1) for m in LOCAL_INC_RE.finditer(clean)]
 
-        if any(spec.startswith("esphome/") for spec in incs):
-            failures.append(
-                f"[DAG LAYER] {rel} includes esphome/* header (only ui_esphome_display.h may include esphome/*)"
-            )
+        for spec in incs:
+            if spec.startswith("esphome/"):
+                if hdr.name == "ui_panel_traits.h" and spec == "esphome/core/defines.h":
+                    continue
+                failures.append(
+                    f"[DAG LAYER] {rel} includes esphome/* header '{spec}' (only ui_esphome_display.h may include esphome/*)"
+                )
         if any(Path(spec).name.startswith("hal_") for spec in incs):
             failures.append(
                 f"[DAG LAYER] {rel} includes hal_*.h (only ui_esphome_display.h bridge may include hal_*.h)"
@@ -159,6 +163,10 @@ def _check_core_to_ui_inversion(failures: list[str]) -> None:
                 f"[DAG INVERSION] {rel} forward-declares or calls latter_ui::mark_dirty_* "
                 "(use state.nav.ui_dirty_full / DeviceCommandEffects::mark_dirty_full)"
             )
+        if re.search(r"\bnamespace\s+latter_ui\b", clean):
+            failures.append(
+                f"[NAMESPACE BOUNDARY] {rel} defines namespace latter_ui inside latter_core/latter_beacon (use namespace latter_core)"
+            )
 
 
 def _check_ui_cpp_boundaries(failures: list[str]) -> None:
@@ -181,6 +189,11 @@ def _check_ui_cpp_boundaries(failures: list[str]) -> None:
                 f"[DAG LAYER] {rel} includes ESP-IDF heap/DMA header directly (use ui_psram_* in ui_gfx.h)"
             )
 
+        if name == "ui_gfx.cpp" and re.search(r"\bsky_base_cache_drop\s*\(", clean):
+            failures.append(
+                "[DAG LAYER] components/latter_ui/ui_gfx.cpp must not reference sky_base_cache_drop() directly "
+                "(use register_psram_cache_evictor / evict_registered_psram_caches)"
+            )
         if name == "page_system.cpp" and "esphome_bridge.h" in inc_names:
             failures.append("[DAG LAYER] components/latter_ui/page_system.cpp must not include esphome_bridge.h")
         if name.startswith("page_music") and "latter_actions.h" in inc_names:
@@ -191,29 +204,53 @@ def _check_ui_cpp_boundaries(failures: list[str]) -> None:
                 failures.append(f"[DAG LAYER] {rel} includes sibling page .cpp: {other_pages}")
 
 
+def _extract_string_tuple_var(tree: ast.Module, var_name: str, suffix: str) -> list[str]:
+    out: list[str] = []
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Name) and t.id == var_name for t in targets) and node.value is not None:
+                out.extend(
+                    elt.value
+                    for elt in ast.walk(node.value)
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str) and elt.value.endswith(suffix)
+                )
+    return out
+
+
 def _check_ui_headers_manifest(failures: list[str]) -> None:
-    """Verify `components/latter_ui/__init__.py` `UI_HEADERS` lists every `include/ui_*.h` file 1:1."""
+    """Verify `components/latter_ui/__init__.py` Toolkit/Universal header & source manifests match disk 1:1."""
     init_py = ROOT / "components" / "latter_ui" / "__init__.py"
     if not init_py.is_file():
         failures.append("[UI MANIFEST] components/latter_ui/__init__.py missing")
         return
     tree = ast.parse(init_py.read_text(encoding="utf-8"), filename="components/latter_ui/__init__.py")
-    listed: list[str] = []
-    for node in tree.body:
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            if any(isinstance(t, ast.Name) and t.id == "UI_HEADERS" for t in targets) and node.value is not None:
-                listed.extend(
-                    elt.value
-                    for elt in ast.walk(node.value)
-                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str) and elt.value.endswith(".h")
-                )
-    on_disk = sorted(p.name for p in (ROOT / "include").glob("ui_*.h"))
-    if sorted(listed) != on_disk:
-        missing = sorted(set(on_disk) - set(listed))
-        extra = sorted(set(listed) - set(on_disk))
+    toolkit_hdrs = _extract_string_tuple_var(tree, "UI_TOOLKIT_HEADERS", ".h")
+    app_hdrs = _extract_string_tuple_var(tree, "UI_UNIVERSAL_APP_HEADERS", ".h")
+    hdr_overlap = sorted(set(toolkit_hdrs) & set(app_hdrs))
+    if hdr_overlap:
+        failures.append(f"[UI MANIFEST] UI_TOOLKIT_HEADERS overlaps UI_UNIVERSAL_APP_HEADERS: {hdr_overlap}")
+    listed_hdrs = sorted(toolkit_hdrs + app_hdrs)
+    on_disk_hdrs = sorted(p.name for p in (ROOT / "include").glob("ui_*.h"))
+    if listed_hdrs != on_disk_hdrs:
+        missing = sorted(set(on_disk_hdrs) - set(listed_hdrs))
+        extra = sorted(set(listed_hdrs) - set(on_disk_hdrs))
         failures.append(
-            f"[UI MANIFEST] components/latter_ui/__init__.py UI_HEADERS mismatch: missing={missing}, extra={extra}"
+            f"[UI MANIFEST] components/latter_ui/__init__.py UI headers mismatch: missing={missing}, extra={extra}"
+        )
+
+    toolkit_srcs = _extract_string_tuple_var(tree, "UI_TOOLKIT_SOURCES", ".cpp")
+    app_srcs = _extract_string_tuple_var(tree, "UI_UNIVERSAL_APP_SOURCES", ".cpp")
+    src_overlap = sorted(set(toolkit_srcs) & set(app_srcs))
+    if src_overlap:
+        failures.append(f"[UI MANIFEST] UI_TOOLKIT_SOURCES overlaps UI_UNIVERSAL_APP_SOURCES: {src_overlap}")
+    listed_srcs = sorted(toolkit_srcs + app_srcs)
+    on_disk_srcs = sorted(p.name for p in (ROOT / "components" / "latter_ui").glob("*.cpp"))
+    if listed_srcs != on_disk_srcs:
+        missing = sorted(set(on_disk_srcs) - set(listed_srcs))
+        extra = sorted(set(listed_srcs) - set(on_disk_srcs))
+        failures.append(
+            f"[UI MANIFEST] components/latter_ui/__init__.py UI sources mismatch: missing={missing}, extra={extra}"
         )
 
 

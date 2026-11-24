@@ -14,7 +14,8 @@
 
 #include "latter_prof.h"
 
-namespace esphome::latter_core {
+namespace latter_core {
+using namespace ::esphome;
 
 namespace {
 constexpr const char *TAG = "latter";
@@ -31,10 +32,10 @@ void LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
   store->edge_count.fetch_add(1U, std::memory_order_relaxed);
 }
 
-void LatterTouchscreen::set_protocol(::latter_ui::TouchHalProtocol proto) {
+void LatterTouchscreen::set_protocol(TouchHalProtocol proto) {
   this->protocol_ = proto;
   if (!this->active_poll_explicit_) {
-    this->active_poll_ms_ = ::latter_ui::default_active_poll_ms(proto);
+    this->active_poll_ms_ = default_active_poll_ms(proto);
   }
 }
 
@@ -49,7 +50,7 @@ float LatterTouchscreen::get_setup_priority() const {
 }
 
 void LatterTouchscreen::setup() {
-  using P = ::latter_ui::TouchHalProtocol;
+  using P = TouchHalProtocol;
   this->setup_complete_ = false;
   this->irq_active_high_ = false;
   this->detected_chip_id_ = 0U;
@@ -92,11 +93,11 @@ void LatterTouchscreen::setup() {
 }
 
 void LatterTouchscreen::finish_setup_() {
-  using P = ::latter_ui::TouchHalProtocol;
+  using P = TouchHalProtocol;
 
   if (!this->init_controller_()) {
     ESP_LOGE(TAG, "Touch HAL (%s @ 0x%02X) failed I2C init; scheduled for HAL recovery",
-             ::latter_ui::touch_hal_protocol_name(this->protocol_), this->address_);
+             touch_hal_protocol_name(this->protocol_), this->address_);
     this->mark_failed();
     return;
   }
@@ -124,12 +125,12 @@ void LatterTouchscreen::finish_setup_() {
     this->stop_poller();
   }
 
-  ::latter_ui::touch_pump_bridge().bind(
+  touch_pump_bridge().bind(
       this, +[](void *ctx) { static_cast<LatterTouchscreen *>(ctx)->pump_from_host(); });
   this->setup_complete_ = true;
 
   ESP_LOGD(TAG, "Touch HAL ready: proto=%s chip=0x%04X addr=0x%02X mode=%s poll=%ums raw=%dx%d",
-           ::latter_ui::touch_hal_protocol_name(this->protocol_),
+           touch_hal_protocol_name(this->protocol_),
            static_cast<unsigned>(this->detected_chip_id_), this->address_,
            (this->interrupt_pin_ != nullptr)
                ? (this->irq_active_high_ ? "irq_high+poll" : "irq_low+poll")
@@ -146,7 +147,7 @@ void LatterTouchscreen::update() {
 
 void LatterTouchscreen::pump_from_host() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
-  const uint32_t now = millis();
+  const uint32_t now = esphome::millis();
   const bool has_irq = this->irq_store_.irq_pending.load(std::memory_order_relaxed);
   const bool poll_ready =
       (this->finger_down_ || this->interrupt_pin_ == nullptr) &&
@@ -158,14 +159,14 @@ void LatterTouchscreen::pump_from_host() {
 
 void LatterTouchscreen::loop() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
-  const uint32_t now = millis();
+  const uint32_t now = esphome::millis();
 
   const uint32_t edges = this->irq_store_.edge_count.load(std::memory_order_relaxed);
   if (edges != this->last_edge_snapshot_) {
-    ::latter_ui::touch_hal_telemetry().irq_edges += (edges - this->last_edge_snapshot_);
+    touch_hal_telemetry().irq_edges += (edges - this->last_edge_snapshot_);
     this->last_edge_snapshot_ = edges;
-    if (::latter_ui::touch_wake_bridge().is_standby()) {
-      ::latter_ui::touch_wake_bridge().arm_wake_grace(now);
+    if (touch_wake_bridge().is_standby()) {
+      touch_wake_bridge().arm_wake_grace(now);
     }
   }
 
@@ -183,7 +184,7 @@ void LatterTouchscreen::loop() {
 }
 
 bool LatterTouchscreen::init_controller_() {
-  using P = ::latter_ui::TouchHalProtocol;
+  using P = TouchHalProtocol;
   switch (this->protocol_) {
     case P::FT6336:
     case P::FT3168: {
@@ -295,7 +296,7 @@ void LatterTouchscreen::service_once_(uint32_t now) {
   this->poll_due_ = false;
   this->had_irq_this_pass_ = had_irq;
 
-  auto &tel = ::latter_ui::touch_hal_telemetry();
+  auto &tel = touch_hal_telemetry();
   if (this->finger_down_ && this->last_service_ms_ != 0U) {
     const uint32_t gap = now - this->last_service_ms_;
     if (gap > tel.max_active_gap_ms) tel.max_active_gap_ms = gap;
@@ -371,12 +372,12 @@ void LatterTouchscreen::service_once_(uint32_t now) {
 }
 
 void LatterTouchscreen::update_touches() {
-  using K = ::latter_ui::TouchSampleKind;
-  using P = ::latter_ui::TouchHalProtocol;
-  auto &tel = ::latter_ui::touch_hal_telemetry();
+  using K = TouchSampleKind;
+  using P = TouchHalProtocol;
+  auto &tel = touch_hal_telemetry();
   tel.i2c_reads++;
 
-  ::latter_ui::TouchDecodedSample dec{};
+  TouchDecodedSample dec{};
 
   switch (this->protocol_) {
     case P::FT6336:
@@ -387,7 +388,7 @@ void LatterTouchscreen::update_touches() {
         this->skip_update_ = true;
         return;
       }
-      dec = ::latter_ui::decode_focaltech_frame(buf);
+      dec = decode_focaltech_frame(buf);
       break;
     }
 
@@ -413,7 +414,7 @@ void LatterTouchscreen::update_touches() {
           return;
         }
       }
-      dec = ::latter_ui::decode_gt911_frame(status, (cnt >= 1U && cnt <= 5U) ? pt : nullptr);
+      dec = decode_gt911_frame(status, (cnt >= 1U && cnt <= 5U) ? pt : nullptr);
       if (dec.ack_buffer) {
         (void) this->write(ack_814e, 3);
       }
@@ -428,7 +429,7 @@ void LatterTouchscreen::update_touches() {
         this->skip_update_ = true;
         return;
       }
-      dec = ::latter_ui::decode_cst9217_frame(buf);
+      dec = decode_cst9217_frame(buf);
       break;
     }
 
@@ -439,7 +440,7 @@ void LatterTouchscreen::update_touches() {
         this->skip_update_ = true;
         return;
       }
-      dec = ::latter_ui::decode_cst816s_frame(buf);
+      dec = decode_cst816s_frame(buf);
       break;
     }
   }
@@ -455,17 +456,17 @@ void LatterTouchscreen::update_touches() {
   }
 
   if (!this->finger_down_ && this->had_irq_this_pass_ &&
-      ::latter_ui::touch_wake_bridge().is_standby()) {
+      touch_wake_bridge().is_standby()) {
     const int16_t cx = static_cast<int16_t>(this->x_raw_max_ / 2);
     const int16_t cy = static_cast<int16_t>(this->y_raw_max_ / 2);
     this->wake_pulse_active_ = true;
     tel.wake_pulses++;
     LATTER_PROF_LOGI("[PROF:TOUCH] wake_pulse=1 proto=%s",
-                     ::latter_ui::touch_hal_protocol_name(this->protocol_));
+                     touch_hal_protocol_name(this->protocol_));
     this->add_raw_touch_position_(0, cx, cy);
   }
 }
 
-}  // namespace esphome::latter_core
+}  // namespace latter_core
 
 #endif

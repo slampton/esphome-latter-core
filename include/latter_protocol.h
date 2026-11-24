@@ -1,10 +1,13 @@
 #pragma once
 // AUTO-GENERATED FROM protocol/latter_v3.json BY tools/gen_protocol.py — DO NOT EDIT MANUALLY.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
+#include <string_view>
 
-namespace latter_ui {
+namespace latter_core {
 
 static constexpr int kProtocolContractVersion = 3;
 static constexpr size_t kProtocolMinRequiredFields = 3;
@@ -392,7 +395,8 @@ enum class DevicePrefsField : size_t {
   WEATHER_APP_BACKGROUND = 69,  // weather_app_background (bool)
   DO_NOT_DISTURB = 70,  // do_not_disturb (bool)
   MUSIC_AUTO_OPEN = 71,  // music_auto_open (string)
-  COUNT = 72
+  GLASS_STYLE = 72,  // glass_style (string)
+  COUNT = 73
 };
 
 // Domain: shortcuts
@@ -408,4 +412,329 @@ enum class ShortcutsField : size_t {
   COUNT = 8
 };
 
-}  // namespace latter_ui
+enum class PrefContractDomain : uint8_t {
+  SELECT = 0,
+  SWITCH = 1,
+  NUMBER = 2,
+  TEXT = 3,
+};
+
+enum class PrefContractCap : uint8_t {
+  DISPLAY = 0,
+  DISPLAY_IMU = 1,
+  DISPLAY_BATTERY = 2,
+  DISPLAY_OR_AUDIO = 3,
+  HW_JPEG = 4,
+  MIC = 5,
+  SPEAKER = 6,
+  BEACON = 7,
+  BEACON_BATTERY = 8,
+};
+
+inline constexpr std::array<std::string_view, 3> kPrefOptsWakeWordMode = {{"Docked Only", "Always On", "Disabled"}};
+inline constexpr uint8_t kPrefDefaultWakeWordModeIdx = 0U;
+inline constexpr std::string_view kPrefDefaultWakeWordMode = "Docked Only";
+inline constexpr std::array<std::string_view, 4> kPrefOptsTapToWake = {{"Single Tap", "Double Tap", "Docked Only", "Disabled"}};
+inline constexpr uint8_t kPrefDefaultTapToWakeIdx = 2U;
+inline constexpr std::string_view kPrefDefaultTapToWake = "Docked Only";
+inline constexpr std::array<std::string_view, 3> kPrefOptsPickupToWake = {{"Always On", "Docked Only", "Disabled"}};
+inline constexpr uint8_t kPrefDefaultPickupToWakeIdx = 1U;
+inline constexpr std::string_view kPrefDefaultPickupToWake = "Docked Only";
+inline constexpr std::array<std::string_view, 6> kPrefOptsBatteryScreenTimeout = {{"10s", "15s", "30s", "1 min", "2 min", "Never"}};
+inline constexpr uint8_t kPrefDefaultBatteryScreenTimeoutIdx = 2U;
+inline constexpr std::string_view kPrefDefaultBatteryScreenTimeout = "30s";
+inline constexpr std::array<std::string_view, 7> kPrefOptsDockedIdleTimeout = {{"10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"}};
+inline constexpr uint8_t kPrefDefaultDockedIdleTimeoutIdx = 3U;
+inline constexpr std::string_view kPrefDefaultDockedIdleTimeout = "1 min";
+inline constexpr std::array<std::string_view, 5> kPrefOptsBatteryHibernateTimeout = {{"5 min", "10 min", "15 min", "30 min", "Disabled"}};
+inline constexpr uint8_t kPrefDefaultBatteryHibernateTimeoutIdx = 2U;
+inline constexpr std::string_view kPrefDefaultBatteryHibernateTimeout = "15 min";
+inline constexpr std::array<std::string_view, 3> kPrefOptsScreensaverMode = {{"Docked Only", "Always", "Never"}};
+inline constexpr uint8_t kPrefDefaultScreensaverModeIdx = 0U;
+inline constexpr std::string_view kPrefDefaultScreensaverMode = "Docked Only";
+inline constexpr std::array<std::string_view, 6> kPrefOptsScreensaverStyle = {{"Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks"}};
+inline constexpr uint8_t kPrefDefaultScreensaverStyleIdx = 0U;
+inline constexpr std::string_view kPrefDefaultScreensaverStyle = "Ambient Clock";
+inline constexpr std::array<std::string_view, 4> kPrefOptsAutoBrightnessMode = {{"Disabled", "Sun Synchronized", "Time Schedule", "Ambient Light"}};
+inline constexpr uint8_t kPrefDefaultAutoBrightnessModeIdx = 1U;
+inline constexpr std::string_view kPrefDefaultAutoBrightnessMode = "Sun Synchronized";
+inline constexpr int32_t kPrefDefaultManualBrightness = 80;  // [1..100, step 1]
+inline constexpr int32_t kPrefMinManualBrightness = 1;
+inline constexpr int32_t kPrefMaxManualBrightness = 100;
+inline constexpr int32_t kPrefStepManualBrightness = 1;
+inline constexpr int32_t kPrefDefaultDayBrightness = 90;  // [1..100, step 1]
+inline constexpr int32_t kPrefMinDayBrightness = 1;
+inline constexpr int32_t kPrefMaxDayBrightness = 100;
+inline constexpr int32_t kPrefStepDayBrightness = 1;
+inline constexpr int32_t kPrefDefaultNightBrightness = 35;  // [1..100, step 1]
+inline constexpr int32_t kPrefMinNightBrightness = 1;
+inline constexpr int32_t kPrefMaxNightBrightness = 100;
+inline constexpr int32_t kPrefStepNightBrightness = 1;
+inline constexpr int32_t kPrefDefaultDayStartHour = 7;  // [0..23, step 1]
+inline constexpr int32_t kPrefMinDayStartHour = 0;
+inline constexpr int32_t kPrefMaxDayStartHour = 23;
+inline constexpr int32_t kPrefStepDayStartHour = 1;
+inline constexpr int32_t kPrefDefaultNightStartHour = 20;  // [0..23, step 1]
+inline constexpr int32_t kPrefMinNightStartHour = 0;
+inline constexpr int32_t kPrefMaxNightStartHour = 23;
+inline constexpr int32_t kPrefStepNightStartHour = 1;
+inline constexpr std::array<std::string_view, 5> kPrefOptsColorProfile = {{"Steel Blue", "Pink", "Blue", "Green", "Custom"}};
+inline constexpr uint8_t kPrefDefaultColorProfileIdx = 0U;
+inline constexpr std::string_view kPrefDefaultColorProfile = "Steel Blue";
+inline constexpr std::array<std::string_view, 5> kPrefOptsVaVisualProfile = {{"Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"}};
+inline constexpr uint8_t kPrefDefaultVaVisualProfileIdx = 0U;
+inline constexpr std::string_view kPrefDefaultVaVisualProfile = "Nebula";
+inline constexpr bool kPrefDefaultHomeScreenEnabled = true;
+inline constexpr std::array<std::string_view, 13> kPrefOptsStartScreen = {{"Home", "Pinned", "Time App", "Calendar", "Clock Face", "Media", "Home Hub", "Area Controls", "Remote", "Weather", "Cameras", "Games", "Tools"}};
+inline constexpr uint8_t kPrefDefaultStartScreenIdx = 0U;
+inline constexpr std::string_view kPrefDefaultStartScreen = "Home";
+inline constexpr std::array<std::string_view, 7> kPrefOptsReturnToHomeTimeout = {{"15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never"}};
+inline constexpr uint8_t kPrefDefaultReturnToHomeTimeoutIdx = 3U;
+inline constexpr std::string_view kPrefDefaultReturnToHomeTimeout = "2 min";
+inline constexpr std::array<std::string_view, 3> kPrefOptsClockFace = {{"Minimal Digital", "Modern Analog", "Hybrid Digital"}};
+inline constexpr uint8_t kPrefDefaultClockFaceIdx = 0U;
+inline constexpr std::string_view kPrefDefaultClockFace = "Minimal Digital";
+inline constexpr std::array<std::string_view, 2> kPrefOptsTimeFormat = {{"12-Hour (AM/PM)", "24-Hour"}};
+inline constexpr uint8_t kPrefDefaultTimeFormatIdx = 0U;
+inline constexpr std::string_view kPrefDefaultTimeFormat = "12-Hour (AM/PM)";
+inline constexpr bool kPrefDefaultWeatherBackground = true;
+inline constexpr bool kPrefDefaultHomeSun = true;
+inline constexpr bool kPrefDefaultHomeMoon = true;
+inline constexpr bool kPrefDefaultWakeGreeting = true;
+inline constexpr std::array<std::string_view, 4> kPrefOptsAlbumArtStyle = {{"Full Screen", "Letterbox", "Standard", "None"}};
+inline constexpr uint8_t kPrefDefaultAlbumArtStyleIdx = 0U;
+inline constexpr std::string_view kPrefDefaultAlbumArtStyle = "Full Screen";
+inline constexpr std::array<std::string_view, 3> kPrefOptsMusicOverlayStyle = {{"Art Only", "Art + Metadata", "Always Visible"}};
+inline constexpr uint8_t kPrefDefaultMusicOverlayStyleIdx = 1U;
+inline constexpr std::string_view kPrefDefaultMusicOverlayStyle = "Art + Metadata";
+inline constexpr std::array<std::string_view, 3> kPrefOptsMusicAutoOpen = {{"Now Playing", "Lyrics", "Off"}};
+inline constexpr uint8_t kPrefDefaultMusicAutoOpenIdx = 0U;
+inline constexpr std::string_view kPrefDefaultMusicAutoOpen = "Now Playing";
+inline constexpr std::array<std::string_view, 3> kPrefOptsAlbumSortOrder = {{"Alphabetical", "Newest on Top", "Oldest on Top"}};
+inline constexpr uint8_t kPrefDefaultAlbumSortOrderIdx = 0U;
+inline constexpr std::string_view kPrefDefaultAlbumSortOrder = "Alphabetical";
+inline constexpr std::array<std::string_view, 3> kPrefOptsArtistAlbumSortOrder = {{"Oldest on Top", "Newest on Top", "Alphabetical"}};
+inline constexpr uint8_t kPrefDefaultArtistAlbumSortOrderIdx = 0U;
+inline constexpr std::string_view kPrefDefaultArtistAlbumSortOrder = "Oldest on Top";
+inline constexpr std::array<std::string_view, 2> kPrefOptsPodcastSortOrder = {{"Newest on Top", "Oldest on Top"}};
+inline constexpr uint8_t kPrefDefaultPodcastSortOrderIdx = 0U;
+inline constexpr std::string_view kPrefDefaultPodcastSortOrder = "Newest on Top";
+inline constexpr std::array<std::string_view, 3> kPrefOptsWwSensOkayNabu = {{"Slightly sensitive", "Moderately sensitive", "Very sensitive"}};
+inline constexpr uint8_t kPrefDefaultWwSensOkayNabuIdx = 1U;
+inline constexpr std::string_view kPrefDefaultWwSensOkayNabu = "Moderately sensitive";
+inline constexpr std::array<std::string_view, 3> kPrefOptsWwSensHeyLuna = {{"Slightly sensitive", "Moderately sensitive", "Very sensitive"}};
+inline constexpr uint8_t kPrefDefaultWwSensHeyLunaIdx = 1U;
+inline constexpr std::string_view kPrefDefaultWwSensHeyLuna = "Moderately sensitive";
+inline constexpr std::array<std::string_view, 3> kPrefOptsWwSensHeyJarvis = {{"Slightly sensitive", "Moderately sensitive", "Very sensitive"}};
+inline constexpr uint8_t kPrefDefaultWwSensHeyJarvisIdx = 1U;
+inline constexpr std::string_view kPrefDefaultWwSensHeyJarvis = "Moderately sensitive";
+inline constexpr std::array<std::string_view, 3> kPrefOptsWwSensHeyMycroft = {{"Slightly sensitive", "Moderately sensitive", "Very sensitive"}};
+inline constexpr uint8_t kPrefDefaultWwSensHeyMycroftIdx = 1U;
+inline constexpr std::string_view kPrefDefaultWwSensHeyMycroft = "Moderately sensitive";
+inline constexpr std::array<std::string_view, 3> kPrefOptsWwSensAlexa = {{"Slightly sensitive", "Moderately sensitive", "Very sensitive"}};
+inline constexpr uint8_t kPrefDefaultWwSensAlexaIdx = 1U;
+inline constexpr std::string_view kPrefDefaultWwSensAlexa = "Moderately sensitive";
+inline constexpr bool kPrefDefaultWakeScreenOnAssist = true;
+inline constexpr int32_t kPrefDefaultAlertVolume = 80;  // [20..100, step 5]
+inline constexpr int32_t kPrefMinAlertVolume = 20;
+inline constexpr int32_t kPrefMaxAlertVolume = 100;
+inline constexpr int32_t kPrefStepAlertVolume = 5;
+inline constexpr int32_t kPrefDefaultVolumeStepSize = 5;  // [1..10, step 1]
+inline constexpr int32_t kPrefMinVolumeStepSize = 1;
+inline constexpr int32_t kPrefMaxVolumeStepSize = 10;
+inline constexpr int32_t kPrefStepVolumeStepSize = 1;
+inline constexpr bool kPrefDefaultGameSoundEffects = true;
+inline constexpr std::array<std::string_view, 3> kPrefOptsBleBeaconMode = {{"Handheld Only", "Handheld + Screen Off", "Always"}};
+inline constexpr uint8_t kPrefDefaultBleBeaconModeIdx = 0U;
+inline constexpr std::string_view kPrefDefaultBleBeaconMode = "Handheld Only";
+inline constexpr std::array<std::string_view, 17> kPrefOptsWeatherSimCondition = {{"Live (Home Assistant)", "Clear Night", "Sunny / Clear Day", "Partly Cloudy (Day)", "Partly Cloudy (Night)", "Cloudy / Overcast (Day)", "Cloudy / Overcast (Night)", "Fog / Mist (Day)", "Fog / Mist (Night)", "Rainy (Day)", "Rainy (Night)", "Pouring / Heavy Rain", "Snow (Day)", "Snow (Night)", "Thunderstorm (Day)", "Thunderstorm (Night)", "Windy"}};
+inline constexpr uint8_t kPrefDefaultWeatherSimConditionIdx = 0U;
+inline constexpr std::string_view kPrefDefaultWeatherSimCondition = "Live (Home Assistant)";
+inline constexpr std::array<std::string_view, 2> kPrefOptsHomeClockTapAction = {{"Time App", "Clock Face"}};
+inline constexpr uint8_t kPrefDefaultHomeClockTapActionIdx = 0U;
+inline constexpr std::string_view kPrefDefaultHomeClockTapAction = "Time App";
+inline constexpr std::array<std::string_view, 2> kPrefOptsHomeDateTapAction = {{"Day View", "Overview"}};
+inline constexpr uint8_t kPrefDefaultHomeDateTapActionIdx = 1U;
+inline constexpr std::string_view kPrefDefaultHomeDateTapAction = "Overview";
+inline constexpr std::string_view kPrefDefaultLocalClockLabel = "";
+inline constexpr bool kPrefDefaultShowUtcClock = false;
+inline constexpr std::string_view kPrefDefaultWorldClocks = "";
+inline constexpr std::string_view kPrefDefaultAlarmsSummary = "07:00|0|1;08:30|0|2;09:00|0|2";
+inline constexpr int32_t kPrefDefaultCalendarLookaheadDays = 30;  // [7..60, step 1]
+inline constexpr int32_t kPrefMinCalendarLookaheadDays = 7;
+inline constexpr int32_t kPrefMaxCalendarLookaheadDays = 60;
+inline constexpr int32_t kPrefStepCalendarLookaheadDays = 1;
+inline constexpr std::array<std::string_view, 2> kPrefOptsCalendarWeekStart = {{"Sunday", "Monday"}};
+inline constexpr uint8_t kPrefDefaultCalendarWeekStartIdx = 0U;
+inline constexpr std::string_view kPrefDefaultCalendarWeekStart = "Sunday";
+inline constexpr bool kPrefDefaultBedtimeActive = false;
+inline constexpr std::array<std::string_view, 2> kPrefOptsBedtimeDisplay = {{"Screen Off", "Ambient Clock"}};
+inline constexpr uint8_t kPrefDefaultBedtimeDisplayIdx = 0U;
+inline constexpr std::string_view kPrefDefaultBedtimeDisplay = "Screen Off";
+inline constexpr bool kPrefDefaultBedtimeSchedule = false;
+inline constexpr int32_t kPrefDefaultBedtimeStartHour = 22;  // [0..23, step 1]
+inline constexpr int32_t kPrefMinBedtimeStartHour = 0;
+inline constexpr int32_t kPrefMaxBedtimeStartHour = 23;
+inline constexpr int32_t kPrefStepBedtimeStartHour = 1;
+inline constexpr int32_t kPrefDefaultBedtimeEndHour = 7;  // [0..23, step 1]
+inline constexpr int32_t kPrefMinBedtimeEndHour = 0;
+inline constexpr int32_t kPrefMaxBedtimeEndHour = 23;
+inline constexpr int32_t kPrefStepBedtimeEndHour = 1;
+inline constexpr int32_t kPrefDefaultBedtimeBrightness = 15;  // [1..100, step 1]
+inline constexpr int32_t kPrefMinBedtimeBrightness = 1;
+inline constexpr int32_t kPrefMaxBedtimeBrightness = 100;
+inline constexpr int32_t kPrefStepBedtimeBrightness = 1;
+inline constexpr std::array<std::string_view, 3> kPrefOptsCameraDefaultView = {{"Grid", "Single", "Carousel"}};
+inline constexpr uint8_t kPrefDefaultCameraDefaultViewIdx = 0U;
+inline constexpr std::string_view kPrefDefaultCameraDefaultView = "Grid";
+inline constexpr std::array<std::string_view, 4> kPrefOptsCameraCarouselInterval = {{"10s", "15s", "30s", "60s"}};
+inline constexpr uint8_t kPrefDefaultCameraCarouselIntervalIdx = 1U;
+inline constexpr std::string_view kPrefDefaultCameraCarouselInterval = "15s";
+inline constexpr std::array<std::string_view, 2> kPrefOptsCameraFraming = {{"Uncropped", "Fill"}};
+inline constexpr uint8_t kPrefDefaultCameraFramingIdx = 0U;
+inline constexpr std::string_view kPrefDefaultCameraFraming = "Uncropped";
+inline constexpr std::array<std::string_view, 3> kPrefOptsCameraStreamMode = {{"Auto", "Low Bandwidth", "Snapshots"}};
+inline constexpr uint8_t kPrefDefaultCameraStreamModeIdx = 0U;
+inline constexpr std::string_view kPrefDefaultCameraStreamMode = "Auto";
+inline constexpr std::array<std::string_view, 2> kPrefOptsCameraDoorbellPopup = {{"Snapshot", "Live Video"}};
+inline constexpr uint8_t kPrefDefaultCameraDoorbellPopupIdx = 0U;
+inline constexpr std::string_view kPrefDefaultCameraDoorbellPopup = "Snapshot";
+inline constexpr bool kPrefDefaultScreensaverPhotoClock = false;
+inline constexpr bool kPrefDefaultWeatherAppBackground = true;
+inline constexpr bool kPrefDefaultDoNotDisturb = false;
+inline constexpr std::array<std::string_view, 3> kPrefOptsGlassStyle = {{"Auto", "Clear", "Dark"}};
+inline constexpr uint8_t kPrefDefaultGlassStyleIdx = 0U;
+inline constexpr std::string_view kPrefDefaultGlassStyle = "Auto";
+
+struct PrefContractSpec {
+  DevicePrefsField field;
+  std::string_view key;
+  PrefContractDomain domain;
+  PrefContractCap capability;
+  std::span<const std::string_view> options;
+  std::string_view default_str;
+  bool default_bool;
+  int32_t default_int;
+  uint8_t default_option_idx;
+  bool has_bounds;
+  int32_t min_val;
+  int32_t max_val;
+  int32_t step;
+};
+
+inline constexpr std::array<PrefContractSpec, 65> kPrefContractSpecs = {{
+    {DevicePrefsField::WAKE_WORD_MODE, "wake_word_mode", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWakeWordMode}, kPrefDefaultWakeWordMode, false, 0, kPrefDefaultWakeWordModeIdx, false, 0, 0, 0},
+    {DevicePrefsField::TAP_TO_WAKE, "tap_to_wake", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsTapToWake}, kPrefDefaultTapToWake, false, 2, kPrefDefaultTapToWakeIdx, false, 0, 0, 0},
+    {DevicePrefsField::PICKUP_TO_WAKE, "pickup_to_wake", PrefContractDomain::SELECT, PrefContractCap::DISPLAY_IMU, std::span<const std::string_view>{kPrefOptsPickupToWake}, kPrefDefaultPickupToWake, false, 1, kPrefDefaultPickupToWakeIdx, false, 0, 0, 0},
+    {DevicePrefsField::BATTERY_SCREEN_TIMEOUT, "battery_screen_timeout", PrefContractDomain::SELECT, PrefContractCap::DISPLAY_BATTERY, std::span<const std::string_view>{kPrefOptsBatteryScreenTimeout}, kPrefDefaultBatteryScreenTimeout, false, 2, kPrefDefaultBatteryScreenTimeoutIdx, false, 0, 0, 0},
+    {DevicePrefsField::DOCKED_IDLE_TIMEOUT, "docked_idle_timeout", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsDockedIdleTimeout}, kPrefDefaultDockedIdleTimeout, false, 3, kPrefDefaultDockedIdleTimeoutIdx, false, 0, 0, 0},
+    {DevicePrefsField::BATTERY_HIBERNATE_TIMEOUT, "battery_hibernate_timeout", PrefContractDomain::SELECT, PrefContractCap::DISPLAY_BATTERY, std::span<const std::string_view>{kPrefOptsBatteryHibernateTimeout}, kPrefDefaultBatteryHibernateTimeout, false, 2, kPrefDefaultBatteryHibernateTimeoutIdx, false, 0, 0, 0},
+    {DevicePrefsField::SCREENSAVER_MODE, "screensaver_mode", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsScreensaverMode}, kPrefDefaultScreensaverMode, false, 0, kPrefDefaultScreensaverModeIdx, false, 0, 0, 0},
+    {DevicePrefsField::SCREENSAVER_STYLE, "screensaver_style", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsScreensaverStyle}, kPrefDefaultScreensaverStyle, false, 0, kPrefDefaultScreensaverStyleIdx, false, 0, 0, 0},
+    {DevicePrefsField::AUTO_BRIGHTNESS_MODE, "auto_brightness_mode", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsAutoBrightnessMode}, kPrefDefaultAutoBrightnessMode, false, 1, kPrefDefaultAutoBrightnessModeIdx, false, 0, 0, 0},
+    {DevicePrefsField::MANUAL_BRIGHTNESS, "manual_brightness", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "80", false, kPrefDefaultManualBrightness, 0U, true, kPrefMinManualBrightness, kPrefMaxManualBrightness, kPrefStepManualBrightness},
+    {DevicePrefsField::DAY_BRIGHTNESS, "day_brightness", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "90", false, kPrefDefaultDayBrightness, 0U, true, kPrefMinDayBrightness, kPrefMaxDayBrightness, kPrefStepDayBrightness},
+    {DevicePrefsField::NIGHT_BRIGHTNESS, "night_brightness", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "35", false, kPrefDefaultNightBrightness, 0U, true, kPrefMinNightBrightness, kPrefMaxNightBrightness, kPrefStepNightBrightness},
+    {DevicePrefsField::DAY_START_HOUR, "day_start_hour", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "7", false, kPrefDefaultDayStartHour, 0U, true, kPrefMinDayStartHour, kPrefMaxDayStartHour, kPrefStepDayStartHour},
+    {DevicePrefsField::NIGHT_START_HOUR, "night_start_hour", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "20", false, kPrefDefaultNightStartHour, 0U, true, kPrefMinNightStartHour, kPrefMaxNightStartHour, kPrefStepNightStartHour},
+    {DevicePrefsField::COLOR_PROFILE, "color_profile", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsColorProfile}, kPrefDefaultColorProfile, false, 0, kPrefDefaultColorProfileIdx, false, 0, 0, 0},
+    {DevicePrefsField::VA_VISUAL_PROFILE, "va_visual_profile", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsVaVisualProfile}, kPrefDefaultVaVisualProfile, false, 0, kPrefDefaultVaVisualProfileIdx, false, 0, 0, 0},
+    {DevicePrefsField::HOME_SCREEN_ENABLED, "home_screen_enabled", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeScreenEnabled, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::START_SCREEN, "start_screen", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsStartScreen}, kPrefDefaultStartScreen, false, 0, kPrefDefaultStartScreenIdx, false, 0, 0, 0},
+    {DevicePrefsField::RETURN_TO_HOME_TIMEOUT, "return_to_home_timeout", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsReturnToHomeTimeout}, kPrefDefaultReturnToHomeTimeout, false, 3, kPrefDefaultReturnToHomeTimeoutIdx, false, 0, 0, 0},
+    {DevicePrefsField::CLOCK_FACE, "clock_face", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsClockFace}, kPrefDefaultClockFace, false, 0, kPrefDefaultClockFaceIdx, false, 0, 0, 0},
+    {DevicePrefsField::TIME_FORMAT, "time_format", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsTimeFormat}, kPrefDefaultTimeFormat, false, 0, kPrefDefaultTimeFormatIdx, false, 0, 0, 0},
+    {DevicePrefsField::WEATHER_BACKGROUND, "weather_background", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultWeatherBackground, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::HOME_SUN, "home_sun", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeSun, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::HOME_MOON, "home_moon", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeMoon, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::WAKE_GREETING, "wake_greeting", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultWakeGreeting, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::ALBUM_ART_STYLE, "album_art_style", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsAlbumArtStyle}, kPrefDefaultAlbumArtStyle, false, 0, kPrefDefaultAlbumArtStyleIdx, false, 0, 0, 0},
+    {DevicePrefsField::MUSIC_OVERLAY_STYLE, "music_overlay_style", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsMusicOverlayStyle}, kPrefDefaultMusicOverlayStyle, false, 1, kPrefDefaultMusicOverlayStyleIdx, false, 0, 0, 0},
+    {DevicePrefsField::MUSIC_AUTO_OPEN, "music_auto_open", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsMusicAutoOpen}, kPrefDefaultMusicAutoOpen, false, 0, kPrefDefaultMusicAutoOpenIdx, false, 0, 0, 0},
+    {DevicePrefsField::ALBUM_SORT_ORDER, "album_sort_order", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsAlbumSortOrder}, kPrefDefaultAlbumSortOrder, false, 0, kPrefDefaultAlbumSortOrderIdx, false, 0, 0, 0},
+    {DevicePrefsField::ARTIST_ALBUM_SORT_ORDER, "artist_album_sort_order", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsArtistAlbumSortOrder}, kPrefDefaultArtistAlbumSortOrder, false, 0, kPrefDefaultArtistAlbumSortOrderIdx, false, 0, 0, 0},
+    {DevicePrefsField::PODCAST_SORT_ORDER, "podcast_sort_order", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsPodcastSortOrder}, kPrefDefaultPodcastSortOrder, false, 0, kPrefDefaultPodcastSortOrderIdx, false, 0, 0, 0},
+    {DevicePrefsField::WW_SENS_OKAY_NABU, "ww_sens_okay_nabu", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWwSensOkayNabu}, kPrefDefaultWwSensOkayNabu, false, 1, kPrefDefaultWwSensOkayNabuIdx, false, 0, 0, 0},
+    {DevicePrefsField::WW_SENS_HEY_LUNA, "ww_sens_hey_luna", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWwSensHeyLuna}, kPrefDefaultWwSensHeyLuna, false, 1, kPrefDefaultWwSensHeyLunaIdx, false, 0, 0, 0},
+    {DevicePrefsField::WW_SENS_HEY_JARVIS, "ww_sens_hey_jarvis", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWwSensHeyJarvis}, kPrefDefaultWwSensHeyJarvis, false, 1, kPrefDefaultWwSensHeyJarvisIdx, false, 0, 0, 0},
+    {DevicePrefsField::WW_SENS_HEY_MYCROFT, "ww_sens_hey_mycroft", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWwSensHeyMycroft}, kPrefDefaultWwSensHeyMycroft, false, 1, kPrefDefaultWwSensHeyMycroftIdx, false, 0, 0, 0},
+    {DevicePrefsField::WW_SENS_ALEXA, "ww_sens_alexa", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWwSensAlexa}, kPrefDefaultWwSensAlexa, false, 1, kPrefDefaultWwSensAlexaIdx, false, 0, 0, 0},
+    {DevicePrefsField::WAKE_SCREEN_ON_ASSIST, "wake_screen_on_assist", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultWakeScreenOnAssist, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::ALERT_VOLUME, "alert_volume", PrefContractDomain::NUMBER, PrefContractCap::SPEAKER, std::span<const std::string_view>{}, "80", false, kPrefDefaultAlertVolume, 0U, true, kPrefMinAlertVolume, kPrefMaxAlertVolume, kPrefStepAlertVolume},
+    {DevicePrefsField::VOLUME_STEP_SIZE, "volume_step_size", PrefContractDomain::NUMBER, PrefContractCap::SPEAKER, std::span<const std::string_view>{}, "5", false, kPrefDefaultVolumeStepSize, 0U, true, kPrefMinVolumeStepSize, kPrefMaxVolumeStepSize, kPrefStepVolumeStepSize},
+    {DevicePrefsField::GAME_SOUND_EFFECTS, "game_sound_effects", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultGameSoundEffects, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::BLE_BEACON_MODE, "ble_beacon_mode", PrefContractDomain::SELECT, PrefContractCap::BEACON_BATTERY, std::span<const std::string_view>{kPrefOptsBleBeaconMode}, kPrefDefaultBleBeaconMode, false, 0, kPrefDefaultBleBeaconModeIdx, false, 0, 0, 0},
+    {DevicePrefsField::WEATHER_SIM_CONDITION, "weather_sim_condition", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsWeatherSimCondition}, kPrefDefaultWeatherSimCondition, false, 0, kPrefDefaultWeatherSimConditionIdx, false, 0, 0, 0},
+    {DevicePrefsField::HOME_CLOCK_TAP_ACTION, "home_clock_tap_action", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsHomeClockTapAction}, kPrefDefaultHomeClockTapAction, false, 0, kPrefDefaultHomeClockTapActionIdx, false, 0, 0, 0},
+    {DevicePrefsField::HOME_DATE_TAP_ACTION, "home_date_tap_action", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsHomeDateTapAction}, kPrefDefaultHomeDateTapAction, false, 1, kPrefDefaultHomeDateTapActionIdx, false, 0, 0, 0},
+    {DevicePrefsField::LOCAL_CLOCK_LABEL, "local_clock_label", PrefContractDomain::TEXT, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, kPrefDefaultLocalClockLabel, false, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::SHOW_UTC_CLOCK, "show_utc_clock", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "0", kPrefDefaultShowUtcClock, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::WORLD_CLOCKS, "world_clocks", PrefContractDomain::TEXT, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, kPrefDefaultWorldClocks, false, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::ALARMS_SUMMARY, "alarms_summary", PrefContractDomain::TEXT, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, kPrefDefaultAlarmsSummary, false, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS, "calendar_lookahead_days", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "30", false, kPrefDefaultCalendarLookaheadDays, 0U, true, kPrefMinCalendarLookaheadDays, kPrefMaxCalendarLookaheadDays, kPrefStepCalendarLookaheadDays},
+    {DevicePrefsField::CALENDAR_WEEK_START, "calendar_week_start", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsCalendarWeekStart}, kPrefDefaultCalendarWeekStart, false, 0, kPrefDefaultCalendarWeekStartIdx, false, 0, 0, 0},
+    {DevicePrefsField::BEDTIME_ACTIVE, "bedtime_active", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "0", kPrefDefaultBedtimeActive, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::BEDTIME_DISPLAY, "bedtime_display", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsBedtimeDisplay}, kPrefDefaultBedtimeDisplay, false, 0, kPrefDefaultBedtimeDisplayIdx, false, 0, 0, 0},
+    {DevicePrefsField::BEDTIME_SCHEDULE, "bedtime_schedule", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "0", kPrefDefaultBedtimeSchedule, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::BEDTIME_START_HOUR, "bedtime_start_hour", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "22", false, kPrefDefaultBedtimeStartHour, 0U, true, kPrefMinBedtimeStartHour, kPrefMaxBedtimeStartHour, kPrefStepBedtimeStartHour},
+    {DevicePrefsField::BEDTIME_END_HOUR, "bedtime_end_hour", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "7", false, kPrefDefaultBedtimeEndHour, 0U, true, kPrefMinBedtimeEndHour, kPrefMaxBedtimeEndHour, kPrefStepBedtimeEndHour},
+    {DevicePrefsField::BEDTIME_BRIGHTNESS, "bedtime_brightness", PrefContractDomain::NUMBER, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "15", false, kPrefDefaultBedtimeBrightness, 0U, true, kPrefMinBedtimeBrightness, kPrefMaxBedtimeBrightness, kPrefStepBedtimeBrightness},
+    {DevicePrefsField::CAMERA_DEFAULT_VIEW, "camera_default_view", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsCameraDefaultView}, kPrefDefaultCameraDefaultView, false, 0, kPrefDefaultCameraDefaultViewIdx, false, 0, 0, 0},
+    {DevicePrefsField::CAMERA_CAROUSEL_INTERVAL, "camera_carousel_interval", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsCameraCarouselInterval}, kPrefDefaultCameraCarouselInterval, false, 1, kPrefDefaultCameraCarouselIntervalIdx, false, 0, 0, 0},
+    {DevicePrefsField::CAMERA_FRAMING, "camera_framing", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsCameraFraming}, kPrefDefaultCameraFraming, false, 0, kPrefDefaultCameraFramingIdx, false, 0, 0, 0},
+    {DevicePrefsField::CAMERA_STREAM_MODE, "camera_stream_mode", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsCameraStreamMode}, kPrefDefaultCameraStreamMode, false, 0, kPrefDefaultCameraStreamModeIdx, false, 0, 0, 0},
+    {DevicePrefsField::CAMERA_DOORBELL_POPUP, "camera_doorbell_popup", PrefContractDomain::SELECT, PrefContractCap::HW_JPEG, std::span<const std::string_view>{kPrefOptsCameraDoorbellPopup}, kPrefDefaultCameraDoorbellPopup, false, 0, kPrefDefaultCameraDoorbellPopupIdx, false, 0, 0, 0},
+    {DevicePrefsField::SCREENSAVER_PHOTO_CLOCK, "screensaver_photo_clock", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "0", kPrefDefaultScreensaverPhotoClock, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::WEATHER_APP_BACKGROUND, "weather_app_background", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultWeatherAppBackground, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::DO_NOT_DISTURB, "do_not_disturb", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY_OR_AUDIO, std::span<const std::string_view>{}, "0", kPrefDefaultDoNotDisturb, 0, 0U, false, 0, 0, 0},
+    {DevicePrefsField::GLASS_STYLE, "glass_style", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsGlassStyle}, kPrefDefaultGlassStyle, false, 0, kPrefDefaultGlassStyleIdx, false, 0, 0, 0},
+}};
+
+inline constexpr const PrefContractSpec *find_pref_contract(std::string_view key) noexcept {
+  for (const auto &spec : kPrefContractSpecs) {
+    if (spec.key == key) return &spec;
+  }
+  return nullptr;
+}
+
+inline constexpr const PrefContractSpec *find_pref_contract(DevicePrefsField field) noexcept {
+  for (const auto &spec : kPrefContractSpecs) {
+    if (spec.field == field) return &spec;
+  }
+  return nullptr;
+}
+
+inline constexpr int find_pref_option_index(std::span<const std::string_view> options,
+                                            std::string_view value) noexcept {
+  for (size_t i = 0; i < options.size(); ++i) {
+    if (options[i] == value) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+inline constexpr int find_pref_option_index(const PrefContractSpec &spec,
+                                            std::string_view value) noexcept {
+  return find_pref_option_index(spec.options, value);
+}
+
+inline constexpr std::string_view pref_option_at_clamped(std::span<const std::string_view> options,
+                                                         size_t idx,
+                                                         size_t fallback = 0U) noexcept {
+  if (options.empty()) return {};
+  if (idx < options.size()) return options[idx];
+  return options[(fallback < options.size()) ? fallback : 0U];
+}
+
+inline constexpr std::string_view pref_option_at_clamped(const PrefContractSpec &spec,
+                                                         size_t idx) noexcept {
+  return pref_option_at_clamped(spec.options, idx, spec.default_option_idx);
+}
+
+inline constexpr int32_t clamp_pref_number(const PrefContractSpec &spec, int32_t value) noexcept {
+  if (!spec.has_bounds) return value;
+  if (value < spec.min_val) return spec.min_val;
+  if (value > spec.max_val) return spec.max_val;
+  return value;
+}
+
+}  // namespace latter_core

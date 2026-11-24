@@ -7,6 +7,7 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -290,7 +291,7 @@ void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   }
 
   // Per-camera configured action pills row above the 4-slot mode bar (D-070 canonical action_pill_row)
-  const bool can_listen = (cam != nullptr) && cam->has_audio();
+  const bool can_listen = (LATTER_HAS_SPEAKER != 0) && (cam != nullptr) && cam->has_audio();
   const bool can_talk = (LATTER_HAS_MIC && LATTER_HAS_SPEAKER) && (cam != nullptr) && cam->has_talkback();
   const bool can_reply = (cam != nullptr) && cam->show_reply();
   const bool can_unlock = (cam != nullptr) && cam->has_unlock();
@@ -481,7 +482,7 @@ void render_cameras_settings_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   ids[row_cnt++] = 2;
   std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Stream: %s", pref_camera_stream_mode_cstr(prefs));
   ids[row_cnt++] = 3;
-#if LATTER_CHIP_P4
+#if LATTER_HAS_HW_JPEG
   std::snprintf(labels[row_cnt], sizeof(labels[row_cnt]), "Doorbell: %s", pref_camera_doorbell_popup_cstr(prefs));
   ids[row_cnt++] = 4;
 #endif
@@ -586,8 +587,40 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
   if (y_start > y_end) return true;
 
   const bool one_to_one = (crop_w == fit_r.w && crop_h == fit_r.h && crop_x0 == 0 && crop_y0 == 0);
-  const int span_w = std::min(fit_r.w, 1024);
-  static uint16_t s_row_buf[1024];
+  // Dynamically sized scanline buffer (zero 1024 px ceiling so 1280x800+ never clips).
+  static uint16_t s_small_row_buf[512];
+  static uint16_t *s_dyn_row_buf = nullptr;
+  static int s_dyn_row_cap = 0;
+  static const bool s_cam_row_evictor_reg = register_psram_cache_evictor([]() noexcept {
+    if (s_dyn_row_buf != nullptr) {
+      ui_psram_free(s_dyn_row_buf);
+      s_dyn_row_buf = nullptr;
+      s_dyn_row_cap = 0;
+    }
+  });
+  (void)s_cam_row_evictor_reg;
+
+  uint16_t *row_buf = s_small_row_buf;
+  int span_w = fit_r.w;
+  if (!one_to_one && fit_r.w > 512) {
+    if (s_dyn_row_cap < fit_r.w) {
+      uint16_t *nb = static_cast<uint16_t *>(
+          ui_psram_malloc(static_cast<size_t>(fit_r.w) * sizeof(uint16_t)));
+      if (nb != nullptr) {
+        if (s_dyn_row_buf != nullptr) ui_psram_free(s_dyn_row_buf);
+        s_dyn_row_buf = nb;
+        s_dyn_row_cap = fit_r.w;
+      }
+    }
+    if (s_dyn_row_buf != nullptr && s_dyn_row_cap >= fit_r.w) {
+      row_buf = s_dyn_row_buf;
+    } else if (s_dyn_row_buf != nullptr && s_dyn_row_cap > 512) {
+      row_buf = s_dyn_row_buf;
+      span_w = s_dyn_row_cap;
+    } else {
+      span_w = 512;
+    }
+  }
 
   const int cx = SCREEN_W / 2;
   const int cy = SCREEN_H / 2;
@@ -626,10 +659,10 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
       uint32_t sx_fp = (static_cast<uint32_t>(crop_x0) << 16) + static_cast<uint32_t>(src_x_skip) * step_fp;
       for (int i = 0; i < row_w; ++i) {
         const int sx = std::min(src_w - 1, static_cast<int>(sx_fp >> 16));
-        s_row_buf[i] = src_row[sx];
+        row_buf[i] = src_row[sx];
         sx_fp += step_fp;
       }
-      blit_rgb565_scanline(it, row_x0, y, row_w, s_row_buf, false);
+      blit_rgb565_scanline(it, row_x0, y, row_w, row_buf, false);
     }
   }
   return true;

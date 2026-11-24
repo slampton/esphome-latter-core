@@ -23,6 +23,7 @@
 
 #include "hal_manifest.h"
 #include "latter_prof.h"
+#include "state/device_runtime_state.h"
 
 #include <algorithm>
 #include <cmath>
@@ -61,7 +62,7 @@
 #include "esphome/components/i2c/i2c_bus.h"
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 // Reserved numeric timeout IDs dispatched via LatterLoopProbe::schedule_timeout (CoreTimeoutBridge):
 //   0x4C410001U..0x4C41000FU : UI compositor frame/weather/activity schedulers (include/ui_compositor.h)
@@ -387,43 +388,75 @@ inline void hal_ledc_apply_on_duty(uint32_t on_duty, bool is_on) {
 }
 #endif
 
-template <typename DispT>
+inline constexpr int hal_backlight_en_gpio_level(
+    bool is_on, bool en_inverted = (LATTER_BACKLIGHT_EN_INVERTED != 0)) noexcept {
+  return en_inverted ? (is_on ? 0 : 1) : (is_on ? 1 : 0);
+}
+
+inline uint8_t hal_backlight_float_to_pct(float pct) noexcept {
+  if (pct <= 0.0001f) return 0U;
+  const float clamped = std::clamp(pct, 0.0f, 1.0f);
+  const long rounded = std::lround(clamped * 100.0f);
+  return static_cast<uint8_t>(std::clamp<long>(rounded, 1L, 100L));
+}
+
+template <bool CustomBacklight, typename DispT>
   requires(!std::is_pointer_v<DispT>)
-inline void hal_set_display_brightness_f(DispT *disp, float pct) {
+inline void hal_set_display_brightness_impl(DispT *disp, float pct) {
   [[maybe_unused]] const bool is_on = (pct > 0.0001f);
 #if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_EN_PIN)
   static int s_last_en = -1;
-  const int want_en = is_on ? 1 : 0;
+  const int want_en = hal_backlight_en_gpio_level(is_on);
   if (s_last_en != want_en) {
     gpio_set_direction(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), GPIO_MODE_OUTPUT);
     gpio_set_level(static_cast<gpio_num_t>(LATTER_BACKLIGHT_EN_PIN), want_en);
     s_last_en = want_en;
   }
 #endif
-#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
-  constexpr uint32_t kPwmBits = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_BITS);
-  static_assert(kPwmBits >= 8 && kPwmBits <= 13, "LATTER_BACKLIGHT_PWM_BITS must be 8..13");
-  static_assert(LATTER_BACKLIGHT_DUTY_MIN_PM >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PM < LATTER_BACKLIGHT_DUTY_MAX_PM &&
-                    LATTER_BACKLIGHT_DUTY_MAX_PM <= 1000,
-                "LATTER_BACKLIGHT_DUTY_MIN_PM/_MAX_PM must satisfy 0 <= MIN < MAX <= 1000");
-  const uint32_t on_duty = hal_map_pwm_on_duty(
-      pct, kPwmBits, static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PM),
-      static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PM));
-  hal_ledc_apply_on_duty(on_duty, is_on);
+  if constexpr (CustomBacklight) {
+    if (auto fn = runtime_state().hw_set_backlight_level; fn != nullptr) {
+      fn(hal_backlight_float_to_pct(pct));
+    }
 #if defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
-  const uint8_t dcs_wake = is_on
-      ? static_cast<uint8_t>(std::max<uint32_t>(1U, static_cast<uint32_t>(std::lround(std::clamp(pct, 0.0f, 1.0f) * 255.0f))))
-      : static_cast<uint8_t>(0U);
-  if (disp != nullptr) hal_panel_dcs_set_brightness(disp, dcs_wake);
+    const uint8_t dcs_wake = is_on
+        ? static_cast<uint8_t>(std::max<uint32_t>(1U, static_cast<uint32_t>(std::lround(std::clamp(pct, 0.0f, 1.0f) * 255.0f))))
+        : static_cast<uint8_t>(0U);
+    if (disp != nullptr) hal_panel_dcs_set_brightness(disp, dcs_wake);
 #else
-  (void)disp;
+    (void)disp;
+#endif
+  } else {
+#if defined(USE_ESP32) && defined(LATTER_BACKLIGHT_PIN)
+    constexpr uint32_t kPwmBits = static_cast<uint32_t>(LATTER_BACKLIGHT_PWM_BITS);
+    static_assert(kPwmBits >= 8 && kPwmBits <= 13, "LATTER_BACKLIGHT_PWM_BITS must be 8..13");
+    static_assert(LATTER_BACKLIGHT_DUTY_MIN_PM >= 0 && LATTER_BACKLIGHT_DUTY_MIN_PM < LATTER_BACKLIGHT_DUTY_MAX_PM &&
+                      LATTER_BACKLIGHT_DUTY_MAX_PM <= 1000,
+                  "LATTER_BACKLIGHT_DUTY_MIN_PM/_MAX_PM must satisfy 0 <= MIN < MAX <= 1000");
+    const uint32_t on_duty = hal_map_pwm_on_duty(
+        pct, kPwmBits, static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MIN_PM),
+        static_cast<uint32_t>(LATTER_BACKLIGHT_DUTY_MAX_PM));
+    hal_ledc_apply_on_duty(on_duty, is_on);
+#if defined(LATTER_PANEL_DCS_SLEEP) && LATTER_PANEL_DCS_SLEEP
+    const uint8_t dcs_wake = is_on
+        ? static_cast<uint8_t>(std::max<uint32_t>(1U, static_cast<uint32_t>(std::lround(std::clamp(pct, 0.0f, 1.0f) * 255.0f))))
+        : static_cast<uint8_t>(0U);
+    if (disp != nullptr) hal_panel_dcs_set_brightness(disp, dcs_wake);
+#else
+    (void)disp;
 #endif
 #else
-  static_assert(requires(DispT *d, uint8_t v) { d->set_brightness(v); },
-                "Display driver lacks set_brightness() and no LATTER_BACKLIGHT_PIN is defined");
-  const uint8_t bri_byte = hal_map_dcs_brightness(pct);
-  if (disp != nullptr) hal_panel_dcs_set_brightness(disp, bri_byte);
+    static_assert(requires(DispT *d, uint8_t v) { d->set_brightness(v); },
+                  "Display driver lacks set_brightness() and neither LATTER_BACKLIGHT_PIN nor LATTER_BACKLIGHT_CUSTOM is configured");
+    const uint8_t bri_byte = hal_map_dcs_brightness(pct);
+    if (disp != nullptr) hal_panel_dcs_set_brightness(disp, bri_byte);
 #endif
+  }
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void hal_set_display_brightness_f(DispT *disp, float pct) {
+  hal_set_display_brightness_impl<(LATTER_BACKLIGHT_CUSTOM != 0)>(disp, pct);
 }
 
 template <typename DispT>
@@ -486,9 +519,27 @@ inline void hal_panel_dcs_poll(DispT *const *disp_pp) {
   if (disp_pp != nullptr) hal_panel_dcs_poll(*disp_pp);
 }
 
+// FocalTech FT5x06 / FT6x36 / FT3x68 CIPHER (REG 0xA3) chip family IDs.
+// Rejects non-FocalTech chips sharing I2C 0x38 (e.g. AHT20 status byte 0x18/0x1C, PCA9554A 0x00/0xFF).
+inline constexpr bool is_known_focaltech_chip_id(uint8_t chip_id) noexcept {
+  switch (chip_id) {
+    case 0x06:  // FT6206 / FT6306
+    case 0x08:  // FT3168 / FT3x68
+    case 0x11:  // FT5316 / FT6236G
+    case 0x36:  // FT6236 / FT6336U
+    case 0x54:  // FT5426 / FT5446 / FT5436
+    case 0x55:  // FT5x06 / FT5306 / FT5406
+    case 0x58:  // FT5826
+    case 0x64:  // FT6336 / FT6436
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Switches FocalTech FT6336/FT3168 touch controllers (0x38) into low-power Period Monitor mode (REG 0x86=0x01)
 // during screen-off standby on battery (~2.5 mA -> ~0.15 mA while preserving INT tap-to-wake), and back to
-// active scan on wake. Safe no-op on other touch ICs if 0x38 does not ACK.
+// active scan on wake. Strictly gated on LATTER_DRV_TOUCH_FT5X06 plus REG 0xA3 chip-ID verification.
 #ifdef USE_I2C
 void hal_set_touch_sleep_mode_bus(esphome::i2c::I2CBus *bus, bool sleep);
 
@@ -559,4 +610,4 @@ inline void hal_recover_touchscreen_if_failed(TouchT *const *ts_pp, uint32_t now
   if (ts_pp != nullptr) hal_recover_touchscreen_if_failed(*ts_pp, now_ms, reset_counter);
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

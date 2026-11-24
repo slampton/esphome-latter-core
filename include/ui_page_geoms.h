@@ -502,14 +502,34 @@ inline constexpr RemoteDpadGeom compute_remote_dpad_geom(int w, int h, bool roun
   const int min_s = (w < h) ? w : h;
   g.cx = w / 2;
   g.cy = round ? (h / 2) : (h / 2 + scale_y_for(8, h));
-  g.r_out = (w < 380) ? 128 : ((w > 520) ? 236 : ((!round && w >= 480) ? 180 : 144));
-  g.r_in  = (w < 380) ?  46 : ((w > 520) ?  86 : ((!round && w >= 480) ?  60 :  50));
-  g.ok_r  = g.r_in - scale_s_for(8, min_s);
+  if (min_s < 380) {
+    g.r_out = 128;
+    g.r_in = 46;
+  } else if (min_s > 520) {
+    g.r_out = std::min(260, (min_s * 236 + 360) / 720);
+    g.r_in = (g.r_out * 86 + 118) / 236;
+  } else if (!round && min_s >= 480) {
+    g.r_out = 180;
+    g.r_in = 60;
+  } else {
+    g.r_out = 144;
+    g.r_in = 50;
+  }
+  g.outer_pad = scale_s_for(10, min_s);
+  if (!round) {
+    const int top_clear = g.cy - scale_y_for(48, h) - g.outer_pad;
+    const int bot_clear = (h - scale_y_for(24, h)) - g.cy - g.outer_pad;
+    const int max_r_v = (top_clear < bot_clear) ? top_clear : bot_clear;
+    if (max_r_v > 64 && g.r_out > max_r_v) {
+      g.r_out = max_r_v;
+      g.r_in = std::max(36, (g.r_out * 36) / 100);
+    }
+  }
+  g.ok_r = g.r_in - scale_s_for(8, min_s);
   g.arr_mid = (g.r_in + g.r_out) / 2;
   const int ring_t = g.r_out - g.r_in;
   g.hit_radial = (ring_t > 20) ? (ring_t - 10) : ring_t;
   g.hit_tangent = (g.r_in * 14) / 10;
-  g.outer_pad = scale_s_for(10, min_s);
   return g;
 }
 

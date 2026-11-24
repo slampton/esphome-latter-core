@@ -5,244 +5,245 @@ namespace latter_test {
 namespace {
 
 void test_device_prefs_v2_and_event_timer_sync() {
-  static_assert(std::is_trivially_copyable_v<latter_ui::PersistedDevicePrefs>);
-  LATTER_CHECK(latter_ui::kPersistedPrefsVersion == 1U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::PrefKey::COUNT) == 66U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT) == 72U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::AreaCtxField::COUNT) == 43U);
-  LATTER_CHECK(static_cast<size_t>(latter_ui::ShortcutsField::COUNT) == 8U);
+  static_assert(std::is_trivially_copyable_v<latter_core::PersistedDevicePrefs>);
+  LATTER_CHECK(latter_core::kPersistedPrefsVersion == 1U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::PrefKey::COUNT) == 67U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::DevicePrefsField::COUNT) == 73U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::AreaCtxField::COUNT) == 43U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::ShortcutsField::COUNT) == 8U);
 
-  LATTER_CHECK(latter_ui::PageId::HOME_HUB == 9);
-  LATTER_CHECK(latter_ui::PageId::TIME == 10);
-  LATTER_CHECK(latter_ui::PageId::PINNED == 11);
-  LATTER_CHECK(latter_ui::PageId::CALENDAR == 12);
-  LATTER_CHECK(latter_ui::PageId::CAMERAS == 13);
-  LATTER_CHECK(latter_ui::find_shortcut_route("app:pinned") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("app:calendar") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("calendar:month") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("tools:calendar") == nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("weather:moon") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("app:cameras") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("cameras:grid") != nullptr);
-  LATTER_CHECK(latter_ui::find_shortcut_route("home_hub:cameras") == nullptr);
+  LATTER_CHECK(latter_core::PageId::HOME_HUB == 9);
+  LATTER_CHECK(latter_core::PageId::TIME == 10);
+  LATTER_CHECK(latter_core::PageId::PINNED == 11);
+  LATTER_CHECK(latter_core::PageId::CALENDAR == 12);
+  LATTER_CHECK(latter_core::PageId::CAMERAS == 13);
+  LATTER_CHECK(latter_core::find_shortcut_route("app:pinned") != nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("app:calendar") != nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("calendar:month") != nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("tools:calendar") == nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("weather:moon") != nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("app:cameras") != nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("cameras:grid") != nullptr);
+  LATTER_CHECK(latter_core::find_shortcut_route("home_hub:cameras") == nullptr);
 
-  latter_ui::PersistedDevicePrefs cam_prefs{};
-  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Pinned"));
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::PINNED);
-  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Calendar"));
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::CALENDAR);
-  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Cameras"));
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == latter_ui::PageId::CAMERAS);
-  LATTER_CHECK(latter_ui::is_cameras_start_screen(cam_prefs));
-  cam_prefs.start_screen = static_cast<uint8_t>(latter_ui::find_opt_index(latter_ui::kStartScreenOpts, "Tools"));
-  LATTER_CHECK(latter_ui::resolve_start_screen_page(cam_prefs) == 8);
+  latter_core::PersistedDevicePrefs cam_prefs{};
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_core::find_pref_option_index(latter_core::kPrefOptsStartScreen, "Pinned"));
+  LATTER_CHECK(latter_core::resolve_start_screen_page(cam_prefs) == latter_core::PageId::PINNED);
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_core::find_pref_option_index(latter_core::kPrefOptsStartScreen, "Calendar"));
+  LATTER_CHECK(latter_core::resolve_start_screen_page(cam_prefs) == latter_core::PageId::CALENDAR);
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_core::find_pref_option_index(latter_core::kPrefOptsStartScreen, "Cameras"));
+  LATTER_CHECK(latter_core::resolve_start_screen_page(cam_prefs) == latter_core::PageId::CAMERAS);
+  LATTER_CHECK(latter_core::is_cameras_start_screen(cam_prefs));
+  cam_prefs.start_screen = static_cast<uint8_t>(latter_core::find_pref_option_index(latter_core::kPrefOptsStartScreen, "Tools"));
+  LATTER_CHECK(latter_core::resolve_start_screen_page(cam_prefs) == 8);
 
-  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("home_hub.garage", "turn_on", 100) == true);
-  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("home_hub.garage", "turn_on") == true);
+  LATTER_CHECK(latter_core::is_sensitive_perimeter_action_impl("home_hub.garage", "turn_on", 100) == true);
+  LATTER_CHECK(latter_core::is_sensitive_perimeter_action_impl("home_hub.garage", "turn_on") == true);
   const std::string retired_target = std::string("whole") + "_home.garage";
-  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl(retired_target, "turn_on", 100) == false);
-  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("lock", "open") == true);
-  LATTER_CHECK(latter_ui::is_sensitive_perimeter_action_impl("cover.garage_door", "open") == true);
-  LATTER_CHECK(!latter_ui::is_sensitive_perimeter_action_impl("light.porch", "turn_on"));
+  LATTER_CHECK(latter_core::is_sensitive_perimeter_action_impl(retired_target, "turn_on", 100) == false);
+  LATTER_CHECK(latter_core::is_sensitive_perimeter_action_impl("lock", "open") == true);
+  LATTER_CHECK(latter_core::is_sensitive_perimeter_action_impl("cover.garage_door", "open") == true);
+  LATTER_CHECK(!latter_core::is_sensitive_perimeter_action_impl("light.porch", "turn_on"));
 
-  latter_ui::home_hub_tab() = 2;
-  LATTER_CHECK(latter_ui::home_hub_tab() == 2);
-  latter_ui::home_hub_state().thermostat_count = 1;
-  latter_ui::home_hub_state().thermostats[0].mode = "heat";
-  LATTER_CHECK(latter_ui::home_hub_state().thermostats[0].mode == "heat");
+  latter_core::home_hub_tab() = 2;
+  LATTER_CHECK(latter_core::home_hub_tab() == 2);
+  latter_core::home_hub_state().thermostat_count = 1;
+  latter_core::home_hub_state().thermostats[0].mode = "heat";
+  LATTER_CHECK(latter_core::home_hub_state().thermostats[0].mode == "heat");
 
-  LATTER_CHECK(latter_ui::is_configured_remote_slot("remote.living_room"));
-  LATTER_CHECK(!latter_ui::is_configured_remote_slot(""));
+  LATTER_CHECK(latter_core::is_configured_remote_slot("remote.living_room"));
+  LATTER_CHECK(!latter_core::is_configured_remote_slot(""));
 
-  int hh_tabs[latter_ui::kMaxHomeHubTabs] = {-1, -1, -1, -1, -1};
-  latter_ui::AreaContextState uninit_ac{};
+  int hh_tabs[latter_core::kMaxHomeHubTabs] = {-1, -1, -1, -1, -1};
+  latter_core::AreaContextState uninit_ac{};
   LATTER_CHECK(uninit_ac.epoch == 0U && uninit_ac.home_categories.empty());
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
-  uninit_ac.home_categories = latter_ui::kDefaultHomeCategories;
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
+  LATTER_CHECK(latter_core::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
+  uninit_ac.home_categories = latter_core::kDefaultHomeCategories;
+  LATTER_CHECK(latter_core::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
   uninit_ac.epoch = 1U;
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 5);
+  LATTER_CHECK(latter_core::collect_home_hub_tabs(hh_tabs, uninit_ac) == 5);
   LATTER_CHECK(hh_tabs[0] == 0 && hh_tabs[1] == 1 && hh_tabs[2] == 2 &&
                hh_tabs[3] == 3 && hh_tabs[4] == 4);
   uninit_ac.epoch = 10U;
   uninit_ac.home_categories = "vacuum,thermostat,unknown,vacuum,intercom";
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 3);
-  LATTER_CHECK(hh_tabs[0] == latter_ui::HomeHubTab::VACUUM &&
-               hh_tabs[1] == latter_ui::HomeHubTab::THERMOSTAT &&
-               hh_tabs[2] == latter_ui::HomeHubTab::INTERCOM);
+  LATTER_CHECK(latter_core::collect_home_hub_tabs(hh_tabs, uninit_ac) == 3);
+  LATTER_CHECK(hh_tabs[0] == latter_core::HomeHubTab::VACUUM &&
+               hh_tabs[1] == latter_core::HomeHubTab::THERMOSTAT &&
+               hh_tabs[2] == latter_core::HomeHubTab::INTERCOM);
   uninit_ac.home_categories.clear();
-  LATTER_CHECK(latter_ui::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
+  LATTER_CHECK(latter_core::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
 
-  const std::string full_manifest = latter_ui::build_hardware_manifest_json();
-  const std::string compact_manifest = latter_ui::build_hardware_manifest_state_json();
+  const std::string full_manifest = latter_core::build_hardware_manifest_json();
   LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
-  LATTER_CHECK(!compact_manifest.empty() && compact_manifest.size() <= 255U);
+  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112303") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"sdk\":") == std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"max_payload_bytes\"") == std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"beacon\":null") != std::string::npos);
 
   std::string parsed_cats[8];
-  const int parsed_n = latter_ui::parse_area_categories_csv("media,light,unknown,media,all", parsed_cats, 8);
+  const int parsed_n = latter_core::parse_area_categories_csv("media,light,unknown,media,all", parsed_cats, 8);
   LATTER_CHECK(parsed_n == 3 && parsed_cats[0] == "media" && parsed_cats[1] == "light" && parsed_cats[2] == "all");
-  LATTER_CHECK(latter_ui::parse_area_categories_csv("", parsed_cats, 8) == 0);
-  const int def_n = latter_ui::parse_area_categories_csv(latter_ui::kDefaultAreaCategories, parsed_cats, 8);
+  LATTER_CHECK(latter_core::parse_area_categories_csv("", parsed_cats, 8) == 0);
+  const int def_n = latter_core::parse_area_categories_csv(latter_core::kDefaultAreaCategories, parsed_cats, 8);
   LATTER_CHECK(def_n == 7 && parsed_cats[0] == "scene" && parsed_cats[6] == "media");
 
-  auto &p = latter_ui::persisted_prefs();
-  p = latter_ui::PersistedDevicePrefs{};
-  latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
-  latter_ui::seed_default_prefs_if_needed();
+  auto &p = latter_core::persisted_prefs();
+  p = latter_core::PersistedDevicePrefs{};
+  latter_core::device_prefs_state() = latter_core::DevicePrefsState{};
+  latter_core::seed_default_prefs_if_needed();
   const char *expected_ww_default = (LATTER_IS_STATIONARY != 0) ? "Always On" : "Docked Only";
   const char *expected_clock_default = (LATTER_ROUND_DISPLAY != 0) ? "Modern Analog" : "Minimal Digital";
-  LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == expected_ww_default);
-  LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr()) == expected_clock_default);
-  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr()) == "Home");
-  LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_style_cstr()) == "Ambient Clock");
-  LATTER_CHECK(std::string_view(latter_ui::pref_album_art_style_cstr()) == "Full Screen");
-  LATTER_CHECK(std::string_view(latter_ui::pref_album_sort_order_cstr()) == "Alphabetical");
-  LATTER_CHECK(std::string_view(latter_ui::pref_artist_album_sort_order_cstr()) == "Oldest on Top");
-  LATTER_CHECK(std::string_view(latter_ui::pref_podcast_sort_order_cstr()) == "Newest on Top");
+  LATTER_CHECK(std::string_view(latter_core::pref_wake_word_mode_cstr()) == expected_ww_default);
+  LATTER_CHECK(std::string_view(latter_core::pref_clock_face_cstr()) == expected_clock_default);
+  LATTER_CHECK(std::string_view(latter_core::pref_start_screen_cstr()) == "Home");
+  LATTER_CHECK(std::string_view(latter_core::pref_screensaver_style_cstr()) == "Ambient Clock");
+  LATTER_CHECK(std::string_view(latter_core::pref_album_art_style_cstr()) == "Full Screen");
+  LATTER_CHECK(std::string_view(latter_core::pref_album_sort_order_cstr()) == "Alphabetical");
+  LATTER_CHECK(std::string_view(latter_core::pref_artist_album_sort_order_cstr()) == "Oldest on Top");
+  LATTER_CHECK(std::string_view(latter_core::pref_podcast_sort_order_cstr()) == "Newest on Top");
   LATTER_CHECK(p.prefs_seq == 0U && p.dirty_mask == 0ULL);
 
-  const std::string seed_dirty = latter_ui::build_hello_dirty_prefs(p);
-  LATTER_CHECK(seed_dirty.find(std::string("wake_word_mode=") + expected_ww_default) != std::string::npos);
-  LATTER_CHECK(seed_dirty.find(std::string("clock_face=") + expected_clock_default) != std::string::npos);
-  LATTER_CHECK(seed_dirty.find("screensaver_style=Ambient Clock") != std::string::npos);
-  LATTER_CHECK(seed_dirty.find("ble_beacon_enabled=") == std::string::npos);
+  // Clean boot (prefs_seq == 0 && dirty_mask empty) emits empty dirty_prefs (never dumps unchanged defaults)
+  const std::string seed_dirty = latter_core::build_hello_dirty_prefs(p);
+  LATTER_CHECK(seed_dirty.empty());
 
-  latter_ui::reset_all_v3_rev_guards();
-  std::vector<std::string> dp_tok(static_cast<size_t>(latter_ui::DevicePrefsField::COUNT), "");
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::PREFS_SEQ)] = "7";
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::WAKE_WORD_MODE)] = "Disabled";
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::ALERT_VOLUME)] = "65";
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::COLOR_PROFILE)] = "Custom";
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::THEME_COLOR_HEX)] = "#2288FF";
-  dp_tok[static_cast<size_t>(latter_ui::DevicePrefsField::WEATHER_SIM_CONDITION)] = "Thunderstorm (Day)";
+  latter_core::reset_all_v3_rev_guards();
+  std::vector<std::string> dp_tok(static_cast<size_t>(latter_core::DevicePrefsField::COUNT), "");
+  dp_tok[static_cast<size_t>(latter_core::DevicePrefsField::PREFS_SEQ)] = "7";
+  dp_tok[static_cast<size_t>(latter_core::DevicePrefsField::WAKE_WORD_MODE)] = "Disabled";
+  dp_tok[static_cast<size_t>(latter_core::DevicePrefsField::ALERT_VOLUME)] = "65";
+  dp_tok[static_cast<size_t>(latter_core::DevicePrefsField::COLOR_PROFILE)] = "Custom";
+  dp_tok[static_cast<size_t>(latter_core::DevicePrefsField::THEME_COLOR_HEX)] = "#2288FF";
+  dp_tok[static_cast<size_t>(latter_core::DevicePrefsField::WEATHER_SIM_CONDITION)] = "Thunderstorm (Day)";
 
-  p.dirty_mask = (1ULL << static_cast<uint8_t>(latter_ui::PrefKey::ALERT_VOLUME));
+  p.dirty_mask = (1ULL << static_cast<uint8_t>(latter_core::PrefKey::ALERT_VOLUME));
   uint32_t eff = 0;
-  LATTER_CHECK(latter_ui::parse_v3_device_prefs_payload(build_v3_packet(300, 1, dp_tok), eff));
+  LATTER_CHECK(latter_core::parse_v3_device_prefs_payload(build_v3_packet(300, 1, dp_tok), eff));
   LATTER_CHECK(p.prefs_seq == 7U);
   LATTER_CHECK(p.dirty_mask == 0ULL);
   LATTER_CHECK(p.alert_volume == 65U);
-  LATTER_CHECK(std::string_view(latter_ui::pref_color_profile_cstr()) == "Custom");
+  LATTER_CHECK(std::string_view(latter_core::pref_color_profile_cstr()) == "Custom");
   LATTER_CHECK(p.custom_theme_rgb == 0x2288FFU);
-  LATTER_CHECK(std::string_view(latter_ui::pref_weather_sim_cstr()) == "Thunderstorm (Day)");
-  LATTER_CHECK((eff & latter_ui::kPrefEffectThemePreset) != 0U);
-  LATTER_CHECK((eff & latter_ui::kPrefEffectWakeWordSync) != 0U);
-  LATTER_CHECK((eff & latter_ui::kPrefEffectRedraw) != 0U);
+  LATTER_CHECK(std::string_view(latter_core::pref_weather_sim_cstr()) == "Thunderstorm (Day)");
+  LATTER_CHECK((eff & latter_core::kPrefEffectThemePreset) != 0U);
+  LATTER_CHECK((eff & latter_core::kPrefEffectWakeWordSync) != 0U);
+  LATTER_CHECK((eff & latter_core::kPrefEffectRedraw) != 0U);
 
   MockRpcOutbox outbox{};
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  latter_ui::link_state().ha_connected = true;
+  latter_core::link_state().ha_connected = true;
   uint32_t local_eff = 0;
-  LATTER_CHECK(latter_actions::record_local_pref_edit(
-      latter_ui::PrefKey::WAKE_WORD_MODE, "Always On", 1000U, local_eff, &outbox));
-  LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr()) == "Always On");
+  LATTER_CHECK(latter_core::record_local_pref_edit(
+      latter_core::PrefKey::WAKE_WORD_MODE, "Always On", 1000U, local_eff, &outbox));
+  LATTER_CHECK(std::string_view(latter_core::pref_wake_word_mode_cstr()) == "Always On");
   LATTER_CHECK(!outbox.published.empty());
   LATTER_CHECK(outbox.published.back().find("set_device_prefs") != std::string::npos);
   LATTER_CHECK(outbox.published.back().find("wake_word_mode=Always On") != std::string::npos);
 
   p.dirty_mask = 0ULL;
   outbox.published.clear();
-  latter_ui::link_state().ha_connected = false;
-  LATTER_CHECK(latter_actions::record_local_pref_edit(
-      latter_ui::PrefKey::TIME_FORMAT, "24-Hour", 2000U, local_eff, &outbox));
+  latter_core::link_state().ha_connected = false;
+  LATTER_CHECK(latter_core::record_local_pref_edit(
+      latter_core::PrefKey::TIME_FORMAT, "24-Hour", 2000U, local_eff, &outbox));
   LATTER_CHECK(outbox.published.empty());
   LATTER_CHECK(p.is_24h_format);
-  const std::string offline_dirty = latter_ui::build_hello_dirty_prefs(p);
+  const std::string offline_dirty = latter_core::build_hello_dirty_prefs(p);
   LATTER_CHECK(offline_dirty == "time_format=24-Hour");
 
-  latter_actions::timer_alarm_sync_tracker() = latter_actions::TimerAlarmSyncTracker{};
-  auto &rs = latter_ui::runtime_state();
+  latter_core::timer_alarm_sync_tracker() = latter_core::TimerAlarmSyncTracker{};
+  auto &rs = latter_core::runtime_state();
   rs.timers.running = false;
   rs.timers.paused = false;
   rs.timers.ringing = false;
   rs.alarms.ringing = false;
-  latter_ui::link_state().ha_connected = true;
+  latter_core::link_state().ha_connected = true;
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   outbox.published.clear();
 
-  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(5000U, false, &outbox));
+  LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(5000U, false, &outbox));
   rs.timers.running = true;
   rs.timers.remaining_sec = 120;
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(5250U, false, &outbox));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(5250U, false, &outbox));
   LATTER_CHECK(outbox.published.size() == 1U && outbox.published.back().find("timer_alarm_state") != std::string::npos);
 
   rs.timers.remaining_sec = 119;
-  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(6250U, false, &outbox));
+  LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(6250U, false, &outbox));
 
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   rs.timers.remaining_sec = 179;
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(7250U, false, &outbox));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(7250U, false, &outbox));
   LATTER_CHECK(outbox.published.size() == 2U);
 
-  p = latter_ui::PersistedDevicePrefs{};
+  p = latter_core::PersistedDevicePrefs{};
   LATTER_CHECK(p.home_screen_enabled);
-  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr(p)) == "Home");
-  LATTER_CHECK(std::string_view(latter_ui::pref_return_to_home_timeout_cstr(p)) == "2 min");
-  LATTER_CHECK(latter_ui::return_to_home_timeout_ms(p) == 120000U);
+  LATTER_CHECK(std::string_view(latter_core::pref_start_screen_cstr(p)) == "Home");
+  LATTER_CHECK(std::string_view(latter_core::pref_return_to_home_timeout_cstr(p)) == "2 min");
+  LATTER_CHECK(latter_core::return_to_home_timeout_ms(p) == 120000U);
 
-  latter_ui::PrefMask nav_chg{};
+  latter_core::PrefMask nav_chg{};
   uint32_t nav_eff = 0;
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      p, latter_ui::PrefKey::HOME_SCREEN_ENABLED, "0", false, nav_chg, nav_eff));
+  LATTER_CHECK(latter_core::set_pref_by_key_str(
+      p, latter_core::PrefKey::HOME_SCREEN_ENABLED, "0", nav_chg, nav_eff));
   LATTER_CHECK(!p.home_screen_enabled);
-  LATTER_CHECK(std::string_view(latter_ui::pref_start_screen_cstr(p)) == "Time App");
-  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 10);
-  LATTER_CHECK((nav_eff & latter_ui::kPrefEffectNavPolicy) != 0U);
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      p, latter_ui::PrefKey::START_SCREEN, "Clock Face", false, nav_chg, nav_eff));
-  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 0);
+  LATTER_CHECK(std::string_view(latter_core::pref_start_screen_cstr(p)) == "Time App");
+  LATTER_CHECK(latter_core::resolve_anchor_dock_app(p) == 10);
+  LATTER_CHECK((nav_eff & latter_core::kPrefEffectNavPolicy) != 0U);
+  LATTER_CHECK(latter_core::set_pref_by_key_str(
+      p, latter_core::PrefKey::START_SCREEN, "Clock Face", nav_chg, nav_eff));
+  LATTER_CHECK(latter_core::resolve_anchor_dock_app(p) == 0);
 
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      p, latter_ui::PrefKey::START_SCREEN, "Area Controls", false, nav_chg, nav_eff));
-  LATTER_CHECK(latter_ui::resolve_anchor_dock_app(p) == 6);
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(latter_core::set_pref_by_key_str(
+      p, latter_core::PrefKey::START_SCREEN, "Area Controls", nav_chg, nav_eff));
+  LATTER_CHECK(latter_core::resolve_anchor_dock_app(p) == 6);
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
 
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      p, latter_ui::PrefKey::HOME_SCREEN_ENABLED, "1", false, nav_chg, nav_eff));
-  rs = latter_ui::DeviceRuntimeState{};
+  LATTER_CHECK(latter_core::set_pref_by_key_str(
+      p, latter_core::PrefKey::HOME_SCREEN_ENABLED, "1", nav_chg, nav_eff));
+  rs = latter_core::DeviceRuntimeState{};
   rs.nav.gui_page = 6;
-  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.nav.gui_page = 1;
   rs.nav.home_subpage = 0;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.nav.gui_page = 2;
   rs.music.overlay_mode = 0;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, true));
-  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, true));
+  LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.music.overlay_mode = 2;
-  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, true));
+  LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, true));
   rs.nav.gui_page = 10;
   rs.nav.time_subpage = 1;
   rs.timers.running = true;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.timers.running = false;
-  LATTER_CHECK(latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.nav.time_subpage = 3;
   rs.stopwatch.running = true;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.stopwatch.running = false;
   rs.nav.gui_page = 8;
   rs.nav.tools_subpage = 5;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
   // Remote Control app stays active and never auto-returns to Home (D-079)
-  rs.nav.gui_page = latter_ui::PageId::REMOTE;
+  rs.nav.gui_page = latter_core::PageId::REMOTE;
   rs.nav.remote_subpage = 0;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, false));
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, true));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false, false, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false, false, true));
   rs.nav.remote_subpage = 1;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, false));
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false, false, true));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false, false, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false, false, true));
   rs.nav.remote_subpage = 0;
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      p, latter_ui::PrefKey::RETURN_TO_HOME_TIMEOUT, "Never", false, nav_chg, nav_eff));
+  LATTER_CHECK(latter_core::set_pref_by_key_str(
+      p, latter_core::PrefKey::RETURN_TO_HOME_TIMEOUT, "Never", nav_chg, nav_eff));
   rs.nav.gui_page = 6;
-  LATTER_CHECK(!latter_ui::should_return_to_home_on_idle(rs, p, false));
+  LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
 }
 
 void test_universal_shortcuts_and_pinned_app() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
 
   ShortcutItem dock_eff[kMaxEffectiveDockItems]{};
@@ -325,7 +326,7 @@ void test_universal_shortcuts_and_pinned_app() {
   LATTER_CHECK(latter_rpc::set_pin_session_key(
       "0a0b0c0d", "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"));
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  latter_actions::emit_shortcut_action("script.call_jordan", "turn_on", "123456789012", &outbox);
+  latter_core::emit_shortcut_action("script.call_jordan", "turn_on", "123456789012", &outbox);
   LATTER_CHECK(!outbox.frames.empty());
   std::string sc_joined;
   for (const auto &f : outbox.frames) sc_joined += f;
@@ -338,6 +339,7 @@ void test_universal_shortcuts_and_pinned_app() {
 
 void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
 
   static_assert(kPersistedPrefsVersion == 1U, "PersistedDevicePrefs clean v3.0.0 NVS version == 1");
@@ -345,12 +347,14 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::GAMES_ITEMS) == 53U);
   static_assert(static_cast<size_t>(DevicePrefsField::DO_NOT_DISTURB) == 70U);
   static_assert(static_cast<size_t>(DevicePrefsField::MUSIC_AUTO_OPEN) == 71U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 72U);
+  static_assert(static_cast<size_t>(DevicePrefsField::GLASS_STYLE) == 72U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 73U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 46U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::DO_NOT_DISTURB) == 64U);
   static_assert(static_cast<uint8_t>(PrefKey::MUSIC_AUTO_OPEN) == 65U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 66U);
+  static_assert(static_cast<uint8_t>(PrefKey::GLASS_STYLE) == 66U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 67U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -449,14 +453,15 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(restored.high_score_snake == 320);
   LATTER_CHECK(restored.high_score_drop_four == 890);
 
-  // Prefix load simulating older NVS blob written before high_score_drop_four was appended
+  // Pre-v3.0 truncated prefix (before kPersistedPrefsMinSize) is cleanly rejected; v3.0 GA floor succeeds
   PersistedDevicePrefs prefix_dst{};
   prefix_dst.high_score_drop_four = 999;
   const size_t old_prefix_len = offsetof(PersistedDevicePrefs, high_score_drop_four);
-  LATTER_CHECK(load_persisted_prefs_from_buffer(raw_nvs, old_prefix_len, prefix_dst));
+  LATTER_CHECK(!load_persisted_prefs_from_buffer(raw_nvs, old_prefix_len, prefix_dst));
+  LATTER_CHECK(load_persisted_prefs_from_buffer(raw_nvs, kPersistedPrefsMinSize, prefix_dst));
   LATTER_CHECK(prefix_dst.high_score_blocks == 12400);
   LATTER_CHECK(prefix_dst.high_score_snake == 320);
-  LATTER_CHECK(prefix_dst.high_score_drop_four == 0);
+  LATTER_CHECK(prefix_dst.high_score_drop_four == 890);
 
   PersistedDevicePrefs empty_nvs{};
   empty_nvs.tools_items[0] = '\0';
@@ -505,33 +510,33 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   link_state().ha_connected = true;
   auto &rs = runtime_state();
 
-  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(1000U, false, &sw_box));
+  LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(1000U, false, &sw_box));
   LATTER_CHECK(sw_box.published.empty());
 
   rs.stopwatch.running = true;
   rs.stopwatch.start_time_ms = 1000U;
   rs.stopwatch.elapsed_ms = 0U;
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(1000U, false, &sw_box));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(1000U, false, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 1U);
   LATTER_CHECK(sw_box.published.back().find("\"stopwatch_running\":\"1\"") != std::string::npos);
 
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(4000U, false, &sw_box));
+  LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(4000U, false, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 1U);
 
   rs.timers.running = true;
   rs.timers.remaining_sec = 60;
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(5000U, false, &sw_box));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(5000U, false, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 2U);
 
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   rs.timers.remaining_sec = 58;
   rs.stopwatch.start_time_ms = 1000U;
-  LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(7000U, false, &sw_box));
+  LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(7000U, false, &sw_box));
   rs.stopwatch.start_time_ms = 0U;
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(25000U, false, &sw_box));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(25000U, false, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 3U);
   LATTER_CHECK(sw_box.published.back().find("\"stopwatch_elapsed_sec\":\"25\"") != std::string::npos);
 
@@ -539,16 +544,16 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   rs.stopwatch.running = false;
   rs.stopwatch.elapsed_ms = 27400U;
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(27400U, false, &sw_box));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(27400U, false, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 4U);
 
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(28000U, /*force_if_active=*/true, &sw_box));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(28000U, /*force_if_active=*/true, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 5U);
 
   rs.stopwatch.elapsed_ms = 42000U;
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(28500U, false, &sw_box));
+  LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(28500U, false, &sw_box));
   LATTER_CHECK(sw_box.published.size() == 6U);
 
   dirty_band() = DirtyBandTracker{};
@@ -556,7 +561,7 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   mark_dirty_band(10, 30);
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   sw_box.published.clear();
-  const auto rst_sw_eff = latter_actions::handle_device_cmd_reset_stopwatch(29000U, &sw_box);
+  const auto rst_sw_eff = latter_core::handle_device_cmd_reset_stopwatch(29000U, &sw_box);
   LATTER_CHECK(rst_sw_eff.apply_power && !rst_sw_eff.stop_sound);
   LATTER_CHECK(!rs.stopwatch.running && rs.stopwatch.elapsed_ms == 0U && rs.stopwatch.lap_count == 0U);
   dirty_band().begin_frame(PageId::TIME, 3, 0U, false);
@@ -578,7 +583,7 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   sw_box.published.clear();
 
-  const auto can_tmr_eff = latter_actions::handle_device_cmd_cancel_timer(30000U, &sw_box);
+  const auto can_tmr_eff = latter_core::handle_device_cmd_cancel_timer(30000U, &sw_box);
   LATTER_CHECK(can_tmr_eff.stop_sound && can_tmr_eff.sync_brightness && can_tmr_eff.apply_power);
   LATTER_CHECK(!rs.timers.running && !rs.timers.paused && !rs.timers.ringing);
   LATTER_CHECK(timer_slots()[0].remaining_sec == 300 && !timer_slots()[0].running);
@@ -600,7 +605,7 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   sw_box.published.clear();
 
-  const auto dis_eff = latter_actions::handle_device_cmd_dismiss_ringing(35000U, &sw_box);
+  const auto dis_eff = latter_core::handle_device_cmd_dismiss_ringing(35000U, &sw_box);
   LATTER_CHECK(dis_eff.stop_sound && dis_eff.sync_brightness && dis_eff.apply_power);
   LATTER_CHECK(!rs.alarms.ringing && !rs.timers.ringing && rs.alarms.snooze_until == 0U);
   LATTER_CHECK(!prefs.alarms[1].enabled);
@@ -635,6 +640,7 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
 
 void test_bedtime_mode_d063() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
 
   static_assert(is_hour_in_bedtime_window(22, 22U, 7U));
@@ -722,6 +728,7 @@ void test_bedtime_mode_d063() {
 
 void test_full_spectrum_brightness_d065() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   LATTER_CHECK(hal_map_perceptual_u32(0.0f, 10U, 255U, 2.20f) == 0U);
   LATTER_CHECK(hal_map_perceptual_u32(0.00005f, 10U, 255U, 2.20f) == 0U);
@@ -773,14 +780,14 @@ void test_full_spectrum_brightness_d065() {
   PersistedDevicePrefs p{};
   PrefMask chg{};
   uint32_t eff = 0U;
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MANUAL_BRIGHTNESS, "42", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MANUAL_BRIGHTNESS, "42", chg, eff));
   LATTER_CHECK(p.manual_brightness == 42U && get_pref_value_str(PrefKey::MANUAL_BRIGHTNESS, p) == "42");
   LATTER_CHECK((eff & kPrefEffectBrightness) != 0U);
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::DAY_BRIGHTNESS, "150", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::DAY_BRIGHTNESS, "150", chg, eff));
   LATTER_CHECK(p.day_brightness == 100U);
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::NIGHT_BRIGHTNESS, "0", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::NIGHT_BRIGHTNESS, "0", chg, eff));
   LATTER_CHECK(p.night_brightness == 1U);
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::BEDTIME_BRIGHTNESS, "12", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::BEDTIME_BRIGHTNESS, "12", chg, eff));
   LATTER_CHECK(p.bedtime_brightness == 12U && get_pref_value_str(PrefKey::BEDTIME_BRIGHTNESS, p) == "12");
   const std::string encoded = encode_prefs_mask(
       pref_key_bit(PrefKey::MANUAL_BRIGHTNESS) | pref_key_bit(PrefKey::BEDTIME_BRIGHTNESS), p);
@@ -806,6 +813,7 @@ void test_full_spectrum_brightness_d065() {
 
 void test_ambient_light_brightness_d075() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   int8_t pct = -1;
   std::string lux;
@@ -913,21 +921,24 @@ void test_ambient_light_brightness_d075() {
 
 void test_music_auto_open_and_lyrics_fallback_d080() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   v3_domain_reducer().reset();
 
-  // 1. NVS append-only load from pre-music_auto_open prefix defaults music_auto_open to 0 ("Now Playing")
+  // 1. NVS v3.0 GA floor rejects pre-v3.0 truncated prefixes and accepts v3.0+ blobs cleanly
   {
     PersistedDevicePrefs legacy{};
     legacy.do_not_disturb = true;
     legacy.music_auto_open = 2U;
     PersistedDevicePrefs restored{};
     restored.music_auto_open = 2U;
-    LATTER_CHECK(load_persisted_prefs_from_buffer(
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(
         &legacy, offsetof(PersistedDevicePrefs, music_auto_open), restored));
+    LATTER_CHECK(load_persisted_prefs_from_buffer(
+        &legacy, kPersistedPrefsMinSize, restored));
     LATTER_CHECK(restored.do_not_disturb);
-    LATTER_CHECK(restored.music_auto_open == 0U);
-    LATTER_CHECK(std::string_view(pref_music_auto_open_cstr(restored)) == "Now Playing");
+    LATTER_CHECK(restored.music_auto_open == 2U);
+    LATTER_CHECK(std::string_view(pref_music_auto_open_cstr(restored)) == "Off");
   }
 
   // Round-trip PrefKey::MUSIC_AUTO_OPEN via set_pref_by_key_str
@@ -935,12 +946,12 @@ void test_music_auto_open_and_lyrics_fallback_d080() {
     PersistedDevicePrefs p{};
     PrefMask chg{};
     uint32_t eff = 0U;
-    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Lyrics", false, chg, eff));
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Lyrics", chg, eff));
     LATTER_CHECK(p.music_auto_open == 1U && p.music_auto_open_enum() == MusicAutoOpenMode::Lyrics);
     LATTER_CHECK(get_pref_value_str(PrefKey::MUSIC_AUTO_OPEN, p) == "Lyrics");
-    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Off", false, chg, eff));
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Off", chg, eff));
     LATTER_CHECK(p.music_auto_open == 2U && p.music_auto_open_enum() == MusicAutoOpenMode::Off);
-    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Now Playing", false, chg, eff));
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::MUSIC_AUTO_OPEN, "Now Playing", chg, eff));
     LATTER_CHECK(p.music_auto_open == 0U && p.music_auto_open_enum() == MusicAutoOpenMode::NowPlaying);
   }
 
@@ -1098,6 +1109,158 @@ void test_music_auto_open_and_lyrics_fallback_d080() {
   LATTER_CHECK(rs.nav.gui_page == PageId::TIME);
 }
 
+static int g_custom_psram_evictor_calls = 0;
+static void test_custom_psram_evictor() noexcept { ++g_custom_psram_evictor_calls; }
+
+void test_wave2_overhaul_contracts() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Static schema & limit invariants
+  static_assert(latter_rpc::kMaxRpcSlices == 32U);
+  static_assert(FrameHitTable::kMaxRegions == 128U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 73U);
+  static_assert(static_cast<size_t>(PrefKey::COUNT) == 67U);
+  static_assert(static_cast<uint8_t>(PrefKey::GLASS_STYLE) == 66U);
+  static_assert(kHibernateSnapshotVersion == 1U);
+  static_assert(kPersistedPrefsMinSize == offsetof(PersistedDevicePrefs, glass_style) + sizeof(PersistedDevicePrefs::glass_style));
+
+  // 2. device_hello clean-boot byte ceiling (zero unchanged defaults dumped; compact RPC payload)
+  {
+    auto &p = persisted_prefs();
+    p = PersistedDevicePrefs{};
+    device_prefs_state() = DevicePrefsState{};
+    seed_default_prefs_if_needed();
+    LATTER_CHECK(p.prefs_seq == 0U && p.dirty_mask.empty());
+    LATTER_CHECK(build_hello_dirty_prefs(p).empty());
+
+    MockRpcOutbox outbox{};
+    latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+    emit_device_hello(&outbox);
+    uint32_t t = 100U;
+    while (latter_rpc::has_pending_frames()) {
+      latter_rpc::step_outbox_loop(t);
+      t += 50U;
+    }
+    LATTER_CHECK(!outbox.published.empty() && outbox.published.size() <= 5U);
+    size_t total_bytes = 0U;
+    std::string combined;
+    for (const auto &fr : outbox.published) {
+      total_bytes += fr.size();
+      combined += fr;
+    }
+    LATTER_CHECK(total_bytes < 1024U);
+    LATTER_CHECK(combined.find("core_rev") != std::string::npos);
+    LATTER_CHECK(combined.find("max_payload_bytes") == std::string::npos);
+    LATTER_CHECK(combined.find("wake_word_mode=") == std::string::npos);
+
+    // Editing a single local pref emits ONLY that key in build_hello_dirty_prefs()
+    PrefMask chg{};
+    uint32_t eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::GLASS_STYLE, "Dark", chg, eff));
+    p.dirty_mask |= chg;
+    LATTER_CHECK(build_hello_dirty_prefs(p) == "glass_style=Dark");
+  }
+
+  // 3. v3_unescape_subfield() single-pass backslash/pipe/semicolon symmetry with HA backend
+  {
+    LATTER_CHECK(v3_unescape_subfield("") == "");
+    LATTER_CHECK(v3_unescape_subfield("plain text") == "plain text");
+    LATTER_CHECK(v3_unescape_subfield(R"(a\pb\sc\\d)") == R"(a|b;c\d)");
+    LATTER_CHECK(v3_unescape_subfield(R"(\\p\\s\\\\)") == R"(\p\s\\)");
+    LATTER_CHECK(v3_unescape_subfield(R"(trail\)") == R"(trail\)");
+    LATTER_CHECK(v3_unescape_subfield(R"(keep\x)") == R"(keep\x)");
+    LATTER_CHECK(v3_unescape_subfield("Caf\xC3\xA9\\pLive\\s2026\\\\OK") == "Caf\xC3\xA9|Live;2026\\OK");
+  }
+
+  // 4. load_persisted_prefs_from_buffer() arbitrary prefix lengths & v3.1 rollback resilience
+  {
+    PersistedDevicePrefs src{};
+    src.prefs_seq = 42U;
+    src.glass_style = 2U;
+    src.do_not_disturb = true;
+
+    PersistedDevicePrefs dst{};
+    // Reject truncated/under-floor buffers, bad magic, wrong version
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(nullptr, sizeof(src), dst));
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&src, 0U, dst));
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&src, 8U, dst));
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&src, kPersistedPrefsMinSize - 1U, dst));
+
+    PersistedDevicePrefs bad_magic = src;
+    bad_magic.magic = 0xDEADBEEFU;
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&bad_magic, sizeof(bad_magic), dst));
+
+    PersistedDevicePrefs bad_ver = src;
+    bad_ver.version = kPersistedPrefsVersion + 1U;
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&bad_ver, sizeof(bad_ver), dst));
+
+    // Accept exact v3.0 GA floor (kPersistedPrefsMinSize) and full sizeof
+    dst = PersistedDevicePrefs{};
+    LATTER_CHECK(load_persisted_prefs_from_buffer(&src, kPersistedPrefsMinSize, dst));
+    LATTER_CHECK(dst.prefs_seq == 42U && dst.glass_style == 2U && dst.do_not_disturb);
+
+    dst = PersistedDevicePrefs{};
+    LATTER_CHECK(load_persisted_prefs_from_buffer(&src, sizeof(src), dst));
+    LATTER_CHECK(dst.prefs_seq == 42U && dst.glass_style == 2U && dst.do_not_disturb);
+
+    // Accept future oversized v3.1+ append-only blob (rollback resilience: copies our prefix cleanly)
+    std::vector<uint8_t> future_blob(sizeof(PersistedDevicePrefs) + 32U, 0xA5U);
+    std::memcpy(future_blob.data(), &src, sizeof(src));
+    dst = PersistedDevicePrefs{};
+    LATTER_CHECK(load_persisted_prefs_from_buffer(future_blob.data(), future_blob.size(), dst));
+    LATTER_CHECK(dst.prefs_seq == 42U && dst.glass_style == 2U && dst.do_not_disturb);
+  }
+
+  // 5. PrefKey::GLASS_STYLE wire round-trip, validation & clamping
+  {
+    PersistedDevicePrefs p{};
+    LATTER_CHECK(p.glass_style == 0U && p.glass_style_enum() == GlassStyle::Auto);
+    LATTER_CHECK(std::string_view(pref_glass_style_cstr(p)) == "Auto");
+
+    PrefMask chg{};
+    uint32_t eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::GLASS_STYLE, "Clear", chg, eff));
+    LATTER_CHECK(p.glass_style == 1U && p.glass_style_enum() == GlassStyle::Clear);
+    LATTER_CHECK((eff & kPrefEffectRedraw) != 0U);
+    LATTER_CHECK(get_pref_value_str(PrefKey::GLASS_STYLE, p) == "Clear");
+
+    LATTER_CHECK(set_pref_by_key_str(p, PrefKey::GLASS_STYLE, "Dark", chg, eff));
+    LATTER_CHECK(p.glass_style == 2U && p.glass_style_enum() == GlassStyle::Dark);
+    LATTER_CHECK(get_pref_value_str(PrefKey::GLASS_STYLE, p) == "Dark");
+
+    LATTER_CHECK(!set_pref_by_key_str(p, PrefKey::GLASS_STYLE, "FrostedInvalid", chg, eff));
+    LATTER_CHECK(p.glass_style == 2U);
+
+    // Out-of-range byte clamps safely via pref_glass_style_cstr
+    p.glass_style = 99U;
+    LATTER_CHECK(std::string_view(pref_glass_style_cstr(p)) == "Auto");
+
+    // 73-field DevicePrefs v3 wire parse sets glass_style cleanly
+    reset_all_v3_rev_guards();
+    persisted_prefs() = PersistedDevicePrefs{};
+    device_prefs_state() = DevicePrefsState{};
+    std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
+    dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "88";
+    dp_tok[static_cast<size_t>(DevicePrefsField::GLASS_STYLE)] = "Clear";
+    uint32_t p_eff = 0U;
+    LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(99, 1, dp_tok), p_eff, 5000U));
+    LATTER_CHECK(persisted_prefs().glass_style == 1U);
+    LATTER_CHECK((p_eff & kPrefEffectRedraw) != 0U);
+  }
+
+  // 6. PSRAM cache evictor registry (breaks ui_gfx -> page_weather link inversion)
+  {
+    g_custom_psram_evictor_calls = 0;
+    LATTER_CHECK(register_psram_cache_evictor(&test_custom_psram_evictor));
+    LATTER_CHECK(register_psram_cache_evictor(&test_custom_psram_evictor));  // idempotent deduplication
+    evict_registered_psram_caches();
+    LATTER_CHECK(g_custom_psram_evictor_calls == 1);
+    evict_registered_psram_caches();
+    LATTER_CHECK(g_custom_psram_evictor_calls == 2);
+  }
+}
+
 }  // namespace
 
 void run_state_prefs_nvs_tests() {
@@ -1108,6 +1271,7 @@ void run_state_prefs_nvs_tests() {
   test_full_spectrum_brightness_d065();
   test_ambient_light_brightness_d075();
   test_music_auto_open_and_lyrics_fallback_d080();
+  test_wave2_overhaul_contracts();
 }
 
 }  // namespace latter_test

@@ -39,8 +39,8 @@ static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
 #include "hal_sleep_pm.h"
 #include "state/device_runtime_state.h"
 
-#ifndef LATTER_SDK_REV
-#define LATTER_SDK_REV 2026112302L
+#ifndef LATTER_CORE_REV
+#define LATTER_CORE_REV 2026112303L
 #endif
 
 namespace esphome {
@@ -55,40 +55,38 @@ class MipiDsi;
 }  // namespace mipi_dsi
 }  // namespace esphome
 
-namespace esphome::voice_assistant {
+namespace latter_core {
 
 #ifdef USE_VOICE_ASSISTANT
-void stop_va_microphone(VoiceAssistant *va);
-void abort_voice_assistant(VoiceAssistant *va);
-void on_api_client_authenticated(VoiceAssistant *va, const std::string &client_info,
+void stop_va_microphone(esphome::voice_assistant::VoiceAssistant *va);
+void abort_voice_assistant(esphome::voice_assistant::VoiceAssistant *va);
+void on_api_client_authenticated(esphome::voice_assistant::VoiceAssistant *va,
+                                 const std::string &client_info,
                                  const std::string &client_address);
-void clean_disconnect_api_before_hibernate(VoiceAssistant *va);
+void clean_disconnect_api_before_hibernate(esphome::voice_assistant::VoiceAssistant *va);
 #else
-inline void stop_va_microphone(VoiceAssistant *) {}
-inline void abort_voice_assistant(VoiceAssistant *) {}
-inline void on_api_client_authenticated(VoiceAssistant *, const std::string &, const std::string &) {}
-inline void clean_disconnect_api_before_hibernate(VoiceAssistant *) {}
+inline void stop_va_microphone(esphome::voice_assistant::VoiceAssistant *) {}
+inline void abort_voice_assistant(esphome::voice_assistant::VoiceAssistant *) {}
+inline void on_api_client_authenticated(esphome::voice_assistant::VoiceAssistant *,
+                                        const std::string &, const std::string &) {}
+inline void clean_disconnect_api_before_hibernate(esphome::voice_assistant::VoiceAssistant *) {}
 #endif
 
 #if defined(USE_VOICE_ASSISTANT) && defined(USE_MICRO_WAKE_WORD)
-std::string primary_wake_word_name(micro_wake_word::MicroWakeWord *mww);
-void cycle_primary_wake_word(VoiceAssistant *va, micro_wake_word::MicroWakeWord *mww);
+std::string primary_wake_word_name(esphome::micro_wake_word::MicroWakeWord *mww);
+void cycle_primary_wake_word(esphome::voice_assistant::VoiceAssistant *va,
+                             esphome::micro_wake_word::MicroWakeWord *mww);
 #else
-inline std::string primary_wake_word_name(micro_wake_word::MicroWakeWord *) { return "None"; }
-inline void cycle_primary_wake_word(VoiceAssistant *, micro_wake_word::MicroWakeWord *) {}
+inline std::string primary_wake_word_name(esphome::micro_wake_word::MicroWakeWord *) { return "None"; }
+inline void cycle_primary_wake_word(esphome::voice_assistant::VoiceAssistant *,
+                                    esphome::micro_wake_word::MicroWakeWord *) {}
 #endif
 
-}  // namespace esphome::voice_assistant
-
-namespace latter_hal {
 #if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
 uint8_t *get_mipi_dsi_buffer(esphome::mipi_dsi::MipiDsi *d);
 #else
 inline uint8_t *get_mipi_dsi_buffer(esphome::mipi_dsi::MipiDsi *) { return nullptr; }
 #endif
-}  // namespace latter_hal
-
-namespace latter_ui {
 
 template <typename UpdT>
   requires(!std::is_pointer_v<UpdT>)
@@ -159,11 +157,6 @@ inline bool is_newer_semver(const std::string &lat_str, const char *cur_str) {
 inline bool &speaker_volume_boot_synced() {
   static bool synced = false;
   return synced;
-}
-
-inline bool &boot_speaker_off_done() {
-  static bool done = false;
-  return done;
 }
 
 // ==============================================================================
@@ -304,4 +297,4 @@ inline void handle_ota_error(DispT *disp_or_ptr, uint32_t now_m, DeviceRuntimeSt
                    rt.alert.priority, rt.alert.duration_ms, rt.alert.start_ms, now_m);
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

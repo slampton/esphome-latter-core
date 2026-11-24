@@ -18,7 +18,7 @@ esphome:
     - priority: -100
       then:
         - lambda: |-
-            latter_ui::ensure_persisted_prefs_loaded();
+            latter_core::ensure_persisted_prefs_loaded();
             latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
 
 # Client-initiated dial-back (outgoing_connection -> HA TCP :6054, Noise PSK verified on both sides):
@@ -37,11 +37,11 @@ api:
       - lambda: |-
           const bool is_ha = client_info.find("Home Assistant") != std::string::npos;
           if (is_ha) {
-            latter_ui::reset_all_v3_rev_guards();
-            latter_ui::reset_hello_sync_on_connect();
-            latter_ui::mark_hello_in_flight(true, millis());
+            latter_core::reset_all_v3_rev_guards();
+            latter_core::reset_hello_sync_on_connect();
+            latter_core::mark_hello_in_flight(true, millis());
           }
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           if (rs.on_ha_client_connected != nullptr) {
             rs.on_ha_client_connected(client_info, client_address);
           }
@@ -54,9 +54,9 @@ api:
     then:
       - lambda: |-
           if (client_info.find("Home Assistant") != std::string::npos) {
-            latter_ui::mark_hello_in_flight(false);
+            latter_core::mark_hello_in_flight(false);
           }
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           if (rs.on_ha_client_disconnected != nullptr) {
             rs.on_ha_client_disconnected(client_info);
           }
@@ -73,10 +73,10 @@ api:
             condition:
               lambda: |-
                 const uint32_t now_ms = millis();
-                if (!latter_ui::should_trigger_hello_on_ping(now_ms, latter_ui::persisted_prefs().dirty_mask)) {
+                if (!latter_core::should_trigger_hello_on_ping(now_ms, latter_core::persisted_prefs().dirty_mask)) {
                   return false;
                 }
-                latter_ui::mark_hello_in_flight(true, now_ms);
+                latter_core::mark_hello_in_flight(true, now_ms);
                 return true;
             then:
               - script.execute: send_device_hello
@@ -92,23 +92,23 @@ api:
             const std::string_view sv_pay(payload.c_str(), payload.size());
             bool parsed = false;
             if (sv_dom == "area_context") {
-              parsed = latter_ui::parse_v3_area_ctx_payload(sv_pay, latter_ui::area_ctx_state(), latter_ui::home_hub_state());
+              parsed = latter_core::parse_v3_area_ctx_payload(sv_pay, latter_core::area_ctx_state(), latter_core::home_hub_state());
             } else if (sv_dom == "active_media") {
-              parsed = latter_ui::parse_v3_media_payload(sv_pay, latter_ui::media_state());
+              parsed = latter_core::parse_v3_media_payload(sv_pay, latter_core::media_state());
             } else if (sv_dom == "remote_config") {
-              parsed = latter_ui::parse_v3_remote_payload(sv_pay, latter_ui::remote_state());
+              parsed = latter_core::parse_v3_remote_payload(sv_pay, latter_core::remote_state());
             } else if (sv_dom == "weather_forecast") {
-              parsed = latter_ui::parse_v3_weather_payload(sv_pay, latter_ui::weather_state());
+              parsed = latter_core::parse_v3_weather_payload(sv_pay, latter_core::weather_state());
             } else if (sv_dom == "calendar_agenda") {
-              parsed = latter_ui::parse_v3_calendar_payload(sv_pay, latter_ui::calendar_state());
+              parsed = latter_core::parse_v3_calendar_payload(sv_pay, latter_core::calendar_state());
             } else if (sv_dom == "device_prefs") {
               uint32_t eff_mask = 0;
-              parsed = latter_ui::parse_v3_device_prefs_payload(sv_pay, eff_mask, millis());
-              latter_ui::device_prefs_state().last_effects = eff_mask;
+              parsed = latter_core::parse_v3_device_prefs_payload(sv_pay, eff_mask, millis());
+              latter_core::device_prefs_state().last_effects = eff_mask;
             } else if (sv_dom == "shortcuts") {
-              parsed = latter_ui::parse_v3_shortcuts_payload(sv_pay, latter_ui::shortcuts_state());
+              parsed = latter_core::parse_v3_shortcuts_payload(sv_pay, latter_core::shortcuts_state());
             }
-            auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_core::runtime_state();
             if (parsed && rs.on_v3_domain_pushed != nullptr) {
               rs.on_v3_domain_pushed(sv_dom);
             }
@@ -128,11 +128,11 @@ api:
               }
               return;
             }
-            auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_core::runtime_state();
             if (rs.on_device_command != nullptr) {
               rs.on_device_command(sv_cmd);
             } else if (sv_cmd == "restart") {
-              latter_ui::flush_persisted_prefs_if_dirty();
+              latter_core::flush_persisted_prefs_if_dirty();
               App.safe_reboot();
             }
 
@@ -142,7 +142,7 @@ script:
   - id: send_device_hello
     mode: restart
     then:
-      - lambda: 'latter_ui::mark_hello_in_flight(true, millis());'
+      - lambda: 'latter_core::mark_hello_in_flight(true, millis());'
       - wait_until:
           condition:
             api.connected:
@@ -157,15 +157,15 @@ script:
             - lambda: |-
                 const uint32_t now_ms = millis();
                 latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
-                latter_actions::emit_device_hello();
-                latter_actions::check_and_emit_timer_alarm_state(now_ms, true);
-                auto &rs = latter_ui::runtime_state();
+                latter_core::emit_device_hello();
+                latter_core::check_and_emit_timer_alarm_state(now_ms, true);
+                auto &rs = latter_core::runtime_state();
                 if (rs.on_hello_sent != nullptr) {
                   rs.on_hello_sent();
                 }
-                latter_ui::mark_hello_sent(now_ms, latter_ui::persisted_prefs().dirty_mask);
+                latter_core::mark_hello_sent(now_ms, latter_core::persisted_prefs().dirty_mask);
           else:
-            - lambda: 'latter_ui::mark_hello_in_flight(false);'
+            - lambda: 'latter_core::mark_hello_in_flight(false);'
 
 time:
   - platform: homeassistant

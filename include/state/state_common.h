@@ -21,6 +21,12 @@
 #include <type_traits>
 #include <vector>
 
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+#if __has_include("esphome/core/log.h")
+#include "esphome/core/log.h"
+#endif
 #if defined(ESP_PLATFORM) && __has_include(<sdkconfig.h>)
 #include <sdkconfig.h>
 #endif
@@ -78,7 +84,7 @@ enum class SlotChannel : uint8_t {
 #endif
 }  // namespace latter_rpc
 
-namespace latter_ui {
+namespace latter_core {
 
 // Canonical top-level page IDs.
 namespace PageId {
@@ -122,7 +128,6 @@ namespace CalendarSubpage {
 namespace CalDrilldown {
   static constexpr int NONE          = 0;
   static constexpr int DETAIL        = 1;
-  static constexpr int MAP           = 2;
   static constexpr int ADD_STEP1     = 3;
   static constexpr int ADD_STEP2     = 4;
   static constexpr int PICK_TITLE    = 5;
@@ -224,6 +229,12 @@ enum class ClockFaceStyle : uint8_t {
   MinimalDigital = 0,
   ModernAnalog   = 1,
   HybridDigital  = 2,
+};
+
+enum class GlassStyle : uint8_t {
+  Auto  = 0,
+  Clear = 1,
+  Dark  = 2,
 };
 
 enum class MediaPlaybackState : uint8_t {
@@ -471,8 +482,19 @@ inline void v3_check_field_count(const char *domain, std::string_view payload, s
   const size_t got = payload.empty() ? 0 : (1U + static_cast<size_t>(
       std::count(payload.begin(), payload.end(), kProtocolFieldSep)));
   if (got != expected) {
-    v3_mismatch_warn_count()++;
+    const uint32_t count = ++v3_mismatch_warn_count();
+#if defined(USE_ESP32) && defined(ESP_LOGW)
+    if (count <= 8U || (count % 64U) == 0U) {
+      ESP_LOGW("latter_v3", "Domain '%s' field count mismatch: got=%u expected=%u (total=%lu)",
+               domain != nullptr ? domain : "?",
+               static_cast<unsigned>(got),
+               static_cast<unsigned>(expected),
+               static_cast<unsigned long>(count));
+    }
+#else
     (void)domain;
+    (void)count;
+#endif
   }
 }
 
@@ -507,4 +529,4 @@ inline uint32_t parse_hex_rgb_u24(std::string_view sv, uint32_t fallback) {
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

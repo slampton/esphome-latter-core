@@ -21,7 +21,7 @@ from .common import (
 
 NOISE_KEY_BYTES: Final[int] = 32
 AGENTS_MD_MAX_BYTES: Final[int] = 12000
-MIN_SDK_REV: Final[int] = 2026112201
+MIN_CORE_REV: Final[int] = 2026112303
 MAX_MAC_SUFFIX_BASE_NAME_LEN: Final[int] = 24
 REQUIRED_PRODUCT_OPTIONS: Final[tuple[str, ...]] = (
     "Minimal Digital",
@@ -216,18 +216,22 @@ def verify_terminology_and_yaml_globals(failures: list[str]) -> None:
             if suffix in {".yaml", ".yml"}:
                 _check_yaml_hygiene_file(rel, txt, failures)
 
-    option_headers = sorted((ROOT / "include" / "state").glob("*.h")) + sorted((ROOT / "include").glob("hal_*.h"))
+    option_headers = (
+        sorted((ROOT / "include" / "state").glob("*.h"))
+        + sorted((ROOT / "include").glob("hal_*.h"))
+        + [ROOT / "include" / "latter_protocol.h"]
+    )
     combined_opts = "\n".join(p.read_text(encoding="utf-8") for p in option_headers if p.is_file())
     failures.extend(
-        f"[PRODUCT OPTIONS] include/state/*.h + include/hal_*.h missing option {req_opt!r}"
+        f"[PRODUCT OPTIONS] include/state/*.h + include/hal_*.h + include/latter_protocol.h missing option {req_opt!r}"
         for req_opt in REQUIRED_PRODUCT_OPTIONS
         if f'"{req_opt}"' not in combined_opts
     )
 
 
 def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
-    """Verify LATTER_SDK_REV == LATTER_YAML_REV, ESPHome version pins, and v3.0.0 lockstep."""
-    sdk_revs: list[int] = []
+    """Verify LATTER_CORE_REV == LATTER_YAML_REV, ESPHome version pins, and v3.0.0 lockstep."""
+    core_revs: list[int] = []
     yaml_revs: list[int] = []
     scan_files = (
         iter_repo_files(ROOT / "include")
@@ -238,19 +242,19 @@ def verify_sdk_and_version_lockstep(failures: list[str]) -> None:
         if path.suffix.lower() not in {".h", ".hpp", ".cpp", ".yaml"}:
             continue
         txt = path.read_text(encoding="utf-8")
-        sdk_revs.extend(int(m.group(1)) for m in re.finditer(r"(?m)^\s*#\s*define\s+LATTER_SDK_REV\s+(\d+)[ULul]*\b", txt))
+        core_revs.extend(int(m.group(1)) for m in re.finditer(r"(?m)^\s*#\s*define\s+LATTER_CORE_REV\s+(\d+)[ULul]*\b", txt))
         yaml_revs.extend(
             int(m.group(1))
             for m in re.finditer(
                 r"constexpr\s+(?:long|uint32_t|unsigned(?:\s+long)?)\s+LATTER_YAML_REV\s*=\s*(\d+)[ULul]*\s*;", txt
             )
         )
-    if not sdk_revs or not yaml_revs or set(sdk_revs) != set(yaml_revs):
+    if not core_revs or not yaml_revs or set(core_revs) != set(yaml_revs):
         failures.append(
-            f"[SDK REV LOCKSTEP] LATTER_SDK_REV ({sdk_revs}) and LATTER_YAML_REV ({yaml_revs}) must exist and match"
+            f"[CORE REV LOCKSTEP] LATTER_CORE_REV ({core_revs}) and LATTER_YAML_REV ({yaml_revs}) must exist and match"
         )
-    elif min(sdk_revs) < MIN_SDK_REV:
-        failures.append(f"[SDK REV LOCKSTEP] LATTER_SDK_REV ({sdk_revs[0]}) must be >= {MIN_SDK_REV}")
+    elif min(core_revs) < MIN_CORE_REV:
+        failures.append(f"[CORE REV LOCKSTEP] LATTER_CORE_REV ({core_revs[0]}) must be >= {MIN_CORE_REV}")
 
     bridge_h = ROOT / "include" / "esphome_bridge.h"
     if not bridge_h.is_file() or "VERSION_CODE(2026, 11, 0)" not in bridge_h.read_text(encoding="utf-8"):

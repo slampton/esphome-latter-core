@@ -1,7 +1,7 @@
 # ==============================================================================
 # Latter Core Module: High-Refresh Intervals, Alarm Engine & Domain Fetchers
 # (modules/timers_and_fetchers.yaml)
-# Zero YAML globals: reads/writes latter_ui::runtime_state(), persisted_prefs(),
+# Zero YAML globals: reads/writes latter_core::runtime_state(), persisted_prefs(),
 # and calls typed RPC helpers in latter_actions.h.
 # ==============================================================================
 
@@ -14,60 +14,49 @@ interval:
     id: ui_anim_tick
     then:
       - lambda: |-
-          const bool tts_audio_active =
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-              id(announcement_mixing_input).is_running();
-          const bool speaker_audio_busy =
-              tts_audio_active ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              id(media_mixing_input).is_running() ||
-              id(sound_mixing_input).is_running();
+          const auto &au = latter_core::runtime_state().audio;
           latter_ui::dispatch_cadence_20ms(
               millis(), &id(disp1), id(ui_anim_tick),
               id(display_brightness).current_values.is_on(),
               id(home_wallpaper_art).get_width() > 0,
-              id(mww).is_running(), id(va).is_running(),
-              tts_audio_active, speaker_audio_busy,
+              au.mww_running(), au.va_running(),
+              au.tts_active(), au.speaker_busy(),
               latter_ui::kHomeActivityRotateMs,
-              []() {
-                id(enable_speaker_path).execute();
-                id(hal_set_dac_mute).execute(false);
-              },
-              [](int sfx) { id(play_game_sfx).execute(sfx); });
+              []() { latter_core::runtime_state().audio.enable_speaker_for_game_now(); },
+              [](int sfx) { latter_core::runtime_state().audio.play_sfx(sfx); });
 
           // Live MJPEG video dirty-frame consumption (D-066): main UI loop schedules banded update
           {
-            auto &rs = latter_ui::runtime_state();
-            if (latter_ui::video_client().consume_frame_dirty()) {
+            auto &rs = latter_core::runtime_state();
+            if (latter_core::video_client().consume_frame_dirty()) {
               const bool video_vis =
                   rs.nav.display_power_state == 0 && !rs.nav.is_hibernating && !rs.nav.ota_in_progress &&
                   !rs.alarms.ringing && !rs.timers.ringing && !rs.alarms.find_my_active &&
-                  (latter_ui::is_camera_view_active(rs) ||
+                  (latter_core::is_camera_view_active(rs) ||
                    (rs.alert.active && rs.cameras.doorbell_live_popup_active));
               if (video_vis) {
                 latter_ui::schedule_band_disp_update(&id(disp1), rs.cameras.video_y0, rs.cameras.video_y1);
               }
             }
-            latter_ui::video_client().poll_release_if_idle();
+            latter_core::video_client().poll_release_if_idle();
           }
 
   - interval: 250ms
     id: ui_fast_tick
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           std::string cur_fw;
-          if (rs.nav.gui_page == latter_ui::PageId::SYSTEM &&
+          if (rs.nav.gui_page == latter_core::PageId::SYSTEM &&
               (rs.nav.system_menu_mode == latter_ui::SystemMenuMode::UPDATE ||
                rs.nav.system_menu_mode == latter_ui::SystemMenuMode::CONFIRM_UPDATE) &&
               rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
-            cur_fw = latter_ui::fw_update_latest_version(&id(latter_firmware_update));
+            cur_fw = latter_core::fw_update_latest_version(&id(latter_firmware_update));
           }
           latter_ui::dispatch_cadence_250ms(
               millis(), &id(disp1), id(ui_anim_tick),
               id(home_wallpaper_art).get_width() > 0,
-              id(va).is_running(), cur_fw,
+              rs.audio.va_running(), cur_fw,
               latter_ui::kHomeActivityRotateMs,
               []() { id(fetch_wallpaper_debounced).execute(); });
 
@@ -76,20 +65,20 @@ interval:
           // ------------------------------------------------------------------
           {
             const uint32_t now_t_ms = millis();
-            const auto t_eff = latter_ui::timer_alarm_controller().tick_timers_250ms(now_t_ms);
+            const auto t_eff = latter_core::timer_alarm_controller().tick_timers_250ms(now_t_ms);
             if (t_eff.any_expired) {
-              latter_ui::video_client().stop();
-              id(preempt_va_for_alert).execute();
-              latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
+              latter_core::video_client().stop();
+              rs.audio.preempt_va_for_alert_now();
+              latter_core::note_wake_reason(latter_core::WakeReason::ALERT);
               id(wake_to_active_state).execute();
-              id(play_alarm_sound).execute();
+              rs.audio.play_alarm();
               latter_ui::schedule_disp_update(&id(disp1));
               ESP_LOGI("timer", "Countdown timer expired! Firing alert.");
             } else if (t_eff.auto_silenced) {
-              id(stop_alarm_sound).execute();
+              rs.audio.stop_alarm();
               id(sync_display_brightness).execute();
               latter_ui::schedule_disp_update(&id(disp1));
-              latter_ui::display_lifecycle().note_activity(now_t_ms);
+              latter_core::display_lifecycle().note_activity(now_t_ms);
               ESP_LOGI("timer", "Unattended alert auto-silenced after 5 min.");
             } else if (t_eff.sec_changed) {
               if (!rs.voice.active && rs.voice.status_text.empty() && rs.nav.display_power_state == 0) {
@@ -109,22 +98,22 @@ interval:
           // 60-second safety auto-stop for Find My Device beacon
           if (rs.alarms.find_my_active && (millis() - rs.alarms.find_my_start_ms >= 60000U)) {
             rs.alarms.find_my_active = false;
-            id(stop_alarm_sound).execute();
+            rs.audio.stop_alarm();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            latter_ui::display_lifecycle().note_activity(millis());
+            latter_core::display_lifecycle().note_activity(millis());
           }
 
           // Slow 1 Hz active-field blink in Time App -> Alarms Editor (500 ms half-period band flush)
           {
             static bool s_prev_alarm_blink = false;
             if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating &&
-                rs.nav.gui_page == latter_ui::PageId::TIME &&
+                rs.nav.gui_page == latter_core::PageId::TIME &&
                 rs.nav.time_subpage == latter_ui::TimeSubpage::ALARMS &&
                 rs.alarms.edit_idx > 0 && !rs.voice.active && rs.voice.status_text.empty()) {
-              const uint32_t latest_in = std::max(latter_ui::last_user_touch_ms(),
+              const uint32_t latest_in = std::max(latter_core::last_user_touch_ms(),
                                                   latter_ui::ui_focus_last_ms());
-              const bool cur_blink = latter_ui::alarm_editor_blink_dim(millis(), latest_in);
+              const bool cur_blink = latter_core::alarm_editor_blink_dim(millis(), latest_in);
               if (cur_blink != s_prev_alarm_blink) {
                 s_prev_alarm_blink = cur_blink;
                 latter_ui::schedule_band_disp_update(
@@ -138,30 +127,30 @@ interval:
           // Dedicated Cameras App & P4 Live Doorbell Popup lifecycle supervisor (D-066)
           {
             const uint32_t now_cam_ms = millis();
-            const auto &prefs = latter_ui::persisted_prefs();
-            const auto &ac = latter_ui::area_ctx_state();
-            const bool cam_active_now = latter_ui::is_camera_view_active(rs);
+            const auto &prefs = latter_core::persisted_prefs();
+            const auto &ac = latter_core::area_ctx_state();
+            const bool cam_active_now = latter_core::is_camera_view_active(rs);
             const bool live_popup_now = rs.alert.active && rs.cameras.doorbell_live_popup_active;
             const bool screen_ok = (rs.nav.display_power_state == 0) && !rs.nav.is_hibernating &&
                                    !rs.nav.ota_in_progress && !rs.alarms.ringing &&
                                    !rs.timers.ringing && !rs.alarms.find_my_active;
 
             if (!screen_ok || (!cam_active_now && !live_popup_now)) {
-              if (latter_ui::video_client().is_active()) {
-                latter_ui::video_client().stop();
+              if (latter_core::video_client().is_active()) {
+                latter_core::video_client().stop();
               }
             } else if (cam_active_now) {
-              if (!latter_ui::cam_intercom_status().empty() && rs.intercom.cam_status_ms > 0 &&
+              if (!latter_core::cam_intercom_status().empty() && rs.intercom.cam_status_ms > 0 &&
                   (now_cam_ms - rs.intercom.cam_status_ms > 2500U)) {
-                latter_ui::cam_intercom_status() = "";
+                latter_core::cam_intercom_status() = "";
                 latter_ui::schedule_disp_update(&id(disp1));
               }
 
               // 6 s auto-hide HUD on Single / Carousel (never hides while talking, listening, or quick-reply open)
-              if ((rs.cameras.tab == latter_ui::CamerasTab::SINGLE ||
-                   rs.cameras.tab == latter_ui::CamerasTab::CAROUSEL) &&
+              if ((rs.cameras.tab == latter_core::CamerasTab::SINGLE ||
+                   rs.cameras.tab == latter_core::CamerasTab::CAROUSEL) &&
                   rs.cameras.hud_active && !rs.cameras.quick_reply_open &&
-                  !latter_ui::cam_call_active() && !latter_ui::cam_listen_active() &&
+                  !latter_core::cam_call_active() && !latter_core::cam_listen_active() &&
                   !rs.voice.intercom_turn && !latter_ui::touch_gesture().active &&
                   (now_cam_ms - rs.cameras.hud_timer >= 6000U)) {
                 rs.cameras.hud_active = false;
@@ -170,12 +159,12 @@ interval:
               }
 
               // Automatic Carousel dwell rotation
-              if (rs.cameras.tab == latter_ui::CamerasTab::CAROUSEL &&
+              if (rs.cameras.tab == latter_core::CamerasTab::CAROUSEL &&
                   !rs.cameras.carousel_paused && !rs.cameras.quick_reply_open) {
-                latter_ui::CameraRecord cams[latter_ui::MAX_CAMERA_SLOTS]{};
-                const int c_cnt = latter_ui::parse_cameras_records(ac.cameras_summary, cams, latter_ui::MAX_CAMERA_SLOTS);
-                int car_idx[latter_ui::MAX_CAMERA_SLOTS]{};
-                const int car_cnt = latter_ui::collect_carousel_camera_indices(cams, c_cnt, car_idx, latter_ui::MAX_CAMERA_SLOTS);
+                latter_core::CameraRecord cams[latter_core::MAX_CAMERA_SLOTS]{};
+                const int c_cnt = latter_core::parse_cameras_records(ac.cameras_summary, cams, latter_core::MAX_CAMERA_SLOTS);
+                int car_idx[latter_core::MAX_CAMERA_SLOTS]{};
+                const int car_cnt = latter_core::collect_carousel_camera_indices(cams, c_cnt, car_idx, latter_core::MAX_CAMERA_SLOTS);
                 const uint32_t dwell_ms = prefs.camera_carousel_interval_ms();
                 if (car_cnt > 1 && (now_cam_ms - rs.cameras.carousel_last_advance_ms >= dwell_ms)) {
                   rs.cameras.carousel_idx = (rs.cameras.carousel_idx + 1) % car_cnt;
@@ -193,7 +182,7 @@ interval:
 
               // IMU landscape auto-rotate on non-square rectangular panels
               if (!LATTER_ROUND_DISPLAY && LATTER_HAS_IMU && (latter_ui::SCREEN_W != latter_ui::SCREEN_H) &&
-                  rs.cameras.tab == latter_ui::CamerasTab::SINGLE && !rs.cameras.quick_reply_open) {
+                  rs.cameras.tab == latter_core::CamerasTab::SINGLE && !rs.cameras.quick_reply_open) {
                 float ax = rs.hw_accel_x;
                 float ay = rs.hw_accel_y;
                 if (!std::isnan(ax) && !std::isnan(ay) && (std::abs(ax) > 0.15f || std::abs(ay) > 0.15f)) {
@@ -215,28 +204,28 @@ interval:
 
               // Keep live video stream synced (or fall back to paced snapshots ONLY in Snapshots mode)
               const bool snap_only = (prefs.camera_stream_mode == 2U) || ac.camera_stream_url.empty();
-              if (!snap_only && rs.cameras.tab != latter_ui::CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
-                if (!latter_ui::video_client().is_active() && (now_cam_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
+              if (!snap_only && rs.cameras.tab != latter_core::CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
+                if (!latter_core::video_client().is_active() && (now_cam_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
                   id(sync_camera_stream).execute();
                 }
-              } else if (snap_only && rs.cameras.tab != latter_ui::CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
-                #if LATTER_CHIP_P4
+              } else if (snap_only && rs.cameras.tab != latter_core::CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
+                #if LATTER_HAS_HW_JPEG
                 const uint32_t kCamRefreshMs = 500U;
                 #else
                 const uint32_t kCamRefreshMs = 900U;
                 #endif
-                const uint32_t elapsed_cam_ms = now_cam_ms - latter_ui::last_cam_live_fetch_ms();
-                const uint32_t backoff_until = latter_ui::cam_error_backoff_until_ms();
+                const uint32_t elapsed_cam_ms = now_cam_ms - latter_core::last_cam_live_fetch_ms();
+                const uint32_t backoff_until = latter_core::cam_error_backoff_until_ms();
                 const bool in_backoff = (backoff_until != 0U) &&
                                         (static_cast<int32_t>(now_cam_ms - backoff_until) < 0);
                 if (!in_backoff &&
-                    ((!latter_ui::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
+                    ((!latter_core::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
                      (elapsed_cam_ms >= 4500U))) {
-                  latter_ui::last_cam_live_fetch_ms() = now_cam_ms;
+                  latter_core::last_cam_live_fetch_ms() = now_cam_ms;
                   id(fetch_on_demand_camera).execute();
                 }
               }
-            } else if (live_popup_now && !latter_ui::video_client().is_active() &&
+            } else if (live_popup_now && !latter_core::video_client().is_active() &&
                        (now_cam_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
               id(sync_camera_stream).execute();
             }
@@ -244,8 +233,8 @@ interval:
 
           // Auto-timeout & critical pulse refresh for active Latter push notifications / camera popups
           if (rs.alert.active) {
-            const bool doorbell_talk_busy = latter_ui::cam_call_active() ||
-                                            latter_ui::cam_listen_active() ||
+            const bool doorbell_talk_busy = latter_core::cam_call_active() ||
+                                            latter_core::cam_listen_active() ||
                                             rs.voice.intercom_turn;
             if (!doorbell_talk_busy && (millis() - rs.alert.start_ms >= rs.alert.duration_ms)) {
               id(dismiss_notification).execute();
@@ -280,7 +269,7 @@ interval:
           }
 
           // Event-driven timer/alarm RPC emission (<= 250 ms latency on touchscreen edits & expirations)
-          latter_actions::check_and_emit_timer_alarm_state(millis());
+          latter_core::check_and_emit_timer_alarm_state(millis());
 
 script:
   # Alarm engine: runs from the power supervisor's 1 s interval (power_policy.yaml), so the chip wakes
@@ -294,7 +283,7 @@ script:
           }
           const bool t_valid = now.is_valid();
           const uint32_t now_ms = millis();
-          const auto a_eff = latter_ui::timer_alarm_controller().tick_alarms_1s(
+          const auto a_eff = latter_core::timer_alarm_controller().tick_alarms_1s(
               t_valid,
               t_valid ? static_cast<uint32_t>(now.timestamp) : 0U,
               t_valid ? static_cast<int>(now.hour) : -1,
@@ -303,10 +292,11 @@ script:
               t_valid ? static_cast<int>(now.day_of_week) : 0,
               now_ms);
           if (a_eff.snooze_fired || a_eff.triggered_idx > 0) {
-            id(preempt_va_for_alert).execute();
-            latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
+            const auto &au = latter_core::runtime_state().audio;
+            au.preempt_va_for_alert_now();
+            latter_core::note_wake_reason(latter_core::WakeReason::ALERT);
             id(wake_to_active_state).execute();
-            id(play_alarm_sound).execute();
+            au.play_alarm();
             latter_ui::schedule_disp_update(&id(disp1));
             if (a_eff.snooze_fired) {
               ESP_LOGI("alarm", "Snoozed alarm firing now!");
@@ -314,10 +304,10 @@ script:
               ESP_LOGI("alarm", "Alarm %d triggered! Ringing started.", a_eff.triggered_idx);
             }
           } else if (a_eff.auto_silenced) {
-            id(stop_alarm_sound).execute();
+            latter_core::runtime_state().audio.stop_alarm();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            latter_ui::display_lifecycle().note_activity(now_ms);
+            latter_core::display_lifecycle().note_activity(now_ms);
             ESP_LOGI("alarm", "Unattended alarm auto-silenced after 5 min.");
           }
 
@@ -328,24 +318,24 @@ script:
       - if:
           condition:
             lambda: |-
-              return !latter_ui::media_state().is_local &&
-                     (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
+              return !latter_core::media_state().is_local &&
+                     latter_core::runtime_state().audio.local_mp_playing();
           then:
             - wait_until:
                 condition:
-                  lambda: 'return id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING;'
+                  lambda: 'return !latter_core::runtime_state().audio.local_mp_playing();'
                 timeout: 2500ms
             - delay: 250ms
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
-              const auto &ms = latter_ui::media_state();
+              const auto &rs = latter_core::runtime_state();
+              const auto &ms = latter_core::media_state();
               if ((rs.nav.gui_page != 2) ||
-                  (std::string_view(latter_ui::pref_album_art_style_cstr()) == "None") ||
+                  (std::string_view(latter_core::pref_album_art_style_cstr()) == "None") ||
                   (rs.nav.display_power_state != 0) ||
                   rs.voice.active || !rs.voice.status_text.empty() ||
-                  (ms.is_local && id(album_art).get_width() > 0) ||
+                  (ms.is_local && rs.audio.local_album_art_w() > 0) ||
                   ms.art_url.empty() ||
                   (ms.art_url == rs.music.loaded_art_url)) {
                 return false;
@@ -353,15 +343,15 @@ script:
               #if !LATTER_CHIP_P4
               if (id(remote_album_art).get_width() == 0) {
                 latter_ui::art_canvas_drop_all();
-                latter_ui::sky_base_cache_drop();
+                latter_ui::evict_registered_psram_caches();
               }
               #endif
-              return latter_ui::can_start_online_art_fetch(id(remote_album_art).get_width() > 0);
+              return latter_core::can_start_online_art_fetch(id(remote_album_art).get_width() > 0);
           then:
-            - lambda: 'latter_ui::runtime_state().music.loaded_art_url = latter_ui::media_state().art_url;'
+            - lambda: 'latter_core::runtime_state().music.loaded_art_url = latter_core::media_state().art_url;'
             - online_image.set_url:
                 id: remote_album_art
-                url: !lambda 'return latter_ui::media_state().art_url;'
+                url: !lambda 'return latter_core::media_state().art_url;'
 
   - id: fetch_wallpaper_debounced
     mode: restart
@@ -370,27 +360,27 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
-              const auto &ac = latter_ui::area_ctx_state();
+              const auto &rs = latter_core::runtime_state();
+              const auto &ac = latter_core::area_ctx_state();
               if ((rs.nav.display_power_state != 0) ||
                   rs.voice.active || !rs.voice.status_text.empty() ||
-                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+                  rs.audio.local_mp_playing() ||
                   ac.wallpaper_url.empty() ||
-                  latter_ui::is_day_night_sky_wallpaper_url(ac.wallpaper_url) ||
+                  latter_core::is_day_night_sky_wallpaper_url(ac.wallpaper_url) ||
                   (ac.wallpaper_url == rs.music.loaded_wallpaper_url)) {
                 return false;
               }
               #if !LATTER_CHIP_P4
               if (id(home_wallpaper_art).get_width() == 0) {
                 latter_ui::art_canvas_drop_all();
-                latter_ui::sky_base_cache_drop();
+                latter_ui::evict_registered_psram_caches();
               }
               #endif
-              return latter_ui::can_start_online_art_fetch(id(home_wallpaper_art).get_width() > 0);
+              return latter_core::can_start_online_art_fetch(id(home_wallpaper_art).get_width() > 0);
           then:
             - online_image.set_url:
                 id: home_wallpaper_art
-                url: !lambda 'return latter_ui::area_ctx_state().wallpaper_url;'
+                url: !lambda 'return latter_core::area_ctx_state().wallpaper_url;'
 
   - id: fetch_screensaver_photo_now
     mode: restart
@@ -398,13 +388,13 @@ script:
       - if:
           condition:
             lambda: |-
-              auto &rs = latter_ui::runtime_state();
-              const auto &ac = latter_ui::area_ctx_state();
+              auto &rs = latter_core::runtime_state();
+              const auto &ac = latter_core::area_ctx_state();
               if ((rs.nav.display_power_state != 1) ||
                   rs.nav.is_hibernating || rs.nav.ota_in_progress ||
                   rs.voice.active || !rs.voice.status_text.empty() ||
-                  (std::string_view(latter_ui::effective_screensaver_style_cstr(
-                       latter_ui::persisted_prefs(), rs, millis())) != "Photo Frame") ||
+                  (std::string_view(latter_core::effective_screensaver_style_cstr(
+                       latter_core::persisted_prefs(), rs, millis())) != "Photo Frame") ||
                   ac.screensaver_photo_url.empty() ||
                   (ac.screensaver_photo_url == rs.music.loaded_screensaver_photo_url &&
                    id(screensaver_photo_art).get_width() > 0) ||
@@ -416,10 +406,10 @@ script:
               #if !LATTER_CHIP_P4
               if (id(screensaver_photo_art).get_width() == 0) {
                 latter_ui::art_canvas_drop_all();
-                latter_ui::sky_base_cache_drop();
+                latter_ui::evict_registered_psram_caches();
               }
               #endif
-              if (!latter_ui::can_start_online_art_fetch(id(screensaver_photo_art).get_width() > 0)) {
+              if (!latter_core::can_start_online_art_fetch(id(screensaver_photo_art).get_width() > 0)) {
                 if (id(screensaver_photo_art).get_width() == 0) {
                   rs.music.screensaver_photo_failed = true;
                   id(sync_display_brightness).execute();
@@ -432,18 +422,18 @@ script:
           then:
             - online_image.set_url:
                 id: screensaver_photo_art
-                url: !lambda 'return latter_ui::area_ctx_state().screensaver_photo_url;'
+                url: !lambda 'return latter_core::area_ctx_state().screensaver_photo_url;'
             - delay: 2500ms
             - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                const auto &ac = latter_ui::area_ctx_state();
+                auto &rs = latter_core::runtime_state();
+                const auto &ac = latter_core::area_ctx_state();
                 if (rs.nav.display_power_state == 1 && !rs.nav.is_hibernating &&
                     id(screensaver_photo_art).get_width() == 0 &&
                     !latter_ui::can_reuse_wallpaper_for_photo_frame(
                         ac.screensaver_photo_url, rs.music.loaded_wallpaper_url,
                         id(home_wallpaper_art).get_width() > 0) &&
-                    std::string_view(latter_ui::effective_screensaver_style_cstr(
-                        latter_ui::persisted_prefs(), rs, millis())) == "Photo Frame") {
+                    std::string_view(latter_core::effective_screensaver_style_cstr(
+                        latter_core::persisted_prefs(), rs, millis())) == "Photo Frame") {
                   rs.music.screensaver_photo_failed = true;
                   id(sync_display_brightness).execute();
                   latter_ui::mark_dirty_full();
@@ -463,10 +453,10 @@ script:
       - delay: 1ms
       - if:
           condition:
-            lambda: 'return latter_ui::runtime_state().nav.display_power_state != 1;'
+            lambda: 'return latter_core::runtime_state().nav.display_power_state != 1;'
           then:
             - lambda: |-
-                latter_ui::runtime_state().music.loaded_screensaver_photo_url = "";
+                latter_core::runtime_state().music.loaded_screensaver_photo_url = "";
                 latter_ui::release_art(id(screensaver_photo_art));
 
   - id: fetch_camera_snapshot
@@ -476,73 +466,72 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &ab = latter_ui::runtime_state().alert;
+              const auto &ab = latter_core::runtime_state().alert;
               if (!ab.active || ab.camera_url.empty()) return false;
               #if !LATTER_CHIP_P4
               if (id(camera_snapshot_art).get_width() == 0) {
                 latter_ui::art_canvas_drop_all();
-                latter_ui::sky_base_cache_drop();
-                latter_ui::weather_cloud_cache_drop();
+                latter_ui::evict_registered_psram_caches();
               }
               #endif
-              return latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0);
+              return latter_core::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0);
           then:
             - online_image.set_url:
                 id: camera_snapshot_art
-                url: !lambda 'return latter_ui::runtime_state().alert.camera_url;'
+                url: !lambda 'return latter_core::runtime_state().alert.camera_url;'
 
   - id: stop_camera_stream
     mode: restart
     then:
       - lambda: |-
-          latter_ui::video_client().stop();
+          latter_core::video_client().stop();
 
   - id: sync_camera_stream
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          const auto &prefs = latter_ui::persisted_prefs();
-          const auto &ac = latter_ui::area_ctx_state();
+          auto &rs = latter_core::runtime_state();
+          const auto &prefs = latter_core::persisted_prefs();
+          const auto &ac = latter_core::area_ctx_state();
           rs.cameras.last_stream_sync_ms = millis();
 
           const bool screen_ok = (rs.nav.display_power_state == 0) && !rs.nav.is_hibernating &&
                                  !rs.nav.ota_in_progress && !rs.alarms.ringing &&
                                  !rs.timers.ringing && !rs.alarms.find_my_active;
           const bool live_popup = rs.alert.active && rs.cameras.doorbell_live_popup_active;
-          const bool app_live = latter_ui::is_camera_view_active(rs) &&
-                                (rs.cameras.tab != latter_ui::CamerasTab::SETTINGS) &&
+          const bool app_live = latter_core::is_camera_view_active(rs) &&
+                                (rs.cameras.tab != latter_core::CamerasTab::SETTINGS) &&
                                 !rs.cameras.quick_reply_open &&
                                 (prefs.camera_stream_mode != 2U);
 
           if (!screen_ok || (!live_popup && !app_live) || ac.camera_stream_url.empty()) {
-            latter_ui::video_client().stop();
+            latter_core::video_client().stop();
             return;
           }
 
-          const bool is_p4 = (LATTER_CHIP_P4 != 0);
+          const bool is_hw_jpeg = (LATTER_HAS_HW_JPEG != 0);
           const bool is_round = (LATTER_ROUND_DISPLAY != 0);
           const bool low_bw = (prefs.camera_stream_mode == 1U);
-          const bool audio_busy = latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                                  latter_ui::cam_intercom_ptt_active() || rs.voice.intercom_turn;
+          const bool audio_busy = latter_core::cam_call_active() || latter_core::cam_listen_active() ||
+                                  latter_core::cam_intercom_ptt_active() || rs.voice.intercom_turn;
 
-          latter_ui::CameraRecord cams[latter_ui::MAX_CAMERA_SLOTS]{};
-          const int cam_cnt = latter_ui::parse_cameras_records(ac.cameras_summary, cams, latter_ui::MAX_CAMERA_SLOTS);
+          latter_core::CameraRecord cams[latter_core::MAX_CAMERA_SLOTS]{};
+          const int cam_cnt = latter_core::parse_cameras_records(ac.cameras_summary, cams, latter_core::MAX_CAMERA_SLOTS);
           uint16_t req_w = 0, req_h = 0;
           std::string url;
 
           if (live_popup) {
-            latter_ui::resolve_camera_stream_dims(latter_ui::SCREEN_W, latter_ui::SCREEN_H, is_round,
-                                                  /*is_grid=*/false, is_p4, low_bw, req_w, req_h);
-            const uint8_t fps = latter_ui::resolve_camera_stream_fps(is_p4, false, low_bw, audio_busy);
+            latter_core::resolve_camera_stream_dims(latter_ui::SCREEN_W, latter_ui::SCREEN_H, is_round,
+                                                  /*is_grid=*/false, is_hw_jpeg, low_bw, req_w, req_h);
+            const uint8_t fps = latter_core::resolve_camera_stream_fps(is_hw_jpeg, false, low_bw, audio_busy);
             const std::string ent = !rs.alert.camera_entity.empty()
                                         ? rs.alert.camera_entity
-                                        : latter_ui::resolve_active_carousel_camera_id(ac.cameras_summary, rs.alert.camera_url);
-            url = latter_ui::build_camera_single_stream_url(ac.camera_stream_url, ent, req_w, req_h, fps, false, false);
-          } else if (rs.cameras.tab == latter_ui::CamerasTab::GRID && cam_cnt > 1) {
-            latter_ui::resolve_camera_stream_dims(latter_ui::SCREEN_W, latter_ui::SCREEN_H, is_round,
-                                                  /*is_grid=*/true, is_p4, low_bw, req_w, req_h);
-            const uint8_t fps = latter_ui::resolve_camera_stream_fps(is_p4, true, low_bw, audio_busy);
+                                        : latter_core::resolve_active_carousel_camera_id(ac.cameras_summary, rs.alert.camera_url);
+            url = latter_core::build_camera_single_stream_url(ac.camera_stream_url, ent, req_w, req_h, fps, false, false);
+          } else if (rs.cameras.tab == latter_core::CamerasTab::GRID && cam_cnt > 1) {
+            latter_core::resolve_camera_stream_dims(latter_ui::SCREEN_W, latter_ui::SCREEN_H, is_round,
+                                                  /*is_grid=*/true, is_hw_jpeg, low_bw, req_w, req_h);
+            const uint8_t fps = latter_core::resolve_camera_stream_fps(is_hw_jpeg, true, low_bw, audio_busy);
             const int total_pg = std::max(1, (cam_cnt + 3) / 4);
             rs.cameras.grid_page = std::clamp(rs.cameras.grid_page, 0, total_pg - 1);
             const int pg_start = rs.cameras.grid_page * 4;
@@ -551,64 +540,62 @@ script:
             for (int q = 0; q < 4 && (pg_start + q) < cam_cnt; ++q) {
               ents[vis_cnt++] = cams[pg_start + q].entity_id;
             }
-            url = latter_ui::build_camera_grid_stream_url(ac.camera_stream_url, ents, vis_cnt, req_w, req_h, fps);
+            url = latter_core::build_camera_grid_stream_url(ac.camera_stream_url, ents, vis_cnt, req_w, req_h, fps);
           } else {
-            latter_ui::resolve_camera_stream_dims(latter_ui::SCREEN_W, latter_ui::SCREEN_H, is_round,
-                                                  /*is_grid=*/false, is_p4, low_bw, req_w, req_h,
+            latter_core::resolve_camera_stream_dims(latter_ui::SCREEN_W, latter_ui::SCREEN_H, is_round,
+                                                  /*is_grid=*/false, is_hw_jpeg, low_bw, req_w, req_h,
                                                   rs.cameras.landscape_mode);
-            const uint8_t fps = latter_ui::resolve_camera_stream_fps(is_p4, false, low_bw, audio_busy);
-            const std::string ent = latter_ui::resolve_active_carousel_camera_id(ac.cameras_summary, ac.camera_snapshot_url);
-            url = latter_ui::build_camera_single_stream_url(
+            const uint8_t fps = latter_core::resolve_camera_stream_fps(is_hw_jpeg, false, low_bw, audio_busy);
+            const std::string ent = latter_core::resolve_active_carousel_camera_id(ac.cameras_summary, ac.camera_snapshot_url);
+            url = latter_core::build_camera_single_stream_url(
                 ac.camera_stream_url, ent, req_w, req_h, fps,
                 rs.cameras.effective_fill(prefs), rs.cameras.landscape_mode);
           }
 
           if (url.empty()) {
-            latter_ui::video_client().stop();
+            latter_core::video_client().stop();
             return;
           }
           #if !LATTER_CHIP_P4
           latter_ui::art_canvas_drop_all();
-          latter_ui::sky_base_cache_drop();
-          latter_ui::weather_cloud_cache_drop();
+          latter_ui::evict_registered_psram_caches();
           #endif
-          latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
-          latter_ui::video_client().start(url, req_w, req_h);
+          latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
+          latter_core::video_client().start(url, req_w, req_h);
 
   - id: fetch_on_demand_camera
     mode: restart
     then:
       - delay: 15ms
       - lambda: |-
-          latter_ui::last_cam_live_fetch_ms() = millis();
-          const auto &ac = latter_ui::area_ctx_state();
-          latter_ui::runtime_state().alert.camera_url = latter_ui::build_carousel_camera_url(
+          latter_core::last_cam_live_fetch_ms() = millis();
+          const auto &ac = latter_core::area_ctx_state();
+          latter_core::runtime_state().alert.camera_url = latter_core::build_carousel_camera_url(
               ac.camera_snapshot_url, ac.cameras_summary, millis());
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
-              if (rs.nav.display_power_state != 0 || rs.alert.camera_url.empty() || !latter_ui::is_camera_view_active(rs)) {
+              const auto &rs = latter_core::runtime_state();
+              if (rs.nav.display_power_state != 0 || rs.alert.camera_url.empty() || !latter_core::is_camera_view_active(rs)) {
                 return false;
               }
               #if !LATTER_CHIP_P4
               if (id(camera_snapshot_art).get_width() == 0) {
                 latter_ui::art_canvas_drop_all();
-                latter_ui::sky_base_cache_drop();
-                latter_ui::weather_cloud_cache_drop();
+                latter_ui::evict_registered_psram_caches();
               }
               #endif
-              if (!latter_ui::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0)) {
-                latter_ui::cam_download_in_progress() = false;
-                latter_ui::cam_error_backoff_until_ms() = millis() + 3000U;
+              if (!latter_core::can_start_online_art_fetch(id(camera_snapshot_art).get_width() > 0)) {
+                latter_core::cam_download_in_progress() = false;
+                latter_core::cam_error_backoff_until_ms() = millis() + 3000U;
                 return false;
               }
               return true;
           then:
-            - lambda: 'latter_ui::cam_download_in_progress() = true;'
+            - lambda: 'latter_core::cam_download_in_progress() = true;'
             - online_image.set_url:
                 id: camera_snapshot_art
-                url: !lambda 'return latter_ui::runtime_state().alert.camera_url;'
+                url: !lambda 'return latter_core::runtime_state().alert.camera_url;'
 
   # A camera download that finishes after its view closed: release it (deferred out of the
   # online_image callback) so the snapshot and its composed canvas do not stay in PSRAM.
@@ -619,11 +606,11 @@ script:
       - if:
           condition:
             lambda: |-
-              const auto &rs = latter_ui::runtime_state();
-              return !rs.alert.active && !latter_ui::is_camera_view_active(rs);
+              const auto &rs = latter_core::runtime_state();
+              return !rs.alert.active && !latter_core::is_camera_view_active(rs);
           then:
             - lambda: |-
-                auto &rs = latter_ui::runtime_state();
-                latter_ui::cam_download_in_progress() = false;
+                auto &rs = latter_core::runtime_state();
+                latter_core::cam_download_in_progress() = false;
                 rs.alert.loaded_camera_url = "";
                 latter_ui::release_art(id(camera_snapshot_art));

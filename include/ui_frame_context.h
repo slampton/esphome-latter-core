@@ -303,7 +303,7 @@ inline bool format_iso_time_with_offset(
   if (out == nullptr || out_sz == 0U) return false;
   ParsedIsoTimestamp ts{};
   if (!parse_iso_timestamp_components(iso_str, ts)) {
-    std::snprintf(out, out_sz, "%s", kUnknownGlyph);
+    std::snprintf(out, out_sz, "%s", latter_core::kUnknownGlyph);
     return false;
   }
   if (!ts.has_tz) {
@@ -390,6 +390,7 @@ struct UiFrameContext {
   UiStrView music_artist_album_sort_opt{"Release Year"};
   UiStrView music_podcast_sort_opt{"Latest Episode"};
   UiStrView theme_palette_opt{"Steel & Silver"};
+  UiStrView glass_style_opt{};
   UiStrView tap_wake_opt{"Always On"};
   UiStrView pickup_wake_opt{"Medium"};
   UiStrView display_off_timeout_opt{"30 Seconds"};
@@ -476,8 +477,8 @@ struct SystemTakeoverState {
   UiColor col_solaris_gold{};
 
   static inline SystemTakeoverState from_context(const UiFrameContext &ctx) {
-    const auto &rs = runtime_state();
-    const auto &prefs = persisted_prefs();
+    const auto &rs = latter_core::runtime_state();
+    const auto &prefs = latter_core::persisted_prefs();
     SystemTakeoverState st{};
     st.cx = ctx.cx;
     st.cy = ctx.cy;
@@ -507,11 +508,11 @@ struct SystemTakeoverState {
       const uint8_t sc_va = rs.showcase.effective_va_phase(ctx.now_ms);
       if (sc_va != 0U) {
         st.va_active = true;
-        st.va_vad_active = (sc_va == static_cast<uint8_t>(ShowcaseVaStage::VAD));
-        st.va_tts_received = (sc_va == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING));
-        if (sc_va == static_cast<uint8_t>(ShowcaseVaStage::THINKING)) {
+        st.va_vad_active = (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::VAD));
+        st.va_tts_received = (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::SPEAKING));
+        if (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::THINKING)) {
           st.va_status_text = UiStrView("Thinking...");
-        } else if (sc_va == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING)) {
+        } else if (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::SPEAKING)) {
           st.va_status_text = UiStrView("Responding...");
         } else {
           st.va_status_text = UiStrView("Listening...");
@@ -519,8 +520,11 @@ struct SystemTakeoverState {
       }
     }
     st.va_visual_profile_opt =
-        (sc_on && rs.showcase.va_profile_override >= 0 && rs.showcase.va_profile_override < 5)
-            ? UiStrView(kVaVisualProfileOpts[rs.showcase.va_profile_override])
+        (sc_on && rs.showcase.va_profile_override >= 0 &&
+         rs.showcase.va_profile_override < static_cast<int>(latter_core::kPrefOptsVaVisualProfile.size()))
+            ? UiStrView(latter_core::pref_opt_cstr(
+                  latter_core::kPrefOptsVaVisualProfile,
+                  static_cast<uint8_t>(rs.showcase.va_profile_override)))
             : ctx.va_visual_profile_opt;
     st.notif_active = rs.alert.active;
     st.notif_title = rs.alert.title;
@@ -530,10 +534,14 @@ struct SystemTakeoverState {
     st.notif_camera_entity = rs.alert.camera_entity;
     st.current_loaded_camera_url = rs.alert.loaded_camera_url;
     const bool sc_ss_override =
-        sc_on && rs.showcase.screensaver_style_override >= 0 && rs.showcase.screensaver_style_override < 6;
-    st.screensaver_style_opt = sc_ss_override
-                                   ? UiStrView(kScreensaverStyleOpts[rs.showcase.screensaver_style_override])
-                                   : (prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt);
+        sc_on && rs.showcase.screensaver_style_override >= 0 &&
+        rs.showcase.screensaver_style_override < static_cast<int>(latter_core::kPrefOptsScreensaverStyle.size());
+    st.screensaver_style_opt =
+        sc_ss_override
+            ? UiStrView(latter_core::pref_opt_cstr(
+                  latter_core::kPrefOptsScreensaverStyle,
+                  static_cast<uint8_t>(rs.showcase.screensaver_style_override)))
+            : (prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt);
     st.screensaver_photo_clock = (!prefs.bedtime_active || sc_ss_override) && prefs.screensaver_photo_clock;
     st.quick_actions_open = rs.nav.quick_actions_open;
     st.theme_primary = ctx.theme_primary;

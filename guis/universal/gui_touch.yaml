@@ -1,0 +1,38 @@
+# ==============================================================================
+# Latter Universal GUI Optional Touchscreen Binding (guis/universal/gui_touch.yaml)
+# Included by touch-enabled firmware profiles (LATTER_HAS_TOUCH=1) and omitted
+# by rotary-only / display-only touchless builds (LATTER_HAS_TOUCH=0).
+# ==============================================================================
+
+esphome:
+  on_boot:
+    - priority: 850
+      then:
+        - lambda: |-
+            latter_core::runtime_state().hw_recover_touchscreen = +[](uint32_t now_ms) {
+              latter_core::hal_recover_touchscreen_if_failed(id(touch_screen), now_ms);
+            };
+
+touchscreen:
+  - id: !extend touch_screen
+    on_touch:
+      then:
+        - lambda: |-
+            id(sync_ui_touch_runtime).execute();
+            latter_ui::touch_router().dispatch_press(touch, touches, [](int tx, int ty) {
+              latter_ui::touch_engine().on_touch(tx, ty, millis());
+            });
+    on_update:
+      then:
+        - lambda: |-
+            id(sync_ui_touch_runtime_fast).execute();
+            latter_ui::touch_router().dispatch_move(touches, [](int tx, int ty) {
+              latter_ui::touch_engine().on_update(tx, ty, millis());
+            });
+    on_release:
+      then:
+        - lambda: |-
+            id(sync_ui_touch_runtime).execute();
+            latter_ui::touch_router().dispatch_release([]() {
+              latter_ui::touch_engine().on_release(millis());
+            });

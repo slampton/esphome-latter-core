@@ -47,19 +47,6 @@ int host_glass_alpha_for_text(HostRgb tint, HostRgb backdrop, HostRgb text, int 
   return 256;
 }
 
-int host_glass_alpha_smooth(int &state, int target, uint32_t dt_ms) {
-  if (state <= 0 || target >= state) {
-    state = target;
-  } else {
-    const uint32_t clamped_dt = std::min<uint32_t>(dt_ms, 250U);
-    const int fall = (clamped_dt == 0U)
-                         ? 0
-                         : std::max(1, static_cast<int>((4U * clamped_dt + 8U) / 16U));
-    state = std::max(target, state - fall);
-  }
-  return state;
-}
-
 void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
                              HostRgb tint, HostRgb ref_text, HostGlassVariant variant,
                              HostRgb &out_tint, int &out_a_top, int &out_a_bot) {
@@ -342,12 +329,6 @@ void test_phase2_glass_and_scissor_compositor() {
     }
   }
 
-  int alpha_st = 0;
-  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 220, 16U) == 220);
-  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 240, 16U) == 240);
-  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 160, 16U) == 236);
-  LATTER_CHECK(host_glass_alpha_smooth(alpha_st, 160, 32U) == 228);
-
   const std::string ui_color_types = read_repo_files({
       "../../include/ui_color.h",
       "../../include/ui_types.h",
@@ -373,6 +354,7 @@ void test_phase2_glass_and_scissor_compositor() {
 
 void test_frame_cadence_and_typed_prefs() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   constexpr PersistedDevicePrefs kDefPrefs{};
   static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs>);
@@ -432,6 +414,7 @@ void test_frame_cadence_and_typed_prefs() {
 
 void test_custom_icon_tiers_and_d051() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(dock_icon_r_for(24) == 13);
   static_assert(dock_icon_r_for(27) == 15);
@@ -483,6 +466,7 @@ void test_custom_icon_tiers_and_d051() {
 
 void test_gui_standardization_d070() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   struct BoardSpec { int w, h; bool round, wearable; int ppi; };
   constexpr BoardSpec kBoards[5] = {
@@ -546,6 +530,7 @@ void test_gui_standardization_d070() {
 
 void test_photo_frame_screensaver_day_night_sky_d067() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(screensaver_allowed_for_power(0U, true, false));
   static_assert(!screensaver_allowed_for_power(0U, false, false));
@@ -575,6 +560,165 @@ void test_photo_frame_screensaver_day_night_sky_d067() {
   LATTER_CHECK(can_reuse_wallpaper_for_photo_frame(url, url, true));
 }
 
+bool is_valid_utf8_str(const std::string &s) noexcept {
+  size_t i = 0;
+  const size_t n = s.size();
+  while (i < n) {
+    const unsigned char b0 = static_cast<unsigned char>(s[i]);
+    if (b0 < 0x80U) {
+      ++i;
+      continue;
+    }
+    size_t len = 0;
+    uint32_t cp = 0;
+    if ((b0 & 0xE0U) == 0xC0U && i + 1 < n) {
+      const unsigned char b1 = static_cast<unsigned char>(s[i + 1]);
+      if ((b1 & 0xC0U) != 0x80U) return false;
+      cp = (static_cast<uint32_t>(b0 & 0x1FU) << 6) | static_cast<uint32_t>(b1 & 0x3FU);
+      if (cp < 0x80U) return false;
+      len = 2;
+    } else if ((b0 & 0xF0U) == 0xE0U && i + 2 < n) {
+      const unsigned char b1 = static_cast<unsigned char>(s[i + 1]);
+      const unsigned char b2 = static_cast<unsigned char>(s[i + 2]);
+      if ((b1 & 0xC0U) != 0x80U || (b2 & 0xC0U) != 0x80U) return false;
+      cp = (static_cast<uint32_t>(b0 & 0x0FU) << 12) |
+           (static_cast<uint32_t>(b1 & 0x3FU) << 6) |
+           static_cast<uint32_t>(b2 & 0x3FU);
+      if (cp < 0x800U || (cp >= 0xD800U && cp <= 0xDFFFU)) return false;
+      len = 3;
+    } else if ((b0 & 0xF8U) == 0xF0U && i + 3 < n) {
+      const unsigned char b1 = static_cast<unsigned char>(s[i + 1]);
+      const unsigned char b2 = static_cast<unsigned char>(s[i + 2]);
+      const unsigned char b3 = static_cast<unsigned char>(s[i + 3]);
+      if ((b1 & 0xC0U) != 0x80U || (b2 & 0xC0U) != 0x80U || (b3 & 0xC0U) != 0x80U) return false;
+      cp = (static_cast<uint32_t>(b0 & 0x07U) << 18) |
+           (static_cast<uint32_t>(b1 & 0x3FU) << 12) |
+           (static_cast<uint32_t>(b2 & 0x3FU) << 6) |
+           static_cast<uint32_t>(b3 & 0x3FU);
+      if (cp < 0x10000U || cp > 0x10FFFFU) return false;
+      len = 4;
+    } else {
+      return false;
+    }
+    i += len;
+  }
+  return true;
+}
+
+void test_landscape_geoms_psram_budget_and_utf8_probing() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Landscape panel layout & Remote D-Pad bounds (800x480, 1024x600, 1280x800, 800x400)
+  struct LandscapeCase {
+    int w;
+    int h;
+    int ppi;
+  };
+  static constexpr LandscapeCase kLandscapes[] = {
+      {800, 480, 187},
+      {1024, 600, 170},
+      {1280, 800, 149},
+      {800, 400, 170},
+  };
+  for (const auto &lc : kLandscapes) {
+    const auto ly = compute_panel_layout(lc.w, lc.h, false, false, lc.ppi);
+    LATTER_CHECK(ly.dock_y + ly.dock_r < ly.dock_pips_y);
+    LATTER_CHECK(ly.list_card_w <= kMaxContentColW);
+    int xs[4] = {0, 0, 0, 0};
+    compute_mode_bar_slot_xs(4, lc.w, false, xs);
+    LATTER_CHECK(xs[0] - ly.dock_r >= 0);
+    LATTER_CHECK(xs[3] + ly.dock_r < lc.w);
+    LATTER_CHECK((xs[1] - xs[0]) > 2 * ly.dock_r);
+
+    const auto dp = compute_remote_dpad_geom(lc.w, lc.h, false);
+    LATTER_CHECK(dp.cy - dp.r_out - dp.outer_pad > 0);
+    LATTER_CHECK(dp.cy + dp.r_out + dp.outer_pad < lc.h);
+    LATTER_CHECK(dp.r_out > dp.r_in && dp.r_in >= 36);
+  }
+
+  // Isotropic toggle_switch aspect ratio across all active geometries.
+  {
+    const int sw_h = std::max(18, scale_s(22));
+    const int sw_w = (sw_h * 40 + 11) / 22;
+    const float aspect = static_cast<float>(sw_w) / static_cast<float>(sw_h);
+    LATTER_CHECK(aspect >= 1.70f && aspect <= 1.95f);
+  }
+
+  // 2. Byte-budgeted PSRAM cache sizing (ArtCanvasCache & SkyBaseCache)
+  static_assert(compute_art_cache_slot_budget(720, 720, 32, 3) == 3);
+  static_assert(compute_art_cache_slot_budget(1024, 600, 32, 3) == 2);
+  static_assert(compute_art_cache_slot_budget(1280, 800, 32, 3) == 1);
+  static_assert(compute_art_cache_slot_budget(466, 466, 8, 1) == 1);
+  static_assert(compute_art_cache_slot_budget(800, 480, 8, 1) == 1);
+  static_assert(compute_art_cache_slot_budget(1280, 800, 8, 1) == 0);
+  static_assert(sky_base_cache_allowed(720, 720, 32));
+  static_assert(sky_base_cache_allowed(1024, 600, 32));
+  static_assert(sky_base_cache_allowed(1280, 800, 32));
+  static_assert(sky_base_cache_allowed(800, 480, 8));
+  static_assert(!sky_base_cache_allowed(1280, 800, 8));
+
+  // 3. UTF-8 glyph probing via font.find_glyph() + multibyte pixel-width truncation (no 32-byte cliff)
+  static int s_probe_font_tag = 42;
+  UiFontView probe_font{};
+  probe_font.handle = &s_probe_font_tag;
+  probe_font.height = 20;
+  probe_font.baseline = 16;
+  probe_font.bpp = 1;
+  probe_font.measure_fn = +[](const void *, const char *s, int *w, int *xo, int *bs, int *h) {
+    int cps = 0;
+    if (s != nullptr) {
+      for (const unsigned char *p = reinterpret_cast<const unsigned char *>(s); *p != 0; ++p) {
+        if ((*p & 0xC0U) != 0x80U) ++cps;
+      }
+    }
+    if (w != nullptr) *w = cps * 10;
+    if (xo != nullptr) *xo = 0;
+    if (bs != nullptr) *bs = 16;
+    if (h != nullptr) *h = 20;
+  };
+  probe_font.find_glyph_fn = +[](const void *, uint32_t cp, UiGlyphData &out_g) -> bool {
+    // Allow printable ASCII + Cyrillic 'Ж' (0x0416), Greek 'Ω' (0x03A9), CJK '音' (0x97F3),
+    // and 4-byte emoji '🎵' (0x1F3B5); explicitly reject '€' (0x20AC) and '漢' (0x6F22).
+    const bool ok = (cp >= 0x20U && cp <= 0x7EU) ||
+                    cp == 0x0416U || cp == 0x03A9U || cp == 0x97F3U || cp == 0x1F3B5U;
+    if (!ok) return false;
+    out_g.advance = 10;
+    out_g.width = 8;
+    out_g.height = 14;
+    return true;
+  };
+
+  const std::string mixed = "Hi \xD0\x96\xCE\xA9\xE9\x9F\xB3\xF0\x9F\x8E\xB5\xE2\x82\xAC\xE6\xBC\xA2!";
+  const std::string clean = sanitize_utf8_for_font(mixed, probe_font);
+  LATTER_CHECK(clean == "Hi \xD0\x96\xCE\xA9\xE9\x9F\xB3\xF0\x9F\x8E\xB5!");
+  LATTER_CHECK(is_valid_utf8_str(clean));
+
+  // Missing curly quotes / dashes / ellipsis fall back cleanly to ASCII when absent from font.
+  const std::string punct = "A\xE2\x80\x98" "B\xE2\x80\x99\xE2\x80\x94" "C\xE2\x80\xA6";
+  LATTER_CHECK(sanitize_utf8_for_font(punct, probe_font) == "A'B'-C...");
+
+  // Verify no 32-byte truncation cliff on long ASCII titles with wide max_w.
+  const std::string long_ascii(64, 'A');
+  const std::string fit_wide = fit_text_to_width_font(long_ascii, 500, probe_font);
+  LATTER_CHECK(fit_wide.size() == 50U);  // 48 'A's + ".." = 500 px exactly!
+  LATTER_CHECK(fit_wide.substr(fit_wide.size() - 2U) == "..");
+
+  // Verify multibyte UTF-8 truncation at every width produces valid UTF-8 and fits max_w.
+  std::string long_utf8;
+  for (int k = 0; k < 8; ++k) {
+    long_utf8 += "\xD0\x96\xCE\xA9\xE9\x9F\xB3\xF0\x9F\x8E\xB5";
+  }
+  for (int mw = 20; mw <= 280; mw += 15) {
+    const std::string fitted = fit_text_to_width_font(long_utf8, mw, probe_font);
+    LATTER_CHECK(is_valid_utf8_str(fitted));
+    int tw = 0, xo = 0, bs = 0, th = 0;
+    probe_font.measure(fitted.c_str(), &tw, &xo, &bs, &th);
+    LATTER_CHECK(tw <= mw);
+    LATTER_CHECK(fitted.size() >= 2U && fitted.substr(fitted.size() - 2U) == "..");
+  }
+}
+
 }  // namespace
 
 void run_ui_layout_compositor_tests() {
@@ -584,6 +728,7 @@ void run_ui_layout_compositor_tests() {
   test_custom_icon_tiers_and_d051();
   test_gui_standardization_d070();
   test_photo_frame_screensaver_day_night_sky_d067();
+  test_landscape_geoms_psram_budget_and_utf8_probing();
 }
 
 }  // namespace latter_test

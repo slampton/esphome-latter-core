@@ -20,6 +20,7 @@ from .common import (
     expand_local_yaml_includes,
     extract_substitutions,
     iter_repo_files,
+    parse_latter_core_flags,
     resolve_substitutions,
     strip_cpp_comments,
     strip_yaml_comments,
@@ -266,8 +267,8 @@ def verify_header_order(failures: list[str]) -> None:
                     r'__has_include\s*\(\s*[<"]esphome\.h[>"]\s*\)', clean
                 ):
                     failures.append(f"[HEADER ORDER] {rel} must not reference esphome.h")
-                if re.search(r"(?m)^\s*using\s+namespace\s+latter_ui\s*;", clean):
-                    failures.append(f"[CORE DOCS] {rel} must not declare global `using namespace latter_ui;`")
+                if re.search(r"(?m)^\s*using\s+namespace\s+(?:latter_ui|latter_core|latter_actions)\s*;", clean):
+                    failures.append(f"[CORE DOCS] {rel} must not declare global `using namespace latter_*;`")
             _check_defines_before_use_macro(path, rel, clean, failures)
 
 
@@ -294,10 +295,11 @@ def _check_defines_before_use_macro(path: Path, rel: str, clean: str, failures: 
 
 def _check_single_board_target(bf: Path, sound_refs: list[str], beacon_init_py: str, failures: list[str]) -> None:
     uncommented = strip_yaml_comments(expand_local_yaml_includes(bf))
+    flags = parse_latter_core_flags(uncommented)
     failures.extend(
-        f"[BOARD TRAITS] {bf.name} missing -D{flag}=..."
+        f"[BOARD TRAITS] {bf.name} missing {flag} (via latter_core: schema)"
         for flag in REQUIRED_BOARD_FLAGS
-        if f"-D{flag}=" not in uncommented
+        if flag not in flags
     )
     if 'CONFIG_COMPILER_OPTIMIZATION_PERF: "y"' not in uncommented:
         failures.append(f'[BOARD TRAITS] {bf.name} missing CONFIG_COMPILER_OPTIMIZATION_PERF: "y" (-O2)')
@@ -305,7 +307,7 @@ def _check_single_board_target(bf: Path, sound_refs: list[str], beacon_init_py: 
         failures.append(f'[BOARD TRAITS] {bf.name} missing CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"')
     _check_board_wifi_and_audio(bf.name, uncommented, sound_refs, failures)
     _check_board_light_sleep(bf.name, uncommented, beacon_init_py, failures)
-    _check_board_p4_and_dsi(bf.name, uncommented, failures)
+    _check_board_p4_and_dsi(bf.name, uncommented, flags, failures)
 
 
 def _check_board_wifi_and_audio(
@@ -369,11 +371,15 @@ def _check_board_light_sleep(bname: str, uncommented: str, beacon_init_py: str, 
     )
 
 
-def _check_board_p4_and_dsi(bname: str, uncommented: str, failures: list[str]) -> None:
+def _check_board_p4_and_dsi(
+    bname: str, uncommented: str, flags: dict[str, str], failures: list[str]
+) -> None:
     if re.search(r"\bCONFIG_CACHE_L2_CACHE_LINE_128B\s*:|\bCONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM\b", uncommented):
         failures.append(f"[P4 DMA] {bname} sets forbidden L2 128B cache line or nonexistent MEMPOOL_PREFER_SPIRAM")
-    if "-DLATTER_CHIP_P4=1" in uncommented:
-        if not re.search(r"esp32_hosted:\s*\n(?:[ \t]+.*\n)*?\s+use_psram:\s*true\b", uncommented):
+    if flags.get("LATTER_CHIP_P4") == "1":
+        if "esp32_hosted:" in uncommented and not re.search(
+            r"esp32_hosted:\s*\n(?:[ \t]+.*\n)*?\s+use_psram:\s*true\b", uncommented
+        ):
             failures.append(f"[P4 DMA] {bname} must set use_psram: true under esp32_hosted:")
         if re.search(r"(?m)^power_management\s*:|\besp32_power_management\b|\bmin_frequency:\s*40MHz\b", uncommented):
             failures.append(f"[P4 PM] {bname} must never enable esp32_power_management / 40MHz XTAL DFS")
@@ -383,13 +389,14 @@ def _check_board_p4_and_dsi(bname: str, uncommented: str, failures: list[str]) -
             for dsi_req in (
                 'CONFIG_GDMA_ISR_IRAM_SAFE: "y"',
                 'CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"',
-                "-DLATTER_DSI_IRAM_SAFE=1",
             )
             if dsi_req not in uncommented
         )
+        if flags.get("LATTER_DSI_IRAM_SAFE") != "1":
+            failures.append(f"[DSI IRAM] {bname} missing display.dsi_iram_safe: true (LATTER_DSI_IRAM_SAFE=1)")
         if "esp_lcd_dpi_panel_register_event_callbacks" in uncommented:
             failures.append(f"[DSI IRAM] {bname} still wraps retired esp_lcd_dpi_panel_register_event_callbacks")
-    if "-DLATTER_CHIP_P4=0" in uncommented and not re.search(r"(?m)^\s*execute_from_psram:\s*true\b", uncommented):
+    if flags.get("LATTER_CHIP_P4") == "0" and not re.search(r"(?m)^\s*execute_from_psram:\s*true\b", uncommented):
         failures.append(f"[S3 PSRAM XIP] {bname} must set execute_from_psram: true under esp32.framework.advanced")
     m_touch = re.search(r"(?m)^touchscreen:\s*\n((?:[ \t]+.*\n?)*)", uncommented)
     if m_touch and "interrupt_pin:" in m_touch.group(1) and not re.search(r"(?m)^\s*update_interval:\s*never\b", m_touch.group(1)):
@@ -517,8 +524,11 @@ def verify_board_hal_and_security(failures: list[str]) -> None:
     board_files = sorted((ROOT / "boards").glob("*.yaml"))
     for bf in board_files:
         bf_uncommented = strip_yaml_comments(bf.read_text(encoding="utf-8"))
-        if "-DLATTER_HAS_RTC=" not in bf_uncommented:
-            failures.append(f"[BOARD TRAITS] {bf.name} missing -DLATTER_HAS_RTC=0/1")
+        bf_flags = parse_latter_core_flags(bf_uncommented)
+        if "LATTER_HAS_RTC" not in bf_flags:
+            failures.append(f"[BOARD TRAITS] {bf.name} missing capabilities.rtc in latter_core:")
+        if re.search(r"-DLATTER_", bf_uncommented):
+            failures.append(f"[BOARD TRAITS] {bf.name} must use typed latter_core: YAML instead of raw -DLATTER_* build_flags")
         m_holds = re.search(
             r"(?m)^\s*-\s*id:\s*hal_release_deep_sleep_holds\b([\s\S]*?)(?=^\s*-\s*id:|\Z)", bf_uncommented
         )
@@ -526,15 +536,54 @@ def verify_board_hal_and_security(failures: list[str]) -> None:
             failures.append(f"[BOOT SAFETY] {bf.name} hal_release_deep_sleep_holds touches codec/backlight before setup()")
 
     beacon_init_py = (ROOT / "components" / "latter_beacon" / "__init__.py").read_text(encoding="utf-8")
-    for bf in [*board_files, ROOT / "examples" / "custom_display_template.yaml"]:
+    for bf in board_files:
         _check_single_board_target(bf, sound_refs, beacon_init_py, failures)
 
     _verify_core_cpp_and_prof_gates(failures)
+    _verify_hal_and_display_only_isolation(failures)
     verify_strapping_pins(failures)
     verify_component_deps(failures)
     verify_header_order(failures)
     _verify_duplex_rpc_and_lossy_ui(failures)
     _verify_ota_and_api_security(failures)
+
+
+_HAL_FORBIDDEN_RE: Final[re.Pattern[str]] = re.compile(
+    r"\blatter_ui::|\bgui_page\b|\bcoin_state\b|\bdice_state\b|"
+    r"\bid\(\s*(?:disp1|speaker_enable|latter_media_player|va|mww)\s*\)"
+)
+_DISPLAY_ONLY_FORBIDDEN_RE: Final[re.Pattern[str]] = re.compile(
+    r"\bid\(\s*(?:va|mww|latter_media_player|sendspin_hub|sendspin_group_media_player|"
+    r"album_art|physical_speaker|latter_mic|latter_mic_i2s|speaker_enable|"
+    r"track_title|track_artist|track_album|touch_screen)\s*\)|"
+    r"!extend\s+touch_screen\b"
+)
+
+
+def _verify_hal_and_display_only_isolation(failures: list[str]) -> None:
+    """Enforce zero Universal GUI/audio coupling in modules/hal/*.yaml and display-only firmware."""
+    for hal_yaml in sorted((ROOT / "modules" / "hal").glob("*.yaml")):
+        rel = hal_yaml.relative_to(ROOT).as_posix()
+        clean = strip_cpp_comments(strip_yaml_comments(hal_yaml.read_text(encoding="utf-8")))
+        m_bad = _HAL_FORBIDDEN_RE.search(clean)
+        if m_bad:
+            failures.append(
+                f"[HAL ISOLATION] {rel} must not reference Universal GUI/audio symbol '{m_bad.group(0)}'"
+            )
+
+    disp_only = ROOT / "modules" / "latter_display_only_firmware.yaml"
+    if not disp_only.is_file():
+        failures.append("[DISPLAY-ONLY] modules/latter_display_only_firmware.yaml missing")
+        return
+    for yf in collect_yaml_include_chain(disp_only):
+        rel = yf.relative_to(ROOT).as_posix()
+        clean = strip_cpp_comments(strip_yaml_comments(yf.read_text(encoding="utf-8")))
+        m_bad = _DISPLAY_ONLY_FORBIDDEN_RE.search(clean)
+        if m_bad:
+            failures.append(
+                f"[DISPLAY-ONLY] {rel} (included by latter_display_only_firmware.yaml) "
+                f"references forbidden audio/touch ID '{m_bad.group(0)}'"
+            )
 
 
 def _verify_duplex_rpc_and_lossy_ui(failures: list[str]) -> None:

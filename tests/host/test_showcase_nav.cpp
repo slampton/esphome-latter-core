@@ -41,6 +41,7 @@ bool has_host_cmd(latter_ui::UiHostCmd target) {
 
 void seed_full_nav_fixture() {
   using namespace latter_ui;
+  using namespace latter_core;
   auto &rs = runtime_state();
   auto &ac = area_ctx_state();
   ac.epoch = 1U;
@@ -67,6 +68,7 @@ void seed_full_nav_fixture() {
 
 void test_nav_all_routes_and_trait_gating() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
   seed_full_nav_fixture();
@@ -204,6 +206,7 @@ void test_nav_all_routes_and_trait_gating() {
 
 void test_bedtime_and_silent_nav() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
   seed_full_nav_fixture();
@@ -249,6 +252,7 @@ void test_bedtime_and_silent_nav() {
 
 void test_showcase_lifecycle_nvs_purity_and_auto_expiry() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
   auto &prefs = persisted_prefs();
@@ -377,6 +381,7 @@ void test_showcase_lifecycle_nvs_purity_and_auto_expiry() {
 
 void test_showcase_va_cycle_and_rendering() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
 
@@ -425,6 +430,7 @@ void test_showcase_va_cycle_and_rendering() {
 
 void test_showcase_brightness_and_cordless_motion() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
 
@@ -480,6 +486,7 @@ void test_showcase_brightness_and_cordless_motion() {
 
 void test_showcase_live_triggers_and_screensavers() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
   seed_full_nav_fixture();
@@ -556,6 +563,7 @@ void test_showcase_live_triggers_and_screensavers() {
 
 void test_showcase_touch_rules_and_reel() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
 
@@ -668,6 +676,7 @@ void test_showcase_touch_rules_and_reel() {
 
 void test_showcase_verifier_regressions() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   persisted_prefs() = PersistedDevicePrefs{};
   seed_full_nav_fixture();
@@ -775,17 +784,17 @@ void test_showcase_verifier_regressions() {
     persisted_prefs() = PersistedDevicePrefs{};
     bind_showcase_test_runtime(eng, pri, sec);
     link_state().ha_connected = true;
-    latter_actions::timer_alarm_sync_tracker() = latter_actions::TimerAlarmSyncTracker{};
+    latter_core::timer_alarm_sync_tracker() = latter_core::TimerAlarmSyncTracker{};
     MockRpcOutbox outbox{};
 
     // Baseline idle init
-    LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(40000U, false, &outbox));
+    LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(40000U, false, &outbox));
     LATTER_CHECK(outbox.published.empty());
 
     // Showcase-owned timer slot 0 + stopwatch must emit ZERO RPCs to HA!
     (void)eng.execute_device_ui_command("showcase:timer:300", 40100U);
     (void)eng.execute_device_ui_command("showcase:stopwatch:start", 40200U);
-    LATTER_CHECK(!latter_actions::check_and_emit_timer_alarm_state(41000U, false, &outbox));
+    LATTER_CHECK(!latter_core::check_and_emit_timer_alarm_state(41000U, false, &outbox));
     LATTER_CHECK(outbox.published.empty());
 
     // Real user timer on slot 1 DOES emit cleanly (with slot 1 remaining 120, not slot 0's 300, and sw_run=0)
@@ -795,10 +804,10 @@ void test_showcase_verifier_regressions() {
     s1.running = true;
     s1.target_ms = 41000U + 120000U;
     sync_multi_timer_state();
-    LATTER_CHECK(latter_actions::check_and_emit_timer_alarm_state(41500U, false, &outbox));
+    LATTER_CHECK(latter_core::check_and_emit_timer_alarm_state(41500U, false, &outbox));
     LATTER_CHECK(outbox.published.size() == 1U);
-    LATTER_CHECK(latter_actions::timer_alarm_sync_tracker().last_emitted_rem == 120);
-    LATTER_CHECK(!latter_actions::timer_alarm_sync_tracker().sw_running);
+    LATTER_CHECK(latter_core::timer_alarm_sync_tracker().last_emitted_rem == 120);
+    LATTER_CHECK(!latter_core::timer_alarm_sync_tracker().sw_running);
     LATTER_CHECK(outbox.published[0].find("\"remaining_sec\":\"120\"") != std::string::npos);
     LATTER_CHECK(outbox.published[0].find("\"stopwatch_running\":\"0\"") != std::string::npos);
   }

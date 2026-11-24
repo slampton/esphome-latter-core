@@ -1,4 +1,4 @@
-"""Subprocess tool gates, 5-geometry ASan/UBSan/-Werror host test runner, and trait matrix checks."""
+"""Subprocess tool gates, 6-geometry ASan/UBSan/-Werror host test runner, and trait matrix checks."""
 
 from __future__ import annotations
 
@@ -118,6 +118,24 @@ FIVE_GEOM_CONFIGS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "LATTER_PANEL_PPI=254",
         ),
     ),
+    (
+        "GEOM_1024x600_LANDSCAPE",
+        (
+            "LATTER_HOST_TEST=1",
+            "LATTER_SCREEN_W=1024",
+            "LATTER_SCREEN_H=600",
+            "LATTER_ROUND_DISPLAY=0",
+            "LATTER_IS_WEARABLE=0",
+            "LATTER_IS_STATIONARY=1",
+            "LATTER_HAS_BATTERY=0",
+            "LATTER_HAS_IMU=0",
+            "LATTER_HAS_RTC=0",
+            "LATTER_CHIP_P4=1",
+            "LATTER_HAS_HW_JPEG=1",
+            "LATTER_CORNER_R=20",
+            "LATTER_PANEL_PPI=170",
+        ),
+    ),
 )
 
 UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
@@ -159,6 +177,7 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "CONFIG_IDF_TARGET_ESP32S3=1",
             "LATTER_SCREEN_W=410",
             "LATTER_SCREEN_H=502",
+            "LATTER_PANEL_PPI=315",
             "LATTER_ROUND_DISPLAY=0",
             "LATTER_HAS_BATTERY=1",
             "LATTER_BATTERY_MAH=400",
@@ -212,6 +231,7 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "LATTER_CHIP_P4=1",
             "LATTER_SCREEN_W=720",
             "LATTER_SCREEN_H=720",
+            "LATTER_PANEL_PPI=254",
             "LATTER_ROUND_DISPLAY=0",
             "LATTER_HAS_BATTERY=0",
             "LATTER_HAS_IMU=0",
@@ -219,6 +239,72 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "LATTER_IS_STATIONARY=1",
         ),
     ),
+    (
+        "TOOLKIT_ONLY_ESP32",
+        (
+            "USE_ESP32",
+            "ESP_PLATFORM",
+            "USE_I2C",
+            "USE_API",
+            "USE_WIFI",
+            "USE_FONT",
+            "USE_VOICE_ASSISTANT",
+            "USE_MICRO_WAKE_WORD",
+            "USE_MICROPHONE",
+            "CONFIG_IDF_TARGET_ESP32S3=1",
+            "LATTER_SCREEN_W=466",
+            "LATTER_SCREEN_H=466",
+            "LATTER_PANEL_PPI=266",
+            "LATTER_ROUND_DISPLAY=1",
+            "LATTER_GUI_UNIVERSAL=0",
+            "LATTER_HAS_BATTERY=1",
+            "LATTER_BATTERY_MAH=500",
+            "LATTER_HAS_IMU=1",
+            "LATTER_HAS_RTC=0",
+            "LATTER_IS_STATIONARY=0",
+        ),
+    ),
+    (
+        "TOUCHLESS_AUDIOLESS_ESP32",
+        (
+            "USE_ESP32",
+            "ESP_PLATFORM",
+            "USE_I2C",
+            "USE_API",
+            "USE_WIFI",
+            "USE_FONT",
+            "CONFIG_IDF_TARGET_ESP32S3=1",
+            "LATTER_SCREEN_W=800",
+            "LATTER_SCREEN_H=480",
+            "LATTER_PANEL_PPI=187",
+            "LATTER_ROUND_DISPLAY=0",
+            "LATTER_CORNER_R=20",
+            "LATTER_HAS_BATTERY=0",
+            "LATTER_HAS_IMU=0",
+            "LATTER_HAS_RTC=0",
+            "LATTER_IS_STATIONARY=1",
+            "LATTER_HAS_TOUCH=0",
+            "LATTER_HAS_AUDIO=0",
+            "LATTER_HAS_SPEAKER=0",
+            "LATTER_HAS_MIC=0",
+            "LATTER_HAS_HW_JPEG=0",
+        ),
+    ),
+)
+
+UI_TOOLKIT_ONLY_TUS: Final[frozenset[str]] = frozenset(
+    {
+        "hit_table.cpp",
+        "ui_gfx.cpp",
+        "ui_widgets.cpp",
+        "ui_compositor.cpp",
+        "overlay_notification.cpp",
+        "overlay_quick_actions.cpp",
+        "overlay_takeover.cpp",
+        "overlay_voice_assistant.cpp",
+        "touch_engine.cpp",
+        "touch_dispatch.cpp",
+    }
 )
 
 CORE_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
@@ -237,6 +323,9 @@ CORE_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "USE_LATTER_LOOP_PROBE",
             "CONFIG_IDF_TARGET_ESP32S3=1",
             "CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=1",
+            "LATTER_SCREEN_W=466",
+            "LATTER_SCREEN_H=466",
+            "LATTER_PANEL_PPI=266",
             "LATTER_HAS_BATTERY=1",
             "LATTER_BATTERY_MAH=500",
             "LATTER_HAS_IMU=1",
@@ -262,6 +351,9 @@ CORE_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "USE_LATTER_LOOP_PROBE",
             "CONFIG_IDF_TARGET_ESP32S3=1",
             "CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=1",
+            "LATTER_SCREEN_W=410",
+            "LATTER_SCREEN_H=502",
+            "LATTER_PANEL_PPI=315",
             "LATTER_HAS_BATTERY=1",
             "LATTER_BATTERY_MAH=400",
             "LATTER_HAS_IMU=1",
@@ -288,6 +380,9 @@ CORE_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "CONFIG_IDF_TARGET_ESP32P4=1",
             "USE_ESP32_VARIANT_ESP32P4=1",
             "LATTER_CHIP_P4=1",
+            "LATTER_SCREEN_W=320",
+            "LATTER_SCREEN_H=480",
+            "LATTER_PANEL_PPI=165",
             "LATTER_C6_RESET_PIN=54",
             "LATTER_HAS_BATTERY=1",
             "LATTER_BATTERY_MAH=1000",
@@ -312,6 +407,9 @@ CORE_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "CONFIG_IDF_TARGET_ESP32P4=1",
             "USE_ESP32_VARIANT_ESP32P4=1",
             "LATTER_CHIP_P4=1",
+            "LATTER_SCREEN_W=720",
+            "LATTER_SCREEN_H=720",
+            "LATTER_PANEL_PPI=254",
             "LATTER_C6_RESET_PIN=54",
             "LATTER_HAS_BATTERY=0",
             "LATTER_HAS_IMU=0",
@@ -540,8 +638,19 @@ def _submit_gpp_syntax_and_beacon_tasks(
     has_esp_lam = write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
     for cfg_lbl, defs in UI_TRAIT_MATRICES:
         # ui_mdi.cpp only branches on USE_ESP32 (zero geometry #ifdefs); syntax-check it once on S3_ESP32.
-        matrix_ui_cpps = all_ui_cpps if cfg_lbl == "S3_ESP32" else geom_ui_cpps
-        extra_tus = ([full_lam_esp] if has_esp_lam else []) if "USE_ESP32" in defs else ([full_lam_host] if has_host_lam else [])
+        if cfg_lbl == "TOOLKIT_ONLY_ESP32":
+            matrix_ui_cpps = [p for p in geom_ui_cpps if p.name in UI_TOOLKIT_ONLY_TUS]
+            extra_tus = []
+        elif cfg_lbl == "TOUCHLESS_AUDIOLESS_ESP32":
+            matrix_ui_cpps = geom_ui_cpps
+            extra_tus = []
+        else:
+            matrix_ui_cpps = all_ui_cpps if cfg_lbl == "S3_ESP32" else geom_ui_cpps
+            extra_tus = (
+                ([full_lam_esp] if has_esp_lam else [])
+                if "USE_ESP32" in defs
+                else ([full_lam_host] if has_host_lam else [])
+            )
         futs.append(
             pool.submit(
                 _run_gpp_cmd_gate,
@@ -726,8 +835,19 @@ def _append_msvc_syntax_and_beacon_lines(td_path: Path, bat_lines: list[str]) ->
         has_esp_lam = write_yaml_full_lambdas_syntax_harness(full_lam_esp, include_hal_boards=True) > 0
         for cfg_lbl, defs in UI_TRAIT_MATRICES:
             # ui_mdi.cpp only branches on USE_ESP32 (zero geometry #ifdefs); syntax-check it once on S3_ESP32.
-            matrix_ui_cpps = all_ui_cpps if cfg_lbl == "S3_ESP32" else geom_ui_cpps
-            extra_tus = ([full_lam_esp] if has_esp_lam else []) if "USE_ESP32" in defs else ([full_lam_host] if has_host_lam else [])
+            if cfg_lbl == "TOOLKIT_ONLY_ESP32":
+                matrix_ui_cpps = [p for p in geom_ui_cpps if p.name in UI_TOOLKIT_ONLY_TUS]
+                extra_tus = []
+            elif cfg_lbl == "TOUCHLESS_AUDIOLESS_ESP32":
+                matrix_ui_cpps = geom_ui_cpps
+                extra_tus = []
+            else:
+                matrix_ui_cpps = all_ui_cpps if cfg_lbl == "S3_ESP32" else geom_ui_cpps
+                extra_tus = (
+                    ([full_lam_esp] if has_esp_lam else [])
+                    if "USE_ESP32" in defs
+                    else ([full_lam_host] if has_host_lam else [])
+                )
             ui_cpp_args = " ".join(f'"{p}"' for p in (*matrix_ui_cpps, *extra_tus))
             def_args = " ".join(f"/D{d}" for d in defs)
             # Enforce full /W4 /WX narrowing checks (no /wd4244 or /wd4267 suppressions).

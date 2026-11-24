@@ -7,6 +7,7 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -179,12 +180,21 @@ void render_tv_remote_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   const RemoteDpadGeom dp = compute_remote_dpad_geom(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
   const int dpad_cy  = dp.cy;
-  const int left_fx  = LATTER_ROUND_DISPLAY ? 64 : ((SCREEN_W < 380) ? 34 : ((SCREEN_W > 520) ? 104 : ((SCREEN_W >= 480) ? 44 : 48)));
+  const int f_r      = scale_s(19);
+  const bool is_landscape_rect = (!LATTER_ROUND_DISPLAY && SCREEN_W > SCREEN_H);
+  const int left_fx  = LATTER_ROUND_DISPLAY
+                           ? 64
+                           : (is_landscape_rect
+                                  ? std::max(f_r + scale_s(28), cx - dp.r_out - f_r - scale_s(36))
+                                  : ((SCREEN_W < 380) ? 34 : ((SCREEN_W > 520) ? 104 : ((SCREEN_W >= 480) ? 44 : 48))));
   const int right_fx = SCREEN_W - left_fx;
-  const int flank_dy = LATTER_ROUND_DISPLAY ? 99 : ((SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 196 : ((SCREEN_W >= 480) ? 148 : 116)));
+  const int flank_dy = LATTER_ROUND_DISPLAY
+                           ? 99
+                           : (is_landscape_rect
+                                  ? std::min(dp.r_out - f_r, (SCREEN_H / 2) - scale_y(68) - f_r)
+                                  : ((SCREEN_W < 380) ? 128 : ((SCREEN_W > 520) ? 196 : ((SCREEN_W >= 480) ? 148 : 116))));
   const int top_fy   = dpad_cy - flank_dy;
   const int btm_fy   = dpad_cy + flank_dy;
-  const int f_r      = scale_s(19);
 
   const auto &gest = touch_gesture();
   const auto hold_brd = [&](uint16_t wid, Color base_brd) -> Color {

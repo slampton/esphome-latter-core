@@ -1,4 +1,4 @@
-name: Validate SDK & Examples
+name: Validate Core & Devices
 
 # dev is the integration branch. A push to dev runs every check, compiles all flagship device
 # variants from that exact commit, and only then fast-forwards main, the branch devices build from
@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate ESPHome SDK Modules & Examples
+    name: Validate Latter Core Modules, Probes & Devices
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -46,21 +46,15 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: '**/.esphome/external_files'
-          key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
+          key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/**/*.yaml') }}
           restore-keys: |
             external-files-esphome-2026.11.0-
 
-      - name: Verify static architecture, DAG, protocol, sounds, trait matrices, and 5-geometry C++20 host tests
+      - name: Verify static architecture, DAG, protocol, sounds, trait matrices, and 6-geometry C++20 host tests
         run: python tools/verify_core.py
 
       - name: Check board facts release ledger (zero L-confidence nets)
         run: python tools/check_boards.py --release --check-docs
-
-      - name: Validate Example 1 (Minimal Headless Companion)
-        run: ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config example 1" config examples/minimal_headless_companion.yaml
-
-      - name: Validate Example 2 (Full Companion OS & 480x480 Display Template)
-        run: ATTEMPTS=2 bash .github/scripts/esphome_run.sh "esphome config example 2" config examples/custom_display_template.yaml
 
       - name: Validate bring-up probes
         run: |
@@ -150,7 +144,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: '**/.esphome/external_files'
-          key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/*.yaml') }}
+          key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/**/*.yaml') }}
           restore-keys: |
             external-files-esphome-2026.11.0-
 

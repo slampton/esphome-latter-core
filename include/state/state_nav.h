@@ -9,7 +9,7 @@
 #include "state/state_prefs.h"
 #include "state/state_shortcuts.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 struct ToolsLauncherItemSpec {
   int id = 0;
@@ -378,4 +378,4 @@ inline int resolve_start_screen_page(int app) {
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

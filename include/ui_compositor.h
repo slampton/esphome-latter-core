@@ -22,7 +22,9 @@ inline constexpr bool should_va_takeover_preempt(bool va_active, bool has_status
                                                  bool intercom_turn, int gui_page,
                                                  bool live_popup_active) noexcept {
   if (!va_active && !has_status_text) return false;
-  if (intercom_turn && (gui_page == PageId::CAMERAS || gui_page == PageId::HOME_HUB || live_popup_active)) {
+  if (intercom_turn && (gui_page == latter_core::PageId::CAMERAS ||
+                        gui_page == latter_core::PageId::HOME_HUB ||
+                        live_popup_active)) {
     return false;
   }
   return true;
@@ -35,7 +37,7 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
                                     bool quick_actions_open = false);
 
 inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
-  const auto &rs = runtime_state();
+  const auto &rs = latter_core::runtime_state();
   const bool va_preempt = should_va_takeover_preempt(
       st.va_active, !st.va_status_text.empty(), st.va_intercom_turn,
       rs.nav.gui_page, rs.cameras.doorbell_live_popup_active);
@@ -45,21 +47,22 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
       st.alarm_ringing || st.timer_ringing || st.find_my_active,
       va_preempt,
       ui::pin_pad_state().open, st.notif_active,
-      shortcut_confirm_state().open,
+      latter_core::shortcut_confirm_state().open,
       st.quick_actions_open);
 }
 
 inline int compute_active_subpage_id() {
-  const auto &rs = runtime_state();
+  const auto &rs = latter_core::runtime_state();
   const int hub_drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
-                        ((home_hub_tab() == HomeHubTab::INTERCOM ? home_hub_state().broadcast_page
-                                                                 : home_hub_state().entry_page) << 3);
+                        ((latter_core::home_hub_tab() == latter_core::HomeHubTab::INTERCOM
+                              ? latter_core::home_hub_state().broadcast_page
+                              : latter_core::home_hub_state().entry_page) << 3);
   int cal_vert_pg = rs.cal.overview_page;
-  if (rs.cal.drilldown >= CalDrilldown::PICK_TITLE) {
+  if (rs.cal.drilldown >= latter_core::CalDrilldown::PICK_TITLE) {
     cal_vert_pg = rs.cal.picker_page;
-  } else if (rs.cal.subpage == CalendarSubpage::DAY) {
+  } else if (rs.cal.subpage == latter_core::CalendarSubpage::DAY) {
     cal_vert_pg = rs.cal.day_page;
-  } else if (rs.cal.subpage == CalendarSubpage::WEEK) {
+  } else if (rs.cal.subpage == latter_core::CalendarSubpage::WEEK) {
     cal_vert_pg = rs.cal.week_page;
   }
   const int cal_sub_id =
@@ -80,16 +83,16 @@ inline int compute_active_subpage_id() {
       (rs.cameras.quick_reply_open ? (1 << 9) : 0) |
       (rs.cameras.landscape_mode ? (1 << 10) : 0);
   return compute_subpage_id(
-      rs.nav.gui_page, rs.nav.home_subpage, home_dock_page(),
+      rs.nav.gui_page, rs.nav.home_subpage, latter_core::home_dock_page(),
       music_sub_id, rs.nav.active_game,
       rs.nav.system_menu_mode, rs.nav.system_dashboard_page,
       rs.nav.sleep_menu_page, rs.nav.display_menu_page,
       rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
-      0, timer_view_slot(), home_hub_tab(),
+      0, latter_core::timer_view_slot(), latter_core::home_hub_tab(),
       rs.nav.time_subpage, rs.nav.world_clock_page,
       rs.alarms.edit_idx, rs.nav.home_settings_page,
-      home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page,
+      latter_core::home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page,
       cal_sub_id, cam_sub_id);
 }
 
@@ -116,8 +119,10 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                  const SystemTakeoverState &st);
 void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                   const SystemTakeoverState &st);
+#if LATTER_GUI_UNIVERSAL
 void render_docked_screensaver(Rgb565Surface &it, const UiFrameContext &ctx,
                                const SystemTakeoverState &st);
+#endif
 
 // Renders all system-owned global takeovers in strict priority order:
 //   OTA -> Hibernation -> Panel Off -> Alarm/Timer/Find-My -> Voice Assistant ->

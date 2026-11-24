@@ -31,7 +31,7 @@
 | **Calendar** | 4-tab agenda app (**Overview**, **Day**, **Week**, **Month**) with event detail, deletion, and `+ Add Event` composer (including voice dictation and Home Assistant `zone.*` location picker) |
 | **Tools & Pinned** | Calculator, Dice, Coin Flip, and Flashlight on all boards, plus Bubble Level (IMU boards), classic Analog Chronograph (round displays), and multi-page 2×3 **Pinned** shortcut grids |
 | **Games** | Marbles (universal), Archery, Bricks, and Chomp on IMU displays; Blocks, Snake, and Drop Four (1P AI & 2P) on non-IMU touch displays |
-| **Settings** | On-device status, Home quick toggles, sleep & wake (including Bedtime Mode and Do Not Disturb), display/theme (including Area **Ambient Light** brightness), audio, voice, and firmware update—synced 2-way with Latter Studio |
+| **Settings** | On-device status, Home quick toggles, sleep & wake (including Bedtime Mode and Do Not Disturb), display/theme (including Area **Ambient Light** brightness and **Glass Style**: `Auto` / `Clear` / `Dark`), audio, voice, and firmware update—synced 2-way with Latter Studio |
 
 ---
 
@@ -66,7 +66,7 @@ Each device seeds its initial sleep, wake, and idle settings from its hardware t
 
 Instead of cluttering Home Assistant with dozens of internal entities, Latter uses a **clean 3-part surface**:
 
-1. **Latter Studio (`device_prefs` 2-Way Sync):** All 63 device preferences (display, Area Ambient Light, photo pools, 24-item dock, categories, wake-word sensitivities, sort orders, alarms, World Clocks, and live `device_telemetry`) live in **Latter Studio** and sync two-way with NVS—even while a handheld is hibernating.
+1. **Latter Studio (`device_prefs` 2-Way Sync):** All 65 device preferences (display, adaptive `Glass Style`, Area Ambient Light, photo pools, 24-item dock, categories, wake-word sensitivities, sort orders, alarms, World Clocks, and live `device_telemetry`) live in **Latter Studio** and sync two-way with NVS—even while a handheld is hibernating.
 2. **Curated Entities on the `Latter` Device (8 Platforms):**
    - **Presence & Spatial:** `device_tracker.<slug>`, `sensor.<slug>_current_area`, `sensor.<slug>_current_floor`, `sensor.<slug>_ble_distance` (native HA distance units).
    - **Live Screen & Ambience** *(honest radio availability)*: `light.<slug>_screen` (`on`/`off` + `1–100%` brightness) and `switch.<slug>_screensaver` (two-way screensaver toggle).

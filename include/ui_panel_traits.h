@@ -5,7 +5,15 @@
 // Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
 // ==============================================================================
 
+#if __has_include("esphome/core/defines.h")
+#include "esphome/core/defines.h"
+#endif
+
 #include <cstdint>
+
+#ifndef LATTER_GUI_UNIVERSAL
+#define LATTER_GUI_UNIVERSAL 1
+#endif
 
 #ifndef LATTER_PSRAM_BSS
 #define LATTER_PSRAM_BSS
@@ -54,6 +62,9 @@
 #else
 #define LATTER_CHIP_P4 0
 #endif
+#endif
+#ifndef LATTER_HAS_HW_JPEG
+#define LATTER_HAS_HW_JPEG LATTER_CHIP_P4
 #endif
 #ifndef LATTER_PSRAM_MB
 #define LATTER_PSRAM_MB (LATTER_CHIP_P4 ? 32 : 8)

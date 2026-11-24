@@ -5,6 +5,7 @@
 #include <cstdio>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 

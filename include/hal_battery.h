@@ -40,11 +40,11 @@
 #endif
 
 #if defined(USE_ESP32) && defined(LATTER_HAS_BATTERY) && LATTER_HAS_BATTERY
-static_assert(LATTER_BATTERY_MAH >= 100 && LATTER_BATTERY_MAH <= 5000,
-              "Battery boards declare LATTER_BATTERY_MAH (the fitted cell, boards/facts power.battery_mah)");
+static_assert(LATTER_BATTERY_MAH >= 100 && LATTER_BATTERY_MAH <= 20000,
+              "Battery boards declare LATTER_BATTERY_MAH (100..20000 mAh, boards/facts power.battery_mah)");
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 // ---------------------------------------------------------------------------------------------------
 // Charge profile (<= 0.5C standard rate, floored to AXP2101 ICC steps)
@@ -312,7 +312,7 @@ struct BatteryModel {
   }
 
   uint32_t sample_interval_ms(bool quiet) const {
-    const bool near_cutoff = cutoff_below_count > 0 || (has_sample && vrest_mv <= kFastSampleMv);
+    const bool near_cutoff = cutoff_below_count > 0 || (has_sample && vrest_mv > 0 && vrest_mv <= kFastSampleMv);
     return (quiet && !near_cutoff) ? kSampleQuietMs : kSampleMs;
   }
   bool sample_due(uint32_t now_ms, bool quiet) const {
@@ -323,56 +323,71 @@ struct BatteryModel {
 
   bool update(int vbat_mv, bool batt, ChargePhase ph, BattLoad ld, uint32_t now_ms,
               int hw_gauge_pct = -1, int capacity_mah = kBattCapacityMah, int active_chg_ma = -1) {
-    (void)hw_gauge_pct;  // AXP2101 uncalibrated OTP gauge is diagnostic telemetry only (no step cliff)
     if (now_ms == 0) now_ms = 1;
-    if (vbat_mv < kVbatMinValidMv || vbat_mv > kVbatMaxValidMv) return false;
+    const bool have_hw_gauge = (hw_gauge_pct >= 0 && hw_gauge_pct <= 100);
+    const bool valid_vbat = (vbat_mv >= kVbatMinValidMv && vbat_mv <= kVbatMaxValidMv);
+    if (!valid_vbat && !have_hw_gauge) return false;
     const uint32_t dt_ms = has_sample ? now_ms - last_sample_ms : 0U;
     last_sample_ms = now_ms;
     const bool first = !has_sample;
     const bool plug_change = has_sample && batt != on_battery;
     const bool was_full = full_latched;
     has_sample = true;
-    vraw_mv = vbat_mv;
+    vraw_mv = valid_vbat ? vbat_mv : 0;
     on_battery = batt;
     phase = ph;
     load = ld;
 
-    const int path_mohm = kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
-    const int chg_ma = (active_chg_ma > 0) ? active_chg_ma : charge_ma_for_capacity(capacity_mah);
-    const int pre_ma = precharge_ma_for_capacity(capacity_mah);
+    if (valid_vbat) {
+      const int path_mohm = kPathFixedMilliohm + (capacity_mah > 0 ? kCellIrMilliohmAh * 1000 / capacity_mah : 0);
+      const int chg_ma = (active_chg_ma > 0) ? active_chg_ma : charge_ma_for_capacity(capacity_mah);
+      const int pre_ma = precharge_ma_for_capacity(capacity_mah);
 
-    int comp_mv = 0;
-    if (batt) {
-      comp_mv = batt_load_ma(ld) * path_mohm / 1000;
-    } else if (ph == ChargePhase::CC) {
-      comp_mv = -(chg_ma * path_mohm / 1000);
-    } else if (ph == ChargePhase::CV && !fault) {
-      const float cv_frac = (cv_start_ms != 0U && now_ms > cv_start_ms)
-                                ? std::min(1.0f, static_cast<float>(now_ms - cv_start_ms) /
-                                                     static_cast<float>(kCvNominalMs))
-                                : 0.0f;
-      comp_mv = -static_cast<int>(
-          std::lround(static_cast<float>(chg_ma * path_mohm) * (1.0f - cv_frac) / 1000.0f));
-    } else if (ph == ChargePhase::PRECHARGE || ph == ChargePhase::TRICKLE) {
-      comp_mv = -(pre_ma * path_mohm / 1000);
-    }
-    vrest_mv = vbat_mv + comp_mv;
+      int comp_mv = 0;
+      if (batt) {
+        comp_mv = batt_load_ma(ld) * path_mohm / 1000;
+      } else if (ph == ChargePhase::CC) {
+        comp_mv = -(chg_ma * path_mohm / 1000);
+      } else if (ph == ChargePhase::CV && !fault) {
+        const float cv_frac = (cv_start_ms != 0U && now_ms > cv_start_ms)
+                                  ? std::min(1.0f, static_cast<float>(now_ms - cv_start_ms) /
+                                                       static_cast<float>(kCvNominalMs))
+                                  : 0.0f;
+        comp_mv = -static_cast<int>(
+            std::lround(static_cast<float>(chg_ma * path_mohm) * (1.0f - cv_frac) / 1000.0f));
+      } else if (ph == ChargePhase::PRECHARGE || ph == ChargePhase::TRICKLE) {
+        comp_mv = -(pre_ma * path_mohm / 1000);
+      }
+      vrest_mv = vbat_mv + comp_mv;
 
-    if (first || plug_change || std::isnan(ema_mv)) {
-      ema_mv = static_cast<float>(vrest_mv);
-      settle_until_ms = now_ms + kSettleMs;
+      if (first || plug_change || std::isnan(ema_mv)) {
+        ema_mv = static_cast<float>(vrest_mv);
+        settle_until_ms = now_ms + kSettleMs;
+      } else {
+        const float alpha = 1.0f - std::exp(-static_cast<float>(dt_ms) / kEmaTauMs);
+        ema_mv += alpha * (static_cast<float>(vrest_mv) - ema_mv);
+      }
     } else {
-      const float alpha = 1.0f - std::exp(-static_cast<float>(dt_ms) / kEmaTauMs);
-      ema_mv += alpha * (static_cast<float>(vrest_mv) - ema_mv);
+      vrest_mv = 0;
+      if (first || plug_change) {
+        settle_until_ms = now_ms;
+      }
     }
-    soc_model = ocv_to_soc_for_capacity(ema_mv, capacity_mah);
+    // Honor a dedicated fuel-gauge IC reading (0..100%) when supplied; uncalibrated PMIC OTP gauges
+    // (e.g. AXP2101 REG A4) pass -1 to remain on the rest-voltage OCV model.
+    soc_model = have_hw_gauge ? static_cast<float>(hw_gauge_pct)
+                              : ocv_to_soc_for_capacity(ema_mv, capacity_mah);
     const bool settle = settling(now_ms);
 
     if (batt) {
       cv_start_ms = 0;
       full_latched = false;
       fault = false;
-      if (plug_change && was_full) {
+      if (have_hw_gauge) {
+        soc_display = soc_model;
+        seed_valid = false;
+        settle_until_ms = now_ms;
+      } else if (plug_change && was_full) {
         soc_display = 100.0f;
         settle_until_ms = now_ms;
       } else if (first || std::isnan(soc_display)) {
@@ -398,14 +413,22 @@ struct BatteryModel {
     } else {
       drain_t0_ms = 0;
       seed_valid = false;
-      if (ph == ChargePhase::DONE && !fault && vbat_mv >= kFullMinValidMv) {
+      const bool full_vbat_ok = valid_vbat ? (vbat_mv >= kFullMinValidMv) : (have_hw_gauge && hw_gauge_pct >= 95);
+      if (ph == ChargePhase::DONE && !fault && full_vbat_ok) {
         full_latched = true;
-      } else if (fault || vbat_mv < kFullMinValidMv) {
+      } else if (fault || !full_vbat_ok) {
         full_latched = false;
       }
       if (full_latched) {
         soc_display = 100.0f;
-      } else if (ph == ChargePhase::CV && !fault) {
+      } else if (fault) {
+        cv_start_ms = 0;
+        // Open/missing cell fault on VBUS: hold last valid battery SoC (or NAN if never sampled on cell)
+        // instead of reporting ~100% from the floating 4.20 V charger rail.
+      } else if (have_hw_gauge) {
+        cv_start_ms = 0;
+        soc_display = soc_model;
+      } else if (ph == ChargePhase::CV) {
         if (cv_start_ms == 0) {
           cv_start_ms = now_ms;
           const float base = std::isnan(soc_display) ? soc_model : soc_display;
@@ -415,14 +438,10 @@ struct BatteryModel {
         if (frac > 1.0f) frac = 1.0f;
         const float ramp = cv_start_soc + (kCvRampCeilPct - cv_start_soc) * frac;
         if (std::isnan(soc_display) || ramp > soc_display) soc_display = ramp;
-      } else if (charge_phase_is_charging(ph) && !fault) {
+      } else if (charge_phase_is_charging(ph)) {
         cv_start_ms = 0;
         const float s = soc_model > kCvRampCeilPct ? kCvRampCeilPct : soc_model;
         if (first || settle || std::isnan(soc_display) || s > soc_display) soc_display = s;
-      } else if (fault) {
-        cv_start_ms = 0;
-        // Open/missing cell fault on VBUS: hold last valid battery SoC (or NAN if never sampled on cell)
-        // instead of reporting ~100% from the floating 4.20 V charger rail.
       } else {
         cv_start_ms = 0;
         soc_display = soc_model;
@@ -446,7 +465,7 @@ struct BatteryModel {
       cutoff_below_since_ms = 0;
       cutoff_below_count = 0;
       cutoff_tripped = false;
-    } else if (vrest_mv <= kCutoffRestMv || vraw_mv <= kCutoffLoadedMv) {
+    } else if (valid_vbat && (vrest_mv <= kCutoffRestMv || vraw_mv <= kCutoffLoadedMv)) {
       if (cutoff_below_count == 0) cutoff_below_since_ms = now_ms;
       if (cutoff_below_count < 255) cutoff_below_count++;
       if (!cutoff_tripped && cutoff_below_count >= kCutoffMinSamples &&
@@ -595,22 +614,6 @@ constexpr int64_t rtc_days_from_civil(int y, int m, int d) {
   return era * 146097LL + static_cast<int64_t>(doe) - 719468LL;
 }
 
-// Howard Hinnant's civil_from_days: inverse of rtc_days_from_civil (days since 1970-01-01 UTC -> Y-M-D).
-constexpr void rtc_civil_from_days(int64_t z, int &out_y, int &out_m, int &out_d) {
-  z += 719468LL;
-  const int64_t era = (z >= 0 ? z : z - 146096LL) / 146097LL;
-  const uint32_t doe = static_cast<uint32_t>(z - era * 146097LL);
-  const uint32_t yoe = (doe - doe / 1460U + doe / 36524U - doe / 146096U) / 365U;
-  const int64_t y = static_cast<int64_t>(yoe) + era * 400LL;
-  const uint32_t doy = doe - (365U * yoe + yoe / 4U - yoe / 100U);
-  const uint32_t mp = (5U * doy + 2U) / 153U;
-  const uint32_t d = doy - (153U * mp + 2U) / 5U + 1U;
-  const uint32_t m = mp < 10U ? (mp + 3U) : (mp - 9U);
-  out_y = static_cast<int>(y + (m <= 2U ? 1 : 0));
-  out_m = static_cast<int>(m);
-  out_d = static_cast<int>(d);
-}
-
 // Decode PCF85063 registers 0x04..0x0A (VL/sec, min, hour, day, weekday, century/month, year) into UTC epoch.
 constexpr bool pcf85063_regs_to_epoch(const uint8_t reg[7], int64_t &out_epoch) {
   if ((reg[0] & 0x80U) != 0U) return false;  // VL/OS bit 7 set -> oscillator stop / clock integrity invalid
@@ -688,4 +691,4 @@ inline bool hal_rtc_sync_from_system_clock(BusT &&) {
 }
 #endif  // USE_I2C
 
-}  // namespace latter_ui
+}  // namespace latter_core

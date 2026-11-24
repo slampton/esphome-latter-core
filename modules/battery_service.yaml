@@ -1,0 +1,344 @@
+# ==============================================================================
+# Latter Core Module: Generic Battery Telemetry, PWR Key UX & Low-Battery Policy
+# (modules/battery_service.yaml)
+# Included by battery-powered boards (e.g., alongside modules/hal/pmu_axp2101.yaml
+# or any third-party PMIC/fuel-gauge HAL). Omitted by mains-only boards so they
+# never expose fake battery HA entities.
+# ==============================================================================
+
+esphome:
+  on_boot:
+    - priority: 840
+      then:
+        - lambda: |-
+            auto &rs = latter_core::runtime_state();
+            rs.hw_update_batt_level = +[]() {
+              const auto &bm = latter_core::battery_model();
+              if (!std::isnan(bm.soc_display)) {
+                const float lvl = std::round(bm.soc_display);
+                latter_core::runtime_state().hw_batt_level = lvl;
+                id(batt_level).publish_state(lvl);
+              } else {
+                latter_core::runtime_state().hw_batt_level = NAN;
+                if (id(batt_level).has_state() && !std::isnan(id(batt_level).state)) {
+                  id(batt_level).publish_state(NAN);
+                }
+              }
+            };
+            rs.on_pwr_key_press = +[]() {
+              auto &s = latter_core::runtime_state();
+              if (s.nav.ota_in_progress) {
+                latter_core::pwr_key_wake_consumed() = true;
+                return;
+              }
+              if (s.nav.is_hibernating) {
+                latter_core::pwr_key_wake_consumed() = true;
+                if (s.nav.hibernate_countdown_val > 0) {
+                  s.nav.is_hibernating = false;
+                  s.nav.hibernate_countdown_val = 0;
+                  latter_core::battery_model().hib_reason = latter_core::HibernateReason::OTHER;
+                  latter_core::note_wake_reason(latter_core::WakeReason::CROWN);
+                  id(wake_to_active_state).execute();
+                }
+                return;
+              }
+              const uint32_t now_press_ms = millis();
+              const bool dcs_not_awake =
+                  latter_core::panel_dcs_state().phase != latter_core::PanelDcsState::AWAKE;
+              const bool wake_guard_active =
+                  (latter_core::last_screen_wake_ms() != 0U) &&
+                  ((now_press_ms - latter_core::last_screen_wake_ms()) < 300U);
+              if (s.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on() || dcs_not_awake) {
+                latter_core::pwr_key_wake_consumed() = true;
+                latter_core::note_wake_reason(latter_core::WakeReason::CROWN);
+                id(wake_to_active_state).execute();
+              } else if (wake_guard_active) {
+                latter_core::pwr_key_wake_consumed() = true;
+              } else {
+                latter_core::pwr_key_wake_consumed() = false;
+              }
+              id(pwr_key_long_press_watch).execute();
+            };
+            rs.on_pwr_key_release = +[]() {
+              if (id(pwr_key_long_press_watch).is_running()) {
+                id(pwr_key_long_press_watch).stop();
+                if (latter_core::pwr_key_wake_consumed()) {
+                  latter_core::pwr_key_wake_consumed() = false;
+                  return;
+                }
+                id(handle_crown_button_press).execute(false);
+              } else {
+                latter_core::pwr_key_wake_consumed() = false;
+              }
+            };
+            rs.on_usb_power_changed = +[](bool vbus) {
+              auto &s = latter_core::runtime_state();
+              if (!id(usb_connected).has_state() || id(usb_connected).state != vbus) {
+                id(usb_connected).publish_state(vbus);
+              }
+              if (s.nav.display_power_state == 0) {
+                latter_core::display_lifecycle().note_activity(millis());
+              }
+              // If unplugged while Docked Screensaver is running, transition immediately to Screen Off
+              // so the screensaver never stays awake draining the battery.
+              if (!vbus && s.nav.display_power_state == 1) {
+                id(turn_screen_off).execute();
+              } else if (s.nav.display_power_state == 2) {
+                if (!vbus) {
+                  s.nav.sleep_start_time = millis();
+                  s.audio.usb_unplugged_screen_off();
+                }
+                s.audio.sync_wake_word();
+              }
+              id(apply_power_policy).execute();  // docked vs battery changes radio, IMU and tick policy
+            };
+            rs.on_battery_status_updated = +[](bool charging, const char *charge_state_text) {
+              if (!id(batt_charging).has_state() || id(batt_charging).state != charging) {
+                id(batt_charging).publish_state(charging);
+              }
+              static const char *last_chg_text = nullptr;  // string literals: compare by pointer
+              if (charge_state_text != nullptr && charge_state_text != last_chg_text) {
+                last_chg_text = charge_state_text;
+                id(batt_charge_state).publish_state(charge_state_text);
+              }
+              // Low-battery notice: once per discharge, the next time the screen is on (never wakes the screen).
+              auto &s = latter_core::runtime_state();
+              auto &bm = latter_core::battery_model();
+              if (bm.low_notice_pending && s.nav.display_power_state == 0 && !s.alert.active && !s.nav.is_hibernating &&
+                  !s.voice.active && !s.alarms.ringing && !s.timers.ringing &&
+                  !latter_core::is_camera_view_active(s)) {
+                bm.low_notice_pending = false;
+                char msg[48];
+                snprintf(msg, sizeof(msg), "%.0f%% left. Charge soon.", bm.soc_display);
+                s.alert.title = "Battery Low";
+                s.alert.message = msg;
+                s.alert.priority = "warning";
+                s.alert.duration_ms = 10000U;
+                s.alert.start_ms = millis();
+                s.alert.camera_url = "";
+                s.alert.loaded_camera_url = "";
+                latter_ui::release_art(id(camera_snapshot_art));
+                s.alert.active = true;
+                latter_core::display_lifecycle().note_activity(millis());
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
+            };
+            rs.on_battery_sample_updated = +[](bool cutoff) {
+              auto &s = latter_core::runtime_state();
+              auto &bm = latter_core::battery_model();
+              if (!std::isnan(bm.soc_display)) {
+                const float lvl = std::round(bm.soc_display);
+                s.hw_batt_level = lvl;
+                id(batt_level).publish_state(lvl);
+              } else {
+                s.hw_batt_level = NAN;
+                if (id(batt_level).has_state() && !std::isnan(id(batt_level).state)) {
+                  id(batt_level).publish_state(NAN);
+                }
+              }
+              if (bm.vraw_mv > 0) {
+                const float volts = static_cast<float>(bm.vraw_mv) / 1000.0f;
+                s.hw_batt_voltage = volts;
+                id(batt_voltage).publish_state(volts);
+              }
+              if (!id(batt_low).has_state() || id(batt_low).state != bm.low) {
+                id(batt_low).publish_state(bm.low);
+              }
+              static bool low_logged = false;
+              if (bm.low && !low_logged) {
+                ESP_LOGW("PROF", "[PROF:POWER] trig=LOW_BATT vraw=%dmV vrest=%dmV soc=%.0f%%", bm.vraw_mv, bm.vrest_mv,
+                         bm.soc_display);
+              }
+              low_logged = bm.low;
+              // Cutoff: hibernate cleanly (state saved, API disconnected, PMIC off; never alarm-sleep) instead of
+              // letting the cell run into the PMIC's under-voltage cutoff.
+              if (cutoff && !s.nav.ota_in_progress && !(s.nav.is_hibernating && s.nav.hibernate_countdown_val == 0)) {
+                ESP_LOGW("PROF", "[PROF:POWER] trig=CRITICAL_BATT vraw=%dmV vrest=%dmV soc=%.0f%% -> hibernate",
+                         bm.vraw_mv, bm.vrest_mv, bm.soc_display);
+                bm.hib_reason = latter_core::HibernateReason::CRITICAL;
+                id(start_instant_hibernation).execute();
+              }
+            };
+
+binary_sensor:
+  - platform: template
+    name: "USB Power Connected"
+    id: usb_connected
+    device_class: power
+    entity_category: diagnostic
+
+  - platform: template
+    name: "Battery Charging"
+    id: batt_charging
+    device_class: battery_charging
+    entity_category: diagnostic
+
+  # On at or below latter_core::BatteryModel::kLowPct on battery; off once charging (hal_battery.h).
+  - platform: template
+    name: "Battery Low"
+    id: batt_low
+    device_class: battery
+    entity_category: diagnostic
+
+sensor:
+  - platform: template
+    name: "Battery Level"
+    id: batt_level
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    # Published via on_battery_sample_updated after each battery-model sample (include/hal_battery.h).
+    # No poller of its own, and only whole-percent changes go out.
+    update_interval: never
+    filters:
+      - delta: 1.0
+
+  - platform: template
+    name: "Battery Voltage"
+    id: batt_voltage
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    entity_category: diagnostic
+    accuracy_decimals: 2
+    # The raw VBAT of each battery-model sample, published in every power state.
+    update_interval: never
+    filters:
+      - throttle: 120s
+      - delta: 0.01
+
+text_sensor:
+  - platform: template
+    name: "Battery Charge State"
+    id: batt_charge_state
+    icon: "mdi:battery-charging-outline"
+    entity_category: diagnostic
+    update_interval: never
+
+button:
+  - platform: template
+    name: "Actions: Hibernate Device"
+    id: enter_deep_sleep_btn
+    icon: "mdi:power-sleep"
+    entity_category: config
+    on_press:
+      - lambda: 'latter_core::battery_model().hib_reason = latter_core::HibernateReason::BUTTON;'
+      - script.execute: enter_deep_sleep
+
+script:
+  - id: pwr_key_long_press_watch
+    mode: restart
+    then:
+      - delay: 1000ms
+      - script.execute:
+          id: handle_crown_button_press
+          is_long: true
+
+  - id: handle_crown_button_press
+    mode: restart
+    parameters:
+      is_long: bool
+    then:
+      - lambda: |-
+          static uint32_t last_crown_press = 0;
+          uint32_t now_c = millis();
+          if (now_c - last_crown_press < 150) return;
+          last_crown_press = now_c;
+
+          auto &rs = latter_core::runtime_state();
+          if (rs.nav.is_hibernating) {
+            if (rs.nav.hibernate_countdown_val > 0) {
+              rs.nav.is_hibernating = false;
+              rs.nav.hibernate_countdown_val = 0;
+              latter_core::battery_model().hib_reason = latter_core::HibernateReason::OTHER;
+              latter_core::note_wake_reason(latter_core::WakeReason::CROWN);
+              id(wake_to_active_state).execute();
+            }
+            return;
+          }
+
+          if (is_long) {
+            latter_core::pwr_key_wake_consumed() = false;
+            if (rs.nav.ota_in_progress || rs.nav.is_hibernating || rs.alarms.ringing ||
+                rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active ||
+                latter_ui::ui::pin_pad_state().open || latter_core::shortcut_confirm_state().open) {
+              return;
+            }
+            if (rs.voice.active || !rs.voice.status_text.empty()) {
+              rs.audio.cancel_va_now();
+            }
+            if (!id(display_brightness).current_values.is_on() || rs.nav.display_power_state != 0) {
+              latter_core::note_wake_reason(latter_core::WakeReason::CROWN);
+              id(wake_to_active_state).execute();
+            }
+            rs.nav.quick_actions_open = true;
+            latter_core::display_lifecycle().note_activity(now_c);
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+
+          if (rs.alarms.ringing) {
+            auto now = id(ha_time).now();
+            latter_core::timer_alarm_controller().snooze_active_alarm(
+                now.is_valid(), now.is_valid() ? static_cast<uint32_t>(now.timestamp) : 0U, now_c);
+            rs.audio.stop_alarm();
+            latter_ui::schedule_disp_update(&id(disp1));
+            latter_core::display_lifecycle().note_activity(now_c);
+            return;
+          }
+          if (rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active) {
+            if (rs.alert.active) {
+              id(dismiss_notification).execute();
+              return;
+            }
+            latter_core::timer_alarm_controller().dismiss_ringing();
+            rs.audio.stop_alarm();
+            id(sync_display_brightness).execute();
+            latter_ui::schedule_disp_update(&id(disp1));
+            latter_core::display_lifecycle().note_activity(now_c);
+            return;
+          }
+
+          if (!id(display_brightness).current_values.is_on() || rs.nav.display_power_state != 0) {
+            latter_core::note_wake_reason(latter_core::WakeReason::CROWN);
+            id(wake_to_active_state).execute();
+            return;
+          }
+
+          if (rs.voice.active || !rs.voice.status_text.empty()) {
+            rs.audio.cancel_va_now();
+            return;
+          }
+
+          if (rs.nav.quick_actions_open) {
+            rs.nav.quick_actions_open = false;
+            latter_core::display_lifecycle().note_activity(now_c);
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+
+          if ((rs.nav.gui_page == latter_core::PageId::TIME && rs.nav.time_subpage == 3) ||
+              (LATTER_ROUND_DISPLAY && rs.nav.gui_page == latter_core::PageId::TOOLS &&
+               rs.nav.tools_subpage == latter_core::ToolsSubpage::STOPWATCH)) {
+            latter_core::display_lifecycle().note_activity(now_c);
+            if (!rs.stopwatch.running) {
+              rs.stopwatch.running = true;
+              rs.stopwatch.started_in_analog = (rs.nav.gui_page == latter_core::PageId::TOOLS);
+              rs.stopwatch.start_time_ms = millis() - rs.stopwatch.elapsed_ms;
+              rs.nav.sleep_start_time = 0;
+              id(display_brightness).turn_on().perform();
+              latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
+            } else {
+              rs.stopwatch.running = false;
+              rs.stopwatch.elapsed_ms = millis() - rs.stopwatch.start_time_ms;
+            }
+            latter_ui::schedule_disp_update(&id(disp1));
+            return;
+          }
+
+          id(turn_screen_off).execute();
+          return;

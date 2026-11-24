@@ -22,7 +22,7 @@
 #include <string>
 #include <string_view>
 
-namespace latter_ui {
+namespace latter_core {
 
 // ==============================================================================
 // 1. V3DomainReducer — Deterministic Protocol v3 Inbound Domain State Reducer
@@ -853,7 +853,7 @@ AlarmTickEffects TimerAlarmController::tick_alarms_1s(bool time_valid, uint32_t 
 
     if (trig_idx > 0) {
       if (need_save) {
-        latter_actions::sync_local_alarms_edit(now_ms);
+        latter_core::sync_local_alarms_edit(now_ms);
         eff.prefs_saved = true;
       }
       if (rs.nav.home_subpage == 2) {
@@ -885,7 +885,7 @@ VaTimerEffects TimerAlarmController::on_va_timer_started(const std::string &id,
   sync_multi_timer_state();
   rs.timers.ringing = false;
   if (!rs.alarms.ringing) ringing_started_ms_ = 0U;
-  latter_actions::check_and_emit_timer_alarm_state(now_ms);
+  latter_core::check_and_emit_timer_alarm_state(now_ms);
   eff.schedule_disp = should_redraw_va_timer_(rs);
   return eff;
 }
@@ -898,7 +898,7 @@ VaTimerEffects TimerAlarmController::on_va_timer_updated(const std::string &id,
   const auto &rs = runtime_state();
   upsert_voice_timer_slot(id, name, total_sec, left_sec, is_active, now_ms);
   sync_multi_timer_state();
-  latter_actions::check_and_emit_timer_alarm_state(now_ms);
+  latter_core::check_and_emit_timer_alarm_state(now_ms);
   eff.schedule_disp = should_redraw_va_timer_(rs);
   return eff;
 }
@@ -923,7 +923,7 @@ VaTimerEffects TimerAlarmController::on_va_timer_cancelled(const std::string &id
   const bool was_ringing = rs.timers.ringing;
   rs.timers.ringing = false;
   if (!rs.alarms.ringing) ringing_started_ms_ = 0U;
-  latter_actions::check_and_emit_timer_alarm_state(now_ms);
+  latter_core::check_and_emit_timer_alarm_state(now_ms);
   eff.stop_sound = was_ringing;
   eff.schedule_disp = should_redraw_va_timer_(rs);
   return eff;
@@ -954,7 +954,7 @@ VaTimerEffects TimerAlarmController::on_va_timer_finished(const std::string &id,
     stamp_ringing_start_(now_ms);
     eff.fire_alert = true;
   }
-  latter_actions::check_and_emit_timer_alarm_state(now_ms);
+  latter_core::check_and_emit_timer_alarm_state(now_ms);
   return eff;
 }
 
@@ -1000,6 +1000,17 @@ void reset_runtime_state(bool preserve_hooks) {
   const auto saved_key_pressed = rt.hw_pwr_key_pressed;
   const auto saved_upd_batt = rt.hw_update_batt_level;
   const auto saved_imu_pm = rt.hw_set_imu_power_mode;
+  const auto saved_bl_lvl = rt.hw_set_backlight_level;
+  const auto saved_touch_rec = rt.hw_recover_touchscreen;
+  const auto saved_touch_slp = rt.hw_set_touch_sleep_mode;
+  const auto saved_pwr_press = rt.on_pwr_key_press;
+  const auto saved_pwr_rel = rt.on_pwr_key_release;
+  const auto saved_usb_chg = rt.on_usb_power_changed;
+  const auto saved_batt_stat = rt.on_battery_status_updated;
+  const auto saved_batt_samp = rt.on_battery_sample_updated;
+  const auto saved_mot_poll = rt.on_motion_poller_changed;
+  const auto saved_wom_wake = rt.on_imu_wom_wake;
+  const auto saved_audio = rt.audio;
   const auto saved_on_conn = rt.on_ha_client_connected;
   const auto saved_on_disc = rt.on_ha_client_disconnected;
   const auto saved_on_push = rt.on_v3_domain_pushed;
@@ -1015,6 +1026,17 @@ void reset_runtime_state(bool preserve_hooks) {
     rt.hw_pwr_key_pressed = saved_key_pressed;
     rt.hw_update_batt_level = saved_upd_batt;
     rt.hw_set_imu_power_mode = saved_imu_pm;
+    rt.hw_set_backlight_level = saved_bl_lvl;
+    rt.hw_recover_touchscreen = saved_touch_rec;
+    rt.hw_set_touch_sleep_mode = saved_touch_slp;
+    rt.on_pwr_key_press = saved_pwr_press;
+    rt.on_pwr_key_release = saved_pwr_rel;
+    rt.on_usb_power_changed = saved_usb_chg;
+    rt.on_battery_status_updated = saved_batt_stat;
+    rt.on_battery_sample_updated = saved_batt_samp;
+    rt.on_motion_poller_changed = saved_mot_poll;
+    rt.on_imu_wom_wake = saved_wom_wake;
+    rt.audio = saved_audio;
     rt.on_ha_client_connected = saved_on_conn;
     rt.on_ha_client_disconnected = saved_on_disc;
     rt.on_v3_domain_pushed = saved_on_push;
@@ -1040,7 +1062,7 @@ void reset_runtime_state(bool preserve_hooks) {
   radio_boost_until_ms() = 0U;
   screen_off_tap_state().reset();
   bedtime_schedule_tracker().reset();
-  latter_actions::timer_alarm_sync_tracker() = latter_actions::TimerAlarmSyncTracker{};
+  latter_core::timer_alarm_sync_tracker() = latter_core::TimerAlarmSyncTracker{};
   latter_rpc::clear_pin_session_key();
 
   audio_session().reset();
@@ -1065,4 +1087,4 @@ void reset_runtime_state(bool preserve_hooks) {
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

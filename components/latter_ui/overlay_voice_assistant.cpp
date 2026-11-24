@@ -1,9 +1,10 @@
-#include "ui_pages.h"
+#include "ui_compositor.h"
 
 #include <algorithm>
 #include <cmath>
 
 namespace latter_ui {
+using namespace latter_core;
 namespace {
 
 UiColor get_va_radiation_color(bool is_solaris, float t) {
@@ -32,7 +33,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx
   const bool va_vad_active = st.va_vad_active;
   const UiStrView profile_opt = st.va_visual_profile_opt;
   const UiColor col_white = st.col_white, col_solaris_gold = st.col_solaris_gold;
-  frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::VA_CANCEL_BTN, kHitTap);
+  frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::VA_CANCEL_BTN, kHitTap | kHitFocusSlot);
 
   const bool is_solaris = (profile_opt == "Solaris"), is_light_bar = (profile_opt == "Light Bar");
   const bool is_dot_wave = (profile_opt == "Dot Wave"), is_rings = (profile_opt == "Rings");

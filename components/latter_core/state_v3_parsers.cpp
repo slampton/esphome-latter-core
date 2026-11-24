@@ -8,7 +8,11 @@
 #include "../../include/latter_rpc.h"
 #endif
 
-namespace latter_ui {
+#ifdef USE_ESP32
+#include <nvs.h>
+#endif
+
+namespace latter_core {
 
 bool parse_area_ambient_light(std::string_view raw, int8_t &out_pct, std::string &out_lux) {
   out_pct = -1;
@@ -97,12 +101,30 @@ bool load_persisted_prefs() {
   auto &st = device_prefs_state();
   st.loaded = true;
   st.nvs_save_pending = false;
-#if LATTER_HAS_ESP_PREFS
-  if (esphome::global_preferences == nullptr) return false;
-  PersistedDevicePrefs loaded{};
-  if (persisted_prefs_handle().load(&loaded) &&
-      load_persisted_prefs_from_buffer(&loaded, sizeof(loaded), persisted_prefs())) {
-    return true;
+#ifdef USE_ESP32
+  nvs_handle_t nvs = 0;
+  if (nvs_open(kPersistedPrefsNvsNamespace, NVS_READONLY, &nvs) == ESP_OK) {
+    size_t required_size = 0;
+    const esp_err_t sz_err = nvs_get_blob(nvs, kPersistedPrefsNvsKey, nullptr, &required_size);
+    bool ok = false;
+    if (sz_err == ESP_OK && required_size >= kPersistedPrefsMinSize && required_size <= 4096U) {
+      if (required_size <= sizeof(PersistedDevicePrefs)) {
+        alignas(PersistedDevicePrefs) uint8_t raw[sizeof(PersistedDevicePrefs)]{};
+        size_t read_len = required_size;
+        if (nvs_get_blob(nvs, kPersistedPrefsNvsKey, raw, &read_len) == ESP_OK) {
+          ok = load_persisted_prefs_from_buffer(raw, read_len, persisted_prefs());
+        }
+      } else {
+        std::vector<uint8_t> raw(required_size);
+        size_t read_len = required_size;
+        if (nvs_get_blob(nvs, kPersistedPrefsNvsKey, raw.data(), &read_len) == ESP_OK &&
+            read_len >= sizeof(PersistedDevicePrefs)) {
+          ok = load_persisted_prefs_from_buffer(raw.data(), sizeof(PersistedDevicePrefs), persisted_prefs());
+        }
+      }
+    }
+    nvs_close(nvs);
+    if (ok) return true;
   }
 #endif
   persisted_prefs() = PersistedDevicePrefs{};
@@ -122,9 +144,15 @@ bool save_persisted_prefs() {
   p.version = kPersistedPrefsVersion;
   clamp_prefs_to_capabilities(p);
   device_prefs_state().nvs_save_pending = false;
-#if LATTER_HAS_ESP_PREFS
-  if (esphome::global_preferences == nullptr) return false;
-  return persisted_prefs_handle().save(&p);
+#ifdef USE_ESP32
+  nvs_handle_t nvs = 0;
+  if (nvs_open(kPersistedPrefsNvsNamespace, NVS_READWRITE, &nvs) != ESP_OK) return false;
+  esp_err_t err = nvs_set_blob(nvs, kPersistedPrefsNvsKey, &p, sizeof(p));
+  if (err == ESP_OK) {
+    err = nvs_commit(nvs);
+  }
+  nvs_close(nvs);
+  return err == ESP_OK;
 #else
   return true;
 #endif
@@ -221,6 +249,7 @@ const char *pref_key_name(PrefKey key) {
     case PrefKey::WEATHER_APP_BACKGROUND: return "weather_app_background";
     case PrefKey::DO_NOT_DISTURB: return "do_not_disturb";
     case PrefKey::MUSIC_AUTO_OPEN: return "music_auto_open";
+    case PrefKey::GLASS_STYLE: return "glass_style";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -294,13 +323,14 @@ std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p) {
     case PrefKey::SCREENSAVER_PHOTO_CLOCK: return p.screensaver_photo_clock ? "1" : "0";
     case PrefKey::WEATHER_APP_BACKGROUND: return p.weather_app_background ? "1" : "0";
     case PrefKey::DO_NOT_DISTURB: return p.do_not_disturb ? "1" : "0";
+    case PrefKey::GLASS_STYLE: return pref_glass_style_cstr(p);
     case PrefKey::COUNT: break;
   }
   return "";
 }
 
 bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
-                                bool /*unused_cascade*/, PrefMask &changed_mask, uint32_t &effects_mask) {
+                         PrefMask &changed_mask, uint32_t &effects_mask) {
   if (sv.empty() &&
       key != PrefKey::WORLD_CLOCKS &&
       key != PrefKey::LOCAL_CLOCK_LABEL &&
@@ -308,15 +338,15 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       key != PrefKey::GAMES_ITEMS) {
     return false;
   }
-  auto apply_enum = [&]<size_t N>(uint8_t &slot, const char *const (&opts)[N], uint32_t eff) -> bool {
-    int idx = find_opt_index(opts, sv);
+  auto apply_enum = [&]<size_t N>(uint8_t &slot, const std::array<std::string_view, N> &opts, uint32_t eff) -> bool {
+    const int idx = find_pref_option_index(std::span<const std::string_view>{opts}, sv);
     if (idx < 0) return false;
     uint8_t u = static_cast<uint8_t>(idx);
     if (key == PrefKey::PICKUP_TO_WAKE && (!LATTER_HAS_IMU || LATTER_IS_STATIONARY)) u = 2;
     if (key == PrefKey::BATTERY_HIBERNATE_TIMEOUT && (!LATTER_HAS_BATTERY || LATTER_IS_STATIONARY)) u = 4;
     if (key == PrefKey::CLOCK_FACE && !LATTER_ROUND_DISPLAY && u == 1) u = 0;
     if (key == PrefKey::START_SCREEN && !p.home_screen_enabled && u == 0) u = kStartScreenTimeAppIdx;
-    if (key == PrefKey::CAMERA_DOORBELL_POPUP && !LATTER_CHIP_P4) u = 0;
+    if (key == PrefKey::CAMERA_DOORBELL_POPUP && !LATTER_HAS_HW_JPEG) u = 0;
     if (slot == u) return false;
     slot = u;
     changed_mask |= pref_key_bit(key);
@@ -333,10 +363,10 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
     effects_mask |= (eff | kPrefEffectRedraw);
     return true;
   };
-  auto apply_num = [&](uint8_t &slot, int lo, int hi, uint32_t eff) -> bool {
+  auto apply_num = [&](uint8_t &slot, int32_t lo, int32_t hi, uint32_t eff) -> bool {
     int parsed = v3_parse_int(sv, -9999);
     if (parsed == -9999) return false;
-    uint8_t cl = static_cast<uint8_t>(std::clamp(parsed, lo, hi));
+    uint8_t cl = static_cast<uint8_t>(std::clamp<int32_t>(parsed, lo, hi));
     if (slot == cl) return false;
     slot = cl;
     changed_mask |= pref_key_bit(key);
@@ -346,44 +376,44 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
 
   switch (key) {
     case PrefKey::WAKE_WORD_MODE:
-      return apply_enum(p.wake_word_mode, kWakeWordModeOpts, kPrefEffectWakeWordSync);
+      return apply_enum(p.wake_word_mode, kPrefOptsWakeWordMode, kPrefEffectWakeWordSync);
     case PrefKey::TAP_TO_WAKE:
-      return apply_enum(p.tap_to_wake, kTapWakeOpts, kPrefEffectPowerPolicy);
+      return apply_enum(p.tap_to_wake, kPrefOptsTapToWake, kPrefEffectPowerPolicy);
     case PrefKey::PICKUP_TO_WAKE:
-      return apply_enum(p.pickup_to_wake, kWakePolicyOpts, kPrefEffectPowerPolicy);
+      return apply_enum(p.pickup_to_wake, kPrefOptsPickupToWake, kPrefEffectPowerPolicy);
     case PrefKey::BATTERY_SCREEN_TIMEOUT:
-      return apply_enum(p.battery_screen_timeout, kBattScreenTimeoutOpts, kPrefEffectSleepTimer);
+      return apply_enum(p.battery_screen_timeout, kPrefOptsBatteryScreenTimeout, kPrefEffectSleepTimer);
     case PrefKey::DOCKED_IDLE_TIMEOUT:
-      return apply_enum(p.docked_idle_timeout, kDockedIdleTimeoutOpts, kPrefEffectSleepTimer);
+      return apply_enum(p.docked_idle_timeout, kPrefOptsDockedIdleTimeout, kPrefEffectSleepTimer);
     case PrefKey::BATTERY_HIBERNATE_TIMEOUT:
-      return apply_enum(p.battery_hibernate_timeout, kBattHibernateTimeoutOpts, kPrefEffectPowerPolicy);
+      return apply_enum(p.battery_hibernate_timeout, kPrefOptsBatteryHibernateTimeout, kPrefEffectPowerPolicy);
     case PrefKey::SCREENSAVER_MODE:
-      return apply_enum(p.screensaver_mode, kScreensaverModeOpts,
+      return apply_enum(p.screensaver_mode, kPrefOptsScreensaverMode,
                         kPrefEffectSleepTimer | kPrefEffectScreensaverChange);
     case PrefKey::SCREENSAVER_STYLE:
-      return apply_enum(p.screensaver_style, kScreensaverStyleOpts, kPrefEffectScreensaverChange);
+      return apply_enum(p.screensaver_style, kPrefOptsScreensaverStyle, kPrefEffectScreensaverChange);
     case PrefKey::AUTO_BRIGHTNESS_MODE:
-      return apply_enum(p.auto_brightness_mode, kAutoBrightnessModeOpts, kPrefEffectBrightness);
+      return apply_enum(p.auto_brightness_mode, kPrefOptsAutoBrightnessMode, kPrefEffectBrightness);
     case PrefKey::MANUAL_BRIGHTNESS:
-      return apply_num(p.manual_brightness, 1, 100, kPrefEffectBrightness);
+      return apply_num(p.manual_brightness, kPrefMinManualBrightness, kPrefMaxManualBrightness, kPrefEffectBrightness);
     case PrefKey::DAY_BRIGHTNESS:
-      return apply_num(p.day_brightness, 1, 100, kPrefEffectBrightness);
+      return apply_num(p.day_brightness, kPrefMinDayBrightness, kPrefMaxDayBrightness, kPrefEffectBrightness);
     case PrefKey::NIGHT_BRIGHTNESS:
-      return apply_num(p.night_brightness, 1, 100, kPrefEffectBrightness);
+      return apply_num(p.night_brightness, kPrefMinNightBrightness, kPrefMaxNightBrightness, kPrefEffectBrightness);
     case PrefKey::DAY_START_HOUR:
-      return apply_num(p.day_start_hour, 0, 23, kPrefEffectBrightness);
+      return apply_num(p.day_start_hour, kPrefMinDayStartHour, kPrefMaxDayStartHour, kPrefEffectBrightness);
     case PrefKey::NIGHT_START_HOUR:
-      return apply_num(p.night_start_hour, 0, 23, kPrefEffectBrightness);
+      return apply_num(p.night_start_hour, kPrefMinNightStartHour, kPrefMaxNightStartHour, kPrefEffectBrightness);
     case PrefKey::COLOR_PROFILE:
-      return apply_enum(p.color_profile, kColorProfileOpts, kPrefEffectThemePreset);
+      return apply_enum(p.color_profile, kPrefOptsColorProfile, kPrefEffectThemePreset);
     case PrefKey::VA_VISUAL_PROFILE:
-      return apply_enum(p.va_visual_profile, kVaVisualProfileOpts, 0);
+      return apply_enum(p.va_visual_profile, kPrefOptsVaVisualProfile, 0);
     case PrefKey::START_SCREEN:
-      return apply_enum(p.start_screen, kStartScreenOpts, kPrefEffectNavPolicy);
+      return apply_enum(p.start_screen, kPrefOptsStartScreen, kPrefEffectNavPolicy);
     case PrefKey::CLOCK_FACE:
-      return apply_enum(p.clock_face, kClockFaceOpts, 0);
+      return apply_enum(p.clock_face, kPrefOptsClockFace, 0);
     case PrefKey::TIME_FORMAT:
-      return apply_enum(p.time_format, kTimeFormatOpts, 0);
+      return apply_enum(p.time_format, kPrefOptsTimeFormat, 0);
     case PrefKey::WEATHER_BACKGROUND:
       return apply_bool(p.weather_background, 0);
     case PrefKey::HOME_SUN:
@@ -393,39 +423,39 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
     case PrefKey::WAKE_GREETING:
       return apply_bool(p.wake_greeting, 0);
     case PrefKey::ALBUM_ART_STYLE:
-      return apply_enum(p.album_art_style, kAlbumArtStyleOpts, 0);
+      return apply_enum(p.album_art_style, kPrefOptsAlbumArtStyle, 0);
     case PrefKey::MUSIC_OVERLAY_STYLE:
-      return apply_enum(p.music_overlay_style, kMusicOverlayStyleOpts, 0);
+      return apply_enum(p.music_overlay_style, kPrefOptsMusicOverlayStyle, 0);
     case PrefKey::MUSIC_AUTO_OPEN:
-      return apply_enum(p.music_auto_open, kMusicAutoOpenOpts, 0);
+      return apply_enum(p.music_auto_open, kPrefOptsMusicAutoOpen, 0);
     case PrefKey::ALBUM_SORT_ORDER:
-      return apply_enum(p.album_sort_order, kAlbumSortOpts, 0);
+      return apply_enum(p.album_sort_order, kPrefOptsAlbumSortOrder, 0);
     case PrefKey::ARTIST_ALBUM_SORT_ORDER:
-      return apply_enum(p.artist_album_sort_order, kArtistAlbumSortOpts, 0);
+      return apply_enum(p.artist_album_sort_order, kPrefOptsArtistAlbumSortOrder, 0);
     case PrefKey::PODCAST_SORT_ORDER:
-      return apply_enum(p.podcast_sort_order, kPodcastSortOpts, 0);
+      return apply_enum(p.podcast_sort_order, kPrefOptsPodcastSortOrder, 0);
     case PrefKey::WW_SENS_OKAY_NABU:
-      return apply_enum(p.ww_sens_okay_nabu, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+      return apply_enum(p.ww_sens_okay_nabu, kPrefOptsWwSensOkayNabu, kPrefEffectWakeWordSens);
     case PrefKey::WW_SENS_HEY_LUNA:
-      return apply_enum(p.ww_sens_hey_luna, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+      return apply_enum(p.ww_sens_hey_luna, kPrefOptsWwSensHeyLuna, kPrefEffectWakeWordSens);
     case PrefKey::WW_SENS_HEY_JARVIS:
-      return apply_enum(p.ww_sens_hey_jarvis, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+      return apply_enum(p.ww_sens_hey_jarvis, kPrefOptsWwSensHeyJarvis, kPrefEffectWakeWordSens);
     case PrefKey::WW_SENS_HEY_MYCROFT:
-      return apply_enum(p.ww_sens_hey_mycroft, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+      return apply_enum(p.ww_sens_hey_mycroft, kPrefOptsWwSensHeyMycroft, kPrefEffectWakeWordSens);
     case PrefKey::WW_SENS_ALEXA:
-      return apply_enum(p.ww_sens_alexa, kWwSensitivityOpts, kPrefEffectWakeWordSens);
+      return apply_enum(p.ww_sens_alexa, kPrefOptsWwSensAlexa, kPrefEffectWakeWordSens);
     case PrefKey::WAKE_SCREEN_ON_ASSIST:
       return apply_bool(p.wake_screen_on_assist, 0);
     case PrefKey::ALERT_VOLUME:
-      return apply_num(p.alert_volume, 20, 100, 0);
+      return apply_num(p.alert_volume, kPrefMinAlertVolume, kPrefMaxAlertVolume, 0);
     case PrefKey::VOLUME_STEP_SIZE:
-      return apply_num(p.volume_step_size, 1, 10, 0);
+      return apply_num(p.volume_step_size, kPrefMinVolumeStepSize, kPrefMaxVolumeStepSize, 0);
     case PrefKey::GAME_SOUND_EFFECTS:
       return apply_bool(p.game_sound_effects, 0);
     case PrefKey::BLE_BEACON_ENABLED:
       return apply_bool(p.ble_beacon_enabled, kPrefEffectPowerPolicy);
     case PrefKey::BLE_BEACON_MODE:
-      return apply_enum(p.ble_beacon_mode, kBleBeaconModeOpts, kPrefEffectPowerPolicy);
+      return apply_enum(p.ble_beacon_mode, kPrefOptsBleBeaconMode, kPrefEffectPowerPolicy);
     case PrefKey::HOME_SCREEN_ENABLED: {
       const bool chg = apply_bool(p.home_screen_enabled, kPrefEffectNavPolicy);
       if (!p.home_screen_enabled && p.start_screen == 0) {
@@ -436,9 +466,9 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       return chg;
     }
     case PrefKey::RETURN_TO_HOME_TIMEOUT:
-      return apply_enum(p.return_to_home_timeout, kReturnToHomeTimeoutOpts, 0);
+      return apply_enum(p.return_to_home_timeout, kPrefOptsReturnToHomeTimeout, 0);
     case PrefKey::HOME_CLOCK_TAP_ACTION:
-      return apply_enum(p.home_clock_tap_action, kHomeClockTapOpts, 0);
+      return apply_enum(p.home_clock_tap_action, kPrefOptsHomeClockTapAction, 0);
     case PrefKey::SHOW_UTC_CLOCK:
       return apply_bool(p.show_utc_clock, 0);
     case PrefKey::WORLD_CLOCKS: {
@@ -498,7 +528,7 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       return true;
     }
     case PrefKey::HOME_DATE_TAP_ACTION:
-      return apply_enum(p.home_date_tap_action, kHomeDateTapOpts, 0);
+      return apply_enum(p.home_date_tap_action, kPrefOptsHomeDateTapAction, 0);
     case PrefKey::CALENDAR_LOOKAHEAD_DAYS: {
       const int parsed = v3_parse_int(sv, -9999);
       if (parsed == -9999) return false;
@@ -510,31 +540,31 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       return true;
     }
     case PrefKey::CALENDAR_WEEK_START:
-      return apply_enum(p.calendar_week_start, kCalendarWeekStartOpts, 0);
+      return apply_enum(p.calendar_week_start, kPrefOptsCalendarWeekStart, 0);
     case PrefKey::BEDTIME_ACTIVE:
       return apply_bool(p.bedtime_active,
                         kPrefEffectBedtime | kPrefEffectBrightness | kPrefEffectSleepTimer);
     case PrefKey::BEDTIME_DISPLAY:
-      return apply_enum(p.bedtime_display, kBedtimeDisplayOpts,
+      return apply_enum(p.bedtime_display, kPrefOptsBedtimeDisplay,
                         kPrefEffectBedtime | kPrefEffectBrightness | kPrefEffectSleepTimer);
     case PrefKey::BEDTIME_SCHEDULE:
       return apply_bool(p.bedtime_schedule, kPrefEffectBedtime);
     case PrefKey::BEDTIME_START_HOUR:
-      return apply_num(p.bedtime_start_hour, 0, 23, kPrefEffectBedtime);
+      return apply_num(p.bedtime_start_hour, kPrefMinBedtimeStartHour, kPrefMaxBedtimeStartHour, kPrefEffectBedtime);
     case PrefKey::BEDTIME_END_HOUR:
-      return apply_num(p.bedtime_end_hour, 0, 23, kPrefEffectBedtime);
+      return apply_num(p.bedtime_end_hour, kPrefMinBedtimeEndHour, kPrefMaxBedtimeEndHour, kPrefEffectBedtime);
     case PrefKey::BEDTIME_BRIGHTNESS:
-      return apply_num(p.bedtime_brightness, 1, 100, kPrefEffectBrightness);
+      return apply_num(p.bedtime_brightness, kPrefMinBedtimeBrightness, kPrefMaxBedtimeBrightness, kPrefEffectBrightness);
     case PrefKey::CAMERA_DEFAULT_VIEW:
-      return apply_enum(p.camera_default_view, kCameraDefaultViewOpts, 0);
+      return apply_enum(p.camera_default_view, kPrefOptsCameraDefaultView, 0);
     case PrefKey::CAMERA_CAROUSEL_INTERVAL:
-      return apply_enum(p.camera_carousel_interval, kCameraCarouselIntervalOpts, 0);
+      return apply_enum(p.camera_carousel_interval, kPrefOptsCameraCarouselInterval, 0);
     case PrefKey::CAMERA_FRAMING:
-      return apply_enum(p.camera_framing, kCameraFramingOpts, 0);
+      return apply_enum(p.camera_framing, kPrefOptsCameraFraming, 0);
     case PrefKey::CAMERA_STREAM_MODE:
-      return apply_enum(p.camera_stream_mode, kCameraStreamModeOpts, 0);
+      return apply_enum(p.camera_stream_mode, kPrefOptsCameraStreamMode, 0);
     case PrefKey::CAMERA_DOORBELL_POPUP:
-      return apply_enum(p.camera_doorbell_popup, kCameraDoorbellPopupOpts, 0);
+      return apply_enum(p.camera_doorbell_popup, kPrefOptsCameraDoorbellPopup, 0);
     case PrefKey::SCREENSAVER_PHOTO_CLOCK:
       return apply_bool(p.screensaver_photo_clock, kPrefEffectScreensaverChange);
     case PrefKey::WEATHER_APP_BACKGROUND: {
@@ -551,6 +581,8 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       }
       return chg;
     }
+    case PrefKey::GLASS_STYLE:
+      return apply_enum(p.glass_style, kPrefOptsGlassStyle, 0);
     case PrefKey::COUNT:
       break;
   }
@@ -578,25 +610,9 @@ std::string format_dirty_prefs(const PersistedDevicePrefs &p) {
   return encode_prefs_mask(p.dirty_mask, p);
 }
 
-// On first-time adoption (prefs_seq == 0), advertise compiled board defaults (excluding
-// ble_beacon_enabled, world_clocks, alarms_summary, local_clock_label, tools_items,
-// games_items, bedtime_active, and do_not_disturb unless explicitly edited locally) so
-// Latter seeds board-appropriate defaults without clobbering Studio-configured lists.
+// Only emit locally modified dirty prefs during device_hello. Clean boots (prefs_seq == 0
+// with an empty dirty_mask) return "" so hello stays compact and never dumps ~60 unchanged defaults.
 std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p) {
-  if (p.prefs_seq == 0) {
-    constexpr PrefMask kAllMask = pref_mask_all(static_cast<uint8_t>(PrefKey::COUNT));
-    constexpr PrefMask kExcludeUnlessDirty =
-        pref_key_bit(PrefKey::BLE_BEACON_ENABLED) |
-        pref_key_bit(PrefKey::WORLD_CLOCKS) |
-        pref_key_bit(PrefKey::ALARMS_SUMMARY) |
-        pref_key_bit(PrefKey::LOCAL_CLOCK_LABEL) |
-        pref_key_bit(PrefKey::TOOLS_ITEMS) |
-        pref_key_bit(PrefKey::GAMES_ITEMS) |
-        pref_key_bit(PrefKey::BEDTIME_ACTIVE) |
-        pref_key_bit(PrefKey::DO_NOT_DISTURB);
-    const PrefMask seed_mask = (kAllMask & ~kExcludeUnlessDirty) | p.dirty_mask;
-    return encode_prefs_mask(seed_mask, p);
-  }
   return encode_prefs_mask(p.dirty_mask, p);
 }
 
@@ -618,7 +634,7 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
 
   PrefMask changed_mask{};
   auto apply_f = [&](DevicePrefsField df, PrefKey pk) {
-    set_pref_by_key_str(p, pk, f[static_cast<size_t>(df)], false, changed_mask, out_effects);
+    set_pref_by_key_str(p, pk, f[static_cast<size_t>(df)], changed_mask, out_effects);
   };
 
   apply_f(DevicePrefsField::WAKE_WORD_MODE, PrefKey::WAKE_WORD_MODE);
@@ -687,6 +703,7 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::WEATHER_APP_BACKGROUND, PrefKey::WEATHER_APP_BACKGROUND);
   apply_f(DevicePrefsField::DO_NOT_DISTURB, PrefKey::DO_NOT_DISTURB);
   apply_f(DevicePrefsField::MUSIC_AUTO_OPEN, PrefKey::MUSIC_AUTO_OPEN);
+  apply_f(DevicePrefsField::GLASS_STYLE, PrefKey::GLASS_STYLE);
   st.tools_items = std::string(effective_tools_items_sv(p));
   st.games_items = std::string(effective_games_items_sv(p));
   st.weather_app_background = p.weather_app_background;
@@ -694,7 +711,7 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {
-    int sim_idx = find_opt_index(kWeatherSimOpts, sim_sv);
+    const int sim_idx = find_pref_option_index(std::span<const std::string_view>{kPrefOptsWeatherSimCondition}, sim_sv);
     if (sim_idx >= 0 && st.weather_sim_condition != static_cast<uint8_t>(sim_idx)) {
       st.weather_sim_condition = static_cast<uint8_t>(sim_idx);
       out_effects |= kPrefEffectRedraw;
@@ -1002,12 +1019,6 @@ bool parse_v3_media_payload(std::string_view payload,
   const std::string_view def_spk_sv = f[static_cast<size_t>(MediaField::IS_DEFAULT_SPEAKER)];
   st.is_default_speaker = def_spk_sv.empty() ? st.is_local : v3_parse_bool(def_spk_sv);
   return true;
-}
-
-bool parse_v3_active_media_payload(std::string_view payload,
-                                          MediaState &st,
-                                   uint32_t now_ms) {
-  return parse_v3_media_payload(payload, st, now_ms);
 }
 
 // Parse Protocol v3 remote_config payload ("v3\x1f<epoch>\x1f<rev>\x1f<active_slot>\x1f<count>\x1f<slots_summary>")
@@ -1954,4 +1965,4 @@ std::string build_carousel_camera_url(const std::string &base_cam_url,
       base_cam_url, ent, rs.cameras.effective_fill(persisted_prefs()), cam_landscape_mode(), now_ms);
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

@@ -17,9 +17,9 @@
 #include <functional>
 #include <utility>
 
-namespace esphome::latter_core {
+namespace latter_core {
 
-class LatterLoopProbe : public Component {
+class LatterLoopProbe : public ::esphome::Component {
  public:
   LatterLoopProbe() { this->bind_timeout_bridge_(); }
 
@@ -34,9 +34,9 @@ class LatterLoopProbe : public Component {
   }
 
   void loop() override {
-    ::esphome::latter_core::LoopProbeStats &s = ::esphome::latter_core::loop_probe_stats();
-    const uint32_t now = millis();
-    ::latter_ui::pm_poll_loop(now);
+    LoopProbeStats &s = loop_probe_stats();
+    const uint32_t now = ::esphome::millis();
+    pm_poll_loop(now);
     if (s.last_ms != 0) {
       const uint32_t gap = now - s.last_ms;
       const int b = gap < 20U ? 0 : gap < 50U ? 1 : gap < 200U ? 2 : gap < 1000U ? 3 : 4;
@@ -44,12 +44,12 @@ class LatterLoopProbe : public Component {
     }
     s.last_ms = now;
     s.passes++;
-    if (HighFrequencyLoopRequester::is_high_frequency()) s.hf_passes++;
+    if (::esphome::HighFrequencyLoopRequester::is_high_frequency()) s.hf_passes++;
 
     // Drain paced multi-chunk RPC outbox frames & deterministic audio path deadlines with zero idle timers.
     const bool more_rpc = ::latter_rpc::step_outbox_loop(now);
-    ::latter_ui::audio_arbitrator().poll_loop(now);
-    const bool need_hf = more_rpc || ::latter_ui::audio_arbitrator().needs_fast_loop();
+    audio_arbitrator().poll_loop(now);
+    const bool need_hf = more_rpc || audio_arbitrator().needs_fast_loop();
     if (need_hf && !this->rpc_hf_held_) {
       this->rpc_hf_.start();
       this->rpc_hf_held_ = true;
@@ -58,11 +58,11 @@ class LatterLoopProbe : public Component {
       this->rpc_hf_held_ = false;
     }
   }
-  float get_setup_priority() const override { return setup_priority::LATE; }
+  float get_setup_priority() const override { return ::esphome::setup_priority::LATE; }
 
  protected:
   void bind_timeout_bridge_() noexcept {
-    ::latter_ui::core_timeout_bridge().bind(
+    core_timeout_bridge().bind(
         this,
         +[](void *ctx, uint32_t id, uint32_t delay_ms, std::function<void()> &&fn) {
           static_cast<LatterLoopProbe *>(ctx)->schedule_timeout(id, delay_ms, std::move(fn));
@@ -72,8 +72,8 @@ class LatterLoopProbe : public Component {
         });
   }
 
-  HighFrequencyLoopRequester rpc_hf_{};
+  ::esphome::HighFrequencyLoopRequester rpc_hf_{};
   bool rpc_hf_held_{false};
 };
 
-}  // namespace esphome::latter_core
+}  // namespace latter_core

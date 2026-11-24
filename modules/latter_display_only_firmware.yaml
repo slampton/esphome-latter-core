@@ -1,0 +1,33 @@
+# ==============================================================================
+# Latter Core Umbrella Module: Display-Only Firmware (Audio-Less / Touch-Optional)
+# (modules/latter_display_only_firmware.yaml)
+# Entry point for display boards with LATTER_HAS_AUDIO=0 (and optionally
+# LATTER_HAS_TOUCH=0, e.g., rotary-knob / wall status panels without mic/speaker).
+#
+# Omits audio_pipeline.yaml, voice_assistant.yaml, audio_scripts.yaml, and
+# guis/universal/gui_touch.yaml so ESPHome YAML codegen never requires id(va),
+# id(mww), id(latter_media_player), id(sendspin_hub), or id(touch_screen).
+#
+# If your audio-less display board DOES have a capacitive touchscreen
+# (`latter_core.capabilities.touch: true`), add one package line in your device YAML:
+#   latter_gui_touch: !include ../guis/universal/gui_touch.yaml
+# ==============================================================================
+
+logger:
+  level: INFO
+  boot_log_buffer_size: 1kB
+  boot_logs:
+    latter: INFO
+
+safe_mode:
+  boot_is_good_after: 60s
+
+packages:
+  latter_system:          !include system_core.yaml
+  latter_system_ui_sync:  !include system_ui_sync.yaml
+  latter_power_policy:    !include power_policy.yaml
+  latter_sleep_lifecycle: !include sleep_lifecycle.yaml
+  latter_motion_service:  !include motion_service.yaml
+  latter_pipeline:        !include display_pipeline.yaml
+  latter_timers:          !include timers_and_fetchers.yaml
+  latter_gui:             !include ../guis/universal/gui.yaml

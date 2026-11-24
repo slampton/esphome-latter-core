@@ -45,7 +45,7 @@
 #define LATTER_VIDEO_ESP32_NET 0
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 #if LATTER_VIDEO_ESP32_NET
 
@@ -858,4 +858,4 @@ LatterVideoClient &video_client() noexcept {
   return instance;
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

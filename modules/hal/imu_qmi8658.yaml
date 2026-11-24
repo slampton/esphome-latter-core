@@ -1,7 +1,9 @@
 # ==============================================================================
-# Latter Board HAL Submodule: QMI8658 6-Axis IMU Sensors & Shake Detector
+# Latter Board HAL Submodule: QMI8658 6-Axis IMU Hardware Driver
 # (modules/hal/imu_qmi8658.yaml)
-# Included by boards that have a physical QMI8658 IMU @ 0x6B (1.75C, 2.06, 2.16)
+# Pure chip HAL — zero Universal GUI, audio, or UX coupling.
+# Maps generic latter_core::ImuPowerMode onto QMI8658 CTRL7 / WoM registers.
+# Included by boards with a physical QMI8658 IMU @ 0x6B (1.75C, 2.06, 2.16).
 # ==============================================================================
 
 esphome:
@@ -9,8 +11,8 @@ esphome:
     - priority: 850
       then:
         - lambda: |-
-            latter_ui::runtime_state().hw_set_imu_power_mode = +[](int ctrl7_val) {
-              id(hal_set_imu_power_mode).execute(ctrl7_val);
+            latter_core::runtime_state().hw_set_imu_power_mode = +[](latter_core::ImuPowerMode mode) {
+              id(hal_set_imu_power_mode).execute(static_cast<int>(mode));
             };
 
 motion:
@@ -29,7 +31,7 @@ sensor:
     id: accel_x
     internal: true
     on_value:
-      - lambda: 'latter_ui::runtime_state().hw_accel_x = x;'
+      - lambda: 'latter_core::runtime_state().hw_accel_x = x;'
   - platform: motion
     motion_id: imu
     type: acceleration_y
@@ -37,7 +39,7 @@ sensor:
     id: accel_y
     internal: true
     on_value:
-      - lambda: 'latter_ui::runtime_state().hw_accel_y = x;'
+      - lambda: 'latter_core::runtime_state().hw_accel_y = x;'
   - platform: motion
     motion_id: imu
     type: acceleration_z
@@ -45,7 +47,7 @@ sensor:
     id: accel_z
     internal: true
     on_value:
-      - lambda: 'latter_ui::runtime_state().hw_accel_z = x;'
+      - lambda: 'latter_core::runtime_state().hw_accel_z = x;'
   - platform: motion
     motion_id: imu
     type: roll
@@ -53,7 +55,7 @@ sensor:
     id: imu_roll
     internal: true
     on_value:
-      - lambda: 'latter_ui::runtime_state().hw_imu_roll = x;'
+      - lambda: 'latter_core::runtime_state().hw_imu_roll = x;'
   - platform: motion
     motion_id: imu
     type: pitch
@@ -61,7 +63,7 @@ sensor:
     id: imu_pitch
     internal: true
     on_value:
-      - lambda: 'latter_ui::runtime_state().hw_imu_pitch = x;'
+      - lambda: 'latter_core::runtime_state().hw_imu_pitch = x;'
 
   - platform: qmi8658
     name: "IMU Temperature"
@@ -72,75 +74,7 @@ sensor:
       - throttle: 180s
       - delta: 1.5
     on_value:
-      - lambda: 'latter_ui::runtime_state().hw_imu_temp = x;'
-
-  - platform: template
-    name: "Dynamic Motion Delta"
-    id: motion_mag
-    unit_of_measurement: "g"
-    accuracy_decimals: 3
-    update_interval: 200ms
-    internal: true
-    lambda: |-
-      auto &rs = latter_ui::runtime_state();
-      if (rs.nav.display_power_state != 0) {
-        const std::string_view pw_mode = latter_ui::pref_pickup_to_wake_cstr();
-        if (pw_mode == "Disabled" || (pw_mode == "Docked Only" && !rs.hw_usb_connected)) {
-          rs.hw_motion_mag = 0.0f;
-          return 0.0f;
-        }
-      }
-      float x = id(accel_x).state;
-      float y = id(accel_y).state;
-      float z = id(accel_z).state;
-      if (isnan(x) || isnan(y) || isnan(z)) {
-        rs.hw_motion_mag = NAN;
-        return NAN;
-      }
-
-      static float grav_x = 0.0f;
-      static float grav_y = 0.0f;
-      static float grav_z = 1.0f;
-      static uint32_t last_grav_ms = 0;
-      const uint32_t now_m = millis();
-      if (last_grav_ms == 0U || (now_m - last_grav_ms > 600U)) {
-        grav_x = x;
-        grav_y = y;
-        grav_z = z;
-      } else {
-        const float alpha = 0.20f;
-        grav_x = (1.0f - alpha) * grav_x + alpha * x;
-        grav_y = (1.0f - alpha) * grav_y + alpha * y;
-        grav_z = (1.0f - alpha) * grav_z + alpha * z;
-      }
-      last_grav_ms = now_m;
-
-      float dx = x - grav_x;
-      float dy = y - grav_y;
-      float dz = z - grav_z;
-      float delta = sqrtf(dx*dx + dy*dy + dz*dz);
-      float planar_dyn = sqrtf(dx*dx + dy*dy);
-
-      if (rs.nav.gui_page == 8 && rs.nav.display_power_state == 0) {
-        static uint32_t last_shake_time = 0;
-        bool is_deliberate_shake = (planar_dyn >= 0.46f || delta >= 0.49f);
-        if (is_deliberate_shake && (now_m - last_shake_time > 1200)) {
-          last_shake_time = now_m;
-          if (rs.nav.tools_subpage == 8 && !latter_ui::coin_state().anim_active) {
-            latter_ui::trigger_coin_flip(now_m, esp_random());
-            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
-            latter_ui::display_lifecycle().note_activity(now_m);
-            latter_ui::schedule_anim_disp_update(&id(disp1));
-          } else if (rs.nav.tools_subpage == 4 && !latter_ui::dice_state().anim_active) {
-            latter_ui::trigger_dice_roll(now_m, esp_random(), esp_random());
-            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
-            latter_ui::display_lifecycle().note_activity(now_m);
-            latter_ui::schedule_anim_disp_update(&id(disp1));
-          }
-        }
-      }
-      rs.hw_motion_mag = delta;
-      return delta;
+      - lambda: 'latter_core::runtime_state().hw_imu_temp = x;'
 
 # QMI8658 INT1 (board HAL substitution imu_int1_pin). Push-pull while Wake-on-Motion is armed and
 # High-Z otherwise, so the pull-down holds it low. WoM toggles the line on every event, so both edges
@@ -157,68 +91,77 @@ binary_sensor:
     on_state:
       then:
         - lambda: |-
-            if (!latter_ui::imu_wom().armed) return;
-            if (!latter_ui::hal_imu_wom_event(id(bus_internal))) return;
+            if (!latter_core::imu_wom().armed) return;
+            if (!latter_core::hal_imu_wom_event(id(bus_internal))) return;
             const uint32_t now_wom = millis();
-            auto &wom = latter_ui::imu_wom();
+            auto &wom = latter_core::imu_wom();
             wom.events++;
-            latter_ui::pm_note_imu(wom.armed, wom.events);
+            latter_core::pm_note_imu(wom.armed, wom.events);
             // Poll orientation at 50 ms for a short window so RaiseToWakeDetector confirms fast pickups (< 200 ms).
             wom.qualify_until_ms = (now_wom + 2500U) | 1U;
             LATTER_PROF_LOGI("[PROF:IMU] wom=event n=%u", static_cast<unsigned>(wom.events));
-            id(hal_set_imu_power_mode).execute(0x01);
-            if (latter_ui::runtime_state().nav.display_power_state == 2) {
-              latter_ui::raise_wake_detector().arm_from_wom(now_wom);
+            id(hal_set_imu_power_mode).execute(static_cast<int>(latter_core::ImuPowerMode::AccelOnly));
+            if (auto fn = latter_core::runtime_state().on_imu_wom_wake; fn != nullptr) {
+              fn(now_wom);
             }
-            id(apply_power_policy).execute();
 
 script:
   - id: hal_set_imu_power_mode
     mode: restart
     parameters:
-      ctrl7_val: int
+      mode_id: int
     then:
       - lambda: |-
-          // 0x00 power-down, 0x01 accel, 0x03 accel + gyro (all polled), 0x80 hardware Wake-on-Motion
-          // on INT1 with polling stopped (falls back to 0x01 if the CTRL9 handshake ever fails).
-          static int last_ctrl7 = -1;
+          // Maps generic latter_core::ImuPowerMode onto QMI8658 CTRL7 (REG 0x08) or hardware
+          // Wake-on-Motion on INT1 (falls back to AccelOnly if the CTRL9 handshake ever fails).
+          using Mode = latter_core::ImuPowerMode;
+          static int last_mode = -1;
           static uint32_t last_imu_ms = 100U;
-          int mode = ctrl7_val;
-          if (mode == 0x80 && latter_ui::imu_wom().failed) mode = 0x01;
+          Mode mode = static_cast<Mode>(mode_id);
+          if (mode == Mode::WakeOnMotion && latter_core::imu_wom().failed) {
+            mode = Mode::AccelOnly;
+          }
+          const bool polled = (mode == Mode::AccelOnly || mode == Mode::AccelAndGyro);
           const uint32_t want_imu_ms =
-              (mode > 0 && mode != 0x80 && latter_ui::imu_wom_qualifying(millis())) ? 50U : 100U;
-          if (mode > 0 && mode != 0x80 && want_imu_ms != last_imu_ms) {
+              (polled && latter_core::imu_wom_qualifying(millis())) ? 50U : 100U;
+          if (polled && want_imu_ms != last_imu_ms) {
             last_imu_ms = want_imu_ms;
             id(imu).set_update_interval(want_imu_ms);
-            if (mode == last_ctrl7) {
+            if (static_cast<int>(mode) == last_mode) {
               id(imu).start_poller();
             }
           }
-          if (mode == last_ctrl7) return;
-          last_ctrl7 = mode;
-          if (mode == 0x80) {
-            latter_ui::runtime_state().hw_motion_mag = 0.0f;
+          if (static_cast<int>(mode) == last_mode) return;
+          last_mode = static_cast<int>(mode);
+          auto &rs = latter_core::runtime_state();
+          if (mode == Mode::WakeOnMotion) {
+            rs.hw_motion_mag = 0.0f;
             id(imu).stop_poller();
-            id(motion_mag).stop_poller();
-            float thresh = latter_ui::get_pickup_motion_threshold(false);
-            if (id(speaker_enable).state && thresh < 0.22f) thresh = 0.22f;
-            if (latter_ui::hal_imu_wom_enter(id(bus_internal), latter_ui::imu_wom_threshold_mg(thresh))) return;
-            mode = 0x01;
-            last_ctrl7 = 0x01;
+            if (rs.on_motion_poller_changed != nullptr) {
+              rs.on_motion_poller_changed(false);
+            }
+            float thresh = latter_core::get_pickup_motion_threshold(false);
+            if (rs.audio.speaker_enabled() && thresh < 0.22f) thresh = 0.22f;
+            if (latter_core::hal_imu_wom_enter(id(bus_internal), latter_core::imu_wom_threshold_mg(thresh))) return;
+            mode = Mode::AccelOnly;
+            last_mode = static_cast<int>(Mode::AccelOnly);
           }
-          latter_ui::hal_imu_wom_exit(id(bus_internal));
-          if (mode > 0) {
+          latter_core::hal_imu_wom_exit(id(bus_internal));
+          if (mode != Mode::Off) {
             if (want_imu_ms != last_imu_ms) {
               last_imu_ms = want_imu_ms;
               id(imu).set_update_interval(want_imu_ms);
             }
             id(imu).start_poller();
-            id(motion_mag).start_poller();
+            if (rs.on_motion_poller_changed != nullptr) {
+              rs.on_motion_poller_changed(true);
+            }
           } else {
-            latter_ui::runtime_state().hw_motion_mag = 0.0f;
+            rs.hw_motion_mag = 0.0f;
             id(imu).stop_poller();
-            id(motion_mag).stop_poller();
+            if (rs.on_motion_poller_changed != nullptr) {
+              rs.on_motion_poller_changed(false);
+            }
           }
-          // QMI8658 CTRL7 (0x08): 0x03 = Active (Accel+Gyro), 0x01 = Accel-only, 0x00 = Power-Down
-          uint8_t qmi_ctrl7[2] = {0x08, static_cast<uint8_t>(mode)};
+          uint8_t qmi_ctrl7[2] = {0x08, latter_core::qmi8658_ctrl7_for_power_mode(mode)};
           id(bus_internal).write(0x6B, qmi_ctrl7, 2);

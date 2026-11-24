@@ -14,7 +14,7 @@
 
 #include "hal_manifest.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 struct LinkReport {
   std::atomic<uint32_t> beacon_timeouts{0};  // written on the event-loop task
@@ -81,4 +81,4 @@ bool weak_link_feed_rssi(int32_t rssi, uint32_t now_ms, WeakLinkGate &g = weak_l
 bool weak_link_update(uint32_t now_ms, uint32_t last_wifi_connect_ms = 0U);
 uint32_t weak_link_ms(uint32_t now_ms);
 
-}  // namespace latter_ui
+}  // namespace latter_core

@@ -16,14 +16,16 @@
 #include <string>
 
 #ifdef USE_ESP32
-#include <esp_wifi.h>
 #include <sdkconfig.h>
+#ifdef USE_WIFI
+#include <esp_wifi.h>
+#endif
 #endif
 #if defined(USE_WIFI) && __has_include("esphome/components/wifi/wifi_component.h")
 #include "esphome/components/wifi/wifi_component.h"
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 struct WifiPowerState {
   bool hp_held{false};
@@ -43,7 +45,7 @@ inline WifiPowerState &wifi_power_state() {
 }
 
 inline int wifi_ps_mode_now() {
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && defined(USE_WIFI)
   wifi_ps_type_t t;
   if (esp_wifi_get_ps(&t) == ESP_OK) return static_cast<int>(t);
 #endif
@@ -269,4 +271,4 @@ inline void evaluate_radio_policy(BleCtrlT *ble_ctrl, WifiT *wifi, bool wifi_con
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

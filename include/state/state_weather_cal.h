@@ -18,7 +18,7 @@
 #endif
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 struct WeatherState {
   uint32_t epoch = 0;
@@ -76,11 +76,6 @@ struct CalendarUiState {
   uint8_t dictation_field = 0;  // 0 = none, 1 = Title, 2 = Location
   uint32_t dictation_started_ms = 0;
   uint32_t next_req_id = 1;
-  std::string detail_map_url = "";
-  std::string detail_map_location = "";
-  int map_zoom = 15;
-  int map_pan_x = 0;
-  int map_pan_y = 0;
   std::string feedback_text = "";
   uint32_t feedback_ms = 0;
 
@@ -525,4 +520,4 @@ inline int collect_calendar_day_dots(int32_t ymd,
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

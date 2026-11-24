@@ -47,7 +47,7 @@ inline void latter_host_log_sink(const char *, const char *, Args &&...) {}
 #include <sdkconfig.h>
 #endif
 
-namespace esphome::latter_core {
+namespace latter_core {
 
 struct LoopProbeStats {
   uint32_t passes{0};
@@ -60,10 +60,6 @@ inline LoopProbeStats &loop_probe_stats() {
   static LoopProbeStats s;
   return s;
 }
-
-}  // namespace esphome::latter_core
-
-namespace latter_ui {
 
 inline uint32_t hal_millis_now() {
 #if defined(USE_ESP32) && __has_include("esphome/core/hal.h")
@@ -127,16 +123,16 @@ inline uint32_t profiler_remaining_sec(uint32_t now_ms) {
   return (rem / 1000U) + ((rem % 1000U) != 0U ? 1U : 0U);
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core
 
 #define LATTER_PROF_LOGI(...)                    \
   do {                                           \
-    if (::latter_ui::profiler_enabled()) {       \
+    if (::latter_core::profiler_enabled()) {     \
       ESP_LOGI("PROF", __VA_ARGS__);             \
     }                                            \
   } while (0)
 
-namespace latter_ui {
+namespace latter_core {
 
 struct FlightRecorderStats {
   uint32_t window_frames = 0;
@@ -257,4 +253,4 @@ inline void log_heap_summary() {
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

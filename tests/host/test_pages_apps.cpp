@@ -5,16 +5,16 @@ namespace latter_test {
 namespace {
 
 void test_music_remote_override_and_volume_feedback() {
-  latter_ui::clear_remote_play_override();
+  latter_core::clear_remote_play_override();
 
-  LATTER_CHECK(latter_ui::is_music_playing_effective(true, false, "playing", 1000U));
-  LATTER_CHECK(latter_ui::is_music_playing_effective(true, false, "buffering", 1000U));
-  LATTER_CHECK(!latter_ui::is_music_playing_effective(true, true, "idle", 1000U));
-  LATTER_CHECK(latter_ui::is_music_playing_effective(false, true, "idle", 1000U));
+  LATTER_CHECK(latter_core::is_music_playing_effective(true, false, "playing", 1000U));
+  LATTER_CHECK(latter_core::is_music_playing_effective(true, false, "buffering", 1000U));
+  LATTER_CHECK(!latter_core::is_music_playing_effective(true, true, "idle", 1000U));
+  LATTER_CHECK(latter_core::is_music_playing_effective(false, true, "idle", 1000U));
 
-  latter_ui::set_remote_play_override(false, 2000U);
-  LATTER_CHECK(!latter_ui::is_music_playing_effective(true, false, "playing", 3500U));
-  LATTER_CHECK(latter_ui::is_music_playing_effective(true, false, "playing", 4600U));
+  latter_core::set_remote_play_override(false, 2000U);
+  LATTER_CHECK(!latter_core::is_music_playing_effective(true, false, "playing", 3500U));
+  LATTER_CHECK(latter_core::is_music_playing_effective(true, false, "playing", 4600U));
 
   const std::string touch_cpp = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
   LATTER_CHECK(touch_cpp.find("set_remote_play_override(") == std::string::npos);
@@ -37,17 +37,17 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(!latter_ui::touch_router().allow_tap(10080U, latter_ui::TOUCH_DEBOUNCE_BUTTON));
   LATTER_CHECK(latter_ui::touch_router().allow_tap(10200U, latter_ui::TOUCH_DEBOUNCE_BUTTON));
 
-  latter_ui::MusicRuntimeState m{};
-  LATTER_CHECK(latter_ui::step_music_volume_feedback(1, 5.0f, true, 0.55f, 5000U, m) == 60);
+  latter_core::MusicRuntimeState m{};
+  LATTER_CHECK(latter_core::step_music_volume_feedback(1, 5.0f, true, 0.55f, 5000U, m) == 60);
   LATTER_CHECK(m.action_feedback == "Volume: 60%" && m.feedback_timer == 5000U);
-  LATTER_CHECK(latter_ui::step_music_volume_feedback(-1, 5.0f, true, 0.12f, 5200U, m) == 10);
+  LATTER_CHECK(latter_core::step_music_volume_feedback(-1, 5.0f, true, 0.12f, 5200U, m) == 10);
   LATTER_CHECK(m.action_feedback == "Volume: 10%");
 
-  latter_ui::remote_vol_pct() = 55;
-  LATTER_CHECK(latter_ui::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6000U, m) == 60);
-  LATTER_CHECK(latter_ui::remote_vol_pct() == 60 && m.action_feedback == "Volume: 60%");
-  LATTER_CHECK(latter_ui::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6200U, m) == 65);
-  LATTER_CHECK(latter_ui::remote_vol_pct() == 65 && m.action_feedback == "Volume: 65%");
+  latter_core::remote_vol_pct() = 55;
+  LATTER_CHECK(latter_core::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6000U, m) == 60);
+  LATTER_CHECK(latter_core::remote_vol_pct() == 60 && m.action_feedback == "Volume: 60%");
+  LATTER_CHECK(latter_core::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6200U, m) == 65);
+  LATTER_CHECK(latter_core::remote_vol_pct() == 65 && m.action_feedback == "Volume: 65%");
 }
 
 void test_phase3_weather_sky_backdrop_and_home_scene() {
@@ -76,25 +76,25 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
   LATTER_CHECK(ht.hit_test(423 - 80, 270, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_ACTION_0);
   LATTER_CHECK(ht.hit_test(423 - 20, 270, latter_ui::kHitTap)->widget_id == latter_ui::WidgetId::HOME_ACT_EXPAND);
 
-  latter_ui::reset_all_v3_rev_guards();
-  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
-  std::vector<std::string> ac_tok(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "kitchen";
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Kitchen";
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ICON)] = "mdi:countertop";
-  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(500, 1, ac_tok)));
-  LATTER_CHECK(std::string_view(latter_ui::resolve_area_dock_icon(latter_ui::area_ctx_state())) == "mdi:countertop");
+  latter_core::reset_all_v3_rev_guards();
+  latter_core::area_ctx_state() = latter_core::AreaContextState{};
+  std::vector<std::string> ac_tok(static_cast<size_t>(latter_core::AreaCtxField::COUNT), "");
+  ac_tok[static_cast<size_t>(latter_core::AreaCtxField::AREA_ID)] = "kitchen";
+  ac_tok[static_cast<size_t>(latter_core::AreaCtxField::AREA_NAME)] = "Kitchen";
+  ac_tok[static_cast<size_t>(latter_core::AreaCtxField::AREA_ICON)] = "mdi:countertop";
+  LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(500, 1, ac_tok)));
+  LATTER_CHECK(std::string_view(latter_core::resolve_area_dock_icon(latter_core::area_ctx_state())) == "mdi:countertop");
 
-  auto &prefs = latter_ui::persisted_prefs();
-  auto &rs = latter_ui::runtime_state();
+  auto &prefs = latter_core::persisted_prefs();
+  auto &rs = latter_core::runtime_state();
   prefs.wake_greeting = true;
   rs.nav.wake_greeting_pending = false;
   rs.nav.display_power_state = 2;
   rs.nav.standby_entered_ms = 1000U;
-  latter_ui::note_wake_from_standby(60000U);
+  latter_core::note_wake_from_standby(60000U);
   LATTER_CHECK(!rs.nav.wake_greeting_pending);
   rs.nav.standby_entered_ms = 1000U;
-  latter_ui::note_wake_from_standby(1000U + latter_ui::kStandbyGreetingIdleMs);
+  latter_core::note_wake_from_standby(1000U + latter_core::kStandbyGreetingIdleMs);
   LATTER_CHECK(rs.nav.wake_greeting_pending);
 
   const std::string comp_h = read_repo_files({
@@ -118,6 +118,7 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
 
 void test_home_activity_card_d045() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   LATTER_CHECK(next_alarm_minutes_until(23, 30, true, 0, 22, 0, 3) == 90);
   LATTER_CHECK(next_alarm_minutes_until(3, 0, true, 3, 22, 0, 3) == 300);
@@ -150,6 +151,7 @@ void test_home_activity_card_d045() {
 
 void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   reset_runtime_state();
   int tabs[kMaxHomeHubTabs]{};
@@ -163,14 +165,14 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   MockRpcOutbox rpc_box{};
   latter_rpc::clear_pin_session_key();
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  latter_actions::emit_alarm_action("disarm", "2468", &rpc_box);
+  latter_core::emit_alarm_action("disarm", "2468", &rpc_box);
   for (const auto &f : rpc_box.published) LATTER_CHECK(f.find("2468") == std::string::npos);
 
   LATTER_CHECK(latter_rpc::set_pin_session_key(
       "01020304", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
   rpc_box.published.clear();
-  latter_actions::emit_alarm_action("disarm", "2468", &rpc_box);
+  latter_core::emit_alarm_action("disarm", "2468", &rpc_box);
   std::string alarm_joined;
   for (const auto &f : rpc_box.published) alarm_joined += f;
   LATTER_CHECK(alarm_joined.find("\"code\":\"v1:01020304:") != std::string::npos);
@@ -188,10 +190,11 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
 
 void test_calendar_app_d058() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
   reset_all_v3_rev_guards();
 
-  static_assert(FrameHitTable::kMaxRegions == 56U);
+  static_assert(FrameHitTable::kMaxRegions == 128U);
   static_assert(is_leap_year(2028) && !is_leap_year(2027));
   LATTER_CHECK(parse_ymd_iso("2026-11-17") == 20261117);
   LATTER_CHECK(weekday_sun0_from_ymd(20261117) == 2);
@@ -247,6 +250,7 @@ void test_calendar_app_d058() {
 
 void test_cameras_app_and_live_video_d066() {
   using namespace latter_ui;
+  using namespace latter_core;
   reset_runtime_state();
 
   {

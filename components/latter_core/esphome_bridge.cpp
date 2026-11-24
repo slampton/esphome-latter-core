@@ -77,10 +77,10 @@ template struct BridgeRob<MipiDsiBufferTag, &esphome::mipi_dsi::MipiDsi::buffer_
 
 }  // namespace
 
-namespace esphome::voice_assistant {
+namespace latter_core {
 
 #ifdef USE_VOICE_ASSISTANT
-void stop_va_microphone(VoiceAssistant *va) {
+void stop_va_microphone(esphome::voice_assistant::VoiceAssistant *va) {
   if (va == nullptr) return;
 #ifdef USE_MICROPHONE
   auto *ms = va->*bridge_get(VA_MicSource_Tag{});
@@ -90,18 +90,19 @@ void stop_va_microphone(VoiceAssistant *va) {
 #endif
 }
 
-void abort_voice_assistant(VoiceAssistant *va) {
+void abort_voice_assistant(esphome::voice_assistant::VoiceAssistant *va) {
 #ifdef USE_API
-  api::APIConnection *conn = nullptr;
+  esphome::api::APIConnection *conn = nullptr;
   if (va != nullptr) {
     conn = va->get_api_connection();
     stop_va_microphone(va);
     va->request_stop();
     va->reset_conversation_id();
-    (va->*bridge_get(VA_SetState_Tag{}))(State::IDLE, State::IDLE);
+    (va->*bridge_get(VA_SetState_Tag{}))(esphome::voice_assistant::State::IDLE,
+                                         esphome::voice_assistant::State::IDLE);
   }
   if (conn != nullptr) {
-    api::VoiceAssistantRequest msg;
+    esphome::api::VoiceAssistantRequest msg;
     msg.start = false;
     bool sent = conn->send_message(msg);
     (void)sent;
@@ -111,12 +112,14 @@ void abort_voice_assistant(VoiceAssistant *va) {
     stop_va_microphone(va);
     va->request_stop();
     va->reset_conversation_id();
-    (va->*bridge_get(VA_SetState_Tag{}))(State::IDLE, State::IDLE);
+    (va->*bridge_get(VA_SetState_Tag{}))(esphome::voice_assistant::State::IDLE,
+                                         esphome::voice_assistant::State::IDLE);
   }
 #endif
 }
 
-void on_api_client_authenticated(VoiceAssistant *va, const std::string &client_info,
+void on_api_client_authenticated(esphome::voice_assistant::VoiceAssistant *va,
+                                 const std::string &client_info,
                                  const std::string &client_address) {
 #ifdef USE_API
   if (va == nullptr) return;
@@ -134,14 +137,14 @@ void on_api_client_authenticated(VoiceAssistant *va, const std::string &client_i
 #endif
 }
 
-void clean_disconnect_api_before_hibernate(VoiceAssistant *va) {
+void clean_disconnect_api_before_hibernate(esphome::voice_assistant::VoiceAssistant *va) {
 #ifdef USE_API
   if (va != nullptr) {
     va->*bridge_get(VA_ApiClient_Tag{}) = nullptr;
   }
-  if (api::global_api_server != nullptr) {
+  if (esphome::api::global_api_server != nullptr) {
     ESP_LOGD("power", "Sending clean API DisconnectRequest to Home Assistant before Hibernate rail cut");
-    api::global_api_server->on_shutdown();
+    esphome::api::global_api_server->on_shutdown();
   }
 #else
   (void)va;
@@ -150,7 +153,7 @@ void clean_disconnect_api_before_hibernate(VoiceAssistant *va) {
 #endif  // USE_VOICE_ASSISTANT
 
 #if defined(USE_VOICE_ASSISTANT) && defined(USE_MICRO_WAKE_WORD)
-std::string primary_wake_word_name(micro_wake_word::MicroWakeWord *mww) {
+std::string primary_wake_word_name(esphome::micro_wake_word::MicroWakeWord *mww) {
   if (mww != nullptr) {
     for (auto *model : mww->get_wake_words()) {
       if (model->is_enabled()) return model->get_wake_word();
@@ -159,7 +162,8 @@ std::string primary_wake_word_name(micro_wake_word::MicroWakeWord *mww) {
   return "None";
 }
 
-void cycle_primary_wake_word(VoiceAssistant *va, micro_wake_word::MicroWakeWord *mww) {
+void cycle_primary_wake_word(esphome::voice_assistant::VoiceAssistant *va,
+                             esphome::micro_wake_word::MicroWakeWord *mww) {
   if (va == nullptr || mww == nullptr) return;
   const auto models = mww->get_wake_words();
   const size_t n = models.size();
@@ -184,12 +188,10 @@ void cycle_primary_wake_word(VoiceAssistant *va, micro_wake_word::MicroWakeWord 
 }
 #endif
 
-}  // namespace esphome::voice_assistant
-
-namespace latter_hal {
 #if defined(USE_ESP32_VARIANT_ESP32P4) && __has_include("esphome/components/mipi_dsi/mipi_dsi.h")
 uint8_t *get_mipi_dsi_buffer(esphome::mipi_dsi::MipiDsi *d) {
   return (d != nullptr) ? (d->*bridge_get(MipiDsiBufferTag{})) : nullptr;
 }
 #endif
-}  // namespace latter_hal
+
+}  // namespace latter_core

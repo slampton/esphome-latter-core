@@ -326,7 +326,7 @@ struct MusicHudAutoFadeResult {
 };
 
 MusicHudAutoFadeResult step_music_hud_auto_fade(
-    MusicRuntimeState &m,
+    latter_core::MusicRuntimeState &m,
     uint32_t now_ms,
     std::string_view music_overlay_style_opt,
     bool touch_active = false) noexcept;

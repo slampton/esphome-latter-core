@@ -29,7 +29,9 @@
 #include "hal_link_report.h"
 #include "hal_panel_power.h"
 #include "ui_compositor.h"
+#if LATTER_GUI_UNIVERSAL
 #include "ui_pages.h"
+#endif
 #include "ui_touch_engine.h"
 
 #include <algorithm>
@@ -61,7 +63,7 @@ struct DispBufferAccessor<DispT, false> : DispT {
 template <>
 struct DispBufferAccessor<esphome::mipi_dsi::MipiDsi, true> {
   static uint8_t *get(esphome::mipi_dsi::MipiDsi *d) {
-    return ::latter_hal::get_mipi_dsi_buffer(d);
+    return ::latter_core::get_mipi_dsi_buffer(d);
   }
 };
 #endif
@@ -106,7 +108,7 @@ struct DisplayUpdateScheduler {
 
   static void request_post_frame(const esphome::Component *comp, void (*fn)()) {
     if (comp == nullptr || fn == nullptr) return;
-    schedule_core_timeout(kTimeoutFbClear, 0U, [fn]() { fn(); });
+    latter_core::schedule_core_timeout(kTimeoutFbClear, 0U, [fn]() { fn(); });
   }
 
   static void request_post_frame_raw(void *comp, void (*fn)()) {
@@ -115,11 +117,11 @@ struct DisplayUpdateScheduler {
 
   template <typename DispT>
   static void request_ptr(DispT *disp) {
-    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
       const uint32_t delay_ms = disp_render_in_flight(esphome::millis()) ? 4U : 0U;
-      schedule_core_timeout(
+      latter_core::schedule_core_timeout(
           kTimeoutAsyncDraw, delay_ms, [disp]() {
-            if (screen_is_off_standby() || disp_poller_held()) return;
+            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
             disp->update();
             fb_clear_after_update();
           });
@@ -128,7 +130,7 @@ struct DisplayUpdateScheduler {
 
   template <typename DispT>
   static void request_anim_ptr(DispT *disp) {
-    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
       constexpr uint32_t kFrameMs = 18U;
       constexpr uint32_t kMinPostIdleMs = 6U;
@@ -146,9 +148,9 @@ struct DisplayUpdateScheduler {
       } else if (elapsed_end < kMinPostIdleMs) {
         delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
       }
-      schedule_core_timeout(
+      latter_core::schedule_core_timeout(
           kTimeoutAsyncDraw, delay_ms, [disp]() {
-            if (screen_is_off_standby() || disp_poller_held()) return;
+            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
             disp->update();
             fb_clear_after_update();
           });
@@ -157,7 +159,7 @@ struct DisplayUpdateScheduler {
 
   template <typename DispT>
   static void request_weather_ptr(DispT *disp, uint32_t target_period_ms) {
-    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
+    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
       constexpr uint32_t kMinPostIdleMs = 8U;
 #else
@@ -176,10 +178,10 @@ struct DisplayUpdateScheduler {
         }
       }
       weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
-      schedule_core_timeout(
+      latter_core::schedule_core_timeout(
           kTimeoutWeatherStep, delay_ms, [disp]() {
             weather_due_ms_ref() = 0U;
-            if (screen_is_off_standby() || disp_poller_held()) return;
+            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
             if (disp_render_in_flight(esphome::millis())) return;
             mark_dirty_full();
             disp->update();
@@ -190,10 +192,10 @@ struct DisplayUpdateScheduler {
 
   template <typename DispT>
   static void request_activity_rotate_ptr(DispT *disp, uint32_t delay_ms, int y0, int y1) {
-    if (disp != nullptr && !screen_is_off_standby() && !disp_poller_held()) {
-      schedule_core_timeout(
+    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
+      latter_core::schedule_core_timeout(
           kTimeoutActivityRotate, delay_ms, [disp, y0, y1]() {
-            if (screen_is_off_standby() || disp_poller_held()) return;
+            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
             if (disp_render_in_flight(esphome::millis())) return;
             mark_dirty_band(y0, y1);
             disp->update();
@@ -203,6 +205,39 @@ struct DisplayUpdateScheduler {
   }
 };
 
+inline void esphome_fallback_print_cb(void *raw, int x, int y, const UiFontView &font,
+                                      UiColor color, UiTextAlign align, const char *text,
+                                      UiColor background, int cy0, int cy1) {
+  auto *disp = static_cast<esphome::display::Display *>(raw);
+  if (disp == nullptr || text == nullptr || *text == '\0') return;
+  const int disp_w = disp->get_width();
+  const int disp_h = disp->get_height();
+  const int eff_cy0 = std::max(0, cy0);
+  const int eff_cy1 = std::min(disp_h - 1, cy1);
+  if (disp_w <= 0 || eff_cy1 < eff_cy0) return;
+
+  if (font.is_external_font && font.handle != nullptr) {
+    const bool need_clip = (eff_cy0 > 0 || eff_cy1 < disp_h - 1);
+    if (need_clip) disp->start_clipping(0, eff_cy0, disp_w, eff_cy1 + 1);
+    disp->print(
+        x, y,
+        static_cast<esphome::display::BaseFont *>(const_cast<void *>(font.handle)),
+        static_cast<esphome::Color>(color),
+        static_cast<esphome::display::TextAlign>(static_cast<uint8_t>(align)),
+        text,
+        static_cast<esphome::Color>(background));
+    if (need_clip) disp->end_clipping();
+    return;
+  }
+  render_fallback_glyphs(*disp, x, y, font, color, align, text, background, eff_cy0, eff_cy1);
+}
+
+inline Rgb565Surface make_esphome_surface(esphome::display::Display &it) noexcept {
+  Rgb565Surface surf(it);
+  surf.fallback_print_fn = &esphome_fallback_print_cb;
+  return surf;
+}
+
 template <typename DispT>
   requires(!std::is_pointer_v<DispT>)
 inline Rgb565Surface bind_frame_buffer(DispT *disp, esphome::display::Display &it) {
@@ -210,12 +245,12 @@ inline Rgb565Surface bind_frame_buffer(DispT *disp, esphome::display::Display &i
   fb_clear_bind_raw(nullptr, nullptr);
   if (disp == nullptr || it.get_rotation() != esphome::display::DISPLAY_ROTATION_0_DEGREES) {
     active_frame_buf16() = nullptr;
-    return Rgb565Surface(it);
+    return make_esphome_surface(it);
   }
   uint8_t *raw = DispBufferAccessor<DispT>::get(disp);
   if (raw == nullptr) {
     active_frame_buf16() = nullptr;
-    return Rgb565Surface(it);
+    return make_esphome_surface(it);
   }
   uint16_t *buf16 = reinterpret_cast<uint16_t *>(raw);
   if (active_frame_endian_mode() < 0) {
@@ -223,17 +258,17 @@ inline Rgb565Surface bind_frame_buffer(DispT *disp, esphome::display::Display &i
   }
   active_frame_buf16() = (active_frame_endian_mode() > 0) ? buf16 : nullptr;
   fb_clear_bind_raw(static_cast<void *>(static_cast<esphome::Component *>(disp)), active_frame_buf16());
-  return Rgb565Surface(it);
+  return make_esphome_surface(it);
 }
 
 template <typename DispT>
 inline Rgb565Surface bind_frame_buffer(DispT *const *disp_ptr, esphome::display::Display &it) {
   if (disp_ptr != nullptr) return bind_frame_buffer(*disp_ptr, it);
-  return Rgb565Surface(it);
+  return make_esphome_surface(it);
 }
 
 inline void sync_ctx_link_health(UiFrameContext &ctx) {
-  auto &ls = link_state();
+  auto &ls = latter_core::link_state();
 #ifdef USE_API
   if (esphome::api::global_api_server != nullptr &&
       esphome::api::global_api_server->is_connected_with_state_subscription()) {
@@ -246,7 +281,7 @@ inline void sync_ctx_link_health(UiFrameContext &ctx) {
     return;
   }
 #endif
-  if (link_report().ha_clients > 0) {
+  if (latter_core::link_report().ha_clients > 0) {
     ctx.ha_connected = true;
     ctx.ha_disconnect_ms = 0U;
     return;
@@ -258,29 +293,31 @@ inline void sync_ctx_link_health(UiFrameContext &ctx) {
 // Thin Display& convenience overloads forwarding to Rgb565Surface
 inline bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext &ctx,
                                     const SystemTakeoverState &st) {
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   return render_system_takeovers(surf, ctx, st);
 }
 
+#if LATTER_GUI_UNIVERSAL
 inline void render_active_page(esphome::display::Display &it, const UiFrameContext &ctx) {
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   render_active_page(surf, ctx);
 }
+#endif
 
 inline void render_active_focus_overlay(esphome::display::Display &it, uint32_t now_ms,
                                         UiColor theme_primary, UiColor col_white) {
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   render_active_focus_overlay(surf, now_ms, theme_primary, col_white);
 }
 
 inline void render_home_indicator_bar(esphome::display::Display &it, int cx, int y_pos = kHomeBarY,
                                       UiColor bar_col = kChromeHomePill) {
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   render_home_indicator_bar(surf, cx, y_pos, bar_col);
 }
 
 inline void render_offline_pill(esphome::display::Display &it, const UiFrameContext &ctx) {
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   render_offline_pill(surf, ctx);
 }
 
@@ -289,14 +326,16 @@ inline void render_offline_pill(esphome::display::Display &it, int cx, uint32_t 
   UiFrameContext tmp{};
   tmp.now_ms = now_ms;
   sync_ctx_link_health(tmp);
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   render_offline_pill(surf, cx, now_ms, font, text_c, tmp.ha_connected, tmp.ha_disconnect_ms);
 }
 
+#if LATTER_GUI_UNIVERSAL
 inline void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night) {
-  Rgb565Surface surf(it);
+  Rgb565Surface surf = make_esphome_surface(it);
   render_static_day_night_sky_base(surf, cx, cy, is_night);
 }
+#endif
 
 template <typename DispT>
   requires(!std::is_pointer_v<DispT>)
@@ -376,17 +415,17 @@ template <typename DispT>
   requires(!std::is_pointer_v<DispT>)
 inline void sync_disp_poller_for_anim(DispT *disp, bool anim_active) {
   if (disp == nullptr) return;
-  if (screen_is_off_standby() || disp_poller_held()) {
-    anim_poller_suppressed() = false;
+  if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) {
+    latter_core::anim_poller_suppressed() = false;
     return;
   }
   if (anim_active) {
-    if (!anim_poller_suppressed()) {
-      anim_poller_suppressed() = true;
+    if (!latter_core::anim_poller_suppressed()) {
+      latter_core::anim_poller_suppressed() = true;
       disp->stop_poller();
     }
-  } else if (anim_poller_suppressed()) {
-    anim_poller_suppressed() = false;
+  } else if (latter_core::anim_poller_suppressed()) {
+    latter_core::anim_poller_suppressed() = false;
     disp->start_poller();
   }
 }
@@ -436,7 +475,7 @@ inline void dispatch_cadence_20ms(uint32_t now_ms, DispT *disp, TickT *anim_tick
   }
   if (act.stop_anim_poller) {
     sync_disp_poller_for_anim(disp, false);
-    set_ui_anim_poller(anim_tick, false);
+    latter_core::set_ui_anim_poller(anim_tick, false);
   }
 }
 
@@ -449,7 +488,7 @@ inline void dispatch_cadence_250ms(uint32_t now_ms, DispT *disp, TickT *anim_tic
   const auto act = frame_cadence().step_250ms(
       now_ms, wallpaper_loaded, va_running, latest_fw_version, rotate_period_ms);
   if (act.ensure_anim_poller) {
-    ensure_ui_anim_poller(anim_tick);
+    latter_core::ensure_ui_anim_poller(anim_tick);
   }
   if (act.schedule_activity_rotate) {
     schedule_activity_rotate_disp_update(disp, act.activity_rotate_delay_ms, act.band_y0, act.band_y1);

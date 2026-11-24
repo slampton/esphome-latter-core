@@ -7,7 +7,7 @@
 
 #include "state/state_common.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 enum class MusicView : uint8_t {
   NOW_PLAYING  = 0,
@@ -37,11 +37,6 @@ inline constexpr int kMusicPeerTabCount = 9;
 
 inline constexpr bool is_music_ambient_tab(MusicView v) noexcept {
   return v == MusicView::NOW_PLAYING || v == MusicView::LYRICS || v == MusicView::INFO;
-}
-
-inline constexpr uint32_t music_peer_tab_timeout_ms(MusicView v) noexcept {
-  if (is_music_ambient_tab(v)) return 6000U;
-  return (v == MusicView::VOLUME) ? 5000U : 10000U;
 }
 
 inline constexpr bool resolve_music_route_target(
@@ -383,11 +378,8 @@ struct MusicRuntimeState {
 bool parse_v3_media_payload(std::string_view payload,
                             MediaState &st = media_state(),
                             uint32_t now_ms = 0);
-bool parse_v3_active_media_payload(std::string_view payload,
-                                   MediaState &st = media_state(),
-                                   uint32_t now_ms = 0);
 void append_music_lyrics_records_blob(std::string_view blob,
                                       std::vector<MusicLyricLine> &dst,
                                       size_t max_total = kMaxMusicLyricLines);
 
-}  // namespace latter_ui
+}  // namespace latter_core

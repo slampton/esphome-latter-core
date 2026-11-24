@@ -27,7 +27,7 @@
 #include <string_view>
 #include <vector>
 
-namespace latter_ui {
+namespace latter_core {
 
 // ------------------------------------------------------------------------------
 // 1. Pure C++20 Video Streaming Helpers & Constants
@@ -45,11 +45,6 @@ inline constexpr uint32_t compute_reconnect_backoff_ms(uint32_t attempt) noexcep
   if (attempt == 0U) return 1000U;
   if (attempt == 1U) return 2000U;
   return 5000U;
-}
-
-// Floor pixel dimension down to a 16-pixel multiple (ESP32-P4 HW JPEG DMA requirement).
-inline constexpr int align16_floor(int px) noexcept {
-  return (px <= 0) ? 0 : (px & ~15);
 }
 
 // ASCII case-insensitive helpers (locale-independent, zero allocations).
@@ -259,4 +254,4 @@ bool video_decoder_decode_frame(VideoDecoderContext *dec,
 
 }  // namespace video_detail
 
-}  // namespace latter_ui
+}  // namespace latter_core

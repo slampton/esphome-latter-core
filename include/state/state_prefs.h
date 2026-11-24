@@ -7,13 +7,14 @@
 
 #include "state/state_common.h"
 
-namespace latter_ui {
+namespace latter_core {
 
-// Versioned Persisted Device Preferences (Single ESPPreferenceObject POD Blob)
+// Versioned Persisted Device Preferences (Variable-length ESP-IDF NVS POD Blob)
 // ==============================================================================
 static constexpr uint32_t kPersistedPrefsMagic = 0x4C505246U;  // "LPRF"
 static constexpr uint16_t kPersistedPrefsVersion = 1U;
-static constexpr uint32_t kPersistedPrefsHash = 0x4C415450U;   // "LATP"
+static constexpr const char *kPersistedPrefsNvsNamespace = "latter_prefs";
+static constexpr const char *kPersistedPrefsNvsKey = "prefs";
 
 enum class PrefKey : uint8_t {
   WAKE_WORD_MODE = 0,
@@ -82,7 +83,8 @@ enum class PrefKey : uint8_t {
   WEATHER_APP_BACKGROUND = 63,
   DO_NOT_DISTURB = 64,
   MUSIC_AUTO_OPEN = 65,
-  COUNT = 66,
+  GLASS_STYLE = 66,
+  COUNT = 67,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 128U,
               "PrefKey::COUNT must remain < 128 to fit in 128-bit PrefMask.");
@@ -256,8 +258,12 @@ struct PersistedDevicePrefs {
   bool do_not_disturb = false;             // Appended v3.0+ tail field: Do Not Disturb mode
   uint8_t music_auto_open = 0;             // Appended v3.0+ tail field: 0..2 ("Now Playing", "Lyrics", "Off")
   int32_t high_score_drop_four = 0;        // Appended v3.0+ tail field: Drop Four AI streak high score
+  uint8_t glass_style = 0;                 // Appended v3.0 GA tail field: 0..2 ("Auto", "Clear", "Dark")
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
+  constexpr GlassStyle glass_style_enum() const noexcept {
+    return static_cast<GlassStyle>((glass_style < kPrefOptsGlassStyle.size()) ? glass_style : kPrefDefaultGlassStyleIdx);
+  }
   constexpr MusicAutoOpenMode music_auto_open_enum() const noexcept {
     return static_cast<MusicAutoOpenMode>((music_auto_open < 3U) ? music_auto_open : 0U);
   }
@@ -328,9 +334,10 @@ struct PersistedDevicePrefs {
 static_assert(std::is_trivially_copyable_v<PersistedDevicePrefs> &&
                   std::is_standard_layout_v<PersistedDevicePrefs>,
               "PersistedDevicePrefs must remain standard-layout and trivially copyable for NVS.");
-static constexpr size_t kPersistedPrefsMinSize = offsetof(PersistedDevicePrefs, do_not_disturb);
-static_assert(kPersistedPrefsMinSize > offsetof(PersistedDevicePrefs, camera_doorbell_popup) &&
-                  kPersistedPrefsMinSize < sizeof(PersistedDevicePrefs),
+static constexpr size_t kPersistedPrefsMinSize =
+    offsetof(PersistedDevicePrefs, glass_style) + sizeof(PersistedDevicePrefs::glass_style);
+static_assert(kPersistedPrefsMinSize > offsetof(PersistedDevicePrefs, high_score_drop_four) &&
+                  kPersistedPrefsMinSize <= sizeof(PersistedDevicePrefs),
               "Append-only NVS tail fields must be placed strictly at the end of PersistedDevicePrefs.");
 static_assert(std::char_traits<char>::length(kDefaultToolsItems) < sizeof(PersistedDevicePrefs::tools_items),
               "PersistedDevicePrefs::tools_items must fit kDefaultToolsItems.");
@@ -365,50 +372,7 @@ inline PersistedDevicePrefs &device_prefs() {
   return persisted_prefs();
 }
 
-inline constexpr const char *const kWakeWordModeOpts[3] = {
-    "Docked Only", "Always On", "Disabled"};
-inline constexpr const char *const kTapWakeOpts[4] = {
-    "Single Tap", "Double Tap", "Docked Only", "Disabled"};
-inline constexpr const char *const kWakePolicyOpts[3] = {
-    "Always On", "Docked Only", "Disabled"};
-inline constexpr const char *const kBattScreenTimeoutOpts[6] = {
-    "10s", "15s", "30s", "1 min", "2 min", "Never"};
-inline constexpr const char *const kDockedIdleTimeoutOpts[7] = {
-    "10s", "15s", "30s", "1 min", "2 min", "5 min", "Never"};
-inline constexpr const char *const kBattHibernateTimeoutOpts[5] = {
-    "5 min", "10 min", "15 min", "30 min", "Disabled"};
-inline constexpr const char *const kScreensaverModeOpts[3] = {
-    "Docked Only", "Always", "Never"};
-inline constexpr const char *const kScreensaverStyleOpts[6] = {
-    "Ambient Clock", "Photo Frame", "Aurora", "Starfield", "Digital Rain", "Fireworks"};
-inline constexpr const char *const kAutoBrightnessModeOpts[4] = {
-    "Disabled", "Sun Synchronized", "Time Schedule", "Ambient Light"};
-inline constexpr const char *const kColorProfileOpts[5] = {
-    "Steel Blue", "Pink", "Blue", "Green", "Custom"};
-inline constexpr const char *const kVaVisualProfileOpts[5] = {
-    "Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"};
-inline constexpr const char *const kStartScreenOpts[13] = {
-    "Home", "Pinned", "Time App", "Calendar", "Clock Face", "Media", "Home Hub", "Area Controls",
-    "Remote", "Weather", "Cameras", "Games", "Tools"};
 inline constexpr uint8_t kStartScreenTimeAppIdx = 2U;
-inline constexpr const char *const kHomeClockTapOpts[2] = {
-    "Time App", "Clock Face"};
-inline constexpr const char *const kHomeDateTapOpts[2] = {
-    "Day View", "Overview"};
-inline constexpr const char *const kCalendarWeekStartOpts[2] = {
-    "Sunday", "Monday"};
-inline constexpr const char *const kBedtimeDisplayOpts[2] = {
-    "Screen Off", "Ambient Clock"};
-inline constexpr const char *const kCameraDefaultViewOpts[3] = {
-    "Grid", "Single", "Carousel"};
-inline constexpr const char *const kCameraCarouselIntervalOpts[4] = {
-    "10s", "15s", "30s", "60s"};
-inline constexpr const char *const kCameraFramingOpts[2] = {
-    "Uncropped", "Fill"};
-inline constexpr const char *const kCameraStreamModeOpts[3] = {
-    "Auto", "Low Bandwidth", "Snapshots"};
-inline constexpr const char *const kCameraDoorbellPopupOpts[2] = {
-    "Snapshot", "Live Video"};
 
 inline constexpr uint8_t snap_calendar_lookahead_days(int v) noexcept {
   if (v <= 10) return 7U;
@@ -416,58 +380,24 @@ inline constexpr uint8_t snap_calendar_lookahead_days(int v) noexcept {
   if (v <= 45) return 30U;
   return 60U;
 }
-inline constexpr const char *const kReturnToHomeTimeoutOpts[7] = {
-    "15s", "30s", "1 min", "2 min", "5 min", "10 min", "Never"};
-inline constexpr const char *const kClockFaceOpts[3] = {
-    "Minimal Digital", "Modern Analog", "Hybrid Digital"};
-inline constexpr const char *const kTimeFormatOpts[2] = {"12-Hour (AM/PM)", "24-Hour"};
-inline constexpr const char *const kAlbumArtStyleOpts[4] = {
-    "Full Screen", "Letterbox", "Standard", "None"};
-inline constexpr const char *const kMusicOverlayStyleOpts[3] = {
-    "Art Only", "Art + Metadata", "Always Visible"};
-inline constexpr const char *const kMusicAutoOpenOpts[3] = {
-    "Now Playing", "Lyrics", "Off"};
-inline constexpr const char *const kAlbumSortOpts[3] = {
-    "Alphabetical", "Newest on Top", "Oldest on Top"};
-inline constexpr const char *const kArtistAlbumSortOpts[3] = {
-    "Oldest on Top", "Newest on Top", "Alphabetical"};
-inline constexpr const char *const kPodcastSortOpts[2] = {
-    "Newest on Top", "Oldest on Top"};
-inline constexpr const char *const kWwSensitivityOpts[3] = {
-    "Slightly sensitive", "Moderately sensitive", "Very sensitive"};
-inline constexpr const char *const kBleBeaconModeOpts[3] = {
-    "Handheld Only", "Handheld + Screen Off", "Always"};
-inline constexpr const char *const kWeatherSimOpts[17] = {
-    "Live (Home Assistant)", "Clear Night", "Sunny / Clear Day",
-    "Partly Cloudy (Day)", "Partly Cloudy (Night)",
-    "Cloudy / Overcast (Day)", "Cloudy / Overcast (Night)",
-    "Fog / Mist (Day)", "Fog / Mist (Night)",
-    "Rainy (Day)", "Rainy (Night)", "Pouring / Heavy Rain",
-    "Snow (Day)", "Snow (Night)",
-    "Thunderstorm (Day)", "Thunderstorm (Night)", "Windy"};
 
 template <size_t N>
-inline int find_opt_index(const char *const (&opts)[N], std::string_view sv) {
-  for (size_t i = 0; i < N; ++i) {
-    if (sv == opts[i]) return static_cast<int>(i);
-  }
-  return -1;
+inline constexpr const char *pref_opt_cstr(const std::array<std::string_view, N> &opts,
+                                           size_t idx, size_t fallback = 0U) noexcept {
+  const std::string_view sv = pref_option_at_clamped(std::span<const std::string_view>{opts}, idx, fallback);
+  return sv.empty() ? "" : sv.data();
 }
 
-template <size_t N>
-inline const char *opt_at_clamped(const char *const (&opts)[N], uint8_t idx, uint8_t fallback = 0) {
-  return opts[(idx < N) ? idx : fallback];
-}
-
-inline const char *pref_wake_word_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakeWordModeOpts, p.wake_word_mode); }
-inline const char *pref_tap_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTapWakeOpts, p.tap_to_wake, 2); }
-inline const char *pref_pickup_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kWakePolicyOpts, p.pickup_to_wake, 1); }
-inline const char *pref_battery_screen_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattScreenTimeoutOpts, p.battery_screen_timeout, 2); }
-inline const char *pref_docked_idle_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kDockedIdleTimeoutOpts, p.docked_idle_timeout, 3); }
-inline const char *pref_battery_hibernate_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBattHibernateTimeoutOpts, p.battery_hibernate_timeout, 2); }
-inline const char *pref_screensaver_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kScreensaverModeOpts, p.screensaver_mode); }
-inline const char *pref_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kScreensaverStyleOpts, p.screensaver_style); }
-inline const char *pref_bedtime_display_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBedtimeDisplayOpts, p.bedtime_display); }
+inline const char *pref_wake_word_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsWakeWordMode, p.wake_word_mode, kPrefDefaultWakeWordModeIdx); }
+inline const char *pref_tap_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsTapToWake, p.tap_to_wake, kPrefDefaultTapToWakeIdx); }
+inline const char *pref_pickup_to_wake_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsPickupToWake, p.pickup_to_wake, kPrefDefaultPickupToWakeIdx); }
+inline const char *pref_battery_screen_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsBatteryScreenTimeout, p.battery_screen_timeout, kPrefDefaultBatteryScreenTimeoutIdx); }
+inline const char *pref_docked_idle_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsDockedIdleTimeout, p.docked_idle_timeout, kPrefDefaultDockedIdleTimeoutIdx); }
+inline const char *pref_battery_hibernate_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsBatteryHibernateTimeout, p.battery_hibernate_timeout, kPrefDefaultBatteryHibernateTimeoutIdx); }
+inline const char *pref_screensaver_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsScreensaverMode, p.screensaver_mode, kPrefDefaultScreensaverModeIdx); }
+inline const char *pref_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsScreensaverStyle, p.screensaver_style, kPrefDefaultScreensaverStyleIdx); }
+inline const char *pref_bedtime_display_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsBedtimeDisplay, p.bedtime_display, kPrefDefaultBedtimeDisplayIdx); }
+inline const char *pref_glass_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsGlassStyle, p.glass_style, kPrefDefaultGlassStyleIdx); }
 inline const char *effective_screensaver_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) {
   return p.bedtime_active ? "Ambient Clock" : pref_screensaver_style_cstr(p);
 }
@@ -561,7 +491,7 @@ inline constexpr float resolve_bedtime_ambient_brightness(float bedtime_bri) noe
   return std::min(b, std::max(0.02f, b * 0.35f));
 }
 
-inline const char *pref_auto_brightness_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAutoBrightnessModeOpts, p.auto_brightness_mode, 1); }
+inline const char *pref_auto_brightness_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsAutoBrightnessMode, p.auto_brightness_mode, kPrefDefaultAutoBrightnessModeIdx); }
 
 enum class ActiveBrightnessTargetKind : uint8_t {
   MANUAL = 0,
@@ -650,32 +580,32 @@ inline ActiveBrightnessTarget resolve_active_brightness_target(
   return {ActiveBrightnessTargetKind::MANUAL, PrefKey::MANUAL_BRIGHTNESS,
           prefs.manual_brightness_pct(), "Manual"};
 }
-inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kColorProfileOpts, p.color_profile); }
-inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kVaVisualProfileOpts, p.va_visual_profile); }
-inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kStartScreenOpts, p.start_screen); }
-inline const char *pref_return_to_home_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kReturnToHomeTimeoutOpts, p.return_to_home_timeout, 3); }
+inline const char *pref_color_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsColorProfile, p.color_profile, kPrefDefaultColorProfileIdx); }
+inline const char *pref_va_visual_profile_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsVaVisualProfile, p.va_visual_profile, kPrefDefaultVaVisualProfileIdx); }
+inline const char *pref_start_screen_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsStartScreen, p.start_screen, kPrefDefaultStartScreenIdx); }
+inline const char *pref_return_to_home_timeout_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsReturnToHomeTimeout, p.return_to_home_timeout, kPrefDefaultReturnToHomeTimeoutIdx); }
 inline constexpr uint32_t return_to_home_timeout_ms(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
   return p.return_to_home_ms();
 }
-inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kClockFaceOpts, p.clock_face); }
-inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kTimeFormatOpts, p.time_format); }
-inline const char *pref_home_clock_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeClockTapOpts, p.home_clock_tap_action); }
-inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kHomeDateTapOpts, p.home_date_tap_action, 1); }
-inline const char *pref_calendar_week_start_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCalendarWeekStartOpts, p.calendar_week_start); }
-inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumArtStyleOpts, p.album_art_style); }
-inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicOverlayStyleOpts, p.music_overlay_style, 1); }
-inline const char *pref_music_auto_open_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kMusicAutoOpenOpts, p.music_auto_open); }
-inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kAlbumSortOpts, p.album_sort_order); }
-inline const char *pref_artist_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kArtistAlbumSortOpts, p.artist_album_sort_order); }
-inline const char *pref_podcast_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kPodcastSortOpts, p.podcast_sort_order); }
-inline const char *pref_ww_sens_cstr(uint8_t idx) { return opt_at_clamped(kWwSensitivityOpts, idx, 1); }
-inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kBleBeaconModeOpts, p.ble_beacon_mode); }
-inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return opt_at_clamped(kWeatherSimOpts, st.weather_sim_condition); }
-inline const char *pref_camera_default_view_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraDefaultViewOpts, p.camera_default_view); }
-inline const char *pref_camera_carousel_interval_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraCarouselIntervalOpts, p.camera_carousel_interval, 1); }
-inline const char *pref_camera_framing_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraFramingOpts, p.camera_framing); }
-inline const char *pref_camera_stream_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraStreamModeOpts, p.camera_stream_mode); }
-inline const char *pref_camera_doorbell_popup_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return opt_at_clamped(kCameraDoorbellPopupOpts, p.camera_doorbell_popup); }
+inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsClockFace, p.clock_face, kPrefDefaultClockFaceIdx); }
+inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsTimeFormat, p.time_format, kPrefDefaultTimeFormatIdx); }
+inline const char *pref_home_clock_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsHomeClockTapAction, p.home_clock_tap_action, kPrefDefaultHomeClockTapActionIdx); }
+inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsHomeDateTapAction, p.home_date_tap_action, kPrefDefaultHomeDateTapActionIdx); }
+inline const char *pref_calendar_week_start_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCalendarWeekStart, p.calendar_week_start, kPrefDefaultCalendarWeekStartIdx); }
+inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsAlbumArtStyle, p.album_art_style, kPrefDefaultAlbumArtStyleIdx); }
+inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsMusicOverlayStyle, p.music_overlay_style, kPrefDefaultMusicOverlayStyleIdx); }
+inline const char *pref_music_auto_open_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsMusicAutoOpen, p.music_auto_open, kPrefDefaultMusicAutoOpenIdx); }
+inline const char *pref_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsAlbumSortOrder, p.album_sort_order, kPrefDefaultAlbumSortOrderIdx); }
+inline const char *pref_artist_album_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsArtistAlbumSortOrder, p.artist_album_sort_order, kPrefDefaultArtistAlbumSortOrderIdx); }
+inline const char *pref_podcast_sort_order_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsPodcastSortOrder, p.podcast_sort_order, kPrefDefaultPodcastSortOrderIdx); }
+inline const char *pref_ww_sens_cstr(uint8_t idx) { return pref_opt_cstr(kPrefOptsWwSensOkayNabu, idx, kPrefDefaultWwSensOkayNabuIdx); }
+inline const char *pref_ble_beacon_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsBleBeaconMode, p.ble_beacon_mode, kPrefDefaultBleBeaconModeIdx); }
+inline const char *pref_weather_sim_cstr(const DevicePrefsState &st = device_prefs_state()) { return pref_opt_cstr(kPrefOptsWeatherSimCondition, st.weather_sim_condition, kPrefDefaultWeatherSimConditionIdx); }
+inline const char *pref_camera_default_view_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCameraDefaultView, p.camera_default_view, kPrefDefaultCameraDefaultViewIdx); }
+inline const char *pref_camera_carousel_interval_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCameraCarouselInterval, p.camera_carousel_interval, kPrefDefaultCameraCarouselIntervalIdx); }
+inline const char *pref_camera_framing_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCameraFraming, p.camera_framing, kPrefDefaultCameraFramingIdx); }
+inline const char *pref_camera_stream_mode_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCameraStreamMode, p.camera_stream_mode, kPrefDefaultCameraStreamModeIdx); }
+inline const char *pref_camera_doorbell_popup_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCameraDoorbellPopup, p.camera_doorbell_popup, kPrefDefaultCameraDoorbellPopupIdx); }
 
 
 inline constexpr const char *const kCanonicalToolsItemTokens[6] = {
@@ -799,10 +729,14 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   if (p.camera_default_view >= 3) p.camera_default_view = 0;
   if (p.camera_carousel_interval >= 4) p.camera_carousel_interval = 1;
   if (p.camera_framing >= 2) p.camera_framing = 0;
-  if (p.camera_stream_mode >= 3) p.camera_stream_mode = 0;
-  if (p.camera_doorbell_popup >= 2) p.camera_doorbell_popup = 0;
-#if !LATTER_CHIP_P4
-  p.camera_doorbell_popup = 0;  // Live Video doorbell popup is P4-only
+  if (p.camera_stream_mode >= kPrefOptsCameraStreamMode.size()) p.camera_stream_mode = kPrefDefaultCameraStreamModeIdx;
+  if (p.camera_doorbell_popup >= kPrefOptsCameraDoorbellPopup.size()) p.camera_doorbell_popup = kPrefDefaultCameraDoorbellPopupIdx;
+  if (p.glass_style >= kPrefOptsGlassStyle.size()) p.glass_style = kPrefDefaultGlassStyleIdx;
+#ifndef LATTER_HAS_HW_JPEG
+#define LATTER_HAS_HW_JPEG LATTER_CHIP_P4
+#endif
+#if !LATTER_HAS_HW_JPEG
+  p.camera_doorbell_popup = 0;  // Live Video doorbell popup requires hardware JPEG decode
 #endif
 #if !LATTER_HAS_IMU || LATTER_IS_STATIONARY
   p.pickup_to_wake = 2;  // Disabled
@@ -869,15 +803,16 @@ inline void seed_hardware_sleep_defaults(PersistedDevicePrefs &p) {
 }
 
 
-// Append-only prefix loader: accepts any NVS blob in [kPersistedPrefsMinSize, sizeof(PersistedDevicePrefs)]
-// and zero-initializes newly appended tail fields without wiping NVS across post-v3.0 firmware upgrades.
+// Append-only prefix loader: accepts any NVS blob in [kPersistedPrefsMinSize, 4096]
+// (copies min(len, sizeof(PersistedDevicePrefs)), default-initializing newly appended tail fields
+// on v3.0 -> v3.1+ upgrades and safely reading the v3.0 prefix across OTA rollbacks).
 inline bool load_persisted_prefs_from_buffer(const void *buf, size_t len,
                                              PersistedDevicePrefs &out = persisted_prefs()) {
-  if (buf == nullptr || len < kPersistedPrefsMinSize || len > sizeof(PersistedDevicePrefs)) {
+  if (buf == nullptr || len < kPersistedPrefsMinSize || len > 4096U) {
     return false;
   }
   PersistedDevicePrefs loaded{};
-  std::memcpy(&loaded, buf, len);
+  std::memcpy(&loaded, buf, std::min(len, sizeof(PersistedDevicePrefs)));
   if (loaded.magic != kPersistedPrefsMagic || loaded.version != kPersistedPrefsVersion) {
     return false;
   }
@@ -913,7 +848,7 @@ void seed_default_prefs_if_needed(PersistedDevicePrefs &p = persisted_prefs());
 const char *pref_key_name(PrefKey key);
 std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = persisted_prefs());
 bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
-                         bool unused_cascade, PrefMask &changed_mask, uint32_t &effects_mask);
+                         PrefMask &changed_mask, uint32_t &effects_mask);
 std::string encode_prefs_mask(PrefMask mask, const PersistedDevicePrefs &p = persisted_prefs());
 std::string format_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs());
 std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs());
@@ -923,4 +858,4 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
                                    PersistedDevicePrefs &p = persisted_prefs(),
                                    DevicePrefsState &st = device_prefs_state());
 
-}  // namespace latter_ui
+}  // namespace latter_core

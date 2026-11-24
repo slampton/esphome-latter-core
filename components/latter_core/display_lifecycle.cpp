@@ -4,7 +4,7 @@
 #include "../../include/hal_display_lifecycle.h"
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 namespace {
 constexpr uint32_t kStandbyGreetingMinMs = 1800000U;
@@ -179,4 +179,4 @@ DisplaySupervisorActions DisplayLifecycleController::evaluate_1s(
   return out;
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

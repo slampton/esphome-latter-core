@@ -25,7 +25,7 @@
 #include "hal_manifest.h"
 #include "latter_prof.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 #ifdef USE_ESP32
 std::atomic<uint32_t> &echo_last_loud_ms();
@@ -419,4 +419,4 @@ inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *const *bus_pp, b
 }
 #endif  // USE_I2C
 
-}  // namespace latter_ui
+}  // namespace latter_core

@@ -7,7 +7,7 @@
 
 #include "state/state_common.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 inline constexpr uint16_t kAlarmCapCodeDisarm  = 0x01U;
 inline constexpr uint16_t kAlarmCapCodeArm     = 0x02U;
@@ -644,4 +644,4 @@ inline bool evaluate_perimeter_pin_prompt(std::string_view policy,
   return is_stationary;
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

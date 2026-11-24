@@ -1,0 +1,37 @@
+# ==============================================================================
+# Latter Board HAL Submodule: ESP32-C6 SDIO Wi-Fi 6 / BLE 5 Co-Processor
+# (modules/hal/radio_esp32c6_sdio.yaml)
+# Included by ESP32-P4 boards that use an ESP32-C6 co-processor over SDIO.
+# Ethernet-only ESP32-P4 boards omit this submodule and include only chip_esp32p4.yaml.
+# Override c6_sdio_* substitutions in the board YAML for non-Waveshare pinouts.
+# ==============================================================================
+
+substitutions:
+  c6_sdio_clk_pin: GPIO18
+  c6_sdio_cmd_pin: GPIO19
+  c6_sdio_d0_pin: GPIO14
+  c6_sdio_d1_pin: GPIO15
+  c6_sdio_d2_pin: GPIO16
+  c6_sdio_d3_pin: GPIO17
+  c6_sdio_reset_pin: GPIO54
+
+esp32_hosted:
+  variant: esp32c6
+  use_psram: true
+  clk_pin: ${c6_sdio_clk_pin}
+  cmd_pin: ${c6_sdio_cmd_pin}
+  d0_pin: ${c6_sdio_d0_pin}
+  d1_pin: ${c6_sdio_d1_pin}
+  d2_pin: ${c6_sdio_d2_pin}
+  d3_pin: ${c6_sdio_d3_pin}
+  reset_pin: ${c6_sdio_reset_pin}
+
+update:
+  - platform: esp32_hosted
+    id: update_c6_coprocessor
+    name: "System: C6 Co-Processor Firmware"
+    icon: "mdi:chip"
+    entity_category: config
+    type: http
+    source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
+    update_interval: never

@@ -50,7 +50,7 @@
 #include "esphome/components/esp32/crash_handler.h"
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 FlashWriteStats g_flash_write_stats;
 
@@ -141,6 +141,7 @@ static void stall_fill_cpus(StallRecord &rec) {
 }
 
 static char stall_loop_state() {
+#if defined(CONFIG_FREERTOS_USE_TRACE_FACILITY)
   if (g_stall_loop_task == nullptr) return '?';
   switch (eTaskGetState(g_stall_loop_task)) {
     case eRunning: return 'R';
@@ -149,6 +150,9 @@ static char stall_loop_state() {
     case eSuspended: return 'S';
     default: return '?';
   }
+#else
+  return '?';
+#endif
 }
 
 static void stall_clear_live() {
@@ -355,8 +359,8 @@ void pm_log_wake_profile() {
 
 #ifdef USE_LATTER_LOOP_PROBE
   {
-    static esphome::latter_core::LoopProbeStats prev{};
-    const esphome::latter_core::LoopProbeStats &lp = esphome::latter_core::loop_probe_stats();
+    static LoopProbeStats prev{};
+    const LoopProbeStats &lp = loop_probe_stats();
     LATTER_PROF_LOGI(
         "[PROF:WAKE] loop: interval=%lums passes=%lu hf_held=%lu hf_now=%d gaps <20ms=%lu <50ms=%lu "
         "<200ms=%lu <1s=%lu >=1s=%lu",
@@ -425,10 +429,11 @@ void pm_log_wake_profile() {
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core
 
+#if !defined(LATTER_DIAG_TWDT_BREADCRUMB) || LATTER_DIAG_TWDT_BREADCRUMB
 extern "C" void esp_task_wdt_isr_user_handler(void) {
-  using namespace latter_ui;
+  using namespace latter_core;
   StallRecord rec{};
   const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
   const uint32_t start = esphome::App.get_loop_component_start_time();
@@ -451,14 +456,16 @@ extern "C" void esp_task_wdt_isr_user_handler(void) {
   rec.magic = kTwdtRecordMagic;
   s_twdt_rtc_record = rec;
 }
+#endif
 
+#if !defined(LATTER_DIAG_NVS_GUARD) || LATTER_DIAG_NVS_GUARD
 extern "C" {
 esp_err_t __real_nvs_set_blob(nvs_handle_t handle, const char *key, const void *value, size_t length);
 esp_err_t __wrap_nvs_set_blob(nvs_handle_t handle, const char *key, const void *value, size_t length) {
   const int64_t t0 = esp_timer_get_time();
   const esp_err_t err = __real_nvs_set_blob(handle, key, value, length);
   const uint32_t us = static_cast<uint32_t>(esp_timer_get_time() - t0);
-  auto &fw = latter_ui::g_flash_write_stats;
+  auto &fw = latter_core::g_flash_write_stats;
   fw.nvs_writes.fetch_add(1U, std::memory_order_relaxed);
   uint32_t prev = fw.nvs_max_us.load(std::memory_order_relaxed);
   while (us > prev && !fw.nvs_max_us.compare_exchange_weak(prev, us, std::memory_order_relaxed)) {
@@ -468,13 +475,14 @@ esp_err_t __wrap_nvs_set_blob(nvs_handle_t handle, const char *key, const void *
 
 esp_err_t __real_esp_flash_erase_region(esp_flash_t *chip, uint32_t start, uint32_t len);
 esp_err_t __wrap_esp_flash_erase_region(esp_flash_t *chip, uint32_t start, uint32_t len) {
-  latter_ui::g_flash_write_stats.erases.fetch_add(1U, std::memory_order_relaxed);
+  latter_core::g_flash_write_stats.erases.fetch_add(1U, std::memory_order_relaxed);
   return __real_esp_flash_erase_region(chip, start, len);
 }
 }  // extern "C"
+#endif
 #endif  // USE_ESP32
 
-namespace latter_ui {
+namespace latter_core {
 
 void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, bool chg,
                                float batt_pct, float batt_v, bool spk_pa, bool mww_run,
@@ -539,7 +547,7 @@ void log_boot_summary() {
   const uint32_t up_s = hal_millis_now() / 1000U;
   const auto &tel = pmu_telemetry();
   if (!tel.boot_valid) {
-    LATTER_PROF_LOGI("[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d pmu=none", (long)LATTER_SDK_REV,
+    LATTER_PROF_LOGI("[PROF:BOOT] core_rev=%ld uptime=%lus reset=%s crash=%d rollback=%d pmu=none", (long)LATTER_CORE_REV,
                      (unsigned long)up_s, rr, crash, rollback);
     return;
   }
@@ -573,9 +581,9 @@ void log_boot_summary() {
     }
   }
   LATTER_PROF_LOGI(
-      "[PROF:BOOT] sdk=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) hib=%s on=0x%02X(%s) icc=%dmA cv=0x%02X",
-      (long)LATTER_SDK_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", hib_s,
+      "[PROF:BOOT] core_rev=%ld uptime=%lus reset=%s crash=%d rollback=%d last_off=0x%02X(%s) hib=%s on=0x%02X(%s) icc=%dmA cv=0x%02X",
+      (long)LATTER_CORE_REV, (unsigned long)up_s, rr, crash, rollback, tel.off_src, off_s[0] ? off_s : "-", hib_s,
       tel.on_src, on_s[0] ? on_s : "-", tel.icc_ma, tel.cv_reg);
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

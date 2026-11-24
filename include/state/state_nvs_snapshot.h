@@ -28,25 +28,13 @@
 
 #include "state/device_runtime_state.h"
 
-namespace latter_ui {
-
-#if LATTER_HAS_ESP_PREFS
-inline esphome::ESPPreferenceObject &persisted_prefs_handle() {
-  static esphome::ESPPreferenceObject pref;
-  static bool inited = false;
-  if (!inited && esphome::global_preferences != nullptr) {
-    pref = esphome::global_preferences->make_preference<PersistedDevicePrefs>(kPersistedPrefsHash);
-    inited = true;
-  }
-  return pref;
-}
-#endif
+namespace latter_core {
 
 // ==============================================================================
 // Hibernate Snapshot POD & Cold-Boot Hydration (NVS-backed Frame #1 Seed)
 // ==============================================================================
 static constexpr uint32_t kHibernateSnapshotMagic   = 0x4C485350U;  // "LHSP"
-static constexpr uint16_t kHibernateSnapshotVersion = 3U;
+static constexpr uint16_t kHibernateSnapshotVersion = 1U;
 static constexpr uint32_t kHibernateSnapshotHash    = 0x4C484942U;  // "LHIB"
 static constexpr size_t kHibernateDockSlots         = 10U;
 static constexpr size_t kHibernatePinnedPage1Slots  = 6U;
@@ -333,4 +321,4 @@ inline bool load_hibernate_snapshot_if_cold() {
 }
 
 
-}  // namespace latter_ui
+}  // namespace latter_core

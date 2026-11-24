@@ -9,6 +9,7 @@
 #include <string_view>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -72,7 +73,6 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int sleep_menu_page = rs.nav.sleep_menu_page;
   const int display_menu_page = rs.nav.display_menu_page;
   const bool menu_scroll_active = rs.nav.menu_scroll_active;
-  const int menu_scroll_dir = rs.nav.menu_scroll_dir;
   const int menu_scroll_target_page = rs.nav.menu_scroll_target_page;
 
   const UiFontView font_small = ctx.font_small;
@@ -150,21 +150,24 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int min_vis_y = scale_y(60);
   const int max_vis_y = scale_y(395);
 
-  auto compute_scroll_offset = [&](int cur_page, int max_shift_466) -> int {
-    const int max_shift = scale_y(max_shift_466);
+  auto compute_scroll_offset = [&](int cur_page, int step_rows) -> int {
+    const int step_shift = step_rows * row_s;
+    const int from_off = std::max(0, cur_page - 1) * step_shift;
     if (menu_scroll_active) {
-      const int shift = menu_scroll_shift(max_shift, now_ms);
-      return (menu_scroll_dir == 1) ? shift : (max_shift - shift);
+      const int to_off = std::max(0, menu_scroll_target_page - 1) * step_shift;
+      const int delta = to_off - from_off;
+      const int shift = menu_scroll_shift(std::abs(delta), now_ms);
+      return (delta >= 0) ? (from_off + shift) : (from_off - shift);
     }
     const int bounce_y = edge_bounce().offset_px(
         PageId::SYSTEM, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
-    return ((cur_page == 2) ? max_shift : 0) - bounce_y;
+    return from_off - bounce_y;
   };
 
   char buf[64];
 
   if (system_menu_mode == 0) {
-    const int current_offset = compute_scroll_offset(system_dashboard_page, 189);
+    const int current_offset = compute_scroll_offset(system_dashboard_page, 3);
     static constexpr const char *kSysLabels[8] = {
         "Display", "Sleep & Wake", "Sound", "Voice",
         "Music",   "Home",         "Actions", "Info"};
@@ -199,7 +202,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 1) {
-    const int current_offset = compute_scroll_offset(sleep_menu_page, 315);
+    const int current_offset = compute_scroll_offset(sleep_menu_page, 5);
     char sleep_labels[10][36];
 #if LATTER_HAS_IMU
     std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", ctx.pickup_wake_opt.c_str());
@@ -267,8 +270,9 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     draw_right_chevrons(active_page == 2, active_page == 1);
 
   } else if (system_menu_mode == 2) {
-    const int current_offset = compute_scroll_offset(display_menu_page, 315);
-    char disp_labels[10][36];
+    const int clamped_pg = std::clamp(display_menu_page, 1, 3);
+    const int current_offset = compute_scroll_offset(clamped_pg, 5);
+    char disp_labels[11][36];
     const char *start_lbl =
         (ctx.default_start_app_opt == "Area Controls") ? "Area"
         : ((ctx.default_start_app_opt == "Time App") ? "Time"
@@ -282,47 +286,51 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     std::snprintf(disp_labels[2], sizeof(disp_labels[2]), "Format: %s",
                   prefs.is_24h_format ? "24-Hour" : "12-Hour");
     std::snprintf(disp_labels[3], sizeof(disp_labels[3]), "Color: %s", ctx.theme_palette_opt.c_str());
+    const char *glass_lbl = ctx.glass_style_opt.empty()
+                                ? pref_glass_style_cstr(prefs)
+                                : ctx.glass_style_opt.c_str();
+    std::snprintf(disp_labels[4], sizeof(disp_labels[4]), "Glass Style: %s", glass_lbl);
     const char *ab_s = (ctx.auto_brightness_opt == "Sun Synchronized") ? "Sun"
                        : ((ctx.auto_brightness_opt == "Time Schedule") ? "Sched"
                        : ((ctx.auto_brightness_opt == "Ambient Light") ? "Ambient" : "Off"));
-    std::snprintf(disp_labels[4], sizeof(disp_labels[4]), "Auto Bright: %s", ab_s);
-    std::snprintf(disp_labels[5], sizeof(disp_labels[5]), "Brightness: %d%%",
+    std::snprintf(disp_labels[5], sizeof(disp_labels[5]), "Auto Bright: %s", ab_s);
+    std::snprintf(disp_labels[6], sizeof(disp_labels[6]), "Brightness: %d%%",
                   std::clamp(ctx.manual_brightness_pct, 1, 100));
     format_schedule_range_label(ctx.day_start_hr, ctx.night_start_hr, prefs.is_24h_format,
-                                disp_labels[6], sizeof(disp_labels[6]));
+                                disp_labels[7], sizeof(disp_labels[7]));
     const bool ab_amb = (ctx.auto_brightness_opt == "Ambient Light");
-    std::snprintf(disp_labels[7], sizeof(disp_labels[7]), "%s: %d%%",
+    std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "%s: %d%%",
                   ab_amb ? "Bright Bri" : "Day Bri",
                   std::clamp(ctx.day_brightness_pct, 1, 100));
-    std::snprintf(disp_labels[8], sizeof(disp_labels[8]), "%s: %d%%",
+    std::snprintf(disp_labels[9], sizeof(disp_labels[9]), "%s: %d%%",
                   ab_amb ? "Dark Bri" : "Night Bri",
                   std::clamp(ctx.night_brightness_pct, 1, 100));
-    std::snprintf(disp_labels[9], sizeof(disp_labels[9]), "Photo Clock: %s",
+    std::snprintf(disp_labels[10], sizeof(disp_labels[10]), "Photo Clock: %s",
                   ctx.screensaver_photo_clock ? "On" : "Off");
 
     const bool ab_off = (ctx.auto_brightness_opt == "Disabled" || ctx.auto_brightness_opt.empty());
     const bool ab_sched = (ctx.auto_brightness_opt == "Time Schedule");
-    const int page_base = (display_menu_page == 2) ? 5 : 0;
+    const int page_base = (clamped_pg - 1) * 5;
 
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 11; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
         const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
-        if (i == 9) {
+        if (i == 10) {
           draw_toggle_card_y(y, "Photo Clock", ctx.screensaver_photo_clock, row_slot, row_slot);
-        } else if (i <= 2) {
+        } else if (i <= 2 || i == 4) {
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;
           draw_cycle_card_y(y, disp_labels[i], true, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
-        } else if (i == 5 || i == 7 || i == 8) {
-          const bool active = (i == 5) ? ab_off : !ab_off;
-          const int pct = (i == 5) ? ctx.manual_brightness_pct
-                                   : ((i == 7) ? ctx.day_brightness_pct : ctx.night_brightness_pct);
+        } else if (i == 6 || i == 8 || i == 9) {
+          const bool active = (i == 6) ? ab_off : !ab_off;
+          const int pct = (i == 6) ? ctx.manual_brightness_pct
+                                   : ((i == 8) ? ctx.day_brightness_pct : ctx.night_brightness_pct);
           const uint16_t wid = (active && row_slot >= 0) ? WidgetId::SYS_BRI_SLIDER : WidgetId::NONE;
           draw_slider_card_y(y, disp_labels[i], pct, active, wid, static_cast<int16_t>(i));
         } else {
-          const bool active = !(i == 6 && !ab_sched);
+          const bool active = !(i == 7 && !ab_sched);
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;
@@ -348,8 +356,8 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     render_page_header(it, cx, "DISPLAY", font_small, col_white);
     draw_back();
-    const int active_page = menu_scroll_active ? menu_scroll_target_page : display_menu_page;
-    draw_right_chevrons(active_page == 2, active_page == 1);
+    const int active_page = menu_scroll_active ? std::clamp(menu_scroll_target_page, 1, 3) : clamped_pg;
+    draw_right_chevrons(active_page > 1, active_page < 3);
 
   } else if (system_menu_mode == 3) {
     render_page_header(it, cx, "ACTIONS", font_small, col_white);

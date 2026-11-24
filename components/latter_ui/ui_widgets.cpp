@@ -7,95 +7,11 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 // ==============================================================================
 // 1. Shared Frosted-Glass Chrome & Navigation Primitives
 // ==============================================================================
-void render_pill_button(Rgb565Surface &it, int x1, int x2, int y_mid, int r,
-                        UiColor border_c, UiColor bg_c,
-                        const char *label, UiColor text_c,
-                        UiFontView font,
-                        GlassVariant variant) {
-  const int px0 = x1 - r;
-  const int py0 = y_mid - r;
-  const int pw = (x2 - x1) + 2 * r + 1;
-  const int ph = 2 * r + 1;
-  if (pw <= 4 || ph <= 4) return;
-  GlassVariant eff_var = variant;
-  UiColor norm_tint, rim_col;
-  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark) ? sample_glass_backdrop(px0, py0, pw, ph) : GlassBackdrop{};
-  UiColor eff_tint;
-  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
-
-  fill_round_rect_glass(it, px0, py0, pw, ph, static_cast<float>(r) + 0.5f,
-                        rim_col, rim_top, rim_bot, 1);
-  if (r > 1 && pw > 2 && ph > 2) {
-    fill_round_rect_glass(it, px0 + 1, py0 + 1, pw - 2, ph - 2, static_cast<float>(r) - 0.5f,
-                          eff_tint, a_top, a_bot);
-  }
-
-  if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    const int btn_cx = (x1 + x2) / 2;
-    fast_print(it, btn_cx + 1, y_mid + 1, font, kChromeShadow, UiTextAlign::CENTER, label);
-    fast_print(it, btn_cx, y_mid, font, text_c, UiTextAlign::CENTER, label);
-  }
-}
-
-UiColor render_modern_card(Rgb565Surface &it, int cx_card, int cy_card,
-                           int w, int h, int r,
-                           UiColor bg_c, UiColor border_c,
-                           const char *label, UiColor text_c,
-                           UiFontView font,
-                           GlassVariant variant,
-                           bool sample_surface) {
-  if constexpr (SCREEN_W > 520) {
-    if (w <= 340) w = scale_x(w);
-    if (h <= 96) h = scale_y(h);
-    if (r <= 24) r = scale_s(r);
-  } else if (std::abs(cx_card - SCREEN_CX) <= 4) {
-    if constexpr (SCREEN_W < 380) {
-      if (h <= 48 && w >= 240 && w <= 330) {
-        w = SCREEN_W - 88;
-      } else if (w > SCREEN_W - 20) {
-        w = SCREEN_W - 20;
-      }
-    } else if (w > SCREEN_W - 20) {
-      w = SCREEN_W - 20;
-    }
-  }
-  if (w <= 4 || h <= 4) return bg_c;
-  if (r > h / 2) r = h / 2;
-  if (r > w / 2) r = w / 2;
-  if (r < 2) r = 2;
-  const int x0 = cx_card - w / 2;
-  const int y0 = cy_card - h / 2;
-
-  GlassVariant eff_var = variant;
-  UiColor norm_tint, rim_col;
-  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark)
-          ? sample_glass_backdrop(x0, y0, w, h)
-          : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
-  UiColor eff_tint;
-  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
-
-  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
-  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, std::max(0.5f, static_cast<float>(r) - 1.0f),
-                        eff_tint, a_top, a_bot);
-  const UiColor surf_bg = bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
-
-  if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    fast_print(it, cx_card + 1, cy_card + 1, font, kChromeShadow, UiTextAlign::CENTER, label);
-    fast_print(it, cx_card, cy_card, font, text_c, UiTextAlign::CENTER, label);
-  }
-  return surf_bg;
-}
-
 UiColor render_card_box(Rgb565Surface &it, int x0, int y0, int w, int h,
                         UiColor bg_c, UiColor border_c, int r,
                         GlassVariant variant, UiColor ref_text,
@@ -105,14 +21,18 @@ UiColor render_card_box(Rgb565Surface &it, int x0, int y0, int w, int h,
   if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
 
-  GlassVariant eff_var = variant;
-  UiColor norm_tint, rim_col;
+  const uint8_t g_style = active_glass_style_raw();
+  GlassVariant eff_var =
+      (variant == GlassVariant::ReadableDark || g_style == 2U)
+          ? GlassVariant::ReadableDark
+          : GlassVariant::Clear;
+  UiColor norm_tint{}, rim_col{};
   normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
   const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark)
+      (eff_var == GlassVariant::ReadableDark || g_style == 0U)
           ? sample_glass_backdrop(x0, y0, w, h)
           : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
-  UiColor eff_tint;
+  UiColor eff_tint{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
 
@@ -128,16 +48,19 @@ UiColor render_glass_circle(Rgb565Surface &it, int cx_btn, int cy_btn, int r,
                             UiColor ref_text,
                             bool sample_surface) {
   if (r <= 1) return bg_c;
-  GlassVariant eff_var = variant;
-  UiColor norm_tint, rim_col;
-  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-
   const int d = 2 * r + 1;
+  const uint8_t g_style = active_glass_style_raw();
+  GlassVariant eff_var =
+      (variant == GlassVariant::ReadableDark || g_style == 2U)
+          ? GlassVariant::ReadableDark
+          : GlassVariant::Clear;
+  UiColor norm_tint{}, rim_col{};
+  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
   const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark)
+      (eff_var == GlassVariant::ReadableDark || g_style == 0U)
           ? sample_glass_backdrop(cx_btn - r, cy_btn - r, d, d)
           : (sample_surface ? sample_glass_mean(cx_btn - r, cy_btn - r, d, d) : GlassBackdrop{});
-  UiColor eff_tint;
+  UiColor eff_tint{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
 
@@ -168,7 +91,7 @@ void render_scroll_chevron(Rgb565Surface &it, int x, int y, bool is_up,
   const int dx = scale_s(7);
   const int dy_hi = scale_s(5);
   const int dy_lo = scale_s(4);
-  const int thick = (SCREEN_W > 520) ? 3 : 2;
+  const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
   if (shadow) {
     for (int t = 0; t < thick; t++) {
       if (is_up) {
@@ -208,8 +131,8 @@ void render_bezel_alert_border(Rgb565Surface &it, int cx, int cy, UiColor ring_c
 }
 
 void render_home_indicator_bar(Rgb565Surface &it, int cx, int y_pos, UiColor bar_col) {
-  const int half_w = scale_x(54);
-  const int bar_h = (SCREEN_H > 520) ? 7 : 5;
+  const int half_w = std::min(96, scale_s(54));
+  const int bar_h = (SCREEN_MIN_DIM > 520) ? 7 : 5;
   const int cap_r = bar_h / 2;
   const float cap = 0.5f * static_cast<float>(bar_h);
   fill_round_rect_aa(it, cx - half_w, y_pos - cap_r + 1, 2 * half_w + 1, bar_h, cap, kChromeShadow);
@@ -233,7 +156,7 @@ void render_back_button(Rgb565Surface &it, int cx, UiFontView font,
   const int hit_w = std::min(max_span, std::max(scale_x(235), ly.min_hit_px() * 2));
   const int hit_pad = std::max(0, (ly.min_hit_px() - hit_h + 1) / 2);
   frame_hits().add_rect(cx - hit_w / 2, hit_y0, hit_w, hit_h,
-                        WidgetId::BACK_BUTTON, kHitTap, 0, hit_pad);
+                        WidgetId::BACK_BUTTON, kHitTap | kHitFocusSlot, 0, hit_pad);
 }
 
 void render_offline_pill(Rgb565Surface &it, int cx, uint32_t now_ms,
@@ -262,11 +185,13 @@ void render_offline_pill(Rgb565Surface &it, int cx, uint32_t now_ms,
   const float rad = 0.5f * static_cast<float>(pill_h);
   const int sy0 = round_top ? y0 : (y0 - r);
   const int sh = round_top ? pill_h : (pill_h + r);
-  UiColor eff_tint;
+  GlassBackdrop bd{};
+  UiColor eff_tint{}, rim_col{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(GlassBackdrop{}, kChromeGlassTint, text_c, eff_tint, a_top, a_bot, rim_top, rim_bot,
-                     -1, GlassVariant::Clear);
-  fill_round_rect_glass(it, x0 - 1, sy0 - 1, pill_w + 2, sh + 2, rad + 1.0f, kChromeGlassSheen, rim_top, rim_bot, 1);
+  resolve_styled_glass(x0, sy0, pill_w, sh, kChromeGlassTint, kChromeCardBorder,
+                       GlassVariant::Clear, text_c, -1, false,
+                       bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+  fill_round_rect_glass(it, x0 - 1, sy0 - 1, pill_w + 2, sh + 2, rad + 1.0f, rim_col, rim_top, rim_bot, 1);
   fill_round_rect_glass(it, x0, sy0, pill_w, sh, rad, eff_tint, a_top, a_bot);
   const int text_top = y0 + pad_y - (base - glyph_h);
   fast_print(it, cx + 1, text_top + 1, font, kChromeShadow, UiTextAlign::TOP_CENTER, kLabel);
@@ -283,7 +208,6 @@ UiColor chrome_card_bg_off() { return kChromeCardBgOff; }
 UiColor chrome_card_brd_on() { return kChromeCardBrdOn; }
 UiColor chrome_card_brd_off() { return kChromeCardBrdOff; }
 UiColor chrome_danger_bg() { return kChromeDangerBg; }
-UiColor chrome_modal_bg() { return kChromeModalBg; }
 UiColor chrome_key_bg() { return kChromeKeyBg; }
 UiColor chrome_key_brd() { return kChromeKeyBrd; }
 UiColor chrome_wheel_inner_ring() { return kChromeWheelInnerRing; }
@@ -363,9 +287,6 @@ void draw_icon_lightbulb(Rgb565Surface &it, int cx, int cy, int r, UiColor col, 
 void draw_icon_ceiling_fan(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
   draw_mdi_r(it, "mdi:fan", cx, cy, r, col, shadow, "mdi:fan");
 }
-void draw_icon_curtains(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:curtains", cx, cy, r, col, shadow, "mdi:blinds-horizontal");
-}
 void draw_icon_blinds_slats(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool is_open, bool shadow) {
   draw_mdi_r(it, is_open ? "mdi:blinds-horizontal" : "mdi:blinds-horizontal-closed",
              cx, cy, r, col, shadow, "mdi:blinds-horizontal");
@@ -388,9 +309,6 @@ void draw_icon_intercom_handset(Rgb565Surface &it, int cx, int cy, int r, UiColo
 }
 void draw_icon_bell(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
   draw_mdi_r(it, "mdi:bell-ring", cx, cy, r, col, shadow, "mdi:bell-ring");
-}
-void draw_icon_thumbtack(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
-  draw_mdi_r(it, "mdi:pin", cx, cy, r, col, shadow, "mdi:pin");
 }
 void draw_icon_play_pause(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow) {
   draw_mdi_r(it, "mdi:play-pause", cx, cy, r, col, shadow, "mdi:play-pause");
@@ -628,22 +546,20 @@ const HsvUnitRgb *hsv_unit_lut_72() {
 // 1. Functional Action Pills, Toggles, Sliders, Lists, Grids & Keypads (D-070)
 // ==============================================================================
 void toggle_switch(Rgb565Surface &it, int cx_sw, int cy_sw, bool is_on, UiColor active_col) {
-  const int sw_w = scale_x(40);
-  const int sw_h = scale_y(22);
+  const int sw_h = std::max(18, scale_s(22));
+  const int sw_w = (sw_h * 40 + 11) / 22;
   const int x0 = cx_sw - sw_w / 2;
   const int y0 = cy_sw - sw_h / 2;
   const float rad = 0.5f * static_cast<float>(sw_h);
 
-  GlassVariant eff_var = GlassVariant::Clear;
-  UiColor norm_tint, rim_col;
-  normalize_glass_chrome(is_on ? active_col : kChromeGlassTint,
-                         is_on ? active_col : kChromeTrackBorder,
-                         eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark) ? sample_glass_backdrop(x0, y0, sw_w, sw_h) : GlassBackdrop{};
-  UiColor eff_tint;
+  GlassBackdrop bd{};
+  UiColor eff_tint{}, rim_col{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, kChromeGlassSheen, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
+  resolve_styled_glass(x0, y0, sw_w, sw_h,
+                       is_on ? active_col : kChromeGlassTint,
+                       is_on ? active_col : kChromeTrackBorder,
+                       GlassVariant::Clear, kChromeGlassSheen, -1, false,
+                       bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
 
   fill_round_rect_glass(it, x0, y0, sw_w, sw_h, rad,
                         rim_col, is_on ? std::min(256, rim_top + 24) : rim_top, rim_bot, 1);
@@ -1025,9 +941,11 @@ void toggle_card_row(Rgb565Surface &it, int cx, int y_mid, int w, int h,
   render_card_box(it, cx - eff_w / 2, y_mid - eff_h / 2, eff_w, eff_h,
                   bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, fg);
 
-  const int text_x = cx - eff_w / 2 + scale_x(14);
-  const int sw_cx = cx + eff_w / 2 - scale_x(28);
-  const int max_lbl_px = std::max(60, (sw_cx - scale_x(26)) - text_x);
+  const int text_x = cx - eff_w / 2 + scale_s(14);
+  const int sw_h = std::max(18, scale_s(22));
+  const int sw_w = (sw_h * 40 + 11) / 22;
+  const int sw_cx = cx + eff_w / 2 - (sw_w / 2 + scale_s(10));
+  const int max_lbl_px = std::max(60, (sw_cx - sw_w / 2 - scale_s(8)) - text_x);
   const std::string fit_lbl = fit_text_to_width_font(
       label != nullptr ? std::string(label) : std::string(), max_lbl_px, font);
   shadow_print(it, text_x, y_mid, font, fg, UiTextAlign::CENTER_LEFT, fit_lbl.c_str());
@@ -1038,37 +956,11 @@ void toggle_card_row(Rgb565Surface &it, int cx, int y_mid, int w, int h,
   }
 }
 
-void pill_button(Rgb565Surface &it, int x1, int x2, int y_mid, int r,
-                 UiColor border_c, UiColor bg_c,
-                 const char *label, UiColor text_c, UiFontView font,
-                 uint16_t widget_id, uint8_t flags, int16_t param, GlassVariant variant) {
-  render_pill_button(it, x1, x2, y_mid, r, border_c, bg_c, label, text_c, font, variant);
-  if (widget_id != WidgetId::NONE) {
-    const int px0 = x1 - r;
-    const int py0 = y_mid - r;
-    const int pw = (x2 - x1) + 2 * r + 1;
-    const int ph = 2 * r + 1;
-    frame_hits().add_rect(px0, py0, pw, ph, widget_id, flags, param);
-  }
-}
-
-void pill_button_box(Rgb565Surface &it, int x0, int w, int y_mid, int r,
-                     UiColor border_c, UiColor bg_c,
-                     const char *label, UiColor text_c, UiFontView font,
-                     uint16_t widget_id, uint8_t flags, int16_t param, GlassVariant variant) {
-  const int safe_w = std::max(2, w);
-  const int eff_r = std::min(std::max(1, r), safe_w / 2);
-  const int x1 = x0 + eff_r;
-  const int x2 = std::max(x1, x0 + safe_w - 1 - eff_r);
-  pill_button(it, x1, x2, y_mid, eff_r, border_c, bg_c, label, text_c, font,
-              widget_id, flags, param, variant);
-}
-
 void stepper_row(Rgb565Surface &it, int cx, int y_top, int h,
                  const char *const labels[4], UiFontView font,
                  UiColor col_text, uint16_t base_widget_id) {
-  const int btn_w = (SCREEN_W < 380) ? 50 : scale_x(60);
-  const int step = (SCREEN_W < 380) ? 66 : scale_x(80);
+  const int btn_w = (SCREEN_W < 380) ? 50 : std::min(100, scale_s(60));
+  const int step = (SCREEN_W < 380) ? 66 : std::min(124, scale_s(80));
   const int eff_h = std::max(28, h);
   const int y_mid = y_top + eff_h / 2;
   const int rad = kRadiusKeyPx();
@@ -1304,16 +1196,16 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
   render_page_header(it, cx, hdr, font_small, col_white, true);
 
   const int disp_y = scale_y(84);
-  const int disp_w = std::min(kMaxContentColW, std::min(SCREEN_W - 44, scale_x(236)));
+  const int disp_w = std::min(kMaxContentColW, std::min(SCREEN_W - 44, scale_s(236)));
   const bool show_err = (st.error_msg[0] != '\0' && (now_ms - st.error_ms) < 2200U);
   if (show_err) {
     shadow_print(it, cx, disp_y, font_small, col_white, UiTextAlign::CENTER, st.error_msg);
   } else if (st.len == 0) {
     shadow_print(it, cx, disp_y, font_small, col_slate, UiTextAlign::CENTER, "4-12 Digits");
   } else {
-    const int max_step = scale_x(18);
+    const int max_step = scale_s(18);
     const int dot_step = (st.len > 1)
-                             ? std::min(max_step, std::max(scale_x(12), (disp_w - scale_x(20)) / (static_cast<int>(st.len) - 1)))
+                             ? std::min(max_step, std::max(scale_s(12), (disp_w - scale_s(20)) / (static_cast<int>(st.len) - 1)))
                              : max_step;
     const int dot_r = (st.len > 9) ? std::max(3, scale_s(4)) : scale_s(5);
     const int start_x = cx - ((static_cast<int>(st.len) - 1) * dot_step) / 2;
@@ -1324,9 +1216,9 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
   }
   fast_hline(it, cx - disp_w / 2, disp_y + scale_y(16), disp_w, show_err ? col_red : chrome_card_brd_on());
 
-  const int key_w = (SCREEN_W < 380) ? 68 : scale_x(78);
+  const int key_w = (SCREEN_W < 380) ? 68 : scale_s(78);
   const int key_h = scale_y(48);
-  const int col_step = (SCREEN_W < 380) ? 78 : scale_x(90);
+  const int col_step = (SCREEN_W < 380) ? 78 : scale_s(90);
   const int row_y0 = scale_y(136);
   const int row_step = scale_y(56);
 
@@ -1380,29 +1272,32 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
 void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_items,
                                float cur_start_idx, UiColor col_thumb, bool is_dim) {
   if (total_items <= 4) return;
-  const int track_w = (SCREEN_W < 380) ? 84 : ((SCREEN_W > 520) ? 168 : 112);
-  const int track_h = (SCREEN_W > 520) ? 6 : 4;
+  const int track_w = (SCREEN_MIN_DIM < 380) ? 84 : ((SCREEN_MIN_DIM > 520) ? 168 : 112);
+  const int track_h = (SCREEN_MIN_DIM > 520) ? 6 : 4;
   const int r_cap = track_h / 2;
   const int track_x0 = cx - (track_w / 2);
   const int track_y0 = y_pos - r_cap;
 
   const float cap = static_cast<float>(r_cap);
-  UiColor eff_tint;
+  GlassBackdrop bd{};
+  UiColor eff_tint{}, rim_col{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(GlassBackdrop{}, kChromeGlassTint, kChromeGlassSheen, eff_tint, a_top, a_bot,
-                     rim_top, rim_bot, is_dim ? 72 : -1, GlassVariant::Clear);
+  resolve_styled_glass(track_x0, track_y0, track_w, track_h,
+                       kChromeGlassTint, kChromeCardBorder,
+                       GlassVariant::Clear, kChromeGlassSheen, is_dim ? 72 : -1, false,
+                       bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
   if (is_dim) {
     rim_top = (rim_top * 2) / 3;
     rim_bot = (rim_bot * 2) / 3;
   }
   fill_round_rect_glass(it, track_x0, track_y0, track_w, track_h, cap,
-                        kChromeGlassSheen, rim_top, rim_bot, 1);
+                        rim_col, rim_top, rim_bot, 1);
   if (track_h > 2) {
     fill_round_rect_glass(it, track_x0 + 1, track_y0 + 1, track_w - 2, track_h - 2,
                           std::max(0.5f, cap - 1.0f), eff_tint, a_top, a_bot);
   }
 
-  const int min_thumb_w = (SCREEN_W > 520) ? 28 : 20;
+  const int min_thumb_w = (SCREEN_MIN_DIM > 520) ? 28 : 20;
   const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
   const float max_start = static_cast<float>(std::max(1, total_items - 4));
   const float clamped_start = std::max(0.0f, std::min(max_start, cur_start_idx));
@@ -1418,14 +1313,14 @@ void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_i
 void render_dock_page_pips(Rgb565Surface &it, int cx, int y_pos, int total_pages,
                            int active_page, UiColor col_active, UiColor col_inactive) {
   if (total_pages <= 1) return;
-  const int spacing = scale_x(14);
-  const int dot_r = (SCREEN_W > 520) ? 3 : 2;
+  const int spacing = scale_s(14);
+  const int dot_r = (SCREEN_MIN_DIM > 520) ? 3 : 2;
   const int total_w = (total_pages - 1) * spacing;
   const int start_x = cx - (total_w / 2);
   for (int p = 0; p < total_pages; p++) {
     const int px = start_x + p * spacing;
     if (p == active_page) {
-      const int pw = scale_x(7);
+      const int pw = scale_s(7);
       const int ph = dot_r * 2 + 1;
       const int sx0 = px - pw / 2 - dot_r;
       const int sw = pw + 2 * dot_r + 1;
@@ -1464,13 +1359,14 @@ void render_vertical_page_pips(Rgb565Surface &it, bool show_up, bool show_down,
     const int up_y0 = std::min(scale_y(70), std::max(0, split_y - min_hit_h));
     const int up_h = std::max(min_hit_h, split_y - up_y0);
     frame_hits().add_rect(hit_x0, up_y0, hit_w, std::min(bottom_limit_y - up_y0, up_h),
-                          WidgetId::CHEVRON_UP, kHitTap);
+                          WidgetId::CHEVRON_UP, kHitTap | kHitFocusSlot);
   }
   if (show_down) {
     render_scroll_chevron(it, chev_x, dn_y, false, col_active, kChromeShadow, backdrop_active());
     const int dn_avail = std::max(0, max_dn_y1 - split_y);
     if (dn_avail > 0) {
-      frame_hits().add_rect(hit_x0, split_y, hit_w, dn_avail, WidgetId::CHEVRON_DOWN, kHitTap);
+      frame_hits().add_rect(hit_x0, split_y, hit_w, dn_avail,
+                            WidgetId::CHEVRON_DOWN, kHitTap | kHitFocusSlot);
     }
   }
 }
@@ -1541,7 +1437,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
     fast_line(it, lx + ch_s / 2 + 1, by - ch_s, lx - ch_s / 2 + 1, by, theme_primary);
     fast_line(it, lx - ch_s / 2 + 1, by, lx + ch_s / 2 + 1, by + ch_s, theme_primary);
     frame_hits().add_rect(0, by - dr - scale_y(12), std::max(8, left_cx - dr),
-                          2 * (dr + scale_y(12)), WidgetId::MODE_BAR_LEFT, kHitTap);
+                          2 * (dr + scale_y(12)), WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
   }
   if (has_right_arrow) {
     const int rx = right_cx + chev_off;
@@ -1551,7 +1447,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
     fast_line(it, rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
     frame_hits().add_rect(right_cx + dr, by - dr - scale_y(12),
                           std::max(8, SCREEN_W - (right_cx + dr)),
-                          2 * (dr + scale_y(12)), WidgetId::MODE_BAR_RIGHT, kHitTap);
+                          2 * (dr + scale_y(12)), WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
   }
 
   if (total_count > 4) {
@@ -2116,7 +2012,7 @@ int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
   if (text.empty() || font == nullptr || out_lines == nullptr || max_lines <= 0 || max_w <= 12) {
     return 0;
   }
-  const std::string clean = sanitize_utf8_for_font(text);
+  const std::string clean = sanitize_utf8_for_font(text, font);
   int count = 0;
   size_t pos = 0;
   const size_t n = clean.size();

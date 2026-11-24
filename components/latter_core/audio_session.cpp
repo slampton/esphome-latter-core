@@ -26,7 +26,7 @@
 #include <string>
 #include <string_view>
 
-namespace latter_ui {
+namespace latter_core {
 
 // ==============================================================================
 // 1. AudioSessionController
@@ -315,7 +315,7 @@ void IntercomSessionController::emit_current_cmd() {
       (rs.alert.active && !rs.alert.camera_entity.empty())
           ? rs.alert.camera_entity
           : resolve_active_carousel_camera_id(ac.cameras_summary, ac.camera_snapshot_url);
-  latter_actions::emit_doorbell_intercom(
+  latter_core::emit_doorbell_intercom(
       ic.cam_action, cam_ent, cam_carousel_idx(),
       ic.cam_message, ic.cam_noise_reduction);
   latter_rpc::secure_zero_string(ic.cam_code);
@@ -446,7 +446,7 @@ float media_step_volume(int dir,
     return new_vol;
   }
 
-  latter_actions::emit_media_volume(
+  latter_core::emit_media_volume(
       m.active_speaker_entity, (step_dir > 0) ? "up" : "down", remote_vol_pct());
   return -1.0f;
 }
@@ -482,12 +482,12 @@ LocalMediaHwAction media_toggle_playback(bool local_mp_playing, uint32_t now_ms)
       ms.state = "paused";
     }
     sync_audio_session_media_observation(false, true, now_ms);
-    latter_actions::emit_media_command("pause");
+    latter_core::emit_media_command("pause");
     return ms.is_local ? LocalMediaHwAction::PauseLocalPlayer : LocalMediaHwAction::None;
   }
 
   set_remote_play_override(true, now_ms);
-  latter_actions::emit_media_command("play");
+  latter_core::emit_media_command("play");
   return ms.is_local ? LocalMediaHwAction::StopLocalMww : LocalMediaHwAction::None;
 }
 
@@ -504,7 +504,7 @@ bool media_stop_playback(uint32_t now_ms) {
   m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
-  latter_actions::emit_media_command("pause");
+  latter_core::emit_media_command("pause");
   return ms.is_local;
 }
 
@@ -528,7 +528,7 @@ bool media_clear_queue(uint32_t now_ms) {
   m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
-  latter_actions::emit_media_command("clear_queue");
+  latter_core::emit_media_command("clear_queue");
   return was_local;
 }
 
@@ -539,7 +539,7 @@ void media_next_track(uint32_t now_ms) {
   m.feedback_timer = now_ms;
   m.pos_base = 0.0f;
   m.pos_sync_time = now_ms;
-  latter_actions::emit_media_command("next");
+  latter_core::emit_media_command("next");
 }
 
 void media_prev_track(uint32_t now_ms) {
@@ -549,7 +549,7 @@ void media_prev_track(uint32_t now_ms) {
   m.feedback_timer = now_ms;
   m.pos_base = 0.0f;
   m.pos_sync_time = now_ms;
-  latter_actions::emit_media_command("previous");
+  latter_core::emit_media_command("previous");
 }
 
 void media_seek_relative(int dir, uint32_t now_ms) {
@@ -599,12 +599,12 @@ void media_seek_relative(int dir, uint32_t now_ms) {
   }
   m.pos_base = new_pos;
   m.pos_sync_time = now_ms;
-  latter_actions::emit_media_seek(static_cast<int>(std::max(0.0f, new_pos)));
+  latter_core::emit_media_seek(static_cast<int>(std::max(0.0f, new_pos)));
 }
 
 void media_seek_absolute(uint32_t now_ms) {
   audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, now_ms);
-  latter_actions::emit_media_seek(
+  latter_core::emit_media_seek(
       static_cast<int>(std::max(0.0f, runtime_state().music.pos_base)));
 }
 
@@ -627,7 +627,7 @@ int media_fetch_browse(uint32_t now_ms) {
       (art_opt == "Alphabetical") ? "name" : ((art_opt == "Newest on Top") ? "year_desc" : "year");
   const std::string_view pod_opt(pref_podcast_sort_order_cstr());
   const char *pod_sort = (pod_opt == "Oldest on Top") ? "oldest" : "newest";
-  return latter_actions::emit_music_browse(
+  return latter_core::emit_music_browse(
       mode_s, page, search_sv, rs.music.active_speaker_entity,
       media_state().last_speaker, alb_sort, art_sort, pod_sort, LATTER_SLOT_COUNT, now_ms);
 }
@@ -670,7 +670,7 @@ bool media_play_slot(int slot_1based, uint32_t now_ms) {
   m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
-  latter_actions::emit_media_play_item(
+  latter_core::emit_media_play_item(
       m.active_speaker_entity, m.selected_slot_id, m.selected_slot_type, "replace");
   return ms.is_local;
 }
@@ -714,7 +714,7 @@ bool speaker_activate_selected(bool transfer_queue,
   m.direct_nav = false;
   m.hud_active = true;
   m.hud_timer = now_ms;
-  latter_actions::emit_set_active_speaker(m.active_speaker_entity, transfer_queue);
+  latter_core::emit_set_active_speaker(m.active_speaker_entity, transfer_queue);
   return !new_is_local;
 }
 
@@ -725,7 +725,7 @@ bool speaker_join_target(uint32_t now_ms) {
   m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
-  latter_actions::emit_speaker_join(m.active_speaker_entity, m.target_speaker_id);
+  latter_core::emit_speaker_join(m.active_speaker_entity, m.target_speaker_id);
   return media_state().is_local;
 }
 
@@ -734,7 +734,7 @@ void speaker_unjoin_target(std::string_view friendly_name, uint32_t now_ms) {
   auto &ms = media_state();
   m.action_feedback = "Unjoining -> " + m.target_speaker_name;
   m.feedback_timer = now_ms;
-  latter_actions::emit_speaker_unjoin(m.target_speaker_id);
+  latter_core::emit_speaker_unjoin(m.target_speaker_id);
   const std::string &loc_spk = ms.local_speaker;
   if (m.target_speaker_id == m.active_speaker_entity ||
       (!loc_spk.empty() && m.target_speaker_id == loc_spk)) {
@@ -744,7 +744,7 @@ void speaker_unjoin_target(std::string_view friendly_name, uint32_t now_ms) {
     m.loaded_art_url.clear();
   }
   m.overlay_mode = 0;
-  latter_actions::emit_set_active_speaker(m.active_speaker_entity, false);
+  latter_core::emit_set_active_speaker(m.active_speaker_entity, false);
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

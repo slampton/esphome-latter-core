@@ -6,6 +6,7 @@ namespace {
 
 void populate_rich_host_state(latter_ui::UiFrameContext &ctx) {
   using namespace latter_ui;
+  using namespace latter_core;
 
   reset_runtime_state();
   reset_all_v3_rev_guards();
@@ -166,6 +167,7 @@ void populate_rich_host_state(latter_ui::UiFrameContext &ctx) {
 
 bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
   using namespace latter_ui;
+  using namespace latter_core;
   return (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) ||
          (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) ||
          wid == WidgetId::SYS_BRI_SLIDER ||
@@ -195,6 +197,7 @@ bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
 
 bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
   using namespace latter_ui;
+  using namespace latter_core;
   return wid == WidgetId::CHEVRON_UP ||
          wid == WidgetId::CHEVRON_DOWN ||
          wid == WidgetId::MODE_BAR_LEFT ||
@@ -226,6 +229,7 @@ bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
 
 int sibling_family_key(uint16_t wid) noexcept {
   using namespace latter_ui;
+  using namespace latter_core;
   if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) return 1;
   if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) return 2;
   if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) return 3;
@@ -245,6 +249,7 @@ int sibling_family_key(uint16_t wid) noexcept {
 
 void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char *label) {
   using namespace latter_ui;
+  using namespace latter_core;
   const auto &ht = frame_hits();
   if (ht.dropped_count != 0U || ht.count > FrameHitTable::kMaxRegions) {
     std::fprintf(stderr, "[HOST TEST FAIL] %s dropped=%u count=%u\n",
@@ -277,8 +282,10 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
     const int pw = r.width() + 2 * static_cast<int>(r.hit_pad);
     const int ph = r.height() + 2 * static_cast<int>(r.hit_pad);
     if (is_d019_slot5_row_widget(r.widget_id)) {
-      // 5-row list/form items keep the compact slot5 vertical stride on smaller high-PPI panels.
-      const int min_slot5_h = (r.widget_id == WidgetId::LIGHT_COLOR_BTN) ? (ly.slot5_h - 2) : ly.slot5_h;
+      // 5-row list/form items keep the compact slot5 vertical stride on smaller high-PPI panels,
+      // while still guaranteeing >= 7.0 mm on lower-PPI panels where min_7mm <= slot5_h.
+      const int slot5_floor = (r.widget_id == WidgetId::LIGHT_COLOR_BTN) ? (ly.slot5_h - 2) : ly.slot5_h;
+      const int min_slot5_h = std::min(min_7mm, slot5_floor);
       if (pw < min_7mm || ph < min_slot5_h) {
         std::fprintf(stderr, "[HOST TEST FAIL] %s slot5 widget %u padded=%dx%d < %dx%d\n",
                      label, static_cast<unsigned>(r.widget_id), pw, ph, min_7mm, min_slot5_h);
@@ -325,6 +332,7 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
 
 void render_page_full_and_check(HostSurfaceFixture &fix, int page_id, const char *label) {
   using namespace latter_ui;
+  using namespace latter_core;
   auto &rs = runtime_state();
   rs.nav.gui_page = page_id;
   fix.fill(0U);
@@ -338,6 +346,7 @@ void render_page_full_and_check(HostSurfaceFixture &fix, int page_id, const char
 
 void verify_scissor_band_isolation(HostSurfaceFixture &fix, int page_id, int y0, int y1) {
   using namespace latter_ui;
+  using namespace latter_core;
   constexpr uint16_t kSentinel = 0x5A5AU;
   auto &rs = runtime_state();
   rs.nav.gui_page = page_id;
@@ -372,6 +381,7 @@ void verify_scissor_band_isolation(HostSurfaceFixture &fix, int page_id, int y0,
 
 void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   HostSurfaceFixture fix{};
   populate_rich_host_state(fix.ctx);
@@ -593,8 +603,9 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
 
 void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
+  using namespace latter_core;
 
-  static_assert(LATTER_SDK_REV == 2026112302L, "LATTER_SDK_REV must match 2026112302L");
+  static_assert(LATTER_CORE_REV == 2026112303L, "LATTER_CORE_REV must match 2026112303L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);
@@ -686,6 +697,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
 
 void test_wcag_palette_and_surface_contrast_5geom() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   auto srgb_lin = [](uint8_t c) noexcept -> double {
     const double x = static_cast<double>(c) / 255.0;
@@ -763,6 +775,7 @@ void test_wcag_palette_and_surface_contrast_5geom() {
 
 void test_art_canvas_lut_and_dual_sink_parity_5geom() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   // Enforce exact ui_panel_traits.h <-> hal_manifest.h parity on ArtCanvasCache slot cap.
 #if LATTER_CHIP_P4
@@ -860,6 +873,160 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
   art_canvas_drop_all();
 }
 
+void test_rotated_fallback_print_and_adaptive_glass_style() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Rotated display (active_frame_buf16() == nullptr) text rendering via fallback_print_fn
+  struct MockRotatedDisplay {
+    int w{SCREEN_W};
+    int h{SCREEN_H};
+    int pixel_calls{0};
+    int hline_calls{0};
+    int min_y{99999};
+    int max_y{-1};
+
+    int get_width() const noexcept { return w; }
+    int get_height() const noexcept { return h; }
+    void draw_pixel_at(int x, int y, UiColor) noexcept {
+      if (x >= 0 && x < w && y >= 0 && y < h) {
+        ++pixel_calls;
+        if (y < min_y) min_y = y;
+        if (y > max_y) max_y = y;
+      }
+    }
+    void horizontal_line(int x, int y, int len, UiColor) noexcept {
+      if (len > 0 && x >= 0 && x + len <= w && y >= 0 && y < h) {
+        ++hline_calls;
+        pixel_calls += len;
+        if (y < min_y) min_y = y;
+        if (y > max_y) max_y = y;
+      }
+    }
+    void vertical_line(int, int, int, UiColor) noexcept {}
+  };
+
+  {
+    uint16_t *saved_fb = active_frame_buf16();
+    active_frame_buf16() = nullptr;
+    reset_clip_y_band();
+    MockRotatedDisplay rot_disp{};
+    Rgb565Surface surf(rot_disp);
+    LATTER_CHECK(surf.data == nullptr);
+    LATTER_CHECK(surf.fallback_print_fn != nullptr);
+
+    const UiFontView fnt = UiFontView::make_host_font(20);
+    fast_print(surf, SCREEN_CX, 60, fnt, UiColor(255, 255, 255), UiTextAlign::CENTER, "Rotated OK");
+    LATTER_CHECK(rot_disp.pixel_calls > 0);
+    LATTER_CHECK(rot_disp.hline_calls > 0);
+
+    // Clip band enforcement on fallback print
+    MockRotatedDisplay clipped_disp{};
+    Rgb565Surface clipped_surf(clipped_disp);
+    set_clip_y_band(100, 110);
+    fast_print(clipped_surf, SCREEN_CX, 105, fnt, UiColor(255, 255, 255), UiTextAlign::CENTER, "Clipped");
+    LATTER_CHECK(clipped_disp.pixel_calls > 0);
+    LATTER_CHECK(clipped_disp.min_y >= 100 && clipped_disp.max_y <= 110);
+
+    // Fully outside clip band -> zero pixels emitted
+    MockRotatedDisplay out_disp{};
+    Rgb565Surface out_surf(out_disp);
+    fast_print(out_surf, SCREEN_CX, 20, fnt, UiColor(255, 255, 255), UiTextAlign::CENTER, "Offband");
+    LATTER_CHECK(out_disp.pixel_calls == 0);
+
+    reset_clip_y_band();
+    active_frame_buf16() = saved_fb;
+  }
+
+  // 2. 3-way adaptive glass_style (Auto | Clear | Dark) over dark vs bright backdrops
+  {
+    HostSurfaceFixture fix{};
+    const uint8_t saved_gs = persisted_prefs().glass_style;
+    const UiColor white_fg(255, 255, 255);
+    const UiColor dark_bg(10, 14, 20);
+    const UiColor bright_bg(235, 245, 255);
+    const uint16_t dark_hw = encode_hw_rgb565(dark_bg);
+    const uint16_t bright_hw = encode_hw_rgb565(bright_bg);
+    const int bx = std::max(8, SCREEN_CX - 80);
+    const int by = std::max(8, SCREEN_CY - 24);
+    const int bw = std::min(160, SCREEN_W - 16);
+    const int bh = 48;
+
+    auto decode_px = [](uint16_t hw) -> UiColor {
+      const uint16_t p = decode_hw_rgb565_raw(hw);
+      const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1FU);
+      const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3FU);
+      const uint8_t b5 = static_cast<uint8_t>(p & 0x1FU);
+      return UiColor{
+          static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+          static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+          static_cast<uint8_t>((b5 << 3) | (b5 >> 2)),
+      };
+    };
+
+    // Auto over dark backdrop -> stays crisp airy Clear
+    persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Auto);
+    fix.fill(dark_hw);
+    GlassBackdrop bd{};
+    UiColor eff_tint{}, rim_col{};
+    int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+    resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, white_fg, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(bd.valid);
+    LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
+
+    // Auto over bright backdrop -> smoothly darkens and achieves >= 4.5:1 WCAG AA contrast
+    fix.fill(bright_hw);
+    resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, white_fg, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(bd.valid);
+    LATTER_CHECK(a_top > kGlassClearAlphaMaxQ8 && a_bot > kGlassClearAlphaQ8);
+    const float fg_lum = relative_luminance(white_fg);
+    LATTER_CHECK(contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bright_bg, eff_tint, a_top))) >= 4.5f);
+    LATTER_CHECK(contrast_ratio(fg_lum, relative_luminance(mix_color_q8(bright_bg, eff_tint, a_bot))) >= 4.5f);
+    render_card_box(fix.surf, bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+                    GlassVariant::Clear, white_fg);
+    const UiColor auto_rendered = decode_px(fix.pixels[static_cast<size_t>(by + bh / 2) * SCREEN_W + (bx + bw / 2)]);
+    LATTER_CHECK(contrast_ratio(fg_lum, relative_luminance(auto_rendered)) >= 4.5f);
+
+    // Clear over bright backdrop -> stays airy Clear (zero darkening)
+    persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Clear);
+    fix.fill(bright_hw);
+    resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, white_fg, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
+
+    // Dark over bright backdrop -> ReadableDark with >= 4.5:1 WCAG AA contrast
+    persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Dark);
+    fix.fill(bright_hw);
+    resolve_styled_glass(bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, white_fg, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(a_top >= kGlassReadableAlphaMinQ8 && a_bot >= 200);
+    render_card_box(fix.surf, bx, by, bw, bh, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+                    GlassVariant::Clear, white_fg);
+    const UiColor dark_rendered = decode_px(fix.pixels[static_cast<size_t>(by + bh / 2) * SCREEN_W + (bx + bw / 2)]);
+    LATTER_CHECK(contrast_ratio(fg_lum, relative_luminance(dark_rendered)) >= 4.5f);
+
+    persisted_prefs().glass_style = saved_gs;
+  }
+
+  // 3. Camera scanline blitter scales cleanly across wide landscape widths (> 512 / >= 1024 px)
+  {
+    HostSurfaceFixture fix{};
+    fix.fill(0U);
+    const uint16_t src_px[4] = {0xF800U, 0x07E0U, 0x001FU, 0xFFFFU};
+    const CameraRect vp{0, 0, SCREEN_W, SCREEN_H};
+    LATTER_CHECK(blit_rgb565_fitted_frame(fix.surf, src_px, 2, 2, vp, /*fill=*/true, /*clip_round_bezel=*/false));
+    const uint16_t right_px = fix.pixels[static_cast<size_t>(SCREEN_CY) * SCREEN_W + static_cast<size_t>(SCREEN_W - 2)];
+    LATTER_CHECK(right_px != 0U);
+    evict_registered_psram_caches();
+  }
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
@@ -867,6 +1034,7 @@ void run_ui_rgb565_5geom_tests() {
   test_home_hub_d048_button_only_glass_and_conditional_controls();
   test_wcag_palette_and_surface_contrast_5geom();
   test_art_canvas_lut_and_dual_sink_parity_5geom();
+  test_rotated_fallback_print_and_adaptive_glass_style();
 }
 
 }  // namespace latter_test

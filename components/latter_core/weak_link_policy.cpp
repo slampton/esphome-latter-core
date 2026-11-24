@@ -12,7 +12,7 @@
 
 #include <cstdio>
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && defined(USE_WIFI)
 #include <esp_event.h>
 #include <esp_wifi.h>
 #endif
@@ -20,14 +20,14 @@
 #include "esphome/components/wifi/wifi_component.h"
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 LinkReport &link_report() {
   static LinkReport r;
   return r;
 }
 
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && defined(USE_WIFI)
 static void link_report_on_wifi_event(void *arg, esp_event_base_t base, int32_t event_id, void *event_data) {
   (void)arg;
   (void)base;
@@ -45,7 +45,7 @@ static void link_report_on_wifi_event(void *arg, esp_event_base_t base, int32_t 
 #endif
 
 void link_report_init() {
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && defined(USE_WIFI)
   LinkReport &r = link_report();
   if (r.hooked) return;
   const esp_err_t err =
@@ -283,4 +283,4 @@ std::string link_report_json(uint32_t now_ms, const char *reset_reason, bool hib
   return std::string(buf, static_cast<size_t>(len));
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core

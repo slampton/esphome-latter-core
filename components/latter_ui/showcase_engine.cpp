@@ -21,6 +21,7 @@
 #endif
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -87,8 +88,8 @@ inline uint32_t next_showcase_rng(uint32_t now_ms) noexcept {
 inline int match_va_profile_idx(std::string_view sv) noexcept {
   sv = trim_ascii_ws(sv);
   if (sv.empty()) return -1;
-  for (int i = 0; i < 5; ++i) {
-    if (ascii_ieq(sv, kVaVisualProfileOpts[i])) return i;
+  for (size_t i = 0; i < kPrefOptsVaVisualProfile.size(); ++i) {
+    if (ascii_ieq(sv, kPrefOptsVaVisualProfile[i])) return static_cast<int>(i);
   }
   if (ascii_ieq(sv, "light_bar") || ascii_ieq(sv, "lightbar")) return 3;
   if (ascii_ieq(sv, "dot_wave") || ascii_ieq(sv, "dotwave")) return 4;
@@ -98,8 +99,8 @@ inline int match_va_profile_idx(std::string_view sv) noexcept {
 inline int match_screensaver_style_idx(std::string_view sv) noexcept {
   sv = trim_ascii_ws(sv);
   if (sv.empty()) return -1;
-  for (int i = 0; i < 6; ++i) {
-    if (ascii_ieq(sv, kScreensaverStyleOpts[i])) return i;
+  for (size_t i = 0; i < kPrefOptsScreensaverStyle.size(); ++i) {
+    if (ascii_ieq(sv, kPrefOptsScreensaverStyle[i])) return static_cast<int>(i);
   }
   if (ascii_ieq(sv, "ambient_clock") || ascii_ieq(sv, "ambient")) return 0;
   if (ascii_ieq(sv, "photo_frame") || ascii_ieq(sv, "photo")) return 1;
@@ -110,8 +111,8 @@ inline int match_screensaver_style_idx(std::string_view sv) noexcept {
 inline int match_clock_face_idx(std::string_view sv) noexcept {
   sv = trim_ascii_ws(sv);
   if (sv.empty()) return -1;
-  for (int i = 0; i < 3; ++i) {
-    if (ascii_ieq(sv, kClockFaceOpts[i])) return i;
+  for (size_t i = 0; i < kPrefOptsClockFace.size(); ++i) {
+    if (ascii_ieq(sv, kPrefOptsClockFace[i])) return static_cast<int>(i);
   }
   if (ascii_ieq(sv, "minimal_digital") || ascii_ieq(sv, "minimal") || ascii_ieq(sv, "digital")) return 0;
   if (ascii_ieq(sv, "modern_analog") || ascii_ieq(sv, "analog")) return 1;
@@ -123,8 +124,8 @@ inline int match_weather_sim_idx(std::string_view sv) noexcept {
   sv = trim_ascii_ws(sv);
   if (sv.empty()) return -1;
   if (ascii_ieq(sv, "live")) return 0;
-  for (int i = 0; i < 17; ++i) {
-    if (ascii_ieq(sv, kWeatherSimOpts[i])) return i;
+  for (size_t i = 0; i < kPrefOptsWeatherSimCondition.size(); ++i) {
+    if (ascii_ieq(sv, kPrefOptsWeatherSimCondition[i])) return static_cast<int>(i);
   }
   if (ascii_ieq(sv, "clear-night") || ascii_ieq(sv, "clear_night")) return 1;
   if (ascii_ieq(sv, "sunny") || ascii_ieq(sv, "clear")) return 2;

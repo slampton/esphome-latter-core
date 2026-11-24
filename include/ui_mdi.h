@@ -46,14 +46,6 @@ bool has_mdi_icon(std::string_view name) noexcept;
 bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
                         MdiSpanEmitFn emit_fn, void *user) noexcept;
 
-template <typename SpanFn>
-inline bool rasterize_mdi_icon_fn(std::string_view name, int cx, int cy, int size_px, SpanFn &&fn) {
-  auto tramp = [](void *u, int x0, int x1, int y, uint8_t a) {
-    (*static_cast<SpanFn *>(u))(x0, x1, y, a);
-  };
-  return rasterize_mdi_icon(name, cx, cy, size_px, tramp, &fn);
-}
-
 // ==============================================================================
 // Provider-Agnostic Icon Dispatch Boundary (D-078)
 // Single dispatch seam where future compile-time or secondary icon packs

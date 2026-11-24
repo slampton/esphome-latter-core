@@ -111,6 +111,7 @@ HOST_IDF_STUBS: Final[dict[str, str]] = {
         "#include <cstdint>\n"
         "#include \"esp_err.h\"\n"
         "typedef uint32_t nvs_handle_t;\n"
+        "#define ESP_ERR_NVS_NOT_FOUND 0x1102\n"
         "typedef enum { NVS_READONLY = 0, NVS_READWRITE = 1 } nvs_open_mode_t;\n"
         "inline esp_err_t nvs_open(const char *, nvs_open_mode_t, nvs_handle_t *out) {\n"
         "  if (out) *out = 1;\n"

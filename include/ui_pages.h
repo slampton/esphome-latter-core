@@ -86,15 +86,16 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
                                      float accel_x = 0.0f, float accel_y = 0.0f,
                                      bool show_celestial = true);
 void render_static_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night);
+void sky_base_cache_drop() noexcept;
+void weather_cloud_cache_drop() noexcept;
+void game_arena_drop() noexcept;
 void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz);
 std::string format_iso_time(const std::string &iso_str);
 
-std::string strip_trailing_paren_state(const std::string &s);
-
 void render_climate_controls_deck(Rgb565Surface &it,
                                   const UiFrameContext &ctx,
-                                  const DeviceRuntimeState &rs,
-                                  const ThermostatZoneItem &clim,
+                                  const latter_core::DeviceRuntimeState &rs,
+                                  const latter_core::ThermostatZoneItem &clim,
                                   int content_top,
                                   int content_bot);
 

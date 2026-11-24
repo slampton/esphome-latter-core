@@ -9,8 +9,7 @@
 
 # Board-specific substitutions (font_*_size, art_resize, sendspin_art_resize,
 # sendspin_buffer_size, announcement_buffer_size, mww_internal_ram, audio_*,
-# api_reboot_timeout) live strictly in boards/*.yaml (loaded before this package).
-latter_core:
+# api_reboot_timeout) and typed `latter_core:` hardware traits live strictly in boards/*.yaml.
 
 # Boot lines are usually logged before any API log viewer connects. Keep all warnings/errors
 # (captured automatically across every tag) plus the one-shot `latter` boot banner in a lean
@@ -31,9 +30,11 @@ packages:
   latter_system_ui_sync:  !include system_ui_sync.yaml
   latter_power_policy:    !include power_policy.yaml
   latter_sleep_lifecycle: !include sleep_lifecycle.yaml
+  latter_motion_service:  !include motion_service.yaml
   latter_audio_pipeline:  !include audio_pipeline.yaml
   latter_voice_assistant: !include voice_assistant.yaml
   latter_audio_scripts:   !include audio_scripts.yaml
   latter_pipeline:        !include display_pipeline.yaml
   latter_timers:          !include timers_and_fetchers.yaml
   latter_gui:             !include ../guis/universal/gui.yaml
+  latter_gui_touch:       !include ../guis/universal/gui_touch.yaml

@@ -13,183 +13,50 @@ binary_sensor:
     icon: "mdi:bluetooth"
     lambda: 'return id(ble_ctrl).is_active();'
 
-  - platform: template
-    name: "Pickup Detected"
-    id: pickup_detected
-    device_class: motion
-    internal: true
-    lambda: |-
-      #if !LATTER_HAS_IMU
-      return false;
-      #else
-      static uint32_t last_active_time = 0;
-      static bool is_active = false;
-      const auto &rs = latter_ui::runtime_state();
-
-      const std::string_view pw_mode = latter_ui::pref_pickup_to_wake_cstr();
-      if (pw_mode == "Disabled" || (pw_mode == "Docked Only" && !rs.hw_usb_connected)) {
-        is_active = false;
-        return false;
-      }
-
-      // Wake-on-Motion armed: pollers are stopped and the IMU produces no data, so the cached samples are stale.
-      if (latter_ui::imu_wom().armed) {
-        is_active = false;
-        latter_ui::raise_to_wake().reset();
-        return false;
-      }
-
-      float dyn = rs.hw_motion_mag;
-      if (isnan(dyn)) return false;
-
-      // Dual-Threshold In-Hand Detection:
-      // While screen is active, 0.068g maintains active hold in hand without false-triggering on desk/USB noise.
-      // While screen is sleeping/standby, 0.15g requires a deliberate pickup motion to wake (0.22g if speaker is playing).
-      float thresh = latter_ui::get_pickup_motion_threshold(rs.nav.display_power_state == 0);
-      if (rs.nav.display_power_state != 0 && id(speaker_enable).state && thresh < 0.22f) {
-        thresh = 0.22f;
-      }
-      const uint32_t active_ms = (rs.nav.display_power_state == 0) ? 3000 : 2000;
-      uint32_t now_ms = millis();
-
-      // Screen off: orientation-qualified raise-to-wake (motion spike + screen settles face-up).
-      // Screen on: plain motion keeps the in-hand hold alive.
-      const bool triggered = (rs.nav.display_power_state != 0)
-          ? latter_ui::raise_to_wake().update(dyn, thresh, rs.hw_accel_x, rs.hw_accel_y, rs.hw_accel_z, now_ms)
-          : (dyn > thresh);
-      if (triggered) {
-        is_active = true;
-        last_active_time = now_ms;
-      } else if (is_active) {
-        if (now_ms - last_active_time >= active_ms) {
-          is_active = false;
-        }
-      }
-      return is_active;
-      #endif
-    on_press:
-      then:
-        - if:
-            condition:
-              lambda: |-
-                #if !LATTER_HAS_IMU
-                return false;
-                #else
-                const auto &rs = latter_ui::runtime_state();
-                const std::string_view mode = latter_ui::pref_pickup_to_wake_cstr();
-                if (mode == "Disabled") return false;
-                if (mode == "Docked Only" && !rs.hw_usb_connected) return false;
-                return true;
-                #endif
-            then:
-              - if:
-                  condition:
-                    lambda: 'return latter_ui::runtime_state().nav.display_power_state != 0 || !id(display_brightness).current_values.is_on();'
-                  then:
-                    - lambda: 'latter_ui::note_wake_reason(latter_ui::WakeReason::RAISE);'
-                    - script.execute: wake_to_active_state
-                  else:
-                    - if:
-                        condition:
-                          lambda: 'return !latter_ui::runtime_state().hw_usb_connected && !id(speaker_enable).state;'
-                        then:
-                          - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
-    on_release:
-      then:
-        - if:
-            condition:
-              lambda: |-
-                const auto &rs = latter_ui::runtime_state();
-                return rs.nav.display_power_state == 0 && !rs.hw_usb_connected && !id(speaker_enable).state;
-            then:
-              - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
-
 interval:
   - interval: 1s
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           // 0. Alarm engine (timers_and_fetchers.yaml) shares this tick: one wake a second for both.
           id(alarm_engine_tick).execute();
-          latter_ui::tick_persisted_prefs_flush(millis());
-          latter_actions::check_and_emit_timer_alarm_state(millis());
+          latter_core::tick_persisted_prefs_flush(millis());
+          latter_core::check_and_emit_timer_alarm_state(millis());
 
           // 1. Poll Board PMU Telemetry (AXP2101 VBUS & Battery Charging when present)
           if (rs.hw_poll_pmu_1s != nullptr) {
             rs.hw_poll_pmu_1s();
           }
-          latter_ui::watch_internal_low_water(
-              id(ble_ctrl).is_active(), id(mww).is_running(), id(va).is_running(),
-              id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_IDLE, rs.nav.gui_page);
+          latter_core::watch_internal_low_water(
+              id(ble_ctrl).is_active(), rs.audio.mww_running(), rs.audio.va_running(),
+              rs.audio.local_mp_not_idle(), rs.nav.gui_page);
 
-          // 2. On-Board Wake Word (micro_wake_word) Power & Bus Supervisor
-          static bool ww_model_initialized = false;
-          if (!ww_model_initialized && millis() > 12000U && id(wifi_ctrl).is_connected()) {
-            ww_model_initialized = true;
-            id(apply_wake_word_sensitivities).execute();
-            id(sync_wake_word_state).execute();
-          } else if (millis() > 12500U && !rs.voice.active && !rs.voice.tts_received) {
-            const bool va_busy = id(va).is_running() || !rs.voice.status_text.empty() ||
-                                 id(announcement_mixing_input).is_running();
-            const bool media_busy = latter_ui::audio_arbitrator().media_idle_debounce_active() || rs.voice.resume_music_after ||
-                                    id(media_mixing_input).is_running() ||
-                                    (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                    (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                    (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
-            const bool alert_or_tool_busy = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
-                                            (rs.nav.active_game > 0) ||
-                                            latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
-                                            latter_ui::cam_intercom_ptt_active();
-            const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress ||
-                                  !id(wifi_ctrl).is_connected();
-            const bool should_ww_run = latter_ui::wake_word_should_run(
-                latter_ui::pref_wake_word_mode_cstr(),
-                rs.hw_usb_connected,
-                va_busy, media_busy, alert_or_tool_busy, sys_busy);
-            if (should_ww_run != id(mww).is_running()) {
-              id(sync_wake_word_state).execute();
-            }
-          }
+          // 2-3. Audio / Wake-Word / Voice Assistant 1s supervisor (bound by audio_scripts.yaml; no-op when audio-less)
+          const uint32_t now_1s_ms = millis();
+          rs.audio.tick_1s(now_1s_ms, id(wifi_ctrl).is_connected());
 
-          // 3. Voice Assistant Stuck-Open Watchdog (auto-recovers mic/speaker if HA drops mid-session >35s)
-          static uint32_t va_stuck_since_ms = 0;
-          if (rs.voice.active || !rs.voice.status_text.empty()) {
-            if (va_stuck_since_ms == 0) va_stuck_since_ms = millis();
-            else if ((millis() - va_stuck_since_ms > 35000U) &&
-                     !id(va).is_running() && !id(announcement_mixing_input).is_running()) {
-              ESP_LOGW("va", "Voice Assistant watchdog triggered (>35s idle): resetting session & mic");
-              va_stuck_since_ms = 0;
-              id(cancel_voice_assistant).execute();
-            }
-          } else {
-            va_stuck_since_ms = 0;
+          // 4. Touch recovery (bound by gui_touch.yaml; no-op when touch-less), Flight Recorder & Telemetry
+          if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && rs.hw_recover_touchscreen != nullptr) {
+            rs.hw_recover_touchscreen(now_1s_ms);
           }
-
-          // 4. [PROF:*] Flight Recorder Auto-Disable (24h) & Power/Heap Telemetry
-          uint32_t now_1s_ms = millis();
-          #if LATTER_HAS_TOUCH
-          if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
-            latter_ui::hal_recover_touchscreen_if_failed(id(touch_screen), now_1s_ms);
-          }
-          #endif
-          if (latter_ui::profiler_enabled() && latter_ui::profiler_is_expired(now_1s_ms)) {
+          if (latter_core::profiler_enabled() && latter_core::profiler_is_expired(now_1s_ms)) {
             LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler auto-disabled after 24h");
-            latter_ui::profiler_stop();
+            latter_core::profiler_stop();
             id(ble_ctrl).set_profile_logging(false);
             id(publish_device_telemetry).execute();
           }
           static uint32_t last_prof_10s_ms = 0;
           static int last_prof_pwr_state = -1;
-          if (latter_ui::profiler_enabled() &&
+          if (latter_core::profiler_enabled() &&
               (rs.nav.display_power_state != last_prof_pwr_state || (now_1s_ms - last_prof_10s_ms >= 10000U))) {
             const char *trig = (rs.nav.display_power_state != last_prof_pwr_state) ? "STATE_CHG" : "10S_TICK";
             last_prof_pwr_state = rs.nav.display_power_state;
             last_prof_10s_ms = now_1s_ms;
-            latter_ui::log_power_and_mem_profile(
+            latter_core::log_power_and_mem_profile(
                 trig, rs.nav.display_power_state, rs.hw_usb_connected, rs.hw_batt_charging,
-                rs.hw_batt_level, rs.hw_batt_voltage, id(speaker_enable).state,
-                id(mww).is_running(), rs.voice.active,
-                id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING,
+                rs.hw_batt_level, rs.hw_batt_voltage, rs.audio.speaker_enabled(),
+                rs.audio.mww_running(), rs.voice.active,
+                rs.audio.local_mp_playing(),
                 id(ble_ctrl).is_active(), rs.nav.active_game, rs.nav.sleep_start_time);
           }
 
@@ -203,40 +70,40 @@ interval:
           if (now_1s_ms > 180000U && rs.hw_usb_connected && id(wifi_ctrl).is_connected() &&
               (rs.nav.display_power_state != 0) &&
               !rs.voice.active && !rs.voice.tts_received && !rs.nav.ota_in_progress &&
-              (id(latter_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING) &&
+              !rs.audio.local_mp_playing() &&
               (last_fw_check_ms == 0 || (now_1s_ms - last_fw_check_ms >= 21600000U))) {
             last_fw_check_ms = now_1s_ms;
             id(check_firmware_update).execute();
           }
 
           // 9. Self-heal any settled pending DCS transition.
-          latter_ui::hal_panel_dcs_poll(&id(disp1));
+          latter_core::hal_panel_dcs_poll(&id(disp1));
 
           // 10. Bedtime schedule edge evaluation, auto-exit forgotten Games (>3m untouched),
           // Battery Flashlight/Level/Camera (>5m untouched), and Return-to-Home idle navigation reset.
           auto now_bt = id(ha_time).now();
           if (now_bt.is_valid()) {
-            const int bt_edge = latter_ui::bedtime_schedule_tracker().evaluate_hour(
-                latter_ui::persisted_prefs().bedtime_schedule,
-                latter_ui::persisted_prefs().bedtime_start_hour,
-                latter_ui::persisted_prefs().bedtime_end_hour,
+            const int bt_edge = latter_core::bedtime_schedule_tracker().evaluate_hour(
+                latter_core::persisted_prefs().bedtime_schedule,
+                latter_core::persisted_prefs().bedtime_start_hour,
+                latter_core::persisted_prefs().bedtime_end_hour,
                 now_bt.hour);
-            if (bt_edge >= 0 && (bt_edge == 1) != latter_ui::persisted_prefs().bedtime_active) {
+            if (bt_edge >= 0 && (bt_edge == 1) != latter_core::persisted_prefs().bedtime_active) {
               uint32_t bt_eff = 0U;
-              if (latter_actions::record_local_pref_edit(
-                      latter_ui::PrefKey::BEDTIME_ACTIVE, (bt_edge == 1) ? "1" : "0",
+              if (latter_core::record_local_pref_edit(
+                      latter_core::PrefKey::BEDTIME_ACTIVE, (bt_edge == 1) ? "1" : "0",
                       now_1s_ms, bt_eff)) {
-                latter_ui::device_prefs_state().last_effects |= bt_eff;
+                latter_core::device_prefs_state().last_effects |= bt_eff;
                 id(apply_device_prefs_effects).execute();
               }
             }
           }
-          const auto &prefs = latter_ui::persisted_prefs();
+          const auto &prefs = latter_core::persisted_prefs();
           if (rs.showcase.active) {
             id(tick_showcase_engine).execute();
           }
           const bool showcase_active_1s = rs.showcase.is_active(now_1s_ms);
-          uint32_t last_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
+          uint32_t last_user_act_ms = std::max({latter_core::last_screen_wake_ms(),
                                                 latter_ui::touch_gesture().last_touch_ms,
                                                 latter_ui::ui_focus_last_ms()});
           if (rs.nav.display_power_state == 0 && !showcase_active_1s && (now_1s_ms > last_user_act_ms)) {
@@ -244,21 +111,21 @@ interval:
             if (rs.nav.active_game > 0 && touch_idle_ms >= 180000U) {
               ESP_LOGD("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
               rs.nav.active_game = 0;
-              id(stop_alarm_sound).execute();
-              latter_ui::display_lifecycle().note_activity(now_1s_ms);
+              rs.audio.stop_alarm();
+              latter_core::display_lifecycle().note_activity(now_1s_ms);
             }
             if (!rs.hw_usb_connected &&
                 ((rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
-                 latter_ui::is_camera_view_active(rs)) &&
+                 latter_core::is_camera_view_active(rs)) &&
                 touch_idle_ms >= 300000U) {
               ESP_LOGD("power", "Tool/Camera untouched on battery for 5 min: exiting to idle");
-              if (latter_ui::is_camera_view_active(rs)) {
-                if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
-                  latter_ui::intercom_session().stop_call_with_hw(now_1s_ms);
+              if (latter_core::is_camera_view_active(rs)) {
+                if (latter_core::cam_call_active() || latter_core::cam_intercom_ptt_active() || latter_core::cam_listen_active()) {
+                  latter_core::intercom_session().stop_call_with_hw(now_1s_ms);
                 }
-                latter_ui::cam_quick_reply_open() = false;
-                latter_ui::cam_expanded_fullscreen() = false;
-                latter_ui::video_client().stop();
+                latter_core::cam_quick_reply_open() = false;
+                latter_core::cam_expanded_fullscreen() = false;
+                latter_core::video_client().stop();
                 rs.alert.loaded_camera_url.clear();
                 latter_ui::release_art(id(camera_snapshot_art));
                 id(sync_ui_touch_runtime).execute();
@@ -267,22 +134,22 @@ interval:
                 rs.nav.tools_subpage = 0;
               }
               id(sync_display_brightness).execute();
-              latter_ui::display_lifecycle().note_activity(now_1s_ms);
+              latter_core::display_lifecycle().note_activity(now_1s_ms);
             }
           }
-          const uint32_t rth_ms = latter_ui::return_to_home_timeout_ms(prefs);
+          const uint32_t rth_ms = latter_core::return_to_home_timeout_ms(prefs);
           const bool media_playing_1s =
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              (latter_ui::media_state().state == "playing");
-          const bool cam_busy_1s = latter_ui::cam_call_active() ||
-                                   latter_ui::cam_listen_active() ||
-                                   latter_ui::cam_intercom_ptt_active();
+              rs.audio.local_mp_playing() ||
+              (latter_core::media_state().state == "playing");
+          const bool cam_busy_1s = latter_core::cam_call_active() ||
+                                   latter_core::cam_listen_active() ||
+                                   latter_core::cam_intercom_ptt_active();
           if (rs.nav.display_power_state != 2 && rth_ms > 0U &&
               (now_1s_ms > last_user_act_ms) &&
               (now_1s_ms - last_user_act_ms >= rth_ms) &&
-              latter_ui::should_return_to_home_on_idle(rs, prefs, media_playing_1s, cam_busy_1s)) {
+              latter_core::should_return_to_home_on_idle(rs, prefs, media_playing_1s, cam_busy_1s)) {
             ESP_LOGD("power", "Idle exceeded Return to Home timeout (%s): returning to Home",
-                     latter_ui::pref_return_to_home_timeout_cstr(prefs));
+                     latter_core::pref_return_to_home_timeout_cstr(prefs));
             id(sync_ui_touch_runtime).execute();
             latter_ui::touch_engine().navigate_home(now_1s_ms);
             id(apply_power_policy).execute();
@@ -293,34 +160,34 @@ interval:
           const bool active_tool_awake =
               ((rs.nav.gui_page == 8 &&
                 (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
-               latter_ui::is_camera_view_active(rs));
-          const uint32_t since_touch_ms = now_1s_ms - std::max(latter_ui::last_screen_wake_ms(),
+               latter_core::is_camera_view_active(rs));
+          const uint32_t since_touch_ms = now_1s_ms - std::max(latter_core::last_screen_wake_ms(),
                                                                latter_ui::touch_gesture().last_touch_ms);
           const bool in_hand_hold = (since_touch_ms < 90000U) &&
-              latter_ui::should_in_hand_block_sleep(
-                  !rs.hw_usb_connected && !id(speaker_enable).state && id(pickup_detected).state);
+              latter_core::should_in_hand_block_sleep(
+                  !rs.hw_usb_connected && !rs.audio.speaker_enabled() && rs.hw_pickup_detected);
           const bool voice_or_announce_busy =
-              rs.voice.active || id(va).is_running() || rs.voice.tts_received ||
-              id(announcement_mixing_input).is_running();
+              rs.voice.active || rs.audio.va_running() || rs.voice.tts_received ||
+              rs.audio.announcement_running();
           const bool alert_or_stopwatch_busy =
               rs.stopwatch.running || rs.timers.ringing || rs.alarms.ringing ||
               rs.alarms.find_my_active || rs.alert.active;
           const bool hibernate_blocked =
               rs.nav.is_hibernating || rs.hw_usb_connected || rs.nav.ota_in_progress ||
               showcase_active_1s ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
+              rs.audio.local_mp_playing() ||
               rs.stopwatch.running || rs.timers.running || rs.timers.ringing ||
               rs.alarms.ringing || rs.alarms.find_my_active || voice_or_announce_busy ||
               cam_busy_1s || (rs.nav.active_game > 0);
 
-          latter_ui::DisplaySupervisorInputs dl_in{};
+          latter_core::DisplaySupervisorInputs dl_in{};
           dl_in.is_stationary = (LATTER_IS_STATIONARY != 0);
           dl_in.has_battery = (LATTER_HAS_BATTERY != 0);
           dl_in.usb_connected = rs.hw_usb_connected;
           dl_in.screensaver_mode = prefs.screensaver_mode;
-          dl_in.docked_timeout_opt = latter_ui::pref_docked_idle_timeout_cstr(prefs);
-          dl_in.battery_timeout_opt = latter_ui::pref_battery_screen_timeout_cstr(prefs);
-          dl_in.hibernate_timeout_opt = latter_ui::pref_battery_hibernate_timeout_cstr(prefs);
+          dl_in.docked_timeout_opt = latter_core::pref_docked_idle_timeout_cstr(prefs);
+          dl_in.battery_timeout_opt = latter_core::pref_battery_screen_timeout_cstr(prefs);
+          dl_in.hibernate_timeout_opt = latter_core::pref_battery_hibernate_timeout_cstr(prefs);
           dl_in.wake_greeting_enabled = prefs.wake_greeting && !prefs.bedtime_active;
           dl_in.bedtime_active = prefs.bedtime_active;
           dl_in.panel_brightness_on = id(display_brightness).current_values.is_on();
@@ -334,7 +201,7 @@ interval:
           dl_in.hibernate_blocked = hibernate_blocked;
           dl_in.showcase_active = showcase_active_1s;
 
-          const auto dl_act = latter_ui::display_lifecycle().evaluate_1s(
+          const auto dl_act = latter_core::display_lifecycle().evaluate_1s(
               now_1s_ms, dl_in, rs.nav.display_power_state, rs.nav.sleep_start_time,
               rs.nav.standby_entered_ms, rs.nav.wake_greeting_pending);
           if (dl_act.turn_screen_off_now) {
@@ -345,8 +212,8 @@ interval:
           #if LATTER_HAS_BATTERY
           if (dl_act.start_hibernate_countdown_now) {
             ESP_LOGD("power", "Inactivity with screen off exceeded %s: starting hibernation countdown",
-                     latter_ui::pref_battery_hibernate_timeout_cstr(prefs));
-            latter_ui::battery_model().hib_reason = latter_ui::HibernateReason::IDLE;
+                     latter_core::pref_battery_hibernate_timeout_cstr(prefs));
+            latter_core::battery_model().hib_reason = latter_core::HibernateReason::IDLE;
             id(start_hibernation_countdown).execute();
           }
           #endif
@@ -356,15 +223,9 @@ interval:
     then:
       - lambda: |-
           // High-refresh animation loop for active screensavers via FrameCadenceController.
-          const bool speaker_audio_busy =
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-              (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              id(media_mixing_input).is_running() ||
-              id(announcement_mixing_input).is_running() ||
-              id(sound_mixing_input).is_running();
+          const auto &au = latter_core::runtime_state().audio;
           latter_ui::dispatch_cadence_screensaver_20ms(
-              millis(), &id(disp1), speaker_audio_busy, id(mww).is_running());
+              millis(), &id(disp1), au.speaker_busy(), au.mww_running());
 
 script:
   # Single owner for every power-related actuator. The 1 s supervisor runs it, and state transitions
@@ -377,39 +238,39 @@ script:
     then:
       - lambda: |-
           const uint32_t now_p = millis();
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
 
           // Radio: BLE presence beacon and Wi-Fi modem sleep.
-          const uint32_t last_interact_ms = std::max({latter_ui::last_screen_wake_ms(),
+          const uint32_t last_interact_ms = std::max({latter_core::last_screen_wake_ms(),
                                                       latter_ui::touch_gesture().last_touch_ms,
                                                       latter_ui::ui_focus_last_ms()});
           const bool sc_active_p = rs.showcase.is_active(now_p);
           const bool va_radio_priority =
-              latter_ui::radio_boost_active(now_p) ||
-              rs.voice.active || id(va).is_running() || rs.voice.tts_received;
+              latter_core::radio_boost_active(now_p) ||
+              rs.voice.active || rs.audio.va_running() || rs.voice.tts_received;
           const bool high_tput_needed =
               rs.hw_usb_connected ||
               sc_active_p ||
               va_radio_priority ||
-              id(announcement_mixing_input).is_running() ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING) ||
-              (rs.nav.display_power_state == 0 && (latter_ui::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active))) ||
-              latter_ui::cam_call_active() || latter_ui::cam_listen_active() ||
+              rs.audio.announcement_running() ||
+              rs.audio.local_mp_playing() ||
+              rs.audio.local_mp_announcing() ||
+              (rs.nav.display_power_state == 0 && (latter_core::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active))) ||
+              latter_core::cam_call_active() || latter_core::cam_listen_active() ||
               (rs.nav.display_power_state == 0 && (now_p - last_interact_ms < 8000U));
-          const auto &prefs = latter_ui::persisted_prefs();
-          latter_ui::evaluate_radio_policy(
+          const auto &prefs = latter_core::persisted_prefs();
+          latter_core::evaluate_radio_policy(
               id(ble_ctrl), id(wifi_ctrl), id(wifi_ctrl).is_connected(), prefs.ble_beacon_enabled,
-              latter_ui::beacon_mode_index(latter_ui::pref_ble_beacon_mode_cstr(prefs)), rs.hw_usb_connected,
+              latter_core::beacon_mode_index(latter_core::pref_ble_beacon_mode_cstr(prefs)), rs.hw_usb_connected,
               rs.nav.is_hibernating, rs.nav.ota_in_progress, rs.nav.display_power_state,
               high_tput_needed, now_p,
-              latter_ui::link_state().ha_connected, latter_ui::link_state().last_ha_connect_ms,
+              latter_core::link_state().ha_connected, latter_core::link_state().last_ha_connect_ms,
               va_radio_priority);
           static int8_t s_prev_ble_active = -1;
           const int8_t cur_ble_active = id(ble_ctrl).is_active() ? 1 : 0;
           if (s_prev_ble_active != cur_ble_active) {
             s_prev_ble_active = cur_ble_active;
-            if (latter_ui::link_state().ha_connected) {
+            if (latter_core::link_state().ha_connected) {
               id(publish_device_telemetry).execute();
             }
           }
@@ -417,25 +278,26 @@ script:
           // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
           #if LATTER_HAS_IMU
           if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && (now_p > 6000U) && rs.hw_set_imu_power_mode != nullptr) {
-            const std::string_view pw_mode = latter_ui::pref_pickup_to_wake_cstr(prefs);
+            using Mode = latter_core::ImuPowerMode;
+            const std::string_view pw_mode = latter_core::pref_pickup_to_wake_cstr(prefs);
             const bool pw_allowed = (pw_mode == "Always On") ||
                                     (pw_mode == "Docked Only" && rs.hw_usb_connected);
             if (rs.nav.display_power_state) {
               // Poll only during the short qualification window after a WoM event so the
               // RaiseToWakeDetector can confirm a raise.
-              rs.hw_set_imu_power_mode(!pw_allowed ? 0x00
-                  : (latter_ui::imu_wom_qualifying(now_p) ? 0x01 : 0x80));
+              rs.hw_set_imu_power_mode(!pw_allowed ? Mode::Off
+                  : (latter_core::imu_wom_qualifying(now_p) ? Mode::AccelOnly : Mode::WakeOnMotion));
             } else {
               const bool need_gyro = (rs.nav.gui_page == 3 && rs.nav.active_game >= 1 && rs.nav.active_game <= 4) ||
                                      (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 7);
               const bool need_accel = pw_allowed ||
                                       (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) ||
                                       (rs.nav.gui_page == 5) ||
-                                      latter_ui::is_camera_view_active(rs) ||
+                                      latter_core::is_camera_view_active(rs) ||
                                       (rs.nav.gui_page == 8 &&
                                        (rs.nav.tools_subpage == 4 || rs.nav.tools_subpage == 7 ||
                                         rs.nav.tools_subpage == 8));
-              rs.hw_set_imu_power_mode(need_gyro ? 0x03 : (need_accel ? 0x01 : 0x00));
+              rs.hw_set_imu_power_mode(need_gyro ? Mode::AccelAndGyro : (need_accel ? Mode::AccelOnly : Mode::Off));
             }
           }
           #endif
@@ -446,7 +308,7 @@ script:
           const bool alerts_pending = rs.timers.running || rs.stopwatch.running || rs.alarms.find_my_active ||
                                       rs.alert.active || rs.alarms.ringing || rs.timers.ringing || sc_silent_alert_p;
           const bool va_busy = rs.voice.active || !rs.voice.status_text.empty() ||
-                               id(va).is_running() || rs.voice.tts_received;
+                               rs.audio.va_running() || rs.voice.tts_received;
           auto gate = [](auto *tick, bool want, int8_t &state) {
             if (state == (want ? 1 : 0)) return;
             state = want ? 1 : 0;
@@ -457,7 +319,7 @@ script:
             }
           };
           static int8_t ss_anim_on = -1;
-          const std::string_view eff_ss_style = latter_ui::effective_screensaver_style_cstr(prefs, rs, now_p);
+          const std::string_view eff_ss_style = latter_core::effective_screensaver_style_cstr(prefs, rs, now_p);
           const bool want_ss_anim = (rs.nav.display_power_state == 1) &&
                                     !eff_ss_style.empty() &&
                                     (eff_ss_style != "Ambient Clock") &&
@@ -471,9 +333,9 @@ script:
           // ui_anim_tick (20 ms) self-stops when no active animation is running; stop immediately when
           // leaving active display (unless VA is busy) and start whenever VA or active-screen animation needs it.
           if (va_busy || sc_va_preview_p) {
-            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+            latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
           } else if (rs.nav.display_power_state != 0) {
-            latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
+            latter_core::set_ui_anim_poller(id(ui_anim_tick), false);
           } else if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active ||
                      sc_silent_alert_p ||
                      rs.nav.active_game > 0 ||
@@ -482,7 +344,7 @@ script:
                        (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3))) ||
                      latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
                      rs.nav.menu_scroll_active) {
-            latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+            latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
           }
           // ui_fast_tick: 250 ms with the screen on, a voice turn, or showcase active; 1 s with the screen off while
           // a timer, stopwatch or alert is pending (a countdown still expires within a second); stopped otherwise.
@@ -501,22 +363,18 @@ script:
           // Automatic light sleep (boards whose HAL declares power_management with enable_light_sleep;
           // include/hal_sleep_pm.h). The awake lock keeps the chip out of light sleep except in screen-off
           // quiet on battery; while it is released the light-sleep wake pins below arm and the main loop
-          // interval stretches. latter_ui::pm_apply is called only here (latter-verify enforces).
-          const bool audio_busy = id(speaker_enable).state || id(mww).is_running() ||
-                                  id(announcement_mixing_input).is_running() ||
-                                  latter_ui::audio_arbitrator().has_pending_work() ||
-                                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-                                  (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING);
+          // interval stretches. latter_core::pm_apply is called only here (latter-verify enforces).
+          const bool audio_busy = rs.audio.busy_for_pm();
           // Home Assistant link: awake only while Wi-Fi is up and HA API is connecting (<=30 s) or settling (<=20 s),
           // so off-site battery carry never stays pinned awake waiting for an unreachable AP.
           const bool wifi_up = id(wifi_ctrl).is_connected();
-          if (wifi_up != latter_ui::link_state().wifi_connected) {
-            latter_ui::link_state().wifi_connected = wifi_up;
+          if (wifi_up != latter_core::link_state().wifi_connected) {
+            latter_core::link_state().wifi_connected = wifi_up;
             if (wifi_up) {
-              latter_ui::link_state().last_wifi_connect_ms = (now_p == 0) ? 1U : now_p;
+              latter_core::link_state().last_wifi_connect_ms = (now_p == 0) ? 1U : now_p;
             } else {
               #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
-              latter_ui::weak_link_note_disconnect(now_p);
+              latter_core::weak_link_note_disconnect(now_p);
               #endif
             }
           }
@@ -524,35 +382,37 @@ script:
                                      esphome::api::global_api_server->is_connected_with_state_subscription();
           const bool ha_link_settling =
               wifi_up && !rs.nav.ota_in_progress &&
-              ((!api_connected && (now_p - latter_ui::link_state().last_wifi_connect_ms < 30000U)) ||
-               (api_connected && (now_p - latter_ui::link_state().last_ha_connect_ms < 20000U)));
+              ((!api_connected && (now_p - latter_core::link_state().last_wifi_connect_ms < 30000U)) ||
+               (api_connected && (now_p - latter_core::link_state().last_ha_connect_ms < 20000U)));
           // Weak Wi-Fi: Home Assistant's link drops in automatic light sleep at weak RSSI (hal_link_report.h,
           // kWeakLinkEnterDbm), so a sustained weak link keeps tickless-sleep chips awake after AGC settle.
           #if defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)
           const bool weak_link =
-              wifi_up && latter_ui::weak_link_update(now_p, latter_ui::link_state().last_wifi_connect_ms);
+              wifi_up && latter_core::weak_link_update(now_p, latter_core::link_state().last_wifi_connect_ms);
           #else
           const bool weak_link = false;
           #endif
           const bool stay_awake =
               ha_link_settling || weak_link || sc_active_p ||
-              latter_ui::imu_wom_qualifying(now_p) ||
+              latter_core::imu_wom_qualifying(now_p) ||
               rs.nav.display_power_state != 2 || rs.hw_usb_connected || rs.nav.is_hibernating ||
-              rs.nav.ota_in_progress || audio_busy || va_busy || id(va).is_running() || rs.voice.tts_received ||
-              latter_ui::radio_boost_active(now_p) || (rs.nav.active_game > 0) ||
+              rs.nav.ota_in_progress || audio_busy || va_busy || rs.audio.va_running() || rs.voice.tts_received ||
+              latter_core::radio_boost_active(now_p) || (rs.nav.active_game > 0) ||
               rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active ||
-              latter_ui::cam_call_active() || latter_ui::cam_listen_active();
+              latter_core::cam_call_active() || latter_core::cam_listen_active();
           // PWR key and action button always wake; touch only where a screen-off tap wakes on battery;
           // IMU INT1 while hardware Wake-on-Motion is armed.
-          uint32_t wake_mask = latter_ui::pm_wake_bit(latter_ui::PM_WAKE_PWR_KEY) |
-                               latter_ui::pm_wake_bit(latter_ui::PM_WAKE_ACTION_BTN);
-          const std::string_view tw_mode = latter_ui::pref_tap_to_wake_cstr(prefs);
-          if (tw_mode == "Single Tap" || tw_mode == "Double Tap") wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_TOUCH);
+          uint32_t wake_mask = latter_core::pm_wake_bit(latter_core::PM_WAKE_PWR_KEY) |
+                               latter_core::pm_wake_bit(latter_core::PM_WAKE_ACTION_BTN);
+          const std::string_view tw_mode = latter_core::pref_tap_to_wake_cstr(prefs);
+          if (tw_mode == "Single Tap" || tw_mode == "Double Tap") wake_mask |= latter_core::pm_wake_bit(latter_core::PM_WAKE_TOUCH);
           #if LATTER_HAS_IMU
-          if (latter_ui::imu_wom().armed) wake_mask |= latter_ui::pm_wake_bit(latter_ui::PM_WAKE_IMU);
-          latter_ui::pm_note_imu(latter_ui::imu_wom().armed, latter_ui::imu_wom().events);
+          if (latter_core::imu_wom().armed) wake_mask |= latter_core::pm_wake_bit(latter_core::PM_WAKE_IMU);
+          latter_core::pm_note_imu(latter_core::imu_wom().armed, latter_core::imu_wom().events);
           #endif
           #if LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
-          latter_ui::hal_set_touch_sleep_mode(id(bus_internal), rs.nav.display_power_state == 2 && !rs.hw_usb_connected);
+          if (rs.hw_set_touch_sleep_mode != nullptr) {
+            rs.hw_set_touch_sleep_mode(rs.nav.display_power_state == 2 && !rs.hw_usb_connected);
+          }
           #endif
-          latter_ui::pm_apply(stay_awake, wake_mask);
+          latter_core::pm_apply(stay_awake, wake_mask);

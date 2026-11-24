@@ -68,4 +68,4 @@ script:
       standby: bool
     then:
       - lambda: |-
-          latter_ui::hal_set_es8311_es7210_standby(id(bus_internal), standby, false);
+          latter_core::hal_set_es8311_es7210_standby(id(bus_internal), standby, false);

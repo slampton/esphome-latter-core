@@ -26,7 +26,7 @@ namespace latter_ui {
 // ==============================================================================
 // 1. Canonical Touch Context Fingerprint (kept in UI headers, out of core state PODs)
 // ==============================================================================
-inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state()) noexcept {
+inline int compute_touch_context(const latter_core::DeviceRuntimeState &rs = latter_core::runtime_state()) noexcept {
   const int gp = rs.nav.gui_page;
   int sub = 0;
   int drill = 0;
@@ -38,12 +38,13 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = ((static_cast<int>(rs.music.view) & 0x0F) << 4) |
             ((static_cast<int>(rs.music.drilldown) & 0x03) << 2) |
             (static_cast<int>(rs.music.takeover) & 0x03);
-      if ((rs.music.view == MusicView::LIBRARY && rs.music.drilldown == MusicDrilldown::LIB_LIST) ||
-          rs.music.view == MusicView::ALBUM_TRACKS) {
+      if ((rs.music.view == latter_core::MusicView::LIBRARY &&
+           rs.music.drilldown == latter_core::MusicDrilldown::LIB_LIST) ||
+          rs.music.view == latter_core::MusicView::ALBUM_TRACKS) {
         for (char ch : rs.music.selected_category_mode) {
           drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0x7F;
         }
-      } else if (rs.music.view == MusicView::SETTINGS) {
+      } else if (rs.music.view == latter_core::MusicView::SETTINGS) {
         drill = ((rs.music.mode_bar_win_start & 0x07) << 3) | (rs.music.settings_page & 0x07);
       } else {
         drill = rs.music.mode_bar_win_start & 0x7F;
@@ -69,10 +70,10 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = rs.nav.tools_subpage;
       break;
     case 9:
-      sub = home_hub_tab();
+      sub = latter_core::home_hub_tab();
       drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
-              (((sub == HomeHubTab::INTERCOM ? home_hub_state().broadcast_page
-                                             : home_hub_state().entry_page) & 0x0F) << 3);
+              (((sub == latter_core::HomeHubTab::INTERCOM ? latter_core::home_hub_state().broadcast_page
+                                                          : latter_core::home_hub_state().entry_page) & 0x0F) << 3);
       break;
     case 10:
       sub = rs.nav.time_subpage;
@@ -93,8 +94,8 @@ inline int compute_touch_context(const DeviceRuntimeState &rs = runtime_state())
       sub = rs.cameras.tab;
       drill = (rs.cameras.hud_active ? 1 : 0) |
               (rs.cameras.quick_reply_open ? 2 : 0) |
-              (((sub == CamerasTab::SETTINGS ? rs.cameras.settings_page
-                                             : rs.cameras.grid_page) & 0x07) << 2);
+              (((sub == latter_core::CamerasTab::SETTINGS ? rs.cameras.settings_page
+                                                          : rs.cameras.grid_page) & 0x07) << 2);
       break;
     default:
       break;
@@ -205,9 +206,9 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
 inline void register_music_now_playing_hits(
     FrameHitTable &ht, const MusicNowPlayingGeom &g,
     bool show_metadata, bool show_controls,
-    MusicTakeover takeover, int mode_win_start = 0,
+    latter_core::MusicTakeover takeover, int mode_win_start = 0,
     bool include_mode_bar = true) {
-  if (takeover != MusicTakeover::NONE) return;
+  if (takeover != latter_core::MusicTakeover::NONE) return;
   if (!show_metadata && !show_controls) {
     ht.add_rect(0, 0, g.w, g.h, WidgetId::MUSIC_ART_TAP, kHitTap);
     return;
@@ -224,7 +225,7 @@ inline void register_music_now_playing_hits(
     ht.add_circle(g.next_cx, g.transport_cy, g.side_hit_r,
                   WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
     if (include_mode_bar) {
-      const int max_ws = std::max(0, kMusicPeerTabCount - 4);
+      const int max_ws = std::max(0, latter_core::kMusicPeerTabCount - 4);
       const int ws = std::clamp(mode_win_start, 0, max_ws);
       for (int i = 0; i < 4; ++i) {
         ht.add_circle(g.mode_slot_xs[i], g.mode_bar_cy, g.mode_bar_r,
@@ -236,14 +237,16 @@ inline void register_music_now_playing_hits(
         const int lw = g.mode_slot_xs[0] - g.mode_bar_r;
         if (lw >= 8) {
           ht.add_rect(0, g.mode_bar_cy - g.mode_bar_r - scale_y_for(12, g.h), lw,
-                      2 * (g.mode_bar_r + scale_y_for(12, g.h)), WidgetId::MODE_BAR_LEFT, kHitTap);
+                      2 * (g.mode_bar_r + scale_y_for(12, g.h)),
+                      WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
         }
       }
-      if (ws + 4 < kMusicPeerTabCount) {
+      if (ws + 4 < latter_core::kMusicPeerTabCount) {
         const int rx0 = g.mode_slot_xs[3] + g.mode_bar_r + 1;
         if (g.w - rx0 >= 8) {
           ht.add_rect(rx0, g.mode_bar_cy - g.mode_bar_r - scale_y_for(12, g.h), g.w - rx0,
-                      2 * (g.mode_bar_r + scale_y_for(12, g.h)), WidgetId::MODE_BAR_RIGHT, kHitTap);
+                      2 * (g.mode_bar_r + scale_y_for(12, g.h)),
+                      WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
         }
       }
     }
@@ -254,16 +257,17 @@ inline constexpr int kMusicPeerListPageSize = 4;
 inline constexpr int kMusicFullListPageSize = 5;
 
 inline constexpr int music_browse_page_size_for(
-    MusicView /*view*/, MusicDrilldown drilldown, std::string_view mode = {}) noexcept {
+    latter_core::MusicView /*view*/, latter_core::MusicDrilldown drilldown,
+    std::string_view mode = {}) noexcept {
   if (mode == "bio" || mode == "track_info") return kMusicFullListPageSize;
-  if (drilldown == MusicDrilldown::LIB_LIST) return kMusicFullListPageSize;
+  if (drilldown == latter_core::MusicDrilldown::LIB_LIST) return kMusicFullListPageSize;
   return kMusicPeerListPageSize;
 }
 
-inline constexpr MusicView step_music_peer_tab(MusicView cur, int h_dir) noexcept {
-  int idx = (static_cast<int>(cur) + h_dir) % kMusicPeerTabCount;
-  if (idx < 0) idx += kMusicPeerTabCount;
-  return static_cast<MusicView>(idx);
+inline constexpr latter_core::MusicView step_music_peer_tab(latter_core::MusicView cur, int h_dir) noexcept {
+  int idx = (static_cast<int>(cur) + h_dir) % latter_core::kMusicPeerTabCount;
+  if (idx < 0) idx += latter_core::kMusicPeerTabCount;
+  return static_cast<latter_core::MusicView>(idx);
 }
 
 inline constexpr bool is_music_playable_container_type(std::string_view media_type) noexcept {
@@ -425,7 +429,7 @@ inline void register_music_lyrics_transport_hits(
 }
 
 inline void step_music_lyrics_auto_scroll(
-    MusicLyricsState &lyr, uint32_t pos_ms, uint32_t now_ms,
+    latter_core::MusicLyricsState &lyr, uint32_t pos_ms, uint32_t now_ms,
     int anchor_y_in_viewport, const int *line_doc_cys, int line_count, int max_scroll_px) noexcept {
   const int clamped_max = std::max(0, max_scroll_px);
   if (!lyr.synced || line_count <= 0 || line_doc_cys == nullptr) {
@@ -550,6 +554,7 @@ enum class UiSelectId : uint8_t {
   WW_SENS_HEY_MYCROFT,
   WW_SENS_ALEXA,
   THEME_PALETTE,
+  GLASS_STYLE,
   PICKUP_WAKE_MODE,
   DISPLAY_OFF_TIMEOUT,
   SCREENSAVER_MODE,
@@ -638,33 +643,33 @@ struct UiTouchRuntime {
 };
 
 template <typename ColorT>
-inline void apply_effective_theme_preset(const DeviceRuntimeState &rs,
-                                         const PersistedDevicePrefs &prefs,
+inline void apply_effective_theme_preset(const latter_core::DeviceRuntimeState &rs,
+                                         const latter_core::PersistedDevicePrefs &prefs,
                                          uint32_t now_ms,
                                          ColorT &out_primary,
                                          ColorT &out_secondary) noexcept {
   out_secondary = ColorT{192, 192, 192};
   if (rs.showcase.is_active(now_ms) && rs.showcase.theme_override_mode != 0U) {
-    switch (static_cast<ShowcaseThemeMode>(rs.showcase.theme_override_mode)) {
-      case ShowcaseThemeMode::CUSTOM_RGB:
+    switch (static_cast<latter_core::ShowcaseThemeMode>(rs.showcase.theme_override_mode)) {
+      case latter_core::ShowcaseThemeMode::CUSTOM_RGB:
         apply_custom_rgb_harmony(rs.showcase.theme_override_rgb, out_primary, out_secondary);
         return;
-      case ShowcaseThemeMode::PINK:
+      case latter_core::ShowcaseThemeMode::PINK:
         out_primary = ColorT{168, 120, 132};
         return;
-      case ShowcaseThemeMode::GREEN:
+      case latter_core::ShowcaseThemeMode::GREEN:
         out_primary = ColorT{66, 116, 83};
         return;
-      case ShowcaseThemeMode::BLUE:
+      case latter_core::ShowcaseThemeMode::BLUE:
         out_primary = ColorT{69, 110, 138};
         return;
-      case ShowcaseThemeMode::STEEL_BLUE:
+      case latter_core::ShowcaseThemeMode::STEEL_BLUE:
       default:
         out_primary = ColorT{107, 142, 158};
         return;
     }
   }
-  const std::string_view p(pref_color_profile_cstr(prefs));
+  const std::string_view p(latter_core::pref_color_profile_cstr(prefs));
   if (p == "Custom") {
     apply_custom_rgb_harmony(prefs.custom_theme_rgb, out_primary, out_secondary);
   } else if (p == "Pink") {
@@ -678,8 +683,8 @@ inline void apply_effective_theme_preset(const DeviceRuntimeState &rs,
   }
 }
 
-inline void apply_effective_theme_slots(const DeviceRuntimeState &rs,
-                                        const PersistedDevicePrefs &prefs,
+inline void apply_effective_theme_slots(const latter_core::DeviceRuntimeState &rs,
+                                        const latter_core::PersistedDevicePrefs &prefs,
                                         uint32_t now_ms,
                                         UiThemeSlot out_primary,
                                         UiThemeSlot out_secondary) noexcept {
@@ -706,7 +711,7 @@ struct DeviceUiCommandEffects {
   bool mark_dirty_full{false};
 };
 
-void activate_music_peer_tab(MusicView target, uint32_t now_ms);
+void activate_music_peer_tab(latter_core::MusicView target, uint32_t now_ms);
 
 class TouchGestureEngine {
  public:
@@ -729,7 +734,7 @@ class TouchGestureEngine {
   DeviceUiCommandEffects tick_showcase(uint32_t now_ms);
 
   // Internal cross-TU helpers (implemented in touch_engine.cpp / touch_dispatch.cpp / showcase_engine.cpp)
-  void teardown_before_remote_nav_(DeviceRuntimeState &rs, uint32_t now_ms, bool target_is_camera);
+  void teardown_before_remote_nav_(latter_core::DeviceRuntimeState &rs, uint32_t now_ms, bool target_is_camera);
   DeviceUiCommandEffects execute_device_ui_command_impl_(std::string_view cmd, uint32_t now_ms, bool from_reel);
   bool try_commit_long_press_(uint32_t now_ms);
   bool try_commit_kinematic_swipe_(bool is_release, uint32_t now_ms);
@@ -751,49 +756,49 @@ class TouchGestureEngine {
 
  private:
   friend struct UiTouchRuntime;
-  friend void activate_music_peer_tab(MusicView target, uint32_t now_ms);
+  friend void activate_music_peer_tab(latter_core::MusicView target, uint32_t now_ms);
 
   static uint32_t now_or_hal_ms_(uint32_t fallback_ms = 0U) noexcept {
-    const uint32_t h = hal_millis_now();
+    const uint32_t h = latter_core::hal_millis_now();
     return (h != 0U) ? h : fallback_ms;
   }
 
   static bool resolve_sys_bri_slider_id_(int16_t param, std::string_view auto_bri_mode,
                                          UiNumberId &out_id) noexcept {
     const bool ab_off = (auto_bri_mode == "Disabled" || auto_bri_mode.empty());
-    if (param == 5 && ab_off) {
+    if (param == 6 && ab_off) {
       out_id = UiNumberId::MANUAL_BRIGHTNESS;
       return true;
     }
-    if (param == 7 && !ab_off) {
+    if (param == 8 && !ab_off) {
       out_id = UiNumberId::DAY_BRIGHTNESS;
       return true;
     }
-    if (param == 8 && !ab_off) {
+    if (param == 9 && !ab_off) {
       out_id = UiNumberId::NIGHT_BRIGHTNESS;
       return true;
     }
     return false;
   }
 
-  static UiNumberId brightness_number_id_for_kind_(ActiveBrightnessTargetKind kind) noexcept {
+  static UiNumberId brightness_number_id_for_kind_(latter_core::ActiveBrightnessTargetKind kind) noexcept {
     switch (kind) {
-      case ActiveBrightnessTargetKind::DAY:     return UiNumberId::DAY_BRIGHTNESS;
-      case ActiveBrightnessTargetKind::NIGHT:   return UiNumberId::NIGHT_BRIGHTNESS;
-      case ActiveBrightnessTargetKind::BEDTIME: return UiNumberId::BEDTIME_BRIGHTNESS;
-      case ActiveBrightnessTargetKind::MANUAL:
-      default:                                  return UiNumberId::MANUAL_BRIGHTNESS;
+      case latter_core::ActiveBrightnessTargetKind::DAY:     return UiNumberId::DAY_BRIGHTNESS;
+      case latter_core::ActiveBrightnessTargetKind::NIGHT:   return UiNumberId::NIGHT_BRIGHTNESS;
+      case latter_core::ActiveBrightnessTargetKind::BEDTIME: return UiNumberId::BEDTIME_BRIGHTNESS;
+      case latter_core::ActiveBrightnessTargetKind::MANUAL:
+      default:                                               return UiNumberId::MANUAL_BRIGHTNESS;
     }
   }
 
   static int32_t resolve_touch_today_ymd_(const UiTouchRuntime &rt) noexcept {
     if (rt.time_valid && rt.time_year >= 2020) {
-      return make_ymd(rt.time_year, rt.time_month, rt.time_day);
+      return latter_core::make_ymd(rt.time_year, rt.time_month, rt.time_day);
     }
     return 20260101;
   }
 
-  static void scrub_pin_and_pending_(TouchGestureEngine &eng, DeviceRuntimeState &rs,
+  static void scrub_pin_and_pending_(TouchGestureEngine &eng, latter_core::DeviceRuntimeState &rs,
                                      bool clear_feedback_and_shortcut = true);
   static bool allow_active_touch_down_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms);
   static bool handle_down_takeovers_(TouchGestureEngine &eng, int tx, int ty, uint32_t now_ms);
@@ -811,36 +816,44 @@ class TouchGestureEngine {
   static void apply_optimistic_shortcut_feedback_(const std::string &entity_id,
                                                   const std::string &action,
                                                   const std::string &label,
-                                                  DeviceRuntimeState &rs,
+                                                  latter_core::DeviceRuntimeState &rs,
                                                   uint32_t now_ms);
-  static void activate_shortcut_item_(const ShortcutItem &item, ShortcutOrigin origin,
-                                      DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+  static void activate_shortcut_item_(const latter_core::ShortcutItem &item,
+                                      latter_core::ShortcutOrigin origin,
+                                      latter_core::DeviceRuntimeState &rs,
+                                      const UiTouchRuntime &rt,
                                       uint32_t now_ms);
-  static void launch_dock_app_(int chosen_app, DeviceRuntimeState &rs,
+  static void launch_dock_app_(int chosen_app, latter_core::DeviceRuntimeState &rs,
                                const UiTouchRuntime &rt, uint32_t now_ms);
-  static void launch_shortcut_route_(RouteId route_id, ShortcutOrigin origin,
-                                     DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+  static void launch_shortcut_route_(latter_core::RouteId route_id,
+                                     latter_core::ShortcutOrigin origin,
+                                     latter_core::DeviceRuntimeState &rs,
+                                     const UiTouchRuntime &rt,
                                      uint32_t now_ms);
-  static bool return_from_shortcut_origin_(DeviceRuntimeState &rs,
+  static bool return_from_shortcut_origin_(latter_core::DeviceRuntimeState &rs,
                                            const UiTouchRuntime &rt,
                                            uint32_t now_ms);
   static void handle_home_activity_action_(const HomeActivityItem *items, int count, int item_idx,
                                            bool quick_btn_tap, uint32_t now_ms,
-                                           DeviceRuntimeState &rs, PersistedDevicePrefs &prefs,
+                                           latter_core::DeviceRuntimeState &rs,
+                                           latter_core::PersistedDevicePrefs &prefs,
                                            const UiTouchRuntime &rt);
   static void dispatch_music_play_item_(const std::string &media_id, const std::string &media_type,
                                         const std::string &item_name, std::string_view enqueue,
-                                        bool radio_mode, DeviceRuntimeState &rs, uint32_t now_ms);
-  static std::string resolve_music_speaker_entity_(const DeviceRuntimeState &rs);
-  static int fetch_music_browse_for_current_view_(const DeviceRuntimeState &rs, uint32_t now_ms);
-  static bool open_music_row_action_sheet_(int slot_idx, DeviceRuntimeState &rs, uint32_t now_ms);
-  static bool handle_music_back_step_(DeviceRuntimeState &rs, const UiTouchRuntime &rt, uint32_t now_ms);
+                                        bool radio_mode, latter_core::DeviceRuntimeState &rs,
+                                        uint32_t now_ms);
+  static std::string resolve_music_speaker_entity_(const latter_core::DeviceRuntimeState &rs);
+  static int fetch_music_browse_for_current_view_(const latter_core::DeviceRuntimeState &rs, uint32_t now_ms);
+  static bool open_music_row_action_sheet_(int slot_idx, latter_core::DeviceRuntimeState &rs, uint32_t now_ms);
+  static bool handle_music_back_step_(latter_core::DeviceRuntimeState &rs, const UiTouchRuntime &rt,
+                                      uint32_t now_ms);
   static void do_fetch_area_browse_();
   static void do_fetch_area_list_browse_();
-  static void enter_home_hub_tab_(int target_tab, bool expand_cam, DeviceRuntimeState &rs,
+  static void enter_home_hub_tab_(int target_tab, bool expand_cam, latter_core::DeviceRuntimeState &rs,
                                   const UiTouchRuntime &rt, uint32_t now_ms);
-  static const HomeActivityItem *resolve_home_activities_(uint32_t now_ms, const DeviceRuntimeState &rs,
-                                                          const PersistedDevicePrefs &prefs,
+  static const HomeActivityItem *resolve_home_activities_(uint32_t now_ms,
+                                                          const latter_core::DeviceRuntimeState &rs,
+                                                          const latter_core::PersistedDevicePrefs &prefs,
                                                           const UiTouchRuntime &rt, int &out_count);
   static int remote_key_for_widget_(uint16_t wid) noexcept;
   static void do_remote_send_key_(int key_idx, int target_slot, bool long_press = false,
@@ -866,7 +879,7 @@ class TouchGestureEngine {
 };
 
 TouchGestureEngine &touch_engine();
-void activate_music_peer_tab(MusicView target, uint32_t now_ms);
+void activate_music_peer_tab(latter_core::MusicView target, uint32_t now_ms);
 void request_music_lyrics_refresh(const std::string &track_key, const std::string &speaker_entity,
                                   uint32_t now_ms);
 

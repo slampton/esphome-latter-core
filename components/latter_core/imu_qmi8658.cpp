@@ -3,7 +3,7 @@
 #include "esphome/core/defines.h"
 #include "esphome/core/hal.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 #ifdef USE_ESP32
 ImuWomState &imu_wom() {
@@ -13,6 +13,7 @@ ImuWomState &imu_wom() {
 #endif
 
 #ifdef USE_I2C
+#if LATTER_DRV_IMU_QMI8658
 namespace qmi8658_wom {
 constexpr uint8_t kAddr = 0x6B;
 constexpr uint8_t kCtrl1 = 0x02, kCtrl2 = 0x03, kCtrl7 = 0x08, kCtrl9 = 0x0A;
@@ -60,8 +61,10 @@ void restore_by_reset(esphome::i2c::I2CBus *bus, const uint8_t *snap) {
   wr(bus, kCtrl7, snap[6]);
 }
 }  // namespace qmi8658_wom
+#endif  // LATTER_DRV_IMU_QMI8658
 
 bool hal_imu_wom_enter(esphome::i2c::I2CBus *bus, uint8_t threshold_mg) {
+#if LATTER_DRV_IMU_QMI8658
   using namespace qmi8658_wom;
   ImuWomState &st = imu_wom();
   if (bus == nullptr || st.failed) return false;
@@ -91,9 +94,15 @@ bool hal_imu_wom_enter(esphome::i2c::I2CBus *bus, uint8_t threshold_mg) {
   st.threshold_mg = threshold_mg;
   LATTER_PROF_LOGI("[PROF:IMU] wom=armed thr=%umg", static_cast<unsigned>(threshold_mg));
   return true;
+#else
+  (void)bus;
+  (void)threshold_mg;
+  return false;
+#endif
 }
 
 void hal_imu_wom_exit(esphome::i2c::I2CBus *bus) {
+#if LATTER_DRV_IMU_QMI8658
   using namespace qmi8658_wom;
   ImuWomState &st = imu_wom();
   if (bus == nullptr || !st.armed) return;
@@ -114,19 +123,31 @@ void hal_imu_wom_exit(esphome::i2c::I2CBus *bus) {
   }
   uint8_t s1 = 0;
   rd(bus, kStatus1, &s1);
+#else
+  (void)bus;
+#endif
 }
 
 bool hal_imu_wom_event(esphome::i2c::I2CBus *bus) {
+#if LATTER_DRV_IMU_QMI8658
   if (bus == nullptr || !imu_wom().armed) return false;
   uint8_t s1 = 0;
   if (!qmi8658_wom::rd(bus, qmi8658_wom::kStatus1, &s1)) return false;
   return (s1 & 0x04) != 0;
+#else
+  (void)bus;
+  return false;
+#endif
 }
 
 void hal_imu_qmi8658_hibernate(esphome::i2c::I2CBus *bus) {
+#if LATTER_DRV_IMU_QMI8658
   if (bus == nullptr) return;
   (void)qmi8658_wom::wr(bus, qmi8658_wom::kCtrl7, 0x00);
+#else
+  (void)bus;
+#endif
 }
 #endif  // USE_I2C
 
-}  // namespace latter_ui
+}  // namespace latter_core

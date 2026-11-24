@@ -36,7 +36,7 @@
 }
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 #ifdef USE_ESP32
 namespace {
@@ -122,12 +122,12 @@ void hal_release_pwr_key_wake_pad() {
 
 #ifdef USE_I2C
 namespace {
-constexpr uint8_t kAxpAddr = 0x34;
+[[maybe_unused]] constexpr uint8_t kAxpAddr = 0x34;
 [[maybe_unused]] constexpr uint8_t kPcf85063Addr = 0x51;
 static_assert(kAxpThermalFoldbackEnterC == 65.0f && kAxpThermalFoldbackClearC == 58.0f,
               "AXP2101 thermal foldback thresholds must remain 65 C enter / 58 C clear.");
 
-bool axp_rd(esphome::i2c::I2CBus *bus, uint8_t reg, uint8_t *buf, size_t len = 1) {
+[[maybe_unused]] bool axp_rd(esphome::i2c::I2CBus *bus, uint8_t reg, uint8_t *buf, size_t len = 1) {
   return bus != nullptr && bus->write_readv(kAxpAddr, &reg, 1, buf, len) == esphome::i2c::ERROR_OK;
 }
 
@@ -140,6 +140,7 @@ bool axp_rd(esphome::i2c::I2CBus *bus, uint8_t reg, uint8_t *buf, size_t len = 1
 
 float hal_axp2101_read_die_temp_c(esphome::i2c::I2CBus *bus, bool &ok) {
   ok = false;
+#if LATTER_DRV_PMU_AXP2101
   uint8_t tbuf[2] = {0, 0};
   if (!axp_rd(bus, 0x56, tbuf, 2)) return 0.0f;
   const int raw = ((tbuf[0] & 0x3F) << 8) | tbuf[1];
@@ -148,10 +149,14 @@ float hal_axp2101_read_die_temp_c(esphome::i2c::I2CBus *bus, bool &ok) {
   if (temp_c < -25.0f || temp_c > 125.0f) return 0.0f;
   ok = true;
   return temp_c;
+#else
+  (void)bus;
+  return 0.0f;
+#endif
 }
 
 void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_charging) {
-#if defined(USE_ESP32) && LATTER_HAS_BATTERY
+#if defined(USE_ESP32) && LATTER_DRV_PMU_AXP2101 && LATTER_HAS_BATTERY
   if (bus == nullptr) return;
   auto &tel = pmu_telemetry();
   bool ok = false;
@@ -194,9 +199,14 @@ void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_char
 }
 
 int hal_axp2101_read_gauge_pct(esphome::i2c::I2CBus *bus) {
+#if LATTER_DRV_PMU_AXP2101
   uint8_t gauge = 0xFF;
   if (!axp_rd(bus, 0xA4, &gauge, 1) || gauge > 100) return -1;
   return static_cast<int>(gauge);
+#else
+  (void)bus;
+  return -1;
+#endif
 }
 
 void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t sec_until_alarm) {
@@ -210,6 +220,7 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
   // Boards whose PWR key cannot wake ESP32 deep sleep (non-LP GPIO PWR keys):
   // On battery, never enter rail-on deep sleep (which would strand the user until the timer fires);
   // instead cut AXP2101 rails cleanly (0x10=0x01) so a single PWRON press cold-boots the board.
+#if LATTER_DRV_PMU_AXP2101
   if (!can_wake_for_on_battery_alarm() && sec_until_alarm > 0 && bus != nullptr) {
     uint8_t stat0 = 0;
     const bool vbus_present = axp_rd(bus, 0x00, &stat0, 1) && ((stat0 & 0x20) != 0);
@@ -219,6 +230,7 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
       sec_until_alarm = -1;
     }
   }
+#endif
 
 #if defined(LATTER_PWR_KEY_PIN) && LATTER_PWR_KEY_DEEP_SLEEP_WAKE && SOC_PM_SUPPORT_EXT0_WAKEUP
   esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(LATTER_PWR_KEY_PIN), LATTER_PWR_KEY_ACTIVE_HIGH ? 1 : 0);
@@ -246,6 +258,7 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
     esp_deep_sleep_start();
     return;
   }
+#if LATTER_DRV_PMU_AXP2101
   if (bus != nullptr) {
     const uint16_t rec_mv = batt.vraw_mv > 0 ? static_cast<uint16_t>(batt.vraw_mv) : 0U;
     const uint8_t rec_soc = std::isnan(batt.soc_display) ? 0xFF : static_cast<uint8_t>(std::lround(batt.soc_display));
@@ -260,6 +273,9 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
       ESP_LOGW("power", "AXP2101 power-off write (0x10=0x01) failed; falling back to ESP deep sleep");
     }
   }
+#else
+  (void)bus;
+#endif
   esphome::delay(100);
   esp_deep_sleep_start();
 #else
@@ -269,7 +285,7 @@ void enter_axp2101_hibernate_or_alarm_sleep(esphome::i2c::I2CBus *bus, int32_t s
 }
 
 void hal_axp2101_boot_battery_check(esphome::i2c::I2CBus *bus) {
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && LATTER_DRV_PMU_AXP2101
   if (bus == nullptr) return;
   uint8_t stat0 = 0;
   if (!axp_rd(bus, 0x00, &stat0, 1)) return;
@@ -300,7 +316,7 @@ void hal_axp2101_boot_battery_check(esphome::i2c::I2CBus *bus) {
 }
 
 void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
-#ifdef USE_ESP32
+#if defined(USE_ESP32) && LATTER_DRV_PMU_AXP2101
   if (bus == nullptr) return;
 
   for (uint8_t reg = 0x40; reg <= 0x42; reg++) axp_wr(bus, reg, 0x00);
@@ -420,8 +436,9 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
             bm.seed_from_saved_soc(s_rtc_batt_snap.soc, s_rtc_batt_snap.vraw_mv);
           }
         }
+        // AXP2101 REG A4 OTP gauge is uncalibrated telemetry only (stored in tel.gauge_raw); pass -1 to OCV model.
         bm.update(vbat_mv, !vbus, static_cast<ChargePhase>(chg_state), BattLoad::SCREEN,
-                  boot_ms == 0U ? 1U : boot_ms, hw_gauge, kBattCapacityMah, tel.icc_ma);
+                  boot_ms == 0U ? 1U : boot_ms, -1, kBattCapacityMah, tel.icc_ma);
         hal_battery_save_rtc_snapshot(bm);
         if (!std::isnan(bm.soc_display)) {
           rs.hw_batt_level = std::round(bm.soc_display);
@@ -442,7 +459,7 @@ void hal_init_axp2101(esphome::i2c::I2CBus *bus) {
 }
 
 bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus) {
-#if defined(USE_ESP32) && LATTER_HAS_RTC
+#if defined(USE_ESP32) && LATTER_DRV_RTC_PCF85063
   if (bus == nullptr) return false;
   uint8_t reg[7] = {};
   const uint8_t start_reg = 0x04;
@@ -471,7 +488,7 @@ bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus) {
 }
 
 bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus) {
-#if defined(USE_ESP32) && LATTER_HAS_RTC
+#if defined(USE_ESP32) && LATTER_DRV_RTC_PCF85063
   if (bus == nullptr) return false;
   const time_t now = std::time(nullptr);
   if (now < static_cast<time_t>(1735689600LL)) return false;
@@ -545,4 +562,4 @@ bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus) {
 }
 #endif  // USE_I2C
 
-}  // namespace latter_ui
+}  // namespace latter_core

@@ -4,25 +4,25 @@
 # ==============================================================================
 
 script:
-  # Return the display to its pre-voice-session state (see latter_ui::VaDisplayRestore).
+  # Return the display to its pre-voice-session state (see latter_core::VaDisplayRestore).
   - id: va_restore_display
     mode: restart
     then:
       # Let a music resume settle first (turn_screen_off tears audio down when nothing is playing yet).
       - wait_until:
           condition:
-            lambda: 'return !id(resume_music_after_va).is_running();'
+            lambda: 'return !latter_core::runtime_state().audio.resume_music_running();'
           timeout: 4s
       - delay: 1500ms
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          auto &r = latter_ui::va_display_restore();
+          auto &rs = latter_core::runtime_state();
+          auto &r = latter_core::va_display_restore();
           const int prior = r.armed ? r.prior_state : 0;
           const bool touched = r.touched_since_start(latter_ui::touch_gesture().last_touch_ms);
           r.armed = false;
           const bool alert_up = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active || rs.alert.active;
           if (alert_up || touched || prior == 0 || rs.nav.display_power_state != 0 || rs.nav.is_hibernating) {
-            latter_ui::display_lifecycle().note_activity(millis());
+            latter_core::display_lifecycle().note_activity(millis());
             return;
           }
           if (prior == 1) {
@@ -35,31 +35,31 @@ script:
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.nav.quick_actions_open = false;
           const uint32_t now_ss_ms = millis();
-          const auto &prefs = latter_ui::persisted_prefs();
+          const auto &prefs = latter_core::persisted_prefs();
           const bool sc_ss_override =
               rs.showcase.is_active(now_ss_ms) && rs.showcase.screensaver_style_override >= 0;
           const std::string_view s_style =
               sc_ss_override
-                  ? std::string_view(latter_ui::effective_screensaver_style_cstr(prefs, rs, now_ss_ms))
+                  ? std::string_view(latter_core::effective_screensaver_style_cstr(prefs, rs, now_ss_ms))
                   : (prefs.bedtime_active
-                         ? std::string_view(latter_ui::pref_bedtime_display_cstr(prefs))
-                         : std::string_view(latter_ui::pref_screensaver_style_cstr(prefs)));
+                         ? std::string_view(latter_core::pref_bedtime_display_cstr(prefs))
+                         : std::string_view(latter_core::pref_screensaver_style_cstr(prefs)));
           if (s_style == "Screen Off") {
             id(turn_screen_off).execute();
             return;
           }
-          latter_ui::video_client().stop();
+          latter_core::video_client().stop();
           latter_ui::release_art(id(camera_snapshot_art));
           rs.alert.loaded_camera_url = "";
-          latter_ui::display_lifecycle().on_enter_screensaver(
+          latter_core::display_lifecycle().on_enter_screensaver(
               now_ss_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
           id(disp1).start_poller();
           latter_ui::record_ambient_frame_ms(now_ss_ms);
           id(apply_power_policy).execute();
-          const auto &ac_ss = latter_ui::area_ctx_state();
+          const auto &ac_ss = latter_core::area_ctx_state();
           const bool ss_has_art =
               (id(screensaver_photo_art).get_width() > 0 && !ac_ss.screensaver_photo_url.empty()) ||
               latter_ui::can_reuse_wallpaper_for_photo_frame(
@@ -83,7 +83,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           const uint32_t now_off_ms = millis();
           rs.nav.quick_actions_open = false;
           rs.nav.active_game = 0;
@@ -92,54 +92,43 @@ script:
           // Cut panel/backlight synchronously before audio/IMU I2C and pm_apply() so LightState::loop()
           // is never delayed by the quiet-loop interval (250/1000 ms), and skip a wasted full-frame blit
           // (render_system_takeovers skips buffer writes when display_power_state == 2).
-          latter_ui::display_lifecycle().on_enter_standby_off(
+          latter_core::display_lifecycle().on_enter_standby_off(
               now_off_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
           latter_ui::mark_dirty_full();
           id(disp1).stop_poller();
-          latter_ui::hal_set_display_brightness_f(&id(disp1), 0.0f);
+          latter_core::hal_set_display_brightness_f(&id(disp1), 0.0f);
           id(display_brightness).turn_off().perform();
           id(publish_display_state).execute();
 
-          if (latter_ui::cam_call_active() || latter_ui::cam_intercom_ptt_active() || latter_ui::cam_listen_active()) {
-            latter_ui::intercom_session().stop_call_with_hw(now_off_ms);
+          if (latter_core::cam_call_active() || latter_core::cam_intercom_ptt_active() || latter_core::cam_listen_active()) {
+            latter_core::intercom_session().stop_call_with_hw(now_off_ms);
           }
-          latter_ui::video_client().stop();
+          latter_core::video_client().stop();
           id(fetch_screensaver_photo_now).stop();
           id(fetch_screensaver_photo_debounced).stop();
           latter_ui::release_art(id(screensaver_photo_art));
           rs.music.loaded_screensaver_photo_url = "";
           rs.music.screensaver_photo_failed = false;
 
-          const bool local_audio_playing = (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
-          const std::string_view ww_mode = latter_ui::pref_wake_word_mode_cstr();
-          const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && rs.hw_usb_connected);
-
-          id(sync_wake_word_state).execute();
-
-          if (!local_audio_playing) {
-            id(mute_speaker_path).execute();
-            if (!ww_active) {
-              id(hal_set_audio_codecs_standby).execute(true);
-            }
-          }
+          rs.audio.turn_screen_off_audio(rs.hw_usb_connected);
           id(apply_power_policy).execute();
 
   - id: enter_standby_state
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.nav.quick_actions_open = false;
           const uint32_t now_sb_ms = millis();
-          const auto &prefs = latter_ui::persisted_prefs();
-          latter_ui::video_client().stop();
+          const auto &prefs = latter_core::persisted_prefs();
+          latter_core::video_client().stop();
           latter_ui::release_art(id(camera_snapshot_art));
           rs.alert.loaded_camera_url = "";
           if (prefs.bedtime_active) {
             const bool bt_clock = (LATTER_IS_STATIONARY != 0 || rs.hw_usb_connected) &&
-                                  (std::string_view(latter_ui::pref_bedtime_display_cstr(prefs)) == "Ambient Clock");
+                                  (std::string_view(latter_core::pref_bedtime_display_cstr(prefs)) == "Ambient Clock");
             if (bt_clock) {
-              latter_ui::display_lifecycle().on_enter_screensaver(
+              latter_core::display_lifecycle().on_enter_screensaver(
                   now_sb_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
               id(disp1).start_poller();
               latter_ui::record_ambient_frame_ms(now_sb_ms);
@@ -151,18 +140,18 @@ script:
             }
             return;
           }
-          const std::string_view s_style = latter_ui::pref_screensaver_style_cstr(prefs);
+          const std::string_view s_style = latter_core::pref_screensaver_style_cstr(prefs);
           const bool screensaver_allowed =
-              latter_ui::screensaver_allowed_for_power(
+              latter_core::screensaver_allowed_for_power(
                   prefs.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected) &&
               (s_style != "Screen Off");
           if (screensaver_allowed) {
-            latter_ui::display_lifecycle().on_enter_screensaver(
+            latter_core::display_lifecycle().on_enter_screensaver(
                 now_sb_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
             id(disp1).start_poller();
             latter_ui::record_ambient_frame_ms(now_sb_ms);
             id(apply_power_policy).execute();
-            const auto &ac_sb = latter_ui::area_ctx_state();
+            const auto &ac_sb = latter_core::area_ctx_state();
             const bool sb_has_art =
                 (id(screensaver_photo_art).get_width() > 0 && !ac_sb.screensaver_photo_url.empty()) ||
                 latter_ui::can_reuse_wallpaper_for_photo_frame(
@@ -193,83 +182,80 @@ script:
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           const uint32_t wake_now_ms = millis();
-          const uint32_t prev_user_act_ms = std::max({latter_ui::last_screen_wake_ms(),
+          const uint32_t prev_user_act_ms = std::max({latter_core::last_screen_wake_ms(),
                                                       latter_ui::touch_gesture().last_touch_ms,
                                                       latter_ui::ui_focus_last_ms()});
-          const uint32_t rth_ms = latter_ui::return_to_home_timeout_ms(latter_ui::persisted_prefs());
+          const uint32_t rth_ms = latter_core::return_to_home_timeout_ms(latter_core::persisted_prefs());
           const bool media_playing_wake =
-              (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING) ||
-              (latter_ui::media_state().state == "playing");
-          const bool cam_busy_wake = latter_ui::cam_call_active() ||
-                                     latter_ui::cam_listen_active() ||
-                                     latter_ui::cam_intercom_ptt_active();
+              rs.audio.local_mp_playing() ||
+              (latter_core::media_state().state == "playing");
+          const bool cam_busy_wake = latter_core::cam_call_active() ||
+                                     latter_core::cam_listen_active() ||
+                                     latter_core::cam_intercom_ptt_active();
           if (rth_ms > 0U && wake_now_ms > prev_user_act_ms &&
               (wake_now_ms - prev_user_act_ms >= rth_ms) &&
-              latter_ui::should_return_to_home_on_idle(
-                  rs, latter_ui::persisted_prefs(), media_playing_wake, cam_busy_wake)) {
+              latter_core::should_return_to_home_on_idle(
+                  rs, latter_core::persisted_prefs(), media_playing_wake, cam_busy_wake)) {
             id(sync_ui_touch_runtime).execute();
             latter_ui::touch_engine().navigate_home(wake_now_ms);
           }
           if (rs.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
-            latter_ui::record_screen_wake();
+            latter_core::record_screen_wake();
           }
           id(fetch_screensaver_photo_now).stop();
           id(fetch_screensaver_photo_debounced).stop();
           latter_ui::release_art(id(screensaver_photo_art));
           rs.music.loaded_screensaver_photo_url = "";
           rs.music.screensaver_photo_failed = false;
-          latter_ui::display_lifecycle().on_wake_active(
+          latter_core::display_lifecycle().on_wake_active(
               wake_now_ms, rs.nav.display_power_state, rs.nav.sleep_start_time,
               rs.nav.standby_entered_ms,
-              latter_ui::persisted_prefs().wake_greeting && !latter_ui::persisted_prefs().bedtime_active,
+              latter_core::persisted_prefs().wake_greeting && !latter_core::persisted_prefs().bedtime_active,
               rs.nav.wake_greeting_pending);
-          latter_ui::raise_to_wake().reset();
+          latter_core::raise_to_wake().reset();
           id(disp1).start_poller();
-          latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+          latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
       # Pixel wake runs BEFORE radio/IMU I2C work in apply_power_policy so Frame #1 lights up immediately.
       - script.execute: sync_display_brightness
       - lambda: 'latter_ui::schedule_disp_update(&id(disp1));'
       - script.execute: apply_power_policy
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
-          // Codec power follows audio demand, not screen state: enable_speaker_path / sync_wake_word_state /
-          // voice entry points wake the codecs when audio actually starts.
-          if (id(latter_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING && !id(speaker_enable).state) {
-            id(enable_speaker_path).execute();
-          }
-          const auto &ms = latter_ui::media_state();
+          auto &rs = latter_core::runtime_state();
+          // Codec power follows audio demand, not screen state: audio hooks wake codecs only when audio starts.
+          rs.audio.wake_active_audio();
+          const auto &ms = latter_core::media_state();
           const std::string &art_u = ms.art_url;
           if (rs.nav.gui_page == 2 &&
-              (!ms.is_local || id(album_art).get_width() == 0) &&
+              (!ms.is_local || rs.audio.local_album_art_w() == 0) &&
               !art_u.empty() &&
               art_u != rs.music.loaded_art_url) {
             id(fetch_remote_art_debounced).execute();
           }
-          if (rs.nav.gui_page == latter_ui::PageId::MUSIC &&
+          if (rs.nav.gui_page == latter_core::PageId::MUSIC &&
               !ms.title.empty() &&
-              !latter_ui::is_speech_media_type(ms.media_type) &&
-              (rs.music.view == latter_ui::MusicView::LYRICS ||
-               (rs.music.view == latter_ui::MusicView::NOW_PLAYING &&
+              !latter_core::is_speech_media_type(ms.media_type) &&
+              (rs.music.view == latter_core::MusicView::LYRICS ||
+               (rs.music.view == latter_core::MusicView::NOW_PLAYING &&
                 rs.music.lyrics_auto_managed && rs.music.lyrics_auto_fallback))) {
-            const std::string cur_key = latter_ui::build_music_track_key(ms.title, ms.artist);
+            const std::string cur_key = latter_core::build_music_track_key(ms.title, ms.artist);
             if (!cur_key.empty() && rs.music.lyrics.track_key != cur_key) {
-              if (rs.music.view == latter_ui::MusicView::LYRICS) {
+              if (rs.music.view == latter_core::MusicView::LYRICS) {
                 rs.music.lyrics.track_key = cur_key;
                 rs.music.lyrics.lines.clear();
                 rs.music.lyrics.active_line_idx = -1;
               }
-              latter_actions::emit_music_lyrics_fetch(cur_key, "", millis());
+              latter_core::emit_music_lyrics_fetch(cur_key, "", millis());
             }
           }
-          const std::string &wp_u = latter_ui::area_ctx_state().wallpaper_url;
+          const std::string &wp_u = latter_core::area_ctx_state().wallpaper_url;
           if (!wp_u.empty() &&
-              !latter_ui::is_day_night_sky_wallpaper_url(wp_u) &&
+              !latter_core::is_day_night_sky_wallpaper_url(wp_u) &&
               wp_u != rs.music.loaded_wallpaper_url) {
             id(fetch_wallpaper_debounced).execute();
           }
-          if (latter_ui::is_camera_view_active(rs) ||
+          if (latter_core::is_camera_view_active(rs) ||
               (rs.alert.active && rs.cameras.doorbell_live_popup_active)) {
             id(sync_camera_stream).execute();
           }
@@ -280,26 +266,22 @@ script:
       countdown_sec: int
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           rs.nav.quick_actions_open = false;
-          latter_ui::display_lifecycle().on_prepare_hibernate(
+          latter_core::display_lifecycle().on_prepare_hibernate(
               rs.nav.display_power_state, rs.nav.sleep_start_time);
-          latter_ui::set_ui_anim_poller(id(ui_anim_tick), false);
+          latter_core::set_ui_anim_poller(id(ui_anim_tick), false);
           id(disp1).start_poller();
           rs.nav.hibernate_countdown_val = countdown_sec;
           rs.nav.is_hibernating = true;
           rs.nav.active_game = 0;
-          latter_ui::video_client().stop();
+          latter_core::video_client().stop();
           id(fetch_screensaver_photo_now).stop();
           id(fetch_screensaver_photo_debounced).stop();
           latter_ui::release_art(id(screensaver_photo_art));
           rs.music.loaded_screensaver_photo_url = "";
           rs.music.screensaver_photo_failed = false;
-      - micro_wake_word.stop:
-      - voice_assistant.stop:
-      - media_player.pause: latter_media_player
-      - lambda: 'id(hal_set_dac_mute).execute(true);'
-      - switch.turn_off: speaker_enable
+          rs.audio.prepare_hibernate_audio();
       - script.execute: sync_display_brightness
       - if:
           condition:
@@ -340,25 +322,25 @@ script:
                   - delay: 1000ms
                   - if:
                       condition:
-                        lambda: 'return latter_ui::runtime_state().nav.is_hibernating;'
+                        lambda: 'return latter_core::runtime_state().nav.is_hibernating;'
                       then:
                         - lambda: |-
-                            auto &rs = latter_ui::runtime_state();
+                            auto &rs = latter_core::runtime_state();
                             if (rs.nav.hibernate_countdown_val > 1) {
                               rs.nav.hibernate_countdown_val--;
                               latter_ui::schedule_disp_update(&id(disp1));
                             }
                   - if:
                       condition:
-                        lambda: 'return !latter_ui::runtime_state().nav.is_hibernating;'
+                        lambda: 'return !latter_core::runtime_state().nav.is_hibernating;'
                       then:
-                        - lambda: 'latter_ui::hibernate_ui_prepared() = false;'
+                        - lambda: 'latter_core::hibernate_ui_prepared() = false;'
                         - script.stop: start_hibernation_countdown
             - if:
                 condition:
-                  lambda: 'return latter_ui::runtime_state().nav.is_hibernating;'
+                  lambda: 'return latter_core::runtime_state().nav.is_hibernating;'
                 then:
-                  - lambda: 'latter_ui::runtime_state().nav.hibernate_countdown_val = 0;'
+                  - lambda: 'latter_core::runtime_state().nav.hibernate_countdown_val = 0;'
                   - script.execute: enter_deep_sleep
 
   - id: enter_deep_sleep
@@ -370,50 +352,50 @@ script:
           then:
             - if:
                 condition:
-                  lambda: 'return !latter_ui::hibernate_ui_prepared();'
+                  lambda: 'return !latter_core::hibernate_ui_prepared();'
                 then:
                   - script.execute:
                       id: prepare_hibernation_teardown
                       countdown_sec: 0
                   - script.wait: prepare_hibernation_teardown
                   - delay: 600ms
-            - lambda: 'latter_ui::hibernate_ui_prepared() = false;'
+            - lambda: 'latter_core::hibernate_ui_prepared() = false;'
             - wait_until:
                 condition:
                   lambda: |-
-                    const auto &rs = latter_ui::runtime_state();
+                    const auto &rs = latter_core::runtime_state();
                     return rs.hw_pwr_key_pressed == nullptr || !rs.hw_pwr_key_pressed();
                 timeout: 3s
             - lambda: |-
-                auto &rs = latter_ui::runtime_state();
+                auto &rs = latter_core::runtime_state();
                 rs.nav.is_hibernating = false;
                 rs.nav.display_power_state = 2;
             - light.turn_off: display_brightness
             - component.update: disp1
             - lambda: |-
-                latter_ui::flush_persisted_prefs_if_dirty();
-                latter_ui::save_hibernate_snapshot();
-                latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
-                if (latter_ui::link_state().ha_connected) {
-                  const std::string link_j = latter_ui::link_report_json(
-                      millis(), latter_ui::last_reset_reason(), /*hibernating=*/true);
+                latter_core::flush_persisted_prefs_if_dirty();
+                latter_core::save_hibernate_snapshot();
+                latter_core::hal_rtc_sync_from_system_clock(id(bus_internal));
+                if (latter_core::link_state().ha_connected) {
+                  const std::string link_j = latter_core::link_report_json(
+                      millis(), latter_core::last_reset_reason(), /*hibernating=*/true);
                   const int int_free_kb = static_cast<int>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U);
                   const int int_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U);
                   const int int_largest_kb = static_cast<int>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U);
                   const int psram_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U);
-                  latter_actions::emit_device_telemetry(
+                  latter_core::emit_device_telemetry(
                       link_j, int_free_kb, int_min_kb, int_largest_kb, psram_min_kb,
-                      id(ble_ctrl).is_active(), latter_ui::profiler_enabled());
+                      id(ble_ctrl).is_active(), latter_core::profiler_enabled());
                 }
             - wait_until:
                 condition:
                   lambda: 'return !latter_rpc::has_pending_frames();'
                 timeout: 300ms
             - lambda: |-
-                const auto &bm = latter_ui::battery_model();
-                const char *hib_reason = latter_ui::hibernate_reason_name(static_cast<uint8_t>(bm.hib_reason));
-                const float batt_pct = !std::isnan(latter_ui::runtime_state().hw_batt_level)
-                                           ? latter_ui::runtime_state().hw_batt_level
+                const auto &bm = latter_core::battery_model();
+                const char *hib_reason = latter_core::hibernate_reason_name(static_cast<uint8_t>(bm.hib_reason));
+                const float batt_pct = !std::isnan(latter_core::runtime_state().hw_batt_level)
+                                           ? latter_core::runtime_state().hw_batt_level
                                            : bm.soc_display;
                 if (!std::isnan(batt_pct)) {
                   const unsigned pct = static_cast<unsigned>(std::clamp(std::lround(batt_pct), 0L, 100L));
@@ -422,7 +404,18 @@ script:
                   ESP_LOGI("power", "Entering hibernate (reason=%s, battery=unknown)", hib_reason);
                 }
             - delay: 60ms
-            - lambda: 'esphome::voice_assistant::clean_disconnect_api_before_hibernate(id(va));'
+            - lambda: |-
+                const auto &au = latter_core::runtime_state().audio;
+                if (au.on_clean_disconnect_hibernate != nullptr) {
+                  au.on_clean_disconnect_hibernate();
+                } else {
+                #ifdef USE_API
+                  if (esphome::api::global_api_server != nullptr) {
+                    ESP_LOGD("power", "Sending clean API DisconnectRequest to Home Assistant before Hibernate rail cut");
+                    esphome::api::global_api_server->on_shutdown();
+                  }
+                #endif
+                }
             - delay: 200ms
             - safe_mode.mark_successful:
             - script.execute: hal_enter_hardware_hibernate

@@ -16,8 +16,20 @@
 
 #include "hal_manifest.h"
 #include "latter_prof.h"
+#include "state/device_runtime_state.h"
 
-namespace latter_ui {
+namespace latter_core {
+
+// Maps generic core ImuPowerMode onto QMI8658 CTRL7 (REG 0x08) enable mask.
+inline constexpr uint8_t qmi8658_ctrl7_for_power_mode(ImuPowerMode mode) noexcept {
+  switch (mode) {
+    case ImuPowerMode::Off: return 0x00U;
+    case ImuPowerMode::AccelOnly: return 0x01U;
+    case ImuPowerMode::AccelAndGyro: return 0x03U;
+    case ImuPowerMode::WakeOnMotion: return 0x01U;
+  }
+  return 0x00U;
+}
 
 struct ImuWomState {
   bool armed = false;
@@ -72,4 +84,4 @@ inline void hal_imu_qmi8658_hibernate(I2cBusT *const *bus_pp) {
 }
 #endif  // USE_I2C
 
-}  // namespace latter_ui
+}  // namespace latter_core

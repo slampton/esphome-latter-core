@@ -5,6 +5,7 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, bool panel_is_on,
                                     int display_power_state, bool alert_ringing, bool va_active,
@@ -278,7 +279,9 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
   // 10. DOCKED SCREENSAVER (Mode 1)
   if (st.display_power_state == 1) {
     frame_base(it, st.col_bg);
+#if LATTER_GUI_UNIVERSAL
     render_docked_screensaver(it, ctx, st);
+#endif
     return true;
   }
 

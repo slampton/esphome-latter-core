@@ -46,47 +46,58 @@ substitutions:
   i2s_din_pin: GPIO11
   i2s_dout_pin: GPIO9
 
-esphome:
-  build_flags:
-    - '-DLATTER_BOARD_ID=\"waveshare_p4_35\"'
-    - "-DLATTER_BLE_MINOR=4"
-    - "-DLATTER_SCREEN_W=320"
-    - "-DLATTER_SCREEN_H=480"
-    - "-DLATTER_ROUND_DISPLAY=0"
-    - "-DLATTER_HAS_DISPLAY=1"
-    - "-DLATTER_HAS_TOUCH=1"
-    - "-DLATTER_HAS_AUDIO=1"
-    - "-DLATTER_HAS_IMU=0"
-    - "-DLATTER_HAS_BATTERY=1"
-    - "-DLATTER_HAS_RTC=0"
-    - "-DLATTER_IS_STATIONARY=0"
-    - "-DLATTER_IS_WEARABLE=0"
-    - "-DLATTER_PANEL_IPS=1"
-    - "-DLATTER_PANEL_DCS_SLEEP=1"
-    - "-DLATTER_DISPLAY_DC_PIN=26"
-    - "-DLATTER_PANEL_PPI=165"
-    - "-DLATTER_CHIP_P4=1"
-    - "-DLATTER_PSRAM_MB=32"
-    - "-DLATTER_PWR_KEY_PIN=49"
-    - "-DLATTER_C6_RESET_PIN=54"  # C6 CHIP_PU (esp32_hosted reset_pin; R25 10k pull-up): held low in alarm-sleep
-    - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
-    - "-DLATTER_PMU_TS_DISABLE=1"
-    - "-DLATTER_PMU_DCDC_KEEP_MASK=0x01"
-    - "-DLATTER_PMU_LDO_KEEP_MASK=0x001"
+latter_core:
+  board_id: waveshare_p4_35
+  ble_minor: 4
+  gui: universal
+  chip: esp32p4
+  psram_mb: 32
+  display:
+    width: 320
+    height: 480
+    ppi: 165
+    round: false
+    ips: true
+    dcs_sleep: true
+    dc_pin: 26
+    touch_int_pin: 50
+    touch_rst_pin: 29
+  backlight:
+    pin: 28
+    pwm_hz: 5000
+    pwm_bits: 12
+    duty_min_pm: 3
+    duty_max_pm: 1000
+  power:
     # Fitted cell (boards/facts power.battery_mah): the charge profile, state of charge and cutoff derive
     # from it (include/hal_battery.h)
-    - "-DLATTER_BATTERY_MAH=500"
-    - "-DLATTER_BACKLIGHT_PIN=28"
-    - "-DLATTER_BACKLIGHT_PWM_HZ=5000"
-    - "-DLATTER_BACKLIGHT_PWM_BITS=12"
-    - "-DLATTER_BACKLIGHT_DUTY_MIN_PM=3"
-    - "-DLATTER_BACKLIGHT_DUTY_MAX_PM=1000"
-    - "-DLATTER_TOUCH_INT_PIN=50"
-    - "-DLATTER_TOUCH_RST_PIN=29"
-    - "-DLATTER_AUDIO_OUT_RATE=48000"
-    - "-DLATTER_AUDIO_OUT_CH=1"
-    - "-DLATTER_AUDIO_OUT_BITS=16"
-    - "-DLATTER_AUDIO_IN_RATE=16000"
+    battery_mah: 500
+    pwr_key_pin: 49
+    pwr_key_active_high: true
+    c6_reset_pin: 54  # C6 CHIP_PU (esp32_hosted reset_pin; R25 10k pull-up): held low in alarm-sleep
+    pmu_ts_disable: true
+    pmu_dcdc_keep_mask: 0x01
+    pmu_ldo_keep_mask: 0x001
+  audio:
+    out_rate: 48000
+    out_channels: 1
+    out_bits: 16
+    in_rate: 16000
+  capabilities:
+    display: true
+    touch: true
+    audio: true
+    imu: false
+    battery: true
+    rtc: false
+    stationary: false
+    wearable: false
+  drivers:
+    pmu_axp2101: true
+    rtc_pcf85063: false
+    imu_qmi8658: false
+    codec_es8311: true
+    touch_ft5x06: true
 
 esp32:
   flash_size: 16MB
@@ -110,8 +121,19 @@ spi:
 
 packages:
   latter_chip: !include ../modules/hal/chip_esp32p4.yaml
+  latter_radio: !include ../modules/hal/radio_esp32c6_sdio.yaml
   latter_audio_hal: !include ../modules/hal/audio_es8311_duplex.yaml
   latter_pmu: !include ../modules/hal/pmu_axp2101.yaml
+  latter_battery_service: !include ../modules/battery_service.yaml
+
+esphome:
+  on_boot:
+    - priority: 850
+      then:
+        - lambda: |-
+            latter_core::runtime_state().hw_set_touch_sleep_mode = +[](bool sleep) {
+              latter_core::hal_set_touch_sleep_mode(id(bus_internal), sleep);
+            };
 
 switch:
   - platform: gpio
@@ -213,10 +235,10 @@ script:
     mode: restart
     then:
       - lambda: |-
-          latter_ui::hal_power_down_audio_and_imu_for_hibernate(id(bus_internal), false, false);
+          latter_core::hal_power_down_audio_and_imu_for_hibernate(id(bus_internal), false, false);
 
           // Force Speaker Power Amplifier (GPIO53) and Backlight (GPIO28) LOW and hold
-          latter_ui::hal_set_display_brightness(&id(disp1), 0);
+          latter_core::hal_set_display_brightness(&id(disp1), 0);
           gpio_set_direction(GPIO_NUM_53, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_53, 0);
           gpio_hold_en(GPIO_NUM_53);
@@ -240,12 +262,12 @@ script:
 
           global_preferences->sync();
 
-          const auto &rs = latter_ui::runtime_state();
-          const auto &ap = latter_ui::persisted_prefs().alarms;
-          int32_t sec_to_alarm = latter_ui::seconds_until_next_armed_alarm(
+          const auto &rs = latter_core::runtime_state();
+          const auto &ap = latter_core::persisted_prefs().alarms;
+          int32_t sec_to_alarm = latter_core::seconds_until_next_armed_alarm(
               id(ha_time).now().is_valid() ? id(ha_time).now() : id(sntp_time).now(),
               rs.alarms.snooze_until,
               ap[0].hour, ap[0].minute, ap[0].enabled, ap[0].recurrence,
               ap[1].hour, ap[1].minute, ap[1].enabled, ap[1].recurrence,
               ap[2].hour, ap[2].minute, ap[2].enabled, ap[2].recurrence);
-          latter_ui::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);
+          latter_core::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);

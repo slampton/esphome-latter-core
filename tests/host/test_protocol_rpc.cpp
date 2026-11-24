@@ -5,129 +5,129 @@ namespace latter_test {
 namespace {
 
 void test_protocol_v3_and_rpc() {
-  latter_ui::reset_all_v3_rev_guards();
-  auto &rem = latter_ui::remote_state();
+  latter_core::reset_all_v3_rev_guards();
+  auto &rem = latter_core::remote_state();
   LATTER_CHECK(rem.epoch == 0 && rem.rev == 0);
 
-  std::vector<std::string> r_tok(static_cast<size_t>(latter_ui::RemoteField::COUNT), "");
-  r_tok[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "2";
-  r_tok[static_cast<size_t>(latter_ui::RemoteField::CONFIGURED_COUNT)] = "2";
-  r_tok[static_cast<size_t>(latter_ui::RemoteField::SLOTS_SUMMARY)] = "Apple TV\x1e" "remote.apple_tv";
+  std::vector<std::string> r_tok(static_cast<size_t>(latter_core::RemoteField::COUNT), "");
+  r_tok[static_cast<size_t>(latter_core::RemoteField::ACTIVE_SLOT)] = "2";
+  r_tok[static_cast<size_t>(latter_core::RemoteField::CONFIGURED_COUNT)] = "2";
+  r_tok[static_cast<size_t>(latter_core::RemoteField::SLOTS_SUMMARY)] = "Apple TV\x1e" "remote.apple_tv";
 
-  LATTER_CHECK(latter_ui::parse_v3_remote_payload(build_v3_packet(100, 1, r_tok)));
+  LATTER_CHECK(latter_core::parse_v3_remote_payload(build_v3_packet(100, 1, r_tok)));
   LATTER_CHECK(rem.epoch == 100 && rem.rev == 1 && rem.active_slot == 1 && rem.configured_count == 2);
 
-  r_tok[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "9";
-  LATTER_CHECK(!latter_ui::parse_v3_remote_payload(build_v3_packet(100, 1, r_tok)));
+  r_tok[static_cast<size_t>(latter_core::RemoteField::ACTIVE_SLOT)] = "9";
+  LATTER_CHECK(!latter_core::parse_v3_remote_payload(build_v3_packet(100, 1, r_tok)));
   LATTER_CHECK(rem.active_slot == 1);
 
-  r_tok[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "3";
-  LATTER_CHECK(latter_ui::parse_v3_remote_payload(build_v3_packet(100, 2, r_tok)));
+  r_tok[static_cast<size_t>(latter_core::RemoteField::ACTIVE_SLOT)] = "3";
+  LATTER_CHECK(latter_core::parse_v3_remote_payload(build_v3_packet(100, 2, r_tok)));
   LATTER_CHECK(rem.epoch == 100 && rem.rev == 2 && rem.active_slot == 2);
 
-  LATTER_CHECK(!latter_ui::parse_v3_remote_payload(build_v3_packet(100, 1, r_tok)));
+  LATTER_CHECK(!latter_core::parse_v3_remote_payload(build_v3_packet(100, 1, r_tok)));
   LATTER_CHECK(rem.active_slot == 2);
 
-  r_tok[static_cast<size_t>(latter_ui::RemoteField::ACTIVE_SLOT)] = "1";
-  LATTER_CHECK(latter_ui::parse_v3_remote_payload(build_v3_packet(200, 1, r_tok)));
+  r_tok[static_cast<size_t>(latter_core::RemoteField::ACTIVE_SLOT)] = "1";
+  LATTER_CHECK(latter_core::parse_v3_remote_payload(build_v3_packet(200, 1, r_tok)));
   LATTER_CHECK(rem.epoch == 200 && rem.rev == 1 && rem.active_slot == 0);
 
-  latter_ui::reset_all_v3_rev_guards();
+  latter_core::reset_all_v3_rev_guards();
   LATTER_CHECK(rem.epoch == 0 && rem.rev == 0);
-  LATTER_CHECK(latter_ui::parse_v3_remote_payload(build_v3_packet(200, 1, r_tok)));
+  LATTER_CHECK(latter_core::parse_v3_remote_payload(build_v3_packet(200, 1, r_tok)));
 
   const std::string bad_v2 = std::string("v2\x1f") + "200\x1f" + "9\x1f" + "1\x1f" + "1\x1f" + "a";
   const std::string sub_floor = std::string("v3\x1f") + "200";
-  LATTER_CHECK(!latter_ui::parse_v3_remote_payload(bad_v2));
-  LATTER_CHECK(!latter_ui::parse_v3_remote_payload(sub_floor));
-  LATTER_CHECK(!latter_ui::parse_v3_area_ctx_payload(sub_floor));
-  LATTER_CHECK(!latter_ui::parse_v3_media_payload(sub_floor));
-  LATTER_CHECK(!latter_ui::parse_v3_weather_payload(sub_floor));
-  LATTER_CHECK(!latter_ui::parse_v3_calendar_payload(sub_floor));
+  LATTER_CHECK(!latter_core::parse_v3_remote_payload(bad_v2));
+  LATTER_CHECK(!latter_core::parse_v3_remote_payload(sub_floor));
+  LATTER_CHECK(!latter_core::parse_v3_area_ctx_payload(sub_floor));
+  LATTER_CHECK(!latter_core::parse_v3_media_payload(sub_floor));
+  LATTER_CHECK(!latter_core::parse_v3_weather_payload(sub_floor));
+  LATTER_CHECK(!latter_core::parse_v3_calendar_payload(sub_floor));
 
-  latter_ui::reset_all_v3_rev_guards();
+  latter_core::reset_all_v3_rev_guards();
 
-  std::vector<std::string> area_t(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "office";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Office";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::AREA_TEMP)] = "71.5";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::LIGHTS_ON)] = "2";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ALERT_ID)] = "42";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::SECURITY_PIN_POLICY)] = "require_pin";
-  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 1, area_t)));
-  LATTER_CHECK(latter_ui::area_ctx_state().area_id == "office");
-  LATTER_CHECK(latter_ui::area_ctx_state().lights_on == 2);
-  LATTER_CHECK(latter_ui::area_ctx_state().alert_id == 42);
-  LATTER_CHECK(latter_ui::area_ctx_state().security_pin_policy == "require_pin");
-  LATTER_CHECK(latter_ui::activity_source_mask() == latter_ui::kActivitySourceAll);
+  std::vector<std::string> area_t(static_cast<size_t>(latter_core::AreaCtxField::COUNT), "");
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::AREA_ID)] = "office";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::AREA_NAME)] = "Office";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::AREA_TEMP)] = "71.5";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::LIGHTS_ON)] = "2";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::ALERT_ID)] = "42";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::SECURITY_PIN_POLICY)] = "require_pin";
+  LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(10, 1, area_t)));
+  LATTER_CHECK(latter_core::area_ctx_state().area_id == "office");
+  LATTER_CHECK(latter_core::area_ctx_state().lights_on == 2);
+  LATTER_CHECK(latter_core::area_ctx_state().alert_id == 42);
+  LATTER_CHECK(latter_core::area_ctx_state().security_pin_policy == "require_pin");
+  LATTER_CHECK(latter_core::activity_source_mask() == latter_core::kActivitySourceAll);
 
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "1";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "calendar,timers,future_key";
-  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 2, area_t)));
-  LATTER_CHECK(latter_ui::activity_source_mask() == ((1U << 5) | (1U << 1)));
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::ACTIVITY_CARD)] = "1";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::ACTIVITY_SOURCES)] = "calendar,timers,future_key";
+  LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(10, 2, area_t)));
+  LATTER_CHECK(latter_core::activity_source_mask() == ((1U << 5) | (1U << 1)));
 
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "0";
-  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 3, area_t)));
-  LATTER_CHECK(latter_ui::activity_source_mask() == 0);
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::ACTIVITY_CARD)] = "0";
+  LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(10, 3, area_t)));
+  LATTER_CHECK(latter_core::activity_source_mask() == 0);
 
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_CARD)] = "";
-  area_t[static_cast<size_t>(latter_ui::AreaCtxField::ACTIVITY_SOURCES)] = "";
-  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(10, 4, area_t)));
-  LATTER_CHECK(latter_ui::activity_source_mask() == latter_ui::kActivitySourceAll);
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::ACTIVITY_CARD)] = "";
+  area_t[static_cast<size_t>(latter_core::AreaCtxField::ACTIVITY_SOURCES)] = "";
+  LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(10, 4, area_t)));
+  LATTER_CHECK(latter_core::activity_source_mask() == latter_core::kActivitySourceAll);
 
-  std::vector<std::string> media_t(static_cast<size_t>(latter_ui::MediaField::COUNT), "");
-  media_t[static_cast<size_t>(latter_ui::MediaField::STATE)] = "playing";
-  media_t[static_cast<size_t>(latter_ui::MediaField::TITLE)] = "Time";
-  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "1";
-  media_t[static_cast<size_t>(latter_ui::MediaField::LAST_SPEAKER)] = "media_player.office_speaker";
-  media_t[static_cast<size_t>(latter_ui::MediaField::IS_LOCAL)] = "1";
-  LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 1, media_t)));
-  LATTER_CHECK(latter_ui::media_state().has_volume);
-  LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
-  LATTER_CHECK(latter_ui::media_state().last_speaker == "media_player.office_speaker");
-  LATTER_CHECK(latter_ui::media_state().is_local);
+  std::vector<std::string> media_t(static_cast<size_t>(latter_core::MediaField::COUNT), "");
+  media_t[static_cast<size_t>(latter_core::MediaField::STATE)] = "playing";
+  media_t[static_cast<size_t>(latter_core::MediaField::TITLE)] = "Time";
+  media_t[static_cast<size_t>(latter_core::MediaField::VOLUME)] = "1";
+  media_t[static_cast<size_t>(latter_core::MediaField::LAST_SPEAKER)] = "media_player.office_speaker";
+  media_t[static_cast<size_t>(latter_core::MediaField::IS_LOCAL)] = "1";
+  LATTER_CHECK(latter_core::parse_v3_media_payload(build_v3_packet(10, 1, media_t)));
+  LATTER_CHECK(latter_core::media_state().has_volume);
+  LATTER_CHECK(std::fabs(latter_core::media_state().volume - 0.01f) < 0.0005f);
+  LATTER_CHECK(latter_core::media_state().last_speaker == "media_player.office_speaker");
+  LATTER_CHECK(latter_core::media_state().is_local);
 
-  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "";
-  LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 2, media_t)));
-  LATTER_CHECK(!latter_ui::media_state().has_volume);
-  LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 0.01f) < 0.0005f);
+  media_t[static_cast<size_t>(latter_core::MediaField::VOLUME)] = "";
+  LATTER_CHECK(latter_core::parse_v3_media_payload(build_v3_packet(10, 2, media_t)));
+  LATTER_CHECK(!latter_core::media_state().has_volume);
+  LATTER_CHECK(std::fabs(latter_core::media_state().volume - 0.01f) < 0.0005f);
 
-  media_t[static_cast<size_t>(latter_ui::MediaField::VOLUME)] = "100";
-  LATTER_CHECK(latter_ui::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
-  LATTER_CHECK(latter_ui::media_state().has_volume);
-  LATTER_CHECK(std::fabs(latter_ui::media_state().volume - 1.00f) < 0.0005f);
-  static_assert(static_cast<size_t>(latter_ui::MediaField::IS_DEFAULT_SPEAKER) == 23U);
-  static_assert(static_cast<size_t>(latter_ui::MediaField::COUNT) == 24U);
-  static_assert(static_cast<size_t>(latter_ui::WeatherField::TEMP_UNIT) == 17U);
-  static_assert(static_cast<size_t>(latter_ui::WeatherField::COUNT) == 18U);
+  media_t[static_cast<size_t>(latter_core::MediaField::VOLUME)] = "100";
+  LATTER_CHECK(latter_core::parse_v3_media_payload(build_v3_packet(10, 3, media_t)));
+  LATTER_CHECK(latter_core::media_state().has_volume);
+  LATTER_CHECK(std::fabs(latter_core::media_state().volume - 1.00f) < 0.0005f);
+  static_assert(static_cast<size_t>(latter_core::MediaField::IS_DEFAULT_SPEAKER) == 23U);
+  static_assert(static_cast<size_t>(latter_core::MediaField::COUNT) == 24U);
+  static_assert(static_cast<size_t>(latter_core::WeatherField::TEMP_UNIT) == 17U);
+  static_assert(static_cast<size_t>(latter_core::WeatherField::COUNT) == 18U);
 
-  std::vector<std::string> weather_t(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
-  weather_t[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "sunny";
-  weather_t[static_cast<size_t>(latter_ui::WeatherField::TEMPERATURE)] = "68";
-  weather_t[static_cast<size_t>(latter_ui::WeatherField::WIND_BEARING)] = "247.5";
-  weather_t[static_cast<size_t>(latter_ui::WeatherField::SUN_STATE)] = "above_horizon";
-  weather_t[static_cast<size_t>(latter_ui::WeatherField::MOON_PHASE)] = "waxing_gibbous";
-  weather_t[static_cast<size_t>(latter_ui::WeatherField::TEMP_UNIT)] = "C";
-  LATTER_CHECK(latter_ui::parse_v3_weather_payload(build_v3_packet(10, 1, weather_t)));
-  LATTER_CHECK(latter_ui::weather_state().condition == "sunny");
-  LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
-  LATTER_CHECK(std::fabs(latter_ui::weather_state().wind_bearing - 247.5f) < 0.01f);
-  LATTER_CHECK(latter_ui::weather_state().temp_unit == "C");
-  LATTER_CHECK(latter_ui::v3_mismatch_warn_count() == 0);
+  std::vector<std::string> weather_t(static_cast<size_t>(latter_core::WeatherField::COUNT), "");
+  weather_t[static_cast<size_t>(latter_core::WeatherField::CONDITION)] = "sunny";
+  weather_t[static_cast<size_t>(latter_core::WeatherField::TEMPERATURE)] = "68";
+  weather_t[static_cast<size_t>(latter_core::WeatherField::WIND_BEARING)] = "247.5";
+  weather_t[static_cast<size_t>(latter_core::WeatherField::SUN_STATE)] = "above_horizon";
+  weather_t[static_cast<size_t>(latter_core::WeatherField::MOON_PHASE)] = "waxing_gibbous";
+  weather_t[static_cast<size_t>(latter_core::WeatherField::TEMP_UNIT)] = "C";
+  LATTER_CHECK(latter_core::parse_v3_weather_payload(build_v3_packet(10, 1, weather_t)));
+  LATTER_CHECK(latter_core::weather_state().condition == "sunny");
+  LATTER_CHECK(latter_core::weather_state().sun_state == "above_horizon");
+  LATTER_CHECK(std::fabs(latter_core::weather_state().wind_bearing - 247.5f) < 0.01f);
+  LATTER_CHECK(latter_core::weather_state().temp_unit == "C");
+  LATTER_CHECK(latter_core::v3_mismatch_warn_count() == 0);
 
-  std::vector<std::string> min_weather(latter_ui::kProtocolMinRequiredFields, "");
-  if (min_weather.size() > static_cast<size_t>(latter_ui::WeatherField::CONDITION)) {
-    min_weather[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "clear-night";
+  std::vector<std::string> min_weather(latter_core::kProtocolMinRequiredFields, "");
+  if (min_weather.size() > static_cast<size_t>(latter_core::WeatherField::CONDITION)) {
+    min_weather[static_cast<size_t>(latter_core::WeatherField::CONDITION)] = "clear-night";
   }
-  LATTER_CHECK(latter_ui::parse_v3_weather_payload(build_v3_packet(10, 2, min_weather)));
-  LATTER_CHECK(latter_ui::v3_mismatch_warn_count() == 1);
+  LATTER_CHECK(latter_core::parse_v3_weather_payload(build_v3_packet(10, 2, min_weather)));
+  LATTER_CHECK(latter_core::v3_mismatch_warn_count() == 1);
 
-  std::vector<std::string> future_cal(static_cast<size_t>(latter_ui::CalendarField::COUNT) + 3, "future_ext");
-  future_cal[static_cast<size_t>(latter_ui::CalendarField::SUMMARY)] = "Today|09:00|Standup";
-  future_cal[static_cast<size_t>(latter_ui::CalendarField::EVENT_COUNT)] = "1";
-  LATTER_CHECK(latter_ui::parse_v3_calendar_payload(build_v3_packet(10, 1, future_cal)));
-  LATTER_CHECK(latter_ui::calendar_state().count == 1);
-  LATTER_CHECK(latter_ui::v3_mismatch_warn_count() == 2);
+  std::vector<std::string> future_cal(static_cast<size_t>(latter_core::CalendarField::COUNT) + 3, "future_ext");
+  future_cal[static_cast<size_t>(latter_core::CalendarField::SUMMARY)] = "Today|09:00|Standup";
+  future_cal[static_cast<size_t>(latter_core::CalendarField::EVENT_COUNT)] = "1";
+  LATTER_CHECK(latter_core::parse_v3_calendar_payload(build_v3_packet(10, 1, future_cal)));
+  LATTER_CHECK(latter_core::calendar_state().count == 1);
+  LATTER_CHECK(latter_core::v3_mismatch_warn_count() == 2);
 
   struct FakeOutbox {
     std::vector<std::string> frames;
@@ -200,6 +200,7 @@ void test_protocol_v3_and_rpc() {
 
 void test_v3_domain_reducer_and_timer_alarm() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   reset_runtime_state();
 
@@ -356,6 +357,7 @@ void test_v3_domain_reducer_and_timer_alarm() {
 
 void test_phase4_security_dnd_hit_targets_and_iso_tz() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(static_cast<uint8_t>(AutoBrightnessMode::AmbientLight) == 3U);
   static_assert(ShortcutsState::kMaxDockItems == 24U);
@@ -384,13 +386,18 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
     PersistedDevicePrefs src{};
     src.day_brightness = 77U;
     src.do_not_disturb = true;
-    const size_t prefix_len = offsetof(PersistedDevicePrefs, do_not_disturb);
+    src.glass_style = 2U;
+    const size_t sub_floor_len = offsetof(PersistedDevicePrefs, do_not_disturb);
     PersistedDevicePrefs dst{};
     dst.do_not_disturb = false;
-    LATTER_CHECK(load_persisted_prefs_from_buffer(&src, prefix_len, dst));
-    LATTER_CHECK(dst.day_brightness == 77U);
-    LATTER_CHECK(!dst.do_not_disturb);
+    LATTER_CHECK(!load_persisted_prefs_from_buffer(&src, sub_floor_len, dst));
 
+    LATTER_CHECK(load_persisted_prefs_from_buffer(&src, kPersistedPrefsMinSize, dst));
+    LATTER_CHECK(dst.day_brightness == 77U);
+    LATTER_CHECK(dst.do_not_disturb);
+    LATTER_CHECK(dst.glass_style == 2U);
+
+    dst = PersistedDevicePrefs{};
     LATTER_CHECK(load_persisted_prefs_from_buffer(&src, sizeof(PersistedDevicePrefs), dst));
     LATTER_CHECK(dst.do_not_disturb);
 
@@ -509,6 +516,7 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
 
 void test_sram_psram_budget_and_http_stall_guards() {
   using namespace latter_ui;
+  using namespace latter_core;
 
 #if LATTER_CHIP_P4
   static_assert(LATTER_ART_CACHE_ENTRIES == 3, "32 MB PSRAM P4 builds allow 3 ArtCanvasCache slots");
@@ -576,7 +584,8 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(gfx_src.find("static uint16_t row_buf[") == std::string::npos);
   LATTER_CHECK(gfx_src.find("static uint16_t sx_lut[") == std::string::npos);
   LATTER_CHECK(gfx_src.find("static uint16_t scaled_row[") == std::string::npos);
-  LATTER_CHECK(gfx_src.find("sky_base_cache_drop()") != std::string::npos);
+  LATTER_CHECK(gfx_src.find("sky_base_cache_drop()") == std::string::npos);
+  LATTER_CHECK(gfx_src.find("evict_registered_psram_caches()") != std::string::npos);
   LATTER_CHECK(gfx_src.find("blit_dimmed_rgb565_scanline(") != std::string::npos);
   LATTER_CHECK(gfx_src.find("full_rect_overwrite") != std::string::npos);
   LATTER_CHECK(gfx_src.find("sample_glass_mean(") != std::string::npos);

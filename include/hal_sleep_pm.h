@@ -23,7 +23,7 @@
 #include <sdkconfig.h>
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 // ------------------------------------------------------------------------------
 // 1. Main-loop Stall Guard (compiled in components/latter_core/pm_telemetry_stall.cpp)
@@ -420,4 +420,4 @@ void log_power_and_mem_profile(const char *trigger, int pwr_state, bool usb, boo
                                uint32_t sleep_start_ms);
 void log_boot_summary();
 
-}  // namespace latter_ui
+}  // namespace latter_core

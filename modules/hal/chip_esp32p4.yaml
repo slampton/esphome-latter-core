@@ -1,6 +1,8 @@
 # ==============================================================================
-# Latter Board HAL Submodule: Shared ESP32-P4 SoC, 200MHz PSRAM & C6 SDIO Host
-# Included by ESP32-P4 display board HALs under boards/
+# Latter Board HAL Submodule: Shared ESP32-P4 SoC & 200MHz PSRAM
+# Included by ESP32-P4 display board HALs under boards/.
+# Boards with an ESP32-C6 SDIO radio also include modules/hal/radio_esp32c6_sdio.yaml;
+# Ethernet-only P4 boards omit radio_esp32c6_sdio.yaml.
 # ==============================================================================
 
 substitutions:
@@ -43,24 +45,3 @@ logger:
 esp_ldo:
   - channel: 3
     voltage: 2.5V
-
-esp32_hosted:
-  variant: esp32c6
-  use_psram: true
-  clk_pin: GPIO18
-  cmd_pin: GPIO19
-  d0_pin: GPIO14
-  d1_pin: GPIO15
-  d2_pin: GPIO16
-  d3_pin: GPIO17
-  reset_pin: GPIO54
-
-update:
-  - platform: esp32_hosted
-    id: update_c6_coprocessor
-    name: "System: C6 Co-Processor Firmware"
-    icon: "mdi:chip"
-    entity_category: config
-    type: http
-    source: "https://esphome.github.io/esp-hosted-firmware/manifest/esp32c6.json"
-    update_interval: never

@@ -1,6 +1,7 @@
 #include "ui_pages.h"
 
 namespace latter_ui {
+using namespace latter_core;
 
 // ==============================================================================
 // Top-Level Active Page Dispatcher (All 14 PageId Routes)

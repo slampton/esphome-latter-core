@@ -37,7 +37,7 @@ PSRAM sizes for the S3 boards are the minimum the firmware expects. Check the li
 - **Pocket Assistant** is the smallest handheld. The round screen looks best for album art and clock faces. The crown button wakes and sleeps it, and long-pressing the crown starts hibernate.
 - **Mobile Assistant** fits the most on screen of the three S3 handhelds, which matters most for Area Control and music browsing.
 - **Wrist Assist** is a watch. It's the best choice for per-person presence, because it's always on you. Its default power profile uses a 15 s screen timeout.
-- **Remote Assistant** is the fastest handheld, thanks to the P4 CPU. It has no IMU, so tilt games use touch steering and the Level tool is hidden.
+- **Remote Assistant** is the fastest handheld, thanks to the P4 CPU. It has no IMU, so it ships touch-native arcade games (**Blocks**, **Snake**, **Drop Four**, plus universal **Marbles**) and hides the Level tool.
 - **Desk Assistant** has the largest and sharpest screen. It runs on USB power, is always on, and has its wake word on by default.
 
 ## Board-specific notes

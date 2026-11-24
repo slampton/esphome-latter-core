@@ -12,11 +12,13 @@ with comment-aware tokenization and regular expressions, so !include / !extend /
 !lambda never need third-party YAML parsers.
 
 Usage:
-  python tools/check_boards.py                # check every board
-  python tools/check_boards.py --release      # fail on L-confidence facts
-  python tools/check_boards.py --render-docs  # rewrite docs/hardware.md pin map
-  python tools/check_boards.py --check-docs   # fail if docs/hardware.md stale
-  python tools/check_boards.py --dump <id>    # print YAML scan for one board
+  python tools/check_boards.py                                       # check every flagship board
+  python tools/check_boards.py --release                             # fail on L-confidence facts
+  python tools/check_boards.py --render-docs                         # rewrite docs/hardware.md pin map
+  python tools/check_boards.py --check-docs                          # fail if docs/hardware.md stale
+  python tools/check_boards.py --dump <id>                           # print YAML scan for one board
+  python tools/check_boards.py --external --facts F --board B        # validate an external community board
+  python tools/check_boards.py --external <board_id>                 # validate boards/<id>.yaml without flagship lock-in
 """
 
 from __future__ import annotations
@@ -40,9 +42,23 @@ DOC_BEGIN = (
 )
 DOC_END = "<!-- END GENERATED: tools/check_boards.py -->"
 
-# Deep-sleep wake capability per SoC: S3 RTC GPIO0-21, P4 LP GPIO0-15.
-WAKE_CAPABLE = {"ESP32-S3": set(range(22)), "ESP32-P4": set(range(16))}
-STRAPPING = {"ESP32-S3": {0, 3, 45, 46}, "ESP32-P4": {34, 35, 36, 37, 38}}
+# Deep-sleep wake capability per SoC: S3 RTC GPIO0-21, P4 LP GPIO0-15, S2 RTC 0-21, C6 LP 0-7, C3 LP 0-5.
+WAKE_CAPABLE = {
+    "ESP32-S3": set(range(22)),
+    "ESP32-P4": set(range(16)),
+    "ESP32-S2": set(range(22)),
+    "ESP32-C6": set(range(8)),
+    "ESP32-C3": set(range(6)),
+    "ESP32": {0, 2, 4, 12, 13, 14, 15, 25, 26, 27, 32, 33, 34, 35, 36, 39},
+}
+STRAPPING = {
+    "ESP32-S3": {0, 3, 45, 46},
+    "ESP32-P4": {34, 35, 36, 37, 38},
+    "ESP32-S2": {0, 45, 46},
+    "ESP32-C6": {4, 5, 8, 9, 15},
+    "ESP32-C3": {2, 8, 9},
+    "ESP32": {0, 2, 5, 12, 15},
+}
 CONFIDENCE = {"H", "M", "L"}
 ROLE_UNUSABLE = {"reserved", "unrouted"}
 # Light-sleep traits -> the facts roles they may name (include/hal_sleep_pm.h).
@@ -172,15 +188,172 @@ def strip_comments(text: str) -> str:
     return "\n".join(out)
 
 
-def scan_board_yaml(board_id: str) -> dict[str, Any]:
-    path = BOARDS_DIR / f"{board_id}.yaml"
+_CORE_BOOL_TRUE = {"true", "yes", "on", "1"}
+_CORE_BOOL_FALSE = {"false", "no", "off", "0"}
+
+_CORE_SECTION_FLAG_MAP: dict[str, dict[str, tuple[str, bool, bool]]] = {
+    # section -> yaml_key -> (LATTER_* macro, is_bool, is_gpio_pin)
+    "display": {
+        "width": ("LATTER_SCREEN_W", False, False),
+        "height": ("LATTER_SCREEN_H", False, False),
+        "ppi": ("LATTER_PANEL_PPI", False, False),
+        "round": ("LATTER_ROUND_DISPLAY", True, False),
+        "ips": ("LATTER_PANEL_IPS", True, False),
+        "dcs_sleep": ("LATTER_PANEL_DCS_SLEEP", True, False),
+        "dc_pin": ("LATTER_DISPLAY_DC_PIN", False, True),
+        "corner_r": ("LATTER_CORNER_R", False, False),
+        "dsi_iram_safe": ("LATTER_DSI_IRAM_SAFE", True, False),
+        "slot_count": ("LATTER_SLOT_COUNT", False, False),
+        "card_slot_count": ("LATTER_CARD_SLOT_COUNT", False, False),
+        "bri_gamma_x100": ("LATTER_BRI_GAMMA_X100", False, False),
+        "bri_dcs_min": ("LATTER_BRI_DCS_MIN", False, False),
+        "bri_dcs_max": ("LATTER_BRI_DCS_MAX", False, False),
+        "touch_int_pin": ("LATTER_TOUCH_INT_PIN", False, True),
+        "touch_rst_pin": ("LATTER_TOUCH_RST_PIN", False, True),
+    },
+    "backlight": {
+        "pin": ("LATTER_BACKLIGHT_PIN", False, True),
+        "en_pin": ("LATTER_BACKLIGHT_EN_PIN", False, True),
+        "en_inverted": ("LATTER_BACKLIGHT_EN_INVERTED", True, False),
+        "inverted": ("LATTER_BACKLIGHT_INVERTED", True, False),
+        "custom": ("LATTER_BACKLIGHT_CUSTOM", True, False),
+        "pwm_hz": ("LATTER_BACKLIGHT_PWM_HZ", False, False),
+        "pwm_bits": ("LATTER_BACKLIGHT_PWM_BITS", False, False),
+        "duty_min_pm": ("LATTER_BACKLIGHT_DUTY_MIN_PM", False, False),
+        "duty_max_pm": ("LATTER_BACKLIGHT_DUTY_MAX_PM", False, False),
+    },
+    "power": {
+        "battery_mah": ("LATTER_BATTERY_MAH", False, False),
+        "pwr_key_pin": ("LATTER_PWR_KEY_PIN", False, True),
+        "pwr_key_active_high": ("LATTER_PWR_KEY_ACTIVE_HIGH", True, False),
+        "pwr_key_deep_sleep_wake": ("LATTER_PWR_KEY_DEEP_SLEEP_WAKE", True, False),
+        "action_btn_pin": ("LATTER_ACTION_BTN_PIN", False, True),
+        "imu_int1_pin": ("LATTER_IMU_INT1_PIN", False, True),
+        "c6_reset_pin": ("LATTER_C6_RESET_PIN", False, True),
+        "pmu_ts_disable": ("LATTER_PMU_TS_DISABLE", True, False),
+        "pmu_dcdc_keep_mask": ("LATTER_PMU_DCDC_KEEP_MASK", False, False),
+        "pmu_ldo_keep_mask": ("LATTER_PMU_LDO_KEEP_MASK", False, False),
+    },
+    "capabilities": {
+        "display": ("LATTER_HAS_DISPLAY", True, False),
+        "touch": ("LATTER_HAS_TOUCH", True, False),
+        "audio": ("LATTER_HAS_AUDIO", True, False),
+        "mic": ("LATTER_HAS_MIC", True, False),
+        "speaker": ("LATTER_HAS_SPEAKER", True, False),
+        "imu": ("LATTER_HAS_IMU", True, False),
+        "battery": ("LATTER_HAS_BATTERY", True, False),
+        "rtc": ("LATTER_HAS_RTC", True, False),
+        "stationary": ("LATTER_IS_STATIONARY", True, False),
+        "wearable": ("LATTER_IS_WEARABLE", True, False),
+        "video_stream": ("LATTER_HAS_VIDEO_STREAM", True, False),
+        "hw_jpeg": ("LATTER_HAS_HW_JPEG", True, False),
+    },
+    "drivers": {
+        "pmu_axp2101": ("LATTER_DRV_PMU_AXP2101", True, False),
+        "rtc_pcf85063": ("LATTER_DRV_RTC_PCF85063", True, False),
+        "imu_qmi8658": ("LATTER_DRV_IMU_QMI8658", True, False),
+        "codec_es8311": ("LATTER_DRV_CODEC_ES8311", True, False),
+        "touch_ft5x06": ("LATTER_DRV_TOUCH_FT5X06", True, False),
+    },
+    "diagnostics": {
+        "nvs_guard": ("LATTER_DIAG_NVS_GUARD", True, False),
+        "twdt_breadcrumb": ("LATTER_DIAG_TWDT_BREADCRUMB", True, False),
+    },
+}
+
+
+def _norm_core_val(raw: str, is_bool: bool) -> str:
+    val = raw.strip().strip('"').strip("'")
+    if is_bool:
+        low = val.lower()
+        if low in _CORE_BOOL_TRUE:
+            return "1"
+        if low in _CORE_BOOL_FALSE:
+            return "0"
+    return val
+
+
+def _parse_latter_core_block(code: str) -> tuple[dict[str, str], set[int]]:
+    """Parse typed `latter_core:` YAML config into LATTER_* flags and referenced GPIO numbers."""
+    flags: dict[str, str] = {}
+    pins: set[int] = set()
+    in_core = False
+    section: str | None = None
+    saw_core = False
+
+    for raw_line in code.splitlines():
+        if not raw_line.strip():
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = raw_line.strip()
+        if indent == 0:
+            in_core = stripped == "latter_core:"
+            section = None
+            if in_core:
+                saw_core = True
+            continue
+        if not in_core:
+            continue
+        if indent == 2:
+            if stripped.endswith(":") and ":" not in stripped[:-1]:
+                section = stripped[:-1].strip()
+                continue
+            section = None
+            if ":" not in stripped:
+                continue
+            key, val = stripped.split(":", 1)
+            key = key.strip()
+            val_clean = _norm_core_val(val, False)
+            if key == "board_id":
+                flags["LATTER_BOARD_ID"] = val_clean
+            elif key == "ble_minor":
+                flags["LATTER_BLE_MINOR"] = val_clean
+            elif key == "gui":
+                flags["LATTER_GUI_UNIVERSAL"] = "1" if val_clean.lower() == "universal" else "0"
+            elif key == "chip":
+                flags["LATTER_CHIP_P4"] = "1" if val_clean.lower() == "esp32p4" else "0"
+            elif key == "psram_mb":
+                flags["LATTER_PSRAM_MB"] = val_clean
+        elif indent >= 4 and section in _CORE_SECTION_FLAG_MAP and ":" in stripped:
+            key, val = stripped.split(":", 1)
+            spec = _CORE_SECTION_FLAG_MAP[section].get(key.strip())
+            if spec is None:
+                continue
+            macro, is_bool, is_pin = spec
+            norm = _norm_core_val(val, is_bool)
+            flags[macro] = norm
+            if is_pin:
+                pin_num = _safe_int(norm)
+                if pin_num is not None:
+                    pins.add(pin_num)
+
+    if saw_core:
+        gui_univ = flags.get("LATTER_GUI_UNIVERSAL", "1") == "1"
+        flags.setdefault("LATTER_ROUND_DISPLAY", "0")
+        flags.setdefault("LATTER_PANEL_IPS", "0")
+        flags.setdefault("LATTER_HAS_DISPLAY", "1" if gui_univ else "0")
+        flags.setdefault("LATTER_HAS_TOUCH", "1" if gui_univ else "0")
+        flags.setdefault("LATTER_HAS_AUDIO", "1")
+        flags.setdefault("LATTER_HAS_IMU", "0")
+        flags.setdefault("LATTER_HAS_BATTERY", "0")
+        flags.setdefault("LATTER_HAS_RTC", "0")
+        flags.setdefault("LATTER_IS_STATIONARY", "0")
+        flags.setdefault("LATTER_IS_WEARABLE", "0")
+    return flags, pins
+
+
+def scan_board_yaml(board_id: str, board_path: Path | None = None) -> dict[str, Any]:
+    path = board_path if board_path is not None else (BOARDS_DIR / f"{board_id}.yaml")
     text = path.read_text(encoding="utf-8")
     expanded = _expand_board_hal_includes(text)
     code = strip_comments(expanded)
-    pins = {int(m) for m in PIN_RE.findall(code)} | {
-        int(m) for m in FLAG_PIN_RE.findall(code)
-    }
-    flags: dict[str, str] = {}
+    core_flags, core_pins = _parse_latter_core_block(code)
+    pins = (
+        {int(m) for m in PIN_RE.findall(code)}
+        | {int(m) for m in FLAG_PIN_RE.findall(code)}
+        | core_pins
+    )
+    flags: dict[str, str] = dict(core_flags)
     for name, value in FLAG_RE.findall(code):
         flags[name] = value.strip('"').strip("\\").strip('"')
     addrs = {a.lower() for a in ADDR_RE.findall(code)}
@@ -255,12 +428,92 @@ def load_facts() -> dict[str, dict[str, Any]]:
     return facts
 
 
+def _check_driver_identity_parity(
+    facts: dict[str, Any], scan: dict[str, Any], err: Any
+) -> None:
+    """Ensure explicit LATTER_DRV_* macros match the board's real hardware facts."""
+    i2c_devs = facts.get("i2c_devices", [])
+    parts = [str(d.get("part", "")).lower() for d in i2c_devs]
+    t_spec = facts.get("touch")
+    t_proto = (
+        str(t_spec.get("protocol", "")).lower() if isinstance(t_spec, dict) else ""
+    )
+    expected = {
+        "LATTER_DRV_PMU_AXP2101": facts.get("power", {}).get("pmu") == "AXP2101",
+        "LATTER_DRV_RTC_PCF85063": any(
+            str(d.get("address", "")).lower() == "0x51"
+            and "pcf85063" in str(d.get("part", "")).lower()
+            for d in i2c_devs
+        ),
+        "LATTER_DRV_IMU_QMI8658": any("qmi8658" in p for p in parts),
+        "LATTER_DRV_CODEC_ES8311": any("es8311" in p for p in parts),
+        "LATTER_DRV_TOUCH_FT5X06": t_proto in {"ft6336", "ft3168", "ft5x06"},
+    }
+    for macro, want in expected.items():
+        actual = scan["flags"].get(macro, "0")
+        want_s = "1" if want else "0"
+        if str(actual) != want_s:
+            err(
+                f"{macro}={actual} in the HAL disagrees with hardware facts "
+                f"(expected {want_s})"
+            )
+
+
+def _check_flagship_wiring(
+    board_id: str, facts: dict[str, Any], scan: dict[str, Any], err: Any
+) -> None:
+    """Validate flagship repo integration (devices/*.yaml, BLE minor, reboot_timeout, release.yml)."""
+    dev = device_for_board(board_id)
+    if dev is None:
+        err("no devices/*.yaml includes this board")
+    else:
+        dev_text = dev.read_text(encoding="utf-8")
+        m = MINOR_RE.search(dev_text)
+        fact_minor = _safe_int(facts.get("ble_minor"))
+        if facts.get("ble_minor") is not None:
+            dev_minor = _safe_int(m.group(1)) if m else None
+            if fact_minor is None or dev_minor != fact_minor:
+                err(
+                    f"{dev.name} beacon minor does not equal "
+                    f"facts ble_minor {facts['ble_minor']}"
+                )
+            if scan["flags"].get("LATTER_BLE_MINOR") not in (
+                None,
+                str(facts["ble_minor"]),
+            ):
+                err(
+                    f"LATTER_BLE_MINOR={scan['flags'].get('LATTER_BLE_MINOR')} "
+                    "does not equal facts ble_minor"
+                )
+        base_mod = (REPO / "modules" / "base.yaml").read_text(encoding="utf-8")
+        eff_reboot = _resolve_api_reboot_timeout(base_mod, scan["text"], dev_text)
+        stationary_flag = str(facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY"))
+        if stationary_flag == "0" and eff_reboot != "0s":
+            err(
+                "mobile board api.reboot_timeout must resolve to '0s', "
+                f"got {eff_reboot!r}"
+            )
+        elif stationary_flag == "1" and (not eff_reboot or eff_reboot == "0s"):
+            err(
+                "stationary board api.reboot_timeout must be enabled (e.g. '15min'), "
+                f"got {eff_reboot!r}"
+            )
+    release_yml = (REPO / ".github" / "workflows" / "release.yml").read_text(
+        encoding="utf-8"
+    )
+    if dev is not None and dev.stem not in release_yml:
+        err(f"{dev.stem} has no build job in .github/workflows/release.yml")
+
+
 def check_board(
     board_id: str,
     facts: dict[str, Any],
     release: bool,
     errors: list[str],
     blockers: list[str],
+    *,
+    external: bool = False,
+    board_path: Path | None = None,
 ) -> None:
     def err(msg: str) -> None:
         errors.append(f"[{board_id}] {msg}")
@@ -270,8 +523,11 @@ def check_board(
             err(f"facts missing required section '{key}'")
     if facts.get("board_id") != board_id:
         err(f"facts board_id '{facts.get('board_id')}' does not match file name")
-    if not (BOARDS_DIR / f"{board_id}.yaml").exists():
-        err("no boards/<id>.yaml for this facts file")
+    resolved_board_path = (
+        board_path if board_path is not None else (BOARDS_DIR / f"{board_id}.yaml")
+    )
+    if not resolved_board_path.exists():
+        err(f"board YAML not found: {resolved_board_path}")
         return
 
     soc = facts.get("silicon", {}).get("soc", "")
@@ -279,7 +535,7 @@ def check_board(
         err(f"unknown silicon.soc '{soc}'")
         return
 
-    scan = scan_board_yaml(board_id)
+    scan = scan_board_yaml(board_id, resolved_board_path)
 
     # 1. Pin facts: preserve all entries/roles per GPIO and validate shared_with.
     pins_by_gpio: dict[int, list[dict[str, Any]]] = {}
@@ -441,7 +697,7 @@ def check_board(
             f"({rtc_desc} in facts.i2c_devices)"
         )
 
-    # 6b. First-party Touch HAL contract.
+    # 6b. Touch HAL contract.
     if str(facts.get("latter_flags", {}).get("LATTER_HAS_TOUCH")) == "1":
         t_facts = facts.get("touch")
         if not isinstance(t_facts, dict):
@@ -450,19 +706,23 @@ def check_board(
             proto = str(t_facts.get("protocol", "")).lower()
             t_addr = str(t_facts.get("address", "")).lower()
             delivery = str(t_facts.get("delivery", ""))
-            if proto not in {"ft6336", "ft3168", "gt911", "cst9217", "cst816s"}:
-                err(
-                    f"touch.protocol '{proto}' is not a registered "
-                    "Latter Touch HAL protocol"
-                )
-            if t_addr not in known_addrs:
-                err(f"touch.address '{t_addr}' is not listed in facts.i2c_devices")
-            if not re.search(r"(?m)^\s*-\s*platform:\s*latter_core\b", scan["code"]):
+            uses_latter_touch = bool(
+                re.search(r"(?m)^\s*-\s*platform:\s*latter_core\b", scan["code"])
+            )
+            if not external and not uses_latter_touch:
                 err("touchscreen block must use first-party 'platform: latter_core'")
-            if not re.search(
-                rf"(?m)^\s*protocol:\s*{re.escape(proto)}\b", scan["code"]
-            ):
-                err(f"touchscreen block must declare 'protocol: {proto}'")
+            if uses_latter_touch or not external:
+                if proto not in {"ft6336", "ft3168", "gt911", "cst9217", "cst816s"}:
+                    err(
+                        f"touch.protocol '{proto}' is not a registered "
+                        "Latter Touch HAL protocol"
+                    )
+                if not re.search(
+                    rf"(?m)^\s*protocol:\s*{re.escape(proto)}\b", scan["code"]
+                ):
+                    err(f"touchscreen block must declare 'protocol: {proto}'")
+            if t_addr and t_addr not in known_addrs:
+                err(f"touch.address '{t_addr}' is not listed in facts.i2c_devices")
             int_gpio = t_facts.get("int_gpio")
             if delivery == "irq":
                 if isinstance(int_gpio, bool) or not isinstance(int_gpio, int):
@@ -492,10 +752,13 @@ def check_board(
                         "touch_reset net in facts.pins"
                     )
 
+    # 6c. Driver-identity parity (LATTER_DRV_* vs real hardware facts).
+    _check_driver_identity_parity(facts, scan, err)
+
     # 7. Backlight PWM floor.
     bl = facts.get("backlight") or {}
     min_pwm = _safe_int(bl.get("min_pwm_hz"))
-    if min_pwm is not None and min_pwm > 0:
+    if min_pwm is not None and min_pwm > 0 and scan["flags"].get("LATTER_BACKLIGHT_CUSTOM") != "1":
         hz_raw = scan["flags"].get("LATTER_BACKLIGHT_PWM_HZ")
         hz = _safe_int(hz_raw)
         if hz is None or hz < min_pwm:
@@ -504,7 +767,7 @@ def check_board(
                 f"backlight min_pwm_hz {min_pwm}"
             )
 
-    # 8. Battery boards carry a charge profile and a PMU.
+    # 8. Battery boards carry a valid capacity (100..20000 mAh); AXP2101 boards follow its charge profile.
     power = facts.get("power", {})
     for rail in power.get("rails", []):
         if rail.get("confidence") not in CONFIDENCE:
@@ -516,8 +779,8 @@ def check_board(
             )
     if str(facts.get("latter_flags", {}).get("LATTER_HAS_BATTERY")) == "1":
         mah = _safe_int(power.get("battery_mah"))
-        if mah is None or mah <= 0 or not power.get("pmu"):
-            err("LATTER_HAS_BATTERY=1 needs power.pmu and integer power.battery_mah")
+        if mah is None or not (100 <= mah <= 20000) or (not external and not power.get("pmu")):
+            err("LATTER_HAS_BATTERY=1 needs integer power.battery_mah (100..20000) and power.pmu")
         else:
             flag_mah = _safe_int(
                 facts.get("latter_flags", {}).get("LATTER_BATTERY_MAH")
@@ -527,59 +790,22 @@ def check_board(
                     f"latter_flags.LATTER_BATTERY_MAH must equal "
                     f"power.battery_mah ({mah})"
                 )
-            want_ma = battery_charge_ma(mah)
-            if power.get("charge_ma") != want_ma:
-                err(
-                    f"power.charge_ma must be {want_ma} mA, the profile "
-                    f"include/hal_battery.h derives from {mah} mAh"
-                )
+            if power.get("pmu") == "AXP2101":
+                want_ma = battery_charge_ma(mah)
+                if power.get("charge_ma") != want_ma:
+                    err(
+                        f"power.charge_ma must be {want_ma} mA, the profile "
+                        f"include/hal_battery.h derives from {mah} mAh"
+                    )
         if (
             "pmu_axp2101.yaml" not in strip_comments(scan["text"])
             and power.get("pmu") == "AXP2101"
         ):
             err("AXP2101 battery board does not include modules/hal/pmu_axp2101.yaml")
 
-    # 9. Device file, unique BLE minor and release wiring.
-    dev = device_for_board(board_id)
-    if dev is None:
-        err("no devices/*.yaml includes this board")
-    else:
-        dev_text = dev.read_text(encoding="utf-8")
-        m = MINOR_RE.search(dev_text)
-        fact_minor = _safe_int(facts.get("ble_minor"))
-        if facts.get("ble_minor") is not None:
-            dev_minor = _safe_int(m.group(1)) if m else None
-            if fact_minor is None or dev_minor != fact_minor:
-                err(
-                    f"{dev.name} beacon minor does not equal "
-                    f"facts ble_minor {facts['ble_minor']}"
-                )
-            if scan["flags"].get("LATTER_BLE_MINOR") not in (
-                None,
-                str(facts["ble_minor"]),
-            ):
-                err(
-                    f"LATTER_BLE_MINOR={scan['flags'].get('LATTER_BLE_MINOR')} "
-                    "does not equal facts ble_minor"
-                )
-        base_mod = (REPO / "modules" / "base.yaml").read_text(encoding="utf-8")
-        eff_reboot = _resolve_api_reboot_timeout(base_mod, scan["text"], dev_text)
-        stationary_flag = str(facts.get("latter_flags", {}).get("LATTER_IS_STATIONARY"))
-        if stationary_flag == "0" and eff_reboot != "0s":
-            err(
-                "mobile board api.reboot_timeout must resolve to '0s', "
-                f"got {eff_reboot!r}"
-            )
-        elif stationary_flag == "1" and (not eff_reboot or eff_reboot == "0s"):
-            err(
-                "stationary board api.reboot_timeout must be enabled (e.g. '15min'), "
-                f"got {eff_reboot!r}"
-            )
-    release_yml = (REPO / ".github" / "workflows" / "release.yml").read_text(
-        encoding="utf-8"
-    )
-    if dev is not None and dev.stem not in release_yml:
-        err(f"{dev.stem} has no build job in .github/workflows/release.yml")
+    # 9. Flagship-only repo wiring (skipped in --external community-board mode).
+    if not external:
+        _check_flagship_wiring(board_id, facts, scan, err)
 
     if release and any(b.startswith(f"[{board_id}]") for b in blockers):
         err("L-confidence facts block a release (see release blockers)")
@@ -635,9 +861,51 @@ def splice_docs(existing: str, generated: str) -> str:
     return existing + sep + generated
 
 
+def _run_external_mode(args: argparse.Namespace) -> int:
+    """Validate one or more community/external boards without flagship repo lock-in."""
+    errors: list[str] = []
+    blockers: list[str] = []
+    targets: list[tuple[str, dict[str, Any], Path | None]] = []
+    if args.facts is not None or args.board is not None:
+        if args.facts is None or args.board is None:
+            sys.exit("error: --facts and --board must be provided together with --external")
+        facts_data = json.loads(args.facts.read_text(encoding="utf-8"))
+        bid = str(facts_data.get("board_id") or args.facts.stem)
+        targets.append((bid, facts_data, args.board))
+    elif args.board_id:
+        fp = FACTS_DIR / f"{args.board_id}.json"
+        if not fp.is_file():
+            sys.exit(f"error: facts file not found: {fp}")
+        targets.append((args.board_id, json.loads(fp.read_text(encoding="utf-8")), None))
+    else:
+        for bid, fdata in load_facts().items():
+            targets.append((bid, fdata, None))
+
+    for bid, fdata, bpath in targets:
+        check_board(
+            bid, fdata, args.release, errors, blockers, external=True, board_path=bpath
+        )
+    for b in blockers:
+        print(f"RELEASE BLOCKER {b}")
+    for e in errors:
+        print(f"ERROR {e}")
+    if errors:
+        return 1
+    print(
+        f"check_boards (--external): {len(targets)} board(s) OK "
+        f"({len(blockers)} L-confidence facts)"
+    )
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "board_id",
+        nargs="?",
+        help="optional board id when running with --external",
     )
     ap.add_argument(
         "--release", action="store_true", help="fail on L-confidence facts"
@@ -653,7 +921,27 @@ def main() -> int:
     ap.add_argument(
         "--dump", metavar="BOARD_ID", help="print the YAML scan for one board"
     )
+    ap.add_argument(
+        "--external",
+        action="store_true",
+        help="validate community/external board(s) without flagship release.yml/devices/AXP2101 lock-in",
+    )
+    ap.add_argument(
+        "--facts",
+        type=Path,
+        default=None,
+        help="with --external: explicit path to board facts JSON file",
+    )
+    ap.add_argument(
+        "--board",
+        type=Path,
+        default=None,
+        help="with --external: explicit path to board HAL YAML file",
+    )
     args = ap.parse_args()
+
+    if args.external:
+        return _run_external_mode(args)
 
     if args.dump:
         scan = scan_board_yaml(args.dump)

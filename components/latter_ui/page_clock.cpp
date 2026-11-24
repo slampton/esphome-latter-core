@@ -6,6 +6,7 @@
 #include <cstdio>
 
 namespace latter_ui {
+using namespace latter_core;
 
 // ==============================================================================
 // Page 0: Clock Page Engine (Digital & Analog Watch Faces)

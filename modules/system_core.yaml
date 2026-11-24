@@ -3,7 +3,7 @@
 # (modules/system_core.yaml)
 # Layers on top of modules/base.yaml (single api:, time:, send_device_hello,
 # and latter_rpc_outbox).
-# Zero YAML globals: reads/writes latter_ui::runtime_state() & persisted_prefs().
+# Zero YAML globals: reads/writes latter_core::runtime_state() & persisted_prefs().
 # ==============================================================================
 
 packages:
@@ -14,43 +14,42 @@ esphome:
     - priority: 800
       then:
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_core::runtime_state();
             // A battery past the cutoff powers straight back off before anything else starts (no-op on USB or
             // without a PMU).
             if (rs.hw_boot_battery_check != nullptr) {
               rs.hw_boot_battery_check();
             }
-            latter_ui::load_persisted_prefs();
-            latter_ui::seed_default_prefs_if_needed();
+            latter_core::load_persisted_prefs();
+            latter_core::seed_default_prefs_if_needed();
             // Light-sleep awake lock (created held), wake pins and sleep pad config; no-op without light sleep.
-            latter_ui::pm_init();
+            latter_core::pm_init();
             id(hal_release_deep_sleep_holds).execute();
-            latter_ui::touch_wake_bridge().bind(
-                +[]() -> bool { return latter_ui::runtime_state().nav.display_power_state != 0; },
-                +[](uint32_t now_ms) { latter_ui::pm_wake_grace_arm(now_ms); });
-            latter_ui::hal_release_pwr_key_wake_pad();
-            latter_ui::boot_speaker_off_done() = true;
+            latter_core::touch_wake_bridge().bind(
+                +[]() -> bool { return latter_core::runtime_state().nav.display_power_state != 0; },
+                +[](uint32_t now_ms) { latter_core::pm_wake_grace_arm(now_ms); });
+            latter_core::hal_release_pwr_key_wake_pad();
             rs.nav.sleep_start_time = millis();
             rs.nav.standby_entered_ms = 0;
             rs.nav.wake_greeting_pending = true;
-            latter_ui::last_screen_wake_ms() = rs.nav.sleep_start_time;
+            latter_core::last_screen_wake_ms() = rs.nav.sleep_start_time;
             rs.nav.is_hibernating = false;
             rs.nav.display_power_state = 0; // ACTIVE
             rs.music.active_speaker_name = "${friendly_name}";
             rs.music_slots()[0].name = "${friendly_name}";
 
             rs.on_ha_client_connected = +[](const std::string &client_info, const std::string &client_address) {
-              auto &r = latter_ui::runtime_state();
+              auto &r = latter_core::runtime_state();
               const bool is_ha_conn = client_info.find("Home Assistant") != std::string::npos;
               if (is_ha_conn) {
-                latter_ui::link_state().ha_connected = true;
-                latter_ui::link_state().last_ha_connect_ms = millis();
+                latter_core::link_state().ha_connected = true;
+                latter_core::link_state().last_ha_connect_ms = millis();
                 r.alert.last_seen_alert_id = -1;
                 r.nav.last_pub_display_power_state = -1;
                 r.nav.last_pub_display_bri_pct = -1;
               }
-              latter_ui::link_report_api_connected(is_ha_conn, millis());
-              esphome::voice_assistant::on_api_client_authenticated(id(va), client_info, client_address);
+              latter_core::link_report_api_connected(is_ha_conn, millis());
+              r.audio.notify_api_client_authenticated(client_info, client_address);
               if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
                 latter_ui::schedule_disp_update(&id(disp1));
               }
@@ -61,12 +60,12 @@ esphome:
             };
 
             rs.on_ha_client_disconnected = +[](const std::string &client_info) {
-              auto &r = latter_ui::runtime_state();
+              auto &r = latter_core::runtime_state();
               const bool is_ha_disc = client_info.find("Home Assistant") != std::string::npos;
-              latter_ui::link_report_api_disconnected(is_ha_disc, millis());
-              if (is_ha_disc && latter_ui::link_report().ha_clients == 0) {
-                latter_ui::link_state().ha_connected = false;
-                latter_ui::link_state().last_ha_disconnect_ms = millis();
+              latter_core::link_report_api_disconnected(is_ha_disc, millis());
+              if (is_ha_disc && latter_core::link_report().ha_clients == 0) {
+                latter_core::link_state().ha_connected = false;
+                latter_core::link_state().last_ha_disconnect_ms = millis();
               }
               if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -75,7 +74,7 @@ esphome:
             };
 
             rs.on_hello_sent = +[]() {
-              auto &r = latter_ui::runtime_state();
+              auto &r = latter_core::runtime_state();
               r.nav.last_pub_display_power_state = -1;
               r.nav.last_pub_display_bri_pct = -1;
               id(publish_device_telemetry).execute();
@@ -85,66 +84,53 @@ esphome:
 
     - priority: -100
       then:
-        # SDK revision lockstep stamp: LATTER_YAML_REV must equal LATTER_SDK_REV in include/esphome_bridge.h
+        # Core revision lockstep stamp: LATTER_YAML_REV must equal LATTER_CORE_REV in include/esphome_bridge.h
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026112302L;
-            static_assert(LATTER_YAML_REV == LATTER_SDK_REV,
+            constexpr long LATTER_YAML_REV = 2026112303L;
+            static_assert(LATTER_YAML_REV == LATTER_CORE_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
                           "(docs/flashing.md) and rebuild.");
-            ESP_LOGI("latter", "Latter v%s ready (SDK %ld, reset: %s)", "${version}", (long)LATTER_SDK_REV,
-                     latter_ui::last_reset_reason());
-            latter_ui::start_stall_guard();
-            latter_ui::link_report_init();
-            id(latter_mic_i2s).add_data_callback([](const microphone::AudioCapture &c) {
-              if (c.stream_info.get_bits_per_sample() == 16) latter_ui::echo_meter_feed(c.data.data(), c.data.size());
-            });
-            auto &rs = latter_ui::runtime_state();
+            ESP_LOGI("latter", "Latter v%s ready (core_rev %ld, reset: %s)", "${version}", (long)LATTER_CORE_REV,
+                     latter_core::last_reset_reason());
+            latter_core::start_stall_guard();
+            latter_core::link_report_init();
+            auto &rs = latter_core::runtime_state();
             if (rs.hw_init_pmu != nullptr) {
               rs.hw_init_pmu();
             }
-            if (latter_ui::load_hibernate_snapshot_if_cold()) {
-              const auto &ac = latter_ui::area_ctx_state();
+            if (latter_core::load_hibernate_snapshot_if_cold()) {
+              const auto &ac = latter_core::area_ctx_state();
               if (!ac.area_name.empty()) {
-                latter_ui::latter_area_label() = ac.area_name;
+                latter_core::latter_area_label() = ac.area_name;
               }
             }
-            latter_ui::hal_rtc_restore_system_clock(id(bus_internal));
-            latter_ui::parse_latter_remote_slots_summary(latter_ui::remote_state().slots_summary);
-            rs.remote.active_slot = latter_ui::resolve_active_remote_slot(rs.remote.active_slot);
-        - media_player.pause: latter_media_player
-        - lambda: |-
-            float sv = static_cast<float>(latter_ui::persisted_prefs().speaker_volume_pct);
-            if (sv >= 10.0f && sv <= 100.0f) {
-              float target_v = std::clamp(sv / 100.0f, 0.10f, 1.00f);
-              id(latter_media_player).volume = target_v;
-              id(latter_media_player).make_call().set_volume(target_v).perform();
-            }
-            latter_ui::speaker_volume_boot_synced() = true;
+            latter_core::hal_rtc_restore_system_clock(id(bus_internal));
+            latter_core::parse_latter_remote_slots_summary(latter_core::remote_state().slots_summary);
+            rs.remote.active_slot = latter_core::resolve_active_remote_slot(rs.remote.active_slot);
+            rs.audio.run_boot_init();
         - lambda: 'latter_ui::release_art(id(remote_album_art));'
         - lambda: 'latter_ui::release_art(id(home_wallpaper_art));'
         - lambda: 'latter_ui::release_art(id(screensaver_photo_art));'
         - lambda: 'latter_ui::release_art(id(camera_snapshot_art));'
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_core::runtime_state();
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
             rs.music.loaded_screensaver_photo_url = "";
             rs.alert.loaded_camera_url = "";
-        - script.execute: mute_speaker_path
         - script.execute: sync_ui_touch_runtime
         - script.execute: apply_default_start_page
         - script.execute: apply_theme_preset
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
+            auto &rs = latter_core::runtime_state();
             if (rs.hw_update_batt_level != nullptr) {
               rs.hw_update_batt_level();
             }
-        - script.execute: apply_wake_word_sensitivities
         - script.execute: sync_display_brightness
-        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
+        - lambda: 'latter_core::display_lifecycle().note_activity(millis());'
         - script.execute: apply_power_policy
 
 api:
@@ -178,7 +164,7 @@ api:
         slots: string
       then:
         - lambda: |-
-            if (latter_ui::apply_slots_action(
+            if (latter_core::apply_slots_action(
                     req_id, std::string_view(mode.c_str(), mode.size()),
                     page, total_pages, std::string_view(slots.c_str(), slots.size()),
                     millis(), is_area_slots)) {
@@ -195,21 +181,21 @@ api:
         lines: string
       then:
         - lambda: |-
-            if (latter_ui::apply_music_lyrics_action(
+            if (latter_core::apply_music_lyrics_action(
                     req_id, chunk_index, chunk_count,
                     std::string_view(track_key.c_str(), track_key.size()),
                     synced,
                     std::string_view(lines.c_str(), lines.size()))) {
-              const auto auto_res = latter_ui::reconcile_lyrics_auto_view();
-              const auto &rs = latter_ui::runtime_state();
+              const auto auto_res = latter_core::reconcile_lyrics_auto_view();
+              const auto &rs = latter_core::runtime_state();
               if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
                 if (auto_res.fetch_remote_art &&
-                    (!latter_ui::media_state().is_local || id(album_art).get_width() == 0)) {
+                    (!latter_core::media_state().is_local || rs.audio.local_album_art_w() == 0)) {
                   id(fetch_remote_art_debounced).execute();
                 }
-                if (rs.nav.gui_page == latter_ui::PageId::MUSIC &&
-                    rs.music.view == latter_ui::MusicView::LYRICS) {
-                  latter_ui::ensure_ui_anim_poller(id(ui_anim_tick));
+                if (rs.nav.gui_page == latter_core::PageId::MUSIC &&
+                    rs.music.view == latter_core::MusicView::LYRICS) {
+                  latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
                 }
                 latter_ui::mark_dirty_full();
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -226,12 +212,12 @@ api:
         events: string
       then:
         - lambda: |-
-            if (latter_ui::apply_calendar_view_action(
+            if (latter_core::apply_calendar_view_action(
                     req_id, chunk_index, chunk_count,
                     std::string_view(window_start.c_str(), window_start.size()),
                     std::string_view(window_end.c_str(), window_end.size()),
                     std::string_view(events.c_str(), events.size()))) {
-              const auto &rs = latter_ui::runtime_state();
+              const auto &rs = latter_core::runtime_state();
               if (rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
                 latter_ui::mark_dirty_full();
                 latter_ui::schedule_disp_update(&id(disp1));
@@ -250,8 +236,8 @@ api:
         alert_id: int
       then:
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
-            if (!latter_ui::trigger_alert_banner(
+            auto &rs = latter_core::runtime_state();
+            if (!latter_core::trigger_alert_banner(
                     std::string_view(title.c_str(), title.size()),
                     std::string_view(message.c_str(), message.size()),
                     std::string_view(priority.c_str(), priority.size()),
@@ -261,27 +247,27 @@ api:
                     std::string_view(camera_entity.c_str(), camera_entity.size()))) {
               return;
             }
-            const auto &prefs = latter_ui::persisted_prefs();
+            const auto &prefs = latter_core::persisted_prefs();
             const bool is_doorbell = !rs.alert.camera_entity.empty() || !rs.alert.camera_url.empty();
-            const bool dnd_suppress = latter_ui::should_suppress_alert_in_dnd(
+            const bool dnd_suppress = latter_core::should_suppress_alert_in_dnd(
                 prefs.do_not_disturb, static_cast<int>(rs.alert.priority_level), is_doorbell);
-            const bool bt_suppress = latter_ui::should_suppress_alert_in_bedtime(
+            const bool bt_suppress = latter_core::should_suppress_alert_in_bedtime(
                 prefs.bedtime_active, rs.alert.priority_level);
             if (dnd_suppress || (bt_suppress && rs.nav.display_power_state != 0)) {
               rs.alert.active = false;
               return;
             }
-            id(preempt_va_for_alert).execute();
-            latter_ui::note_wake_reason(latter_ui::WakeReason::NOTIFY);
+            rs.audio.preempt_va_for_alert_now();
+            latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
             id(wake_to_active_state).execute();
-            const bool dnd_chime_suppress = latter_ui::should_suppress_alert_chime_in_dnd(
+            const bool dnd_chime_suppress = latter_core::should_suppress_alert_chime_in_dnd(
                 prefs.do_not_disturb, static_cast<int>(rs.alert.priority_level), is_doorbell);
             if (chime && !bt_suppress && !dnd_chime_suppress && !rs.voice.active && !rs.voice.tts_received) {
               int sfx = (rs.alert.priority == "critical" || rs.alert.priority == "warning") ? 9 : 6;
-              id(play_game_sfx).execute(sfx);
+              rs.audio.play_sfx(sfx);
             }
-            if (latter_ui::is_p4_live_doorbell_popup_enabled(
-                    latter_ui::persisted_prefs(), latter_ui::area_ctx_state(), rs.alert)) {
+            if (latter_core::is_p4_live_doorbell_popup_enabled(
+                    latter_core::persisted_prefs(), latter_core::area_ctx_state(), rs.alert)) {
               rs.cameras.doorbell_live_popup_active = true;
               id(sync_camera_stream).execute();
             } else {
@@ -303,8 +289,8 @@ ota:
       then:
         - light.turn_on: display_brightness
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
-            latter_ui::video_client().stop();
+            auto &rs = latter_core::runtime_state();
+            latter_core::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
             id(fetch_screensaver_photo_now).stop();
@@ -312,33 +298,33 @@ ota:
             latter_ui::release_art(id(screensaver_photo_art));
             latter_ui::release_art(id(camera_snapshot_art));
             latter_ui::art_canvas_drop_all();
-            latter_ui::sky_base_cache_drop();
+            latter_ui::evict_registered_psram_caches();
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
             rs.music.loaded_screensaver_photo_url = "";
             rs.music.screensaver_photo_failed = false;
             rs.alert.loaded_camera_url = "";
-            latter_ui::handle_ota_begin(&id(disp1), rs);
+            latter_core::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
         - component.update: disp1
     on_progress:
       then:
-        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, millis());'
+        - lambda: 'latter_core::handle_ota_progress(&id(disp1), x, millis());'
     on_end:
       then:
-        - lambda: 'latter_ui::handle_ota_end(&id(disp1));'
+        - lambda: 'latter_core::handle_ota_end(&id(disp1));'
     on_error:
       then:
-        - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
+        - lambda: 'latter_core::handle_ota_error(&id(disp1), millis());'
         - script.execute: sync_display_brightness
         - script.execute: apply_power_policy
-        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
+        - lambda: 'latter_core::display_lifecycle().note_activity(millis());'
     on_abort:
       then:
-        - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
+        - lambda: 'latter_core::handle_ota_error(&id(disp1), millis());'
         - script.execute: sync_display_brightness
         - script.execute: apply_power_policy
-        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
+        - lambda: 'latter_core::display_lifecycle().note_activity(millis());'
 
   - platform: esphome
     id: ota_esphome
@@ -346,8 +332,8 @@ ota:
       then:
         - light.turn_on: display_brightness
         - lambda: |-
-            auto &rs = latter_ui::runtime_state();
-            latter_ui::video_client().stop();
+            auto &rs = latter_core::runtime_state();
+            latter_core::video_client().stop();
             latter_ui::release_art(id(remote_album_art));
             latter_ui::release_art(id(home_wallpaper_art));
             id(fetch_screensaver_photo_now).stop();
@@ -355,41 +341,41 @@ ota:
             latter_ui::release_art(id(screensaver_photo_art));
             latter_ui::release_art(id(camera_snapshot_art));
             latter_ui::art_canvas_drop_all();
-            latter_ui::sky_base_cache_drop();
+            latter_ui::evict_registered_psram_caches();
             rs.music.loaded_art_url = "";
             rs.music.loaded_wallpaper_url = "";
             rs.music.loaded_screensaver_photo_url = "";
             rs.music.screensaver_photo_failed = false;
             rs.alert.loaded_camera_url = "";
-            latter_ui::handle_ota_begin(&id(disp1), rs);
+            latter_core::handle_ota_begin(&id(disp1), rs);
         - script.execute: apply_power_policy
         - component.update: disp1
     on_progress:
       then:
-        - lambda: 'latter_ui::handle_ota_progress(&id(disp1), x, millis());'
+        - lambda: 'latter_core::handle_ota_progress(&id(disp1), x, millis());'
     on_end:
       then:
-        - lambda: 'latter_ui::handle_ota_end(&id(disp1));'
+        - lambda: 'latter_core::handle_ota_end(&id(disp1));'
     on_error:
       then:
-        - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
+        - lambda: 'latter_core::handle_ota_error(&id(disp1), millis());'
         - script.execute: sync_display_brightness
         - script.execute: apply_power_policy
-        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
+        - lambda: 'latter_core::display_lifecycle().note_activity(millis());'
     on_abort:
       then:
-        - lambda: 'latter_ui::handle_ota_error(&id(disp1), millis());'
+        - lambda: 'latter_core::handle_ota_error(&id(disp1), millis());'
         - script.execute: sync_display_brightness
         - script.execute: apply_power_policy
-        - lambda: 'latter_ui::display_lifecycle().note_activity(millis());'
+        - lambda: 'latter_core::display_lifecycle().note_activity(millis());'
 
 time:
   - id: !extend ha_time
     on_time_sync:
       then:
         - lambda: |-
-            latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
-            const auto &n = latter_ui::runtime_state().nav;
+            latter_core::hal_rtc_sync_from_system_clock(id(bus_internal));
+            const auto &n = latter_core::runtime_state().nav;
             if (n.display_power_state == 0 && !n.is_hibernating) {
               latter_ui::record_ambient_frame_ms(0);
             }
@@ -397,8 +383,8 @@ time:
     on_time_sync:
       then:
         - lambda: |-
-            latter_ui::hal_rtc_sync_from_system_clock(id(bus_internal));
-            const auto &n = latter_ui::runtime_state().nav;
+            latter_core::hal_rtc_sync_from_system_clock(id(bus_internal));
+            const auto &n = latter_core::runtime_state().nav;
             if (n.display_power_state == 0 && !n.is_hibernating) {
               latter_ui::record_ambient_frame_ms(0);
             }
@@ -430,11 +416,11 @@ button:
     icon: "mdi:restart"
     entity_category: config
     on_press:
-      - lambda: 'latter_ui::flush_persisted_prefs_if_dirty();'
+      - lambda: 'latter_core::flush_persisted_prefs_if_dirty();'
       - light.turn_off: display_brightness
       - component.update: disp1
       - delay: 150ms
-      - lambda: 'latter_ui::hal_prepare_touch_for_restart();'
+      - lambda: 'latter_core::hal_prepare_touch_for_restart();'
       - delay: 20ms
       - button.press: internal_restart
 
@@ -450,11 +436,11 @@ binary_sensor:
         - if:
             condition:
               lambda: |-
-                const auto &rs = latter_ui::runtime_state();
+                const auto &rs = latter_core::runtime_state();
                 return rs.alarms.find_my_active || rs.timers.ringing || rs.alarms.ringing || rs.alert.active;
             then:
               - lambda: |-
-                  auto &rs = latter_ui::runtime_state();
+                  auto &rs = latter_core::runtime_state();
                   if (rs.alert.active) {
                     id(dismiss_notification).execute();
                     return;
@@ -462,20 +448,20 @@ binary_sensor:
                   rs.alarms.find_my_active = false;
                   rs.timers.ringing = false;
                   rs.alarms.ringing = false;
-                  latter_actions::check_and_emit_timer_alarm_state(millis());
-                  id(stop_alarm_sound).execute();
+                  latter_core::check_and_emit_timer_alarm_state(millis());
+                  rs.audio.stop_alarm();
                   id(sync_display_brightness).execute();
                   latter_ui::mark_dirty_full();
                   latter_ui::schedule_disp_update(&id(disp1));
-                  latter_ui::display_lifecycle().note_activity(millis());
+                  latter_core::display_lifecycle().note_activity(millis());
             else:
               - if:
                   condition:
-                    lambda: 'return latter_ui::runtime_state().nav.active_game > 0;'
+                    lambda: 'return latter_core::runtime_state().nav.active_game > 0;'
                   then:
-                    - lambda: 'latter_ui::runtime_state().nav.game_btn_pressed = true;'
+                    - lambda: 'latter_core::runtime_state().nav.game_btn_pressed = true;'
                   else:
-                    - script.execute: toggle_voice_assistant
+                    - lambda: 'latter_core::runtime_state().audio.toggle_va_now();'
 
 text_sensor:
   - platform: wifi_info
@@ -489,23 +475,23 @@ interval:
     then:
       - lambda: |-
           const uint32_t now_60s_ms = millis();
-          latter_ui::link_report_init();
-          latter_ui::link_report_sample();
-          if (latter_ui::profiler_enabled()) {
-            (void)latter_ui::link_report_log_line(now_60s_ms, latter_ui::last_reset_reason());
+          latter_core::link_report_init();
+          latter_core::link_report_sample();
+          if (latter_core::profiler_enabled()) {
+            (void)latter_core::link_report_log_line(now_60s_ms, latter_core::last_reset_reason());
           }
-          if (latter_ui::link_state().ha_connected) {
-            const auto &rs = latter_ui::runtime_state();
+          if (latter_core::link_state().ha_connected) {
+            const auto &rs = latter_core::runtime_state();
             static uint32_t last_tel_pub_ms = 0U;
             static uint32_t last_seen_ha_conn_ms = 0U;
-            const uint32_t ha_conn_ms = latter_ui::link_state().last_ha_connect_ms;
+            const uint32_t ha_conn_ms = latter_core::link_state().last_ha_connect_ms;
             if (last_tel_pub_ms == 0U || (ha_conn_ms != 0U && ha_conn_ms != last_seen_ha_conn_ms)) {
               last_seen_ha_conn_ms = ha_conn_ms;
               last_tel_pub_ms = (ha_conn_ms != 0U) ? ha_conn_ms : ((now_60s_ms != 0U) ? now_60s_ms : 1U);
             }
             const bool batt_quiet = (LATTER_HAS_BATTERY != 0) && !rs.hw_usb_connected &&
                                     (rs.nav.display_power_state == 2);
-            if (latter_ui::profiler_enabled()) {
+            if (latter_core::profiler_enabled()) {
               last_tel_pub_ms = (now_60s_ms != 0U) ? now_60s_ms : 1U;
               id(publish_device_telemetry).execute();
             } else if (!batt_quiet && (now_60s_ms - last_tel_pub_ms >= 900000U)) {
@@ -525,45 +511,45 @@ script:
     then:
       - delay: 3s
       - logger.replay_boot_logs:
-      - lambda: 'latter_ui::log_boot_summary();'
+      - lambda: 'latter_core::log_boot_summary();'
 
   - id: toggle_find_my_device
     mode: restart
     then:
       - lambda: |-
-          auto &rs = latter_ui::runtime_state();
+          auto &rs = latter_core::runtime_state();
           if (!rs.alarms.find_my_active) {
-            id(preempt_va_for_alert).execute();
+            rs.audio.preempt_va_for_alert_now();
             rs.alarms.find_my_active = true;
             rs.alarms.find_my_start_ms = millis();
-            latter_ui::note_wake_reason(latter_ui::WakeReason::ALERT);
+            latter_core::note_wake_reason(latter_core::WakeReason::ALERT);
             id(wake_to_active_state).execute();
-            id(play_alarm_sound).execute();
+            rs.audio.play_alarm();
             latter_ui::schedule_disp_update(&id(disp1));
           } else {
             rs.alarms.find_my_active = false;
-            id(stop_alarm_sound).execute();
+            rs.audio.stop_alarm();
             id(sync_display_brightness).execute();
             latter_ui::schedule_disp_update(&id(disp1));
-            latter_ui::display_lifecycle().note_activity(millis());
+            latter_core::display_lifecycle().note_activity(millis());
           }
 
   - id: publish_device_telemetry
     mode: restart
     then:
       - lambda: |-
-          if (!latter_ui::link_state().ha_connected) return;
-          latter_ui::link_report_init();
-          const std::string link_j = latter_ui::link_report_json(
-              millis(), latter_ui::last_reset_reason(),
-              latter_ui::runtime_state().nav.is_hibernating);
+          if (!latter_core::link_state().ha_connected) return;
+          latter_core::link_report_init();
+          const std::string link_j = latter_core::link_report_json(
+              millis(), latter_core::last_reset_reason(),
+              latter_core::runtime_state().nav.is_hibernating);
           const int int_free_kb = static_cast<int>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024U);
           const int int_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U);
           const int int_largest_kb = static_cast<int>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U);
           const int psram_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U);
-          latter_actions::emit_device_telemetry(
+          latter_core::emit_device_telemetry(
               link_j, int_free_kb, int_min_kb, int_largest_kb, psram_min_kb,
-              id(ble_ctrl).is_active(), latter_ui::profiler_enabled());
+              id(ble_ctrl).is_active(), latter_core::profiler_enabled());
 
   - id: trigger_firmware_update
     mode: restart
@@ -571,7 +557,7 @@ script:
       - update.perform:
           id: latter_firmware_update
       - lambda: |-
-          latter_ui::runtime_state().nav.system_menu_mode = 5;
+          latter_core::runtime_state().nav.system_menu_mode = 5;
           latter_ui::schedule_disp_update(&id(disp1));
 
   - id: check_firmware_update

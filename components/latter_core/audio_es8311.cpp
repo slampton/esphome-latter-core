@@ -3,7 +3,7 @@
 
 #include "esphome/core/defines.h"
 
-namespace latter_ui {
+namespace latter_core {
 
 #ifdef USE_ESP32
 std::atomic<uint32_t> &echo_last_loud_ms() {
@@ -19,6 +19,7 @@ std::atomic<bool> &echo_meter_active() {
 
 #ifdef USE_I2C
 void hal_set_es8311_es7210_standby(esphome::i2c::I2CBus *bus, bool standby, bool has_es7210) {
+#if LATTER_DRV_CODEC_ES8311
   if (bus == nullptr) return;
 
 #if defined(LATTER_IS_STATIONARY) && LATTER_IS_STATIONARY
@@ -139,13 +140,23 @@ void hal_set_es8311_es7210_standby(esphome::i2c::I2CBus *bus, bool standby, bool
     }
   }
 #endif
+#else
+  (void)bus;
+  (void)standby;
+  (void)has_es7210;
+#endif  // LATTER_DRV_CODEC_ES8311
 }
 
 void hal_power_down_audio_and_imu_for_hibernate(esphome::i2c::I2CBus *bus, bool has_imu, bool has_es7210) {
   if (bus == nullptr) return;
+#if LATTER_DRV_IMU_QMI8658
   if (has_imu) {
     hal_imu_qmi8658_hibernate(bus);
   }
+#else
+  (void)has_imu;
+#endif
+#if LATTER_DRV_CODEC_ES8311
   const uint8_t dac_sleep1[2] = {0x0D, 0xFF};
   const uint8_t dac_sleep2[2] = {0x00, 0x80};
   bus->write(0x18, dac_sleep1, 2);
@@ -154,7 +165,10 @@ void hal_power_down_audio_and_imu_for_hibernate(esphome::i2c::I2CBus *bus, bool 
     const uint8_t es7210_pwr[2] = {0x00, 0xFF};
     bus->write(0x40, es7210_pwr, 2);
   }
+#else
+  (void)has_es7210;
+#endif
 }
 #endif  // USE_I2C
 
-}  // namespace latter_ui
+}  // namespace latter_core

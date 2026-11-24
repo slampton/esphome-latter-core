@@ -11,6 +11,7 @@
 #include <vector>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -263,7 +264,7 @@ void render_calendar_add_step1(Rgb565Surface &it, const UiFrameContext &ctx,
     const bool mic_active = false;
     (void)mic_wid;
     (void)dict_id;
-    (void)draw_cal_mic;
+    (void)&draw_cal_mic;
 #endif
     render_card_box(it, x0, ym - row_h / 2, card_w, row_h,
                     kChromeGlassTint, mic_active ? ctx.col_red : kChromeCardBrdOn, kRadiusCardPx());

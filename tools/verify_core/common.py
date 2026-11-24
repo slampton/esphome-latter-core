@@ -235,3 +235,146 @@ def resolve_substitutions(value: str, subs: dict[str, str]) -> str:
             break
         out = nxt
     return out
+
+
+_CORE_SECTION_FLAG_MAP: Final[dict[str, dict[str, tuple[str, bool]]]] = {
+    "display": {
+        "width": ("LATTER_SCREEN_W", False),
+        "height": ("LATTER_SCREEN_H", False),
+        "ppi": ("LATTER_PANEL_PPI", False),
+        "round": ("LATTER_ROUND_DISPLAY", True),
+        "ips": ("LATTER_PANEL_IPS", True),
+        "dcs_sleep": ("LATTER_PANEL_DCS_SLEEP", True),
+        "dc_pin": ("LATTER_DISPLAY_DC_PIN", False),
+        "corner_r": ("LATTER_CORNER_R", False),
+        "dsi_iram_safe": ("LATTER_DSI_IRAM_SAFE", True),
+        "slot_count": ("LATTER_SLOT_COUNT", False),
+        "card_slot_count": ("LATTER_CARD_SLOT_COUNT", False),
+        "bri_gamma_x100": ("LATTER_BRI_GAMMA_X100", False),
+        "bri_dcs_min": ("LATTER_BRI_DCS_MIN", False),
+        "bri_dcs_max": ("LATTER_BRI_DCS_MAX", False),
+        "touch_int_pin": ("LATTER_TOUCH_INT_PIN", False),
+        "touch_rst_pin": ("LATTER_TOUCH_RST_PIN", False),
+    },
+    "backlight": {
+        "pin": ("LATTER_BACKLIGHT_PIN", False),
+        "en_pin": ("LATTER_BACKLIGHT_EN_PIN", False),
+        "inverted": ("LATTER_BACKLIGHT_INVERTED", True),
+        "pwm_hz": ("LATTER_BACKLIGHT_PWM_HZ", False),
+        "pwm_bits": ("LATTER_BACKLIGHT_PWM_BITS", False),
+        "duty_min_pm": ("LATTER_BACKLIGHT_DUTY_MIN_PM", False),
+        "duty_max_pm": ("LATTER_BACKLIGHT_DUTY_MAX_PM", False),
+    },
+    "power": {
+        "battery_mah": ("LATTER_BATTERY_MAH", False),
+        "pwr_key_pin": ("LATTER_PWR_KEY_PIN", False),
+        "pwr_key_active_high": ("LATTER_PWR_KEY_ACTIVE_HIGH", True),
+        "pwr_key_deep_sleep_wake": ("LATTER_PWR_KEY_DEEP_SLEEP_WAKE", True),
+        "action_btn_pin": ("LATTER_ACTION_BTN_PIN", False),
+        "imu_int1_pin": ("LATTER_IMU_INT1_PIN", False),
+        "c6_reset_pin": ("LATTER_C6_RESET_PIN", False),
+        "pmu_ts_disable": ("LATTER_PMU_TS_DISABLE", True),
+        "pmu_dcdc_keep_mask": ("LATTER_PMU_DCDC_KEEP_MASK", False),
+        "pmu_ldo_keep_mask": ("LATTER_PMU_LDO_KEEP_MASK", False),
+    },
+    "capabilities": {
+        "display": ("LATTER_HAS_DISPLAY", True),
+        "touch": ("LATTER_HAS_TOUCH", True),
+        "audio": ("LATTER_HAS_AUDIO", True),
+        "mic": ("LATTER_HAS_MIC", True),
+        "speaker": ("LATTER_HAS_SPEAKER", True),
+        "imu": ("LATTER_HAS_IMU", True),
+        "battery": ("LATTER_HAS_BATTERY", True),
+        "rtc": ("LATTER_HAS_RTC", True),
+        "stationary": ("LATTER_IS_STATIONARY", True),
+        "wearable": ("LATTER_IS_WEARABLE", True),
+        "video_stream": ("LATTER_HAS_VIDEO_STREAM", True),
+        "hw_jpeg": ("LATTER_HAS_HW_JPEG", True),
+    },
+    "drivers": {
+        "pmu_axp2101": ("LATTER_DRV_PMU_AXP2101", True),
+        "rtc_pcf85063": ("LATTER_DRV_RTC_PCF85063", True),
+        "imu_qmi8658": ("LATTER_DRV_IMU_QMI8658", True),
+        "codec_es8311": ("LATTER_DRV_CODEC_ES8311", True),
+        "touch_ft5x06": ("LATTER_DRV_TOUCH_FT5X06", True),
+    },
+    "diagnostics": {
+        "nvs_guard": ("LATTER_DIAG_NVS_GUARD", True),
+        "twdt_breadcrumb": ("LATTER_DIAG_TWDT_BREADCRUMB", True),
+    },
+}
+
+
+def parse_latter_core_flags(yaml_text: str) -> dict[str, str]:
+    """Extract effective LATTER_* defines from typed `latter_core:` YAML (or legacy -DLATTER_* flags)."""
+    code = strip_yaml_comments(yaml_text)
+    flags: dict[str, str] = {}
+    in_core = False
+    section: str | None = None
+    saw_core = False
+
+    def _norm(raw: str, is_bool: bool) -> str:
+        val = raw.strip().strip('"').strip("'")
+        if is_bool:
+            low = val.lower()
+            if low in {"true", "yes", "on", "1"}:
+                return "1"
+            if low in {"false", "no", "off", "0"}:
+                return "0"
+        return val
+
+    for raw_line in code.splitlines():
+        if not raw_line.strip():
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
+        stripped = raw_line.strip()
+        if indent == 0:
+            in_core = stripped == "latter_core:"
+            section = None
+            if in_core:
+                saw_core = True
+            continue
+        if not in_core:
+            continue
+        if indent == 2:
+            if stripped.endswith(":") and ":" not in stripped[:-1]:
+                section = stripped[:-1].strip()
+                continue
+            section = None
+            if ":" not in stripped:
+                continue
+            key, val = stripped.split(":", 1)
+            key = key.strip()
+            val_clean = _norm(val, False)
+            if key == "board_id":
+                flags["LATTER_BOARD_ID"] = val_clean
+            elif key == "ble_minor":
+                flags["LATTER_BLE_MINOR"] = val_clean
+            elif key == "gui":
+                flags["LATTER_GUI_UNIVERSAL"] = "1" if val_clean.lower() == "universal" else "0"
+            elif key == "chip":
+                flags["LATTER_CHIP_P4"] = "1" if val_clean.lower() == "esp32p4" else "0"
+            elif key == "psram_mb":
+                flags["LATTER_PSRAM_MB"] = val_clean
+        elif indent >= 4 and section in _CORE_SECTION_FLAG_MAP and ":" in stripped:
+            key, val = stripped.split(":", 1)
+            spec = _CORE_SECTION_FLAG_MAP[section].get(key.strip())
+            if spec is not None:
+                flags[spec[0]] = _norm(val, spec[1])
+
+    if saw_core:
+        gui_univ = flags.get("LATTER_GUI_UNIVERSAL", "1") == "1"
+        flags.setdefault("LATTER_ROUND_DISPLAY", "0")
+        flags.setdefault("LATTER_PANEL_IPS", "0")
+        flags.setdefault("LATTER_HAS_DISPLAY", "1" if gui_univ else "0")
+        flags.setdefault("LATTER_HAS_TOUCH", "1" if gui_univ else "0")
+        flags.setdefault("LATTER_HAS_AUDIO", "1")
+        flags.setdefault("LATTER_HAS_IMU", "0")
+        flags.setdefault("LATTER_HAS_BATTERY", "0")
+        flags.setdefault("LATTER_HAS_RTC", "0")
+        flags.setdefault("LATTER_IS_STATIONARY", "0")
+        flags.setdefault("LATTER_IS_WEARABLE", "0")
+
+    for name, value in re.findall(r"-D(LATTER_[A-Z0-9_]+)=([^\"'\s]+)", code):
+        flags[name] = value.strip('"').strip("\\").strip('"')
+    return flags

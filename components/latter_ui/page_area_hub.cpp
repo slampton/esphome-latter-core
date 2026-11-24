@@ -7,6 +7,7 @@
 #include <string>
 
 namespace latter_ui {
+using namespace latter_core;
 
 namespace {
 
@@ -49,16 +50,6 @@ void draw_area_mode_icon(Rgb565Surface &it, int g_idx,
 }
 
 }  // namespace
-
-std::string strip_trailing_paren_state(const std::string &s) {
-  if (s.size() > 4 && s.back() == ')') {
-    const size_t lp = s.rfind(" (");
-    if (lp != std::string::npos && lp > 0) {
-      return s.substr(0, lp);
-    }
-  }
-  return s;
-}
 
 void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();

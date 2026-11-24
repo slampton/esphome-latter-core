@@ -15,7 +15,192 @@
 #include "state/state_time_alarms.h"
 #include "state/state_alerts_intercom.h"
 
-namespace latter_ui {
+namespace latter_core {
+
+enum class ImuPowerMode : uint8_t {
+  Off = 0,
+  AccelOnly = 1,
+  AccelAndGyro = 2,
+  WakeOnMotion = 3,
+};
+
+struct AudioRuntimeHooks {
+  bool (*is_mww_running)() = nullptr;
+  bool (*is_va_running)() = nullptr;
+  bool (*is_local_mp_playing)() = nullptr;
+  bool (*is_local_mp_paused)() = nullptr;
+  bool (*is_local_mp_announcing)() = nullptr;
+  bool (*is_local_mp_not_idle)() = nullptr;
+  float (*local_mp_volume)() = nullptr;
+  bool (*is_speaker_enabled)() = nullptr;
+  bool (*is_speaker_busy)() = nullptr;
+  bool (*is_tts_active)() = nullptr;
+  bool (*is_announcement_running)() = nullptr;
+  bool (*is_busy_for_pm)() = nullptr;
+  bool (*is_resume_music_running)() = nullptr;
+  bool (*get_local_album_art)(const uint16_t *&data, int &w, int &h) = nullptr;
+  std::string (*primary_wake_word)() = nullptr;
+
+  void (*on_api_client_authenticated)(const std::string &client_info, const std::string &client_address) = nullptr;
+  void (*on_clean_disconnect_hibernate)() = nullptr;
+  void (*on_boot_init)() = nullptr;
+  void (*on_prepare_hibernate)() = nullptr;
+  void (*on_turn_screen_off)(bool usb_connected) = nullptr;
+  void (*on_wake_active)() = nullptr;
+  void (*on_usb_unplugged_screen_off)() = nullptr;
+  void (*apply_wake_word_sensitivities)() = nullptr;
+  void (*sync_wake_word_state)() = nullptr;
+  void (*stop_mww)() = nullptr;
+  void (*cycle_primary_wake_word)() = nullptr;
+  void (*start_va)() = nullptr;
+  void (*toggle_va)() = nullptr;
+  void (*cancel_va)() = nullptr;
+  void (*abort_va)() = nullptr;
+  void (*preempt_va_for_alert)() = nullptr;
+  void (*play_alarm_sound)() = nullptr;
+  void (*stop_alarm_sound)() = nullptr;
+  void (*play_game_sfx)(int sfx_id) = nullptr;
+  void (*enable_speaker_for_game)() = nullptr;
+  void (*mute_speaker_path)() = nullptr;
+  void (*resume_music_after_va)() = nullptr;
+  void (*media_idle_finish)() = nullptr;
+  void (*set_local_volume)(float vol_0_to_1, bool update_player, bool un_duck) = nullptr;
+  void (*pause_local_mp)() = nullptr;
+  void (*stop_local_mp)() = nullptr;
+  void (*clear_local_track_meta)() = nullptr;
+  void (*stop_doorbell_audio)() = nullptr;
+  void (*start_doorbell_ptt)() = nullptr;
+  void (*start_calendar_dictation)() = nullptr;
+  void (*start_broadcast_dictation)() = nullptr;
+  void (*tick_1s_supervisor)(uint32_t now_ms, bool wifi_connected) = nullptr;
+
+  bool mww_running() const { return is_mww_running != nullptr && is_mww_running(); }
+  bool va_running() const { return is_va_running != nullptr && is_va_running(); }
+  bool local_mp_playing() const { return is_local_mp_playing != nullptr && is_local_mp_playing(); }
+  bool local_mp_paused() const { return is_local_mp_paused != nullptr && is_local_mp_paused(); }
+  bool local_mp_announcing() const { return is_local_mp_announcing != nullptr && is_local_mp_announcing(); }
+  bool local_mp_not_idle() const { return is_local_mp_not_idle != nullptr && is_local_mp_not_idle(); }
+  float local_mp_volume_or(float fallback = 0.0f) const {
+    return (local_mp_volume != nullptr) ? local_mp_volume() : fallback;
+  }
+  bool speaker_enabled() const { return is_speaker_enabled != nullptr && is_speaker_enabled(); }
+  bool speaker_busy() const { return is_speaker_busy != nullptr && is_speaker_busy(); }
+  bool tts_active() const { return is_tts_active != nullptr && is_tts_active(); }
+  bool announcement_running() const { return is_announcement_running != nullptr && is_announcement_running(); }
+  bool busy_for_pm() const { return is_busy_for_pm != nullptr && is_busy_for_pm(); }
+  bool resume_music_running() const { return is_resume_music_running != nullptr && is_resume_music_running(); }
+  bool read_local_album_art(const uint16_t *&data, int &w, int &h) const {
+    if (get_local_album_art == nullptr) {
+      data = nullptr;
+      w = 0;
+      h = 0;
+      return false;
+    }
+    return get_local_album_art(data, w, h);
+  }
+  int local_album_art_w() const {
+    const uint16_t *d = nullptr;
+    int w = 0, h = 0;
+    return read_local_album_art(d, w, h) ? w : 0;
+  }
+  std::string primary_wake_word_str() const {
+    return (primary_wake_word != nullptr) ? primary_wake_word() : std::string("None");
+  }
+
+  void notify_api_client_authenticated(const std::string &ci, const std::string &ca) const {
+    if (on_api_client_authenticated != nullptr) on_api_client_authenticated(ci, ca);
+  }
+  void run_boot_init() const {
+    if (on_boot_init != nullptr) on_boot_init();
+  }
+  void prepare_hibernate_audio() const {
+    if (on_prepare_hibernate != nullptr) on_prepare_hibernate();
+  }
+  void turn_screen_off_audio(bool usb_connected) const {
+    if (on_turn_screen_off != nullptr) on_turn_screen_off(usb_connected);
+  }
+  void wake_active_audio() const {
+    if (on_wake_active != nullptr) on_wake_active();
+  }
+  void usb_unplugged_screen_off() const {
+    if (on_usb_unplugged_screen_off != nullptr) on_usb_unplugged_screen_off();
+  }
+  void apply_ww_sensitivities() const {
+    if (apply_wake_word_sensitivities != nullptr) apply_wake_word_sensitivities();
+  }
+  void sync_wake_word() const {
+    if (sync_wake_word_state != nullptr) sync_wake_word_state();
+  }
+  void stop_mww_now() const {
+    if (stop_mww != nullptr) stop_mww();
+  }
+  void cycle_primary_ww() const {
+    if (cycle_primary_wake_word != nullptr) cycle_primary_wake_word();
+  }
+  void start_va_now() const {
+    if (start_va != nullptr) start_va();
+  }
+  void toggle_va_now() const {
+    if (toggle_va != nullptr) toggle_va();
+  }
+  void cancel_va_now() const {
+    if (cancel_va != nullptr) cancel_va();
+  }
+  void abort_va_now() const {
+    if (abort_va != nullptr) abort_va();
+  }
+  void preempt_va_for_alert_now() const {
+    if (preempt_va_for_alert != nullptr) preempt_va_for_alert();
+  }
+  void play_alarm() const {
+    if (play_alarm_sound != nullptr) play_alarm_sound();
+  }
+  void stop_alarm() const {
+    if (stop_alarm_sound != nullptr) stop_alarm_sound();
+  }
+  void play_sfx(int sfx_id) const {
+    if (play_game_sfx != nullptr) play_game_sfx(sfx_id);
+  }
+  void enable_speaker_for_game_now() const {
+    if (enable_speaker_for_game != nullptr) enable_speaker_for_game();
+  }
+  void mute_speaker_now() const {
+    if (mute_speaker_path != nullptr) mute_speaker_path();
+  }
+  void resume_music_after_va_now() const {
+    if (resume_music_after_va != nullptr) resume_music_after_va();
+  }
+  void media_idle_finish_now() const {
+    if (media_idle_finish != nullptr) media_idle_finish();
+  }
+  void sync_local_volume(float vol_0_to_1, bool update_player, bool un_duck) const {
+    if (set_local_volume != nullptr) set_local_volume(vol_0_to_1, update_player, un_duck);
+  }
+  void pause_local_mp_now() const {
+    if (pause_local_mp != nullptr) pause_local_mp();
+  }
+  void stop_local_mp_now() const {
+    if (stop_local_mp != nullptr) stop_local_mp();
+  }
+  void clear_local_track_meta_now() const {
+    if (clear_local_track_meta != nullptr) clear_local_track_meta();
+  }
+  void stop_doorbell_audio_now() const {
+    if (stop_doorbell_audio != nullptr) stop_doorbell_audio();
+  }
+  void start_doorbell_ptt_now() const {
+    if (start_doorbell_ptt != nullptr) start_doorbell_ptt();
+  }
+  void start_calendar_dictation_now() const {
+    if (start_calendar_dictation != nullptr) start_calendar_dictation();
+  }
+  void start_broadcast_dictation_now() const {
+    if (start_broadcast_dictation != nullptr) start_broadcast_dictation();
+  }
+  void tick_1s(uint32_t now_ms, bool wifi_connected) const {
+    if (tick_1s_supervisor != nullptr) tick_1s_supervisor(now_ms, wifi_connected);
+  }
+};
 
 struct DeviceRuntimeState {
   static constexpr size_t kSlotChannelCount = static_cast<size_t>(latter_rpc::SlotChannel::COUNT);
@@ -44,11 +229,12 @@ struct DeviceRuntimeState {
   HelloSyncState hello_sync{};
   ShowcaseState showcase{};
 
-  // Live hardware telemetry & optional peripheral hooks (populated by modules/hal/pmu_axp2101.yaml and
-  // modules/hal/imu_qmi8658.yaml when included; safe mains-powered / no-IMU defaults otherwise so
-  // pmu_none.yaml & imu_none.yaml are retired without ESPHome Python lambda id(...) lookup errors).
+  // Live hardware telemetry & optional peripheral hooks (populated by board HALs, battery_service,
+  // motion_service, audio_pipeline/audio_scripts, and gui_touch when included; safe defaults
+  // otherwise so audio-less, touch-less, mains-only, and IMU-less builds compile cleanly).
   bool hw_usb_connected = true;
   bool hw_batt_charging = false;
+  bool hw_pickup_detected = false;
   float hw_batt_level = NAN;
   float hw_batt_voltage = NAN;
   float hw_accel_x = 0.0f;
@@ -64,7 +250,23 @@ struct DeviceRuntimeState {
   void (*hw_wait_pwr_key_release)() = nullptr;
   bool (*hw_pwr_key_pressed)() = nullptr;
   void (*hw_update_batt_level)() = nullptr;
-  void (*hw_set_imu_power_mode)(int ctrl7_val) = nullptr;
+  void (*hw_set_imu_power_mode)(ImuPowerMode mode) = nullptr;
+  void (*hw_set_backlight_level)(uint8_t pct) = nullptr;
+  void (*hw_recover_touchscreen)(uint32_t now_ms) = nullptr;
+  void (*hw_set_touch_sleep_mode)(bool sleep) = nullptr;
+
+  // Generic OS service callbacks bound by battery_service.yaml & motion_service.yaml so chip HALs
+  // under modules/hal/ stay 100% free of Universal GUI pages, widgets, and display/audio IDs.
+  void (*on_pwr_key_press)() = nullptr;
+  void (*on_pwr_key_release)() = nullptr;
+  void (*on_usb_power_changed)(bool usb_connected) = nullptr;
+  void (*on_battery_status_updated)(bool is_charging, const char *chg_text) = nullptr;
+  void (*on_battery_sample_updated)(bool cutoff_tripped) = nullptr;
+  void (*on_motion_poller_changed)(bool active) = nullptr;
+  void (*on_imu_wom_wake)(uint32_t now_ms) = nullptr;
+
+  // Optional audio subsystem hooks bound by modules/audio_pipeline.yaml + audio_scripts.yaml
+  AudioRuntimeHooks audio{};
 
   // Display/session lifecycle hooks bound by modules/system_core.yaml on top of modules/base.yaml
   void (*on_ha_client_connected)(const std::string &client_info, const std::string &client_address) = nullptr;
@@ -205,10 +407,6 @@ bool apply_calendar_view_action(int req_id,
                                 std::string_view events,
                                 CalendarWindowStore &store = calendar_window_store(),
                                 DeviceRuntimeState &rs = runtime_state());
-
-inline bool is_calendar_map_view_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
-  return rs.nav.gui_page == PageId::CALENDAR && rs.cal.drilldown == CalDrilldown::MAP;
-}
 
 inline bool cal_dictation_active(const DeviceRuntimeState &rs = runtime_state()) noexcept {
   return rs.cal.dictation_field != 0U;
@@ -452,8 +650,8 @@ inline const char *effective_screensaver_style_cstr(const PersistedDevicePrefs &
                                                     uint32_t now_ms) noexcept {
   if (rs.showcase.is_active(now_ms) &&
       rs.showcase.screensaver_style_override >= 0 &&
-      rs.showcase.screensaver_style_override < 6) {
-    return kScreensaverStyleOpts[rs.showcase.screensaver_style_override];
+      rs.showcase.screensaver_style_override < static_cast<int>(kPrefOptsScreensaverStyle.size())) {
+    return pref_opt_cstr(kPrefOptsScreensaverStyle, static_cast<size_t>(rs.showcase.screensaver_style_override));
   }
   return effective_screensaver_style_cstr(p);
 }
@@ -463,16 +661,16 @@ inline uint8_t effective_clock_face(const PersistedDevicePrefs &p,
                                     uint32_t now_ms) noexcept {
   if (rs.showcase.is_active(now_ms) &&
       rs.showcase.clock_face_override >= 0 &&
-      rs.showcase.clock_face_override < 3) {
+      rs.showcase.clock_face_override < static_cast<int>(kPrefOptsClockFace.size())) {
     return static_cast<uint8_t>(rs.showcase.clock_face_override);
   }
-  return (p.clock_face < 3U) ? p.clock_face : 0U;
+  return (p.clock_face < kPrefOptsClockFace.size()) ? p.clock_face : kPrefDefaultClockFaceIdx;
 }
 
 inline const char *effective_clock_face_cstr(const PersistedDevicePrefs &p,
                                              const DeviceRuntimeState &rs,
                                              uint32_t now_ms) noexcept {
-  return opt_at_clamped(kClockFaceOpts, effective_clock_face(p, rs, now_ms));
+  return pref_opt_cstr(kPrefOptsClockFace, effective_clock_face(p, rs, now_ms), kPrefDefaultClockFaceIdx);
 }
 
 inline const char *effective_va_visual_profile_cstr(const PersistedDevicePrefs &p,
@@ -480,8 +678,8 @@ inline const char *effective_va_visual_profile_cstr(const PersistedDevicePrefs &
                                                     uint32_t now_ms) noexcept {
   if (rs.showcase.is_active(now_ms) &&
       rs.showcase.va_profile_override >= 0 &&
-      rs.showcase.va_profile_override < 5) {
-    return kVaVisualProfileOpts[rs.showcase.va_profile_override];
+      rs.showcase.va_profile_override < static_cast<int>(kPrefOptsVaVisualProfile.size())) {
+    return pref_opt_cstr(kPrefOptsVaVisualProfile, static_cast<size_t>(rs.showcase.va_profile_override));
   }
   return pref_va_visual_profile_cstr(p);
 }
@@ -491,8 +689,8 @@ inline const char *effective_weather_sim_cstr(const DevicePrefsState &st,
                                               uint32_t now_ms) noexcept {
   if (rs.showcase.is_active(now_ms) &&
       rs.showcase.weather_sim_override >= 0 &&
-      rs.showcase.weather_sim_override < 17) {
-    return kWeatherSimOpts[rs.showcase.weather_sim_override];
+      rs.showcase.weather_sim_override < static_cast<int>(kPrefOptsWeatherSimCondition.size())) {
+    return pref_opt_cstr(kPrefOptsWeatherSimCondition, static_cast<size_t>(rs.showcase.weather_sim_override));
   }
   return pref_weather_sim_cstr(st);
 }
@@ -959,8 +1157,8 @@ inline bool is_p4_live_doorbell_popup_enabled(
     const PersistedDevicePrefs &p = persisted_prefs(),
     const AreaContextState &ac = area_ctx_state(),
     const AlertBannerState &ab = runtime_state().alert,
-    bool is_p4 = (LATTER_CHIP_P4 != 0)) noexcept {
-  if (!is_p4 || p.camera_doorbell_popup != 1U) return false;
+    bool has_hw_jpeg = (LATTER_HAS_HW_JPEG != 0)) noexcept {
+  if (!has_hw_jpeg || p.camera_doorbell_popup != 1U) return false;
   if (ac.camera_stream_url.empty()) return false;
   return !ab.camera_entity.empty() || !ab.camera_url.empty();
 }
@@ -973,4 +1171,4 @@ std::string build_carousel_camera_url(const std::string &base_cam_url,
                                       const std::string &cameras_summary,
                                       uint32_t now_ms);
 
-}  // namespace latter_ui
+}  // namespace latter_core

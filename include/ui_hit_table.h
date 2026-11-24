@@ -60,7 +60,7 @@ struct HitRegion {
 static_assert(sizeof(HitRegion) == 14, "HitRegion must stay compact at 14 bytes");
 
 struct FrameHitTable {
-  static constexpr uint8_t kMaxRegions = 56;
+  static constexpr uint8_t kMaxRegions = 128;
   HitRegion regions[kMaxRegions]{};
   uint8_t count{0};
   uint16_t dropped_count{0};

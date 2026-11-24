@@ -18,17 +18,17 @@
 #include "latter_rpc.h"
 #include "state/device_runtime_state.h"
 
-namespace latter_actions {
+namespace latter_core {
 
 // 1. device_hello
 template <typename OutboxT = std::nullptr_t>
 inline void emit_device_hello(OutboxT outbox = nullptr) {
-  latter_ui::ensure_persisted_prefs_loaded();
-  const auto &prefs = latter_ui::persisted_prefs();
-  const std::string boot_str = std::to_string(latter_ui::device_boot_id());
-  const std::string manifest_str = latter_ui::build_hardware_manifest_json();
+  ensure_persisted_prefs_loaded();
+  const auto &prefs = persisted_prefs();
+  const std::string boot_str = std::to_string(device_boot_id());
+  const std::string manifest_str = build_hardware_manifest_json();
   const std::string seq_str = std::to_string(prefs.prefs_seq);
-  const std::string dirty_str = latter_ui::build_hello_dirty_prefs(prefs);
+  const std::string dirty_str = build_hello_dirty_prefs(prefs);
   latter_rpc::emit(outbox, "device_hello", {
     {"contract", "3"},
     {"boot_id", boot_str},
@@ -91,7 +91,7 @@ inline int emit_music_browse(std::string_view mode,
                              int page_size = LATTER_SLOT_COUNT,
                              uint32_t now_ms = 0,
                              OutboxT outbox = nullptr) {
-  auto &rt = latter_ui::runtime_state();
+  auto &rt = runtime_state();
   if (now_ms != 0) rt.last_music_page_req_ms = now_ms;
   const int req_id = latter_rpc::issue_req_id(latter_rpc::classify_browse_mode(mode));
   const std::string req_str = std::to_string(req_id);
@@ -100,7 +100,7 @@ inline int emit_music_browse(std::string_view mode,
   const std::string_view eff_spk =
       !speaker.empty() ? speaker : std::string_view(rt.music.active_speaker_entity);
   const std::string_view eff_last_spk =
-      !last_speaker.empty() ? last_speaker : std::string_view(latter_ui::media_state().last_speaker);
+      !last_speaker.empty() ? last_speaker : std::string_view(media_state().last_speaker);
 
   const bool send_last_spk = (mode == "speakers") && !eff_last_spk.empty() && (eff_last_spk != eff_spk);
   const bool send_alb_sort = (mode == "album") && !album_sort.empty() && (album_sort != "name");
@@ -127,15 +127,15 @@ inline int emit_music_lyrics_fetch(std::string_view track_key = "",
                                    std::string_view speaker = "",
                                    uint32_t now_ms = 0,
                                    OutboxT outbox = nullptr) {
-  auto &rt = latter_ui::runtime_state();
-  const auto &ms = latter_ui::media_state();
+  auto &rt = runtime_state();
+  const auto &ms = media_state();
   if (now_ms != 0U) rt.last_music_page_req_ms = now_ms;
   auto &lyr = rt.music.lyrics;
   lyr.latest_req_id = (lyr.latest_req_id >= 1000000) ? 1 : (lyr.latest_req_id + 1);
   lyr.loading = true;
   const int req_id = lyr.latest_req_id;
   const std::string req_str = std::to_string(req_id);
-  const std::string fallback_key = latter_ui::build_music_track_key(ms.title, ms.artist);
+  const std::string fallback_key = build_music_track_key(ms.title, ms.artist);
   const std::string_view eff_key = !track_key.empty() ? track_key : std::string_view(fallback_key);
   const std::string_view eff_spk =
       !speaker.empty() ? speaker : std::string_view(rt.music.active_speaker_entity);
@@ -188,7 +188,7 @@ inline void emit_media_play_item(std::string_view entity_id,
                                  OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   const std::string_view eff_enq = enqueue.empty() ? std::string_view("play") : enqueue;
   latter_rpc::emit(outbox, "media_command", {
     {"command", "play_media"},
@@ -217,7 +217,7 @@ inline void emit_media_queue_play(std::string_view queue_item_id,
                                   OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "queue_play"},
     {"entity_id", eff_spk},
@@ -232,7 +232,7 @@ inline void emit_media_queue_move(std::string_view queue_item_id,
                                   OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "queue_move"},
     {"entity_id", eff_spk},
@@ -256,7 +256,7 @@ inline void emit_media_queue_delete(std::string_view queue_item_id,
                                     OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "queue_delete"},
     {"entity_id", eff_spk},
@@ -268,7 +268,7 @@ template <typename OutboxT = std::nullptr_t>
 inline void emit_media_mute_toggle(std::string_view entity_id = "", OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "mute_toggle"},
     {"entity_id", eff_spk},
@@ -279,7 +279,7 @@ template <typename OutboxT = std::nullptr_t>
 inline void emit_media_shuffle_toggle(std::string_view entity_id = "", OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "shuffle_toggle"},
     {"entity_id", eff_spk},
@@ -290,7 +290,7 @@ template <typename OutboxT = std::nullptr_t>
 inline void emit_media_repeat_cycle(std::string_view entity_id = "", OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "repeat_cycle"},
     {"entity_id", eff_spk},
@@ -303,7 +303,7 @@ inline void emit_media_favorite_toggle(std::string_view media_id = "",
                                        OutboxT outbox = nullptr) {
   const std::string_view eff_spk =
       !entity_id.empty() ? entity_id
-                         : std::string_view(latter_ui::runtime_state().music.active_speaker_entity);
+                         : std::string_view(runtime_state().music.active_speaker_entity);
   latter_rpc::emit(outbox, "media_command", {
     {"command", "favorite_toggle"},
     {"entity_id", eff_spk},
@@ -395,7 +395,7 @@ inline void emit_area_action(std::string_view entity_id,
                              OutboxT outbox = nullptr) {
   const std::string lvl_str = std::to_string(level);
   const std::string_view eff_area =
-      !area_id.empty() ? area_id : std::string_view(latter_ui::runtime_state().area.active_area_id);
+      !area_id.empty() ? area_id : std::string_view(runtime_state().area.active_area_id);
   if (code.empty()) {
     latter_rpc::emit(outbox, "area_action", {
       {"entity_id", entity_id},
@@ -630,19 +630,19 @@ inline void emit_set_device_prefs(uint32_t base_seq, std::string_view changes, O
 }
 
 template <typename OutboxT = std::nullptr_t>
-inline bool record_local_pref_edit(latter_ui::PrefKey key, std::string_view val,
+inline bool record_local_pref_edit(PrefKey key, std::string_view val,
                                    uint32_t now_ms, uint32_t &out_effects,
                                    OutboxT outbox = nullptr) {
   out_effects = 0;
-  auto &p = latter_ui::persisted_prefs();
-  latter_ui::PrefMask changed_mask{};
-  if (!latter_ui::set_pref_by_key_str(p, key, val, true, changed_mask, out_effects)) {
+  auto &p = persisted_prefs();
+  PrefMask changed_mask{};
+  if (!set_pref_by_key_str(p, key, val, changed_mask, out_effects)) {
     return false;
   }
   p.dirty_mask |= changed_mask;
-  latter_ui::schedule_persisted_prefs_save(now_ms);
-  if (latter_ui::link_state().ha_connected) {
-    const std::string changes = latter_ui::encode_prefs_mask(changed_mask, p);
+  schedule_persisted_prefs_save(now_ms);
+  if (link_state().ha_connected) {
+    const std::string changes = encode_prefs_mask(changed_mask, p);
     emit_set_device_prefs(p.prefs_seq, changes, outbox);
   }
   return true;
@@ -700,7 +700,7 @@ inline TimerAlarmSyncTracker &timer_alarm_sync_tracker() {
 template <typename OutboxT = std::nullptr_t>
 inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_active = false,
                                              OutboxT outbox = nullptr, bool force_emit = false) {
-  const auto &rs = latter_ui::runtime_state();
+  const auto &rs = runtime_state();
   const bool sc_active = rs.showcase.active;
   const bool hide_slot0 = sc_active && rs.showcase.timer_owned;
   const bool hide_sw = sc_active && rs.showcase.stopwatch_owned;
@@ -752,7 +752,7 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   } else if (force_if_active && any_active) {
     should_emit = true;
   } else if (!tr.inited) {
-    if (!any_active && latter_ui::link_state().ha_connected) {
+    if (!any_active && link_state().ha_connected) {
       tr.inited = true;
     }
     should_emit = any_active;
@@ -782,7 +782,7 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
   }
 
   if (!should_emit) return false;
-  if (!latter_ui::link_state().ha_connected) {
+  if (!link_state().ha_connected) {
     tr.pending_sync = true;
     return false;
   }
@@ -804,13 +804,13 @@ inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_acti
 // Persist local alarm mutations (Time App toggle/editor, Home quick-disable, Once auto-clear)
 // and push alarms_summary upstream via Protocol v3 set_device_prefs when HA is connected.
 template <typename OutboxT = std::nullptr_t>
-inline void sync_local_pref_key_edit(latter_ui::PrefKey key, OutboxT outbox = nullptr) {
-  auto &p = latter_ui::persisted_prefs();
-  const latter_ui::PrefMask bit = latter_ui::pref_key_bit(key);
+inline void sync_local_pref_key_edit(PrefKey key, OutboxT outbox = nullptr) {
+  auto &p = persisted_prefs();
+  const PrefMask bit = pref_key_bit(key);
   p.dirty_mask |= bit;
-  latter_ui::save_persisted_prefs();
-  if (latter_ui::link_state().ha_connected) {
-    const std::string changes = latter_ui::encode_prefs_mask(bit, p);
+  save_persisted_prefs();
+  if (link_state().ha_connected) {
+    const std::string changes = encode_prefs_mask(bit, p);
     emit_set_device_prefs(p.prefs_seq, changes, outbox);
   }
 }
@@ -818,7 +818,7 @@ inline void sync_local_pref_key_edit(latter_ui::PrefKey key, OutboxT outbox = nu
 template <typename OutboxT = std::nullptr_t>
 inline void sync_local_alarms_edit(uint32_t now_ms = 0, OutboxT outbox = nullptr) {
   (void)now_ms;
-  sync_local_pref_key_edit(latter_ui::PrefKey::ALARMS_SUMMARY, outbox);
+  sync_local_pref_key_edit(PrefKey::ALARMS_SUMMARY, outbox);
 }
 
 struct DeviceCommandEffects {
@@ -831,8 +831,8 @@ struct DeviceCommandEffects {
 template <typename OutboxT = std::nullptr_t>
 inline DeviceCommandEffects handle_device_cmd_dismiss_ringing(uint32_t now_ms,
                                                               OutboxT outbox = nullptr) {
-  auto &rs = latter_ui::runtime_state();
-  auto &prefs = latter_ui::persisted_prefs();
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
   const bool was_any = (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active);
   if (rs.alarms.ringing) {
     if (rs.alarms.ringing_idx >= 1 && rs.alarms.ringing_idx <= 3) {
@@ -850,9 +850,9 @@ inline DeviceCommandEffects handle_device_cmd_dismiss_ringing(uint32_t now_ms,
   }
   if (rs.timers.ringing) {
     rs.timers.va_timer_name.clear();
-    latter_ui::sync_multi_timer_state();
+    sync_multi_timer_state();
   }
-  (void)latter_ui::timer_alarm_controller().dismiss_ringing();
+  (void)timer_alarm_controller().dismiss_ringing();
   rs.nav.ui_dirty_full = true;
   (void)check_and_emit_timer_alarm_state(now_ms, false, outbox, /*force_emit=*/true);
   return DeviceCommandEffects{was_any, was_any, true, true};
@@ -861,8 +861,8 @@ inline DeviceCommandEffects handle_device_cmd_dismiss_ringing(uint32_t now_ms,
 template <typename OutboxT = std::nullptr_t>
 inline DeviceCommandEffects handle_device_cmd_cancel_timer(uint32_t now_ms,
                                                            OutboxT outbox = nullptr) {
-  auto &rs = latter_ui::runtime_state();
-  auto *slots = latter_ui::timer_slots();
+  auto &rs = runtime_state();
+  auto *slots = timer_slots();
   for (int i = 0; i < 3; ++i) {
     slots[i].running = false;
     slots[i].paused = false;
@@ -873,9 +873,9 @@ inline DeviceCommandEffects handle_device_cmd_cancel_timer(uint32_t now_ms,
   const bool was_ringing = rs.timers.ringing;
   rs.timers.ringing = false;
   if (was_ringing && !rs.alarms.ringing && !rs.alarms.find_my_active) {
-    latter_ui::timer_alarm_controller().reset();
+    timer_alarm_controller().reset();
   }
-  latter_ui::sync_multi_timer_state();
+  sync_multi_timer_state();
   if (rs.nav.home_subpage == 2 && !rs.timers.running && !rs.stopwatch.running) {
     rs.nav.home_subpage = 0;
   }
@@ -887,7 +887,7 @@ inline DeviceCommandEffects handle_device_cmd_cancel_timer(uint32_t now_ms,
 template <typename OutboxT = std::nullptr_t>
 inline DeviceCommandEffects handle_device_cmd_reset_stopwatch(uint32_t now_ms,
                                                               OutboxT outbox = nullptr) {
-  auto &rs = latter_ui::runtime_state();
+  auto &rs = runtime_state();
   rs.stopwatch.reset();
   if (rs.nav.home_subpage == 2 && !rs.timers.running && !rs.stopwatch.running) {
     rs.nav.home_subpage = 0;
@@ -897,8 +897,4 @@ inline DeviceCommandEffects handle_device_cmd_reset_stopwatch(uint32_t now_ms,
   return DeviceCommandEffects{false, false, true, true};
 }
 
-}  // namespace latter_actions
-
-namespace latter_ui {
-using namespace latter_actions;
-}  // namespace latter_ui
+}  // namespace latter_core

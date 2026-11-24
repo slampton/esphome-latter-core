@@ -57,7 +57,7 @@
 #include <soc/gpio_reg.h>
 #endif
 
-namespace latter_ui {
+namespace latter_core {
 
 #if LATTER_PM_AUTO_SLEEP
 constexpr esp_pm_lock_type_t kPmAwakeLockType = ESP_PM_CPU_FREQ_MAX;
@@ -636,5 +636,5 @@ bool pm_take_profile_snapshot(PmProfileSnapshot &out, bool clear_dump_pending) n
 #endif
 }
 
-}  // namespace latter_ui
+}  // namespace latter_core
 #endif  // USE_ESP32

@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include "../../include/hal_imu_qmi8658.h"
 
 namespace latter_test {
 
@@ -60,180 +61,214 @@ struct MockAnimPoller {
 };
 
 void test_battery_model_and_power_policy() {
-  LATTER_CHECK(latter_ui::path_mohm_for_capacity(0) == 30);
-  LATTER_CHECK(latter_ui::path_mohm_for_capacity(400) == 180);
-  LATTER_CHECK(latter_ui::path_mohm_for_capacity(500) == 150);
-  LATTER_CHECK(latter_ui::path_mohm_for_capacity(1000) == 90);
-  LATTER_CHECK(latter_ui::precharge_ma_for_capacity(0) == 50);
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(0) == 100);
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(400) == 200);
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(500) == 200);
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(1000) == 500);
-  LATTER_CHECK(latter_ui::charge_ma_for_capacity(2000) == 500);
-  LATTER_CHECK(latter_ui::axp2101_icc_code(100) == 4);
-  LATTER_CHECK(latter_ui::axp2101_icc_code(200) == 8);
-  LATTER_CHECK(latter_ui::axp2101_icc_code(500) == 11);
+  LATTER_CHECK(latter_core::path_mohm_for_capacity(0) == 30);
+  LATTER_CHECK(latter_core::path_mohm_for_capacity(400) == 180);
+  LATTER_CHECK(latter_core::path_mohm_for_capacity(500) == 150);
+  LATTER_CHECK(latter_core::path_mohm_for_capacity(1000) == 90);
+  LATTER_CHECK(latter_core::precharge_ma_for_capacity(0) == 50);
+  LATTER_CHECK(latter_core::charge_ma_for_capacity(0) == 100);
+  LATTER_CHECK(latter_core::charge_ma_for_capacity(400) == 200);
+  LATTER_CHECK(latter_core::charge_ma_for_capacity(500) == 200);
+  LATTER_CHECK(latter_core::charge_ma_for_capacity(1000) == 500);
+  LATTER_CHECK(latter_core::charge_ma_for_capacity(2000) == 500);
+  LATTER_CHECK(latter_core::axp2101_icc_code(100) == 4);
+  LATTER_CHECK(latter_core::axp2101_icc_code(200) == 8);
+  LATTER_CHECK(latter_core::axp2101_icc_code(500) == 11);
 
   {
-    latter_ui::BatteryModel stab;
-    stab.update(3880, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, 99, 500);
+    latter_core::BatteryModel stab;
+    // AXP2101 callers pass -1 for hw_gauge_pct (uncalibrated OTP gauge stays diagnostic-only).
+    stab.update(3880, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 1000, -1, 500);
     const float boot_soc = stab.soc_display;
-    stab.update(3891, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 90000, 10, 500);
+    stab.update(3891, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 90000, -1, 500);
     LATTER_CHECK(std::fabs(stab.soc_display - boot_soc) < 0.5f);
-    stab.update(3915, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 120000, 95, 500);
+    stab.update(3915, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 120000, -1, 500);
     LATTER_CHECK(stab.soc_display <= boot_soc + 0.01f);
   }
 
+  // Dedicated fuel-gauge IC support (0..100%) + >5000 mAh tablet battery support (up to 20000 mAh).
   {
-    latter_ui::BatteryModel reboot_bm;
+    LATTER_CHECK(latter_core::path_mohm_for_capacity(10000) == 36);
+    LATTER_CHECK(latter_core::path_mohm_for_capacity(20000) == 33);
+    LATTER_CHECK(latter_core::charge_ma_for_capacity(10000) == 500);
+    LATTER_CHECK(latter_core::charge_ma_for_capacity(20000) == 500);
+
+    latter_core::BatteryModel fg_bm;
+    LATTER_CHECK(!fg_bm.update(3900, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 1000, 73, 10000));
+    LATTER_CHECK(std::fabs(fg_bm.soc_display - 73.0f) < 0.01f);
+    LATTER_CHECK(!fg_bm.update(3860, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 11000, 68, 10000));
+    LATTER_CHECK(std::fabs(fg_bm.soc_display - 68.0f) < 0.01f);
+    // Charging CC/CV honors real fuel-gauge SoC rather than synthetic CV timer ramp.
+    LATTER_CHECK(!fg_bm.update(4160, false, latter_core::ChargePhase::CV, latter_core::BattLoad::SCREEN, 21000, 91, 10000));
+    LATTER_CHECK(std::fabs(fg_bm.soc_display - 91.0f) < 0.01f);
+    // Low-battery notice triggers from fuel-gauge SoC on discharge.
+    LATTER_CHECK(!fg_bm.update(3550, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 31000, 9, 10000));
+    LATTER_CHECK(fg_bm.low && fg_bm.low_notice_pending && std::fabs(fg_bm.soc_display - 9.0f) < 0.01f);
+
+    // SoC-only fuel gauge (vbat_mv == 0) works cleanly and never falsely trips voltage cutoff.
+    latter_core::BatteryModel soc_only;
+    LATTER_CHECK(!soc_only.update(0, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 1000, 42, 8000));
+    LATTER_CHECK(soc_only.has_sample && std::fabs(soc_only.soc_display - 42.0f) < 0.01f);
+    LATTER_CHECK(soc_only.sample_interval_ms(true) == latter_core::BatteryModel::kSampleQuietMs);
+    for (uint32_t i = 1; i <= 5; ++i) {
+      LATTER_CHECK(!soc_only.update(0, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 1000 + i * 10000U, 40, 8000));
+    }
+    LATTER_CHECK(!soc_only.cutoff_tripped);
+    // Out-of-range hw_gauge_pct (101) falls back to OCV model (rejecting vbat_mv == 0).
+    LATTER_CHECK(!soc_only.update(0, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 70000, 101, 8000));
+    LATTER_CHECK(std::fabs(soc_only.soc_display - 40.0f) < 0.01f);
+  }
+
+  {
+    latter_core::BatteryModel reboot_bm;
     reboot_bm.seed_from_saved_soc(41, 3830);
-    reboot_bm.update(3850, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, -1, 500);
+    reboot_bm.update(3850, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 1000, -1, 500);
     LATTER_CHECK(std::fabs(reboot_bm.soc_display - 41.0f) < 0.01f);
 
-    latter_ui::BatteryModel drained_bm;
+    latter_core::BatteryModel drained_bm;
     drained_bm.seed_from_saved_soc(41, 3830);
-    drained_bm.update(3600, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, -1, 500);
+    drained_bm.update(3600, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 1000, -1, 500);
     LATTER_CHECK(drained_bm.soc_display < 20.0f);
 
-    latter_ui::BatteryModel recharged_bm;
+    latter_core::BatteryModel recharged_bm;
     recharged_bm.seed_from_saved_soc(41, 3830);
-    recharged_bm.update(4120, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, -1, 500);
+    recharged_bm.update(4120, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 1000, -1, 500);
     LATTER_CHECK(recharged_bm.soc_display > 90.0f);
   }
 
   {
-    latter_ui::BatteryModel fault_bm;
-    fault_bm.update(4064, false, latter_ui::ChargePhase::DONE, latter_ui::BattLoad::SCREEN, 1000, -1, 400);
+    latter_core::BatteryModel fault_bm;
+    fault_bm.update(4064, false, latter_core::ChargePhase::DONE, latter_core::BattLoad::SCREEN, 1000, -1, 400);
     LATTER_CHECK(!fault_bm.full_latched && fault_bm.soc_display < 95.0f);
 
     uint32_t t_ms = 2000;
     for (int i = 0; i < 3; ++i) {
-      fault_bm.note_charger_phase(true, latter_ui::ChargePhase::CC, t_ms);
+      fault_bm.note_charger_phase(true, latter_core::ChargePhase::CC, t_ms);
       t_ms += 1000;
-      fault_bm.note_charger_phase(true, latter_ui::ChargePhase::DONE, t_ms);
+      fault_bm.note_charger_phase(true, latter_core::ChargePhase::DONE, t_ms);
       t_ms += 3000;
     }
     LATTER_CHECK(fault_bm.fault && !fault_bm.full_latched && fault_bm.state_char() == '!');
-    LATTER_CHECK(std::string(latter_ui::battery_charge_state_text(false, 4, fault_bm.fault)) == "Battery Fault");
+    LATTER_CHECK(std::string(latter_core::battery_charge_state_text(false, 4, fault_bm.fault)) == "Battery Fault");
 
-    fault_bm.update(4200, false, latter_ui::ChargePhase::DONE, latter_ui::BattLoad::SCREEN, t_ms, -1, 400);
+    fault_bm.update(4200, false, latter_core::ChargePhase::DONE, latter_core::BattLoad::SCREEN, t_ms, -1, 400);
     LATTER_CHECK(!fault_bm.full_latched);
 
-    fault_bm.note_charger_phase(true, latter_ui::ChargePhase::CC, t_ms + 1000);
-    fault_bm.note_charger_phase(true, latter_ui::ChargePhase::CC, t_ms + 32000);
+    fault_bm.note_charger_phase(true, latter_core::ChargePhase::CC, t_ms + 1000);
+    fault_bm.note_charger_phase(true, latter_core::ChargePhase::CC, t_ms + 32000);
     LATTER_CHECK(!fault_bm.fault);
-    fault_bm.note_charger_phase(true, latter_ui::ChargePhase::DONE, t_ms + 33000);
-    fault_bm.update(4180, false, latter_ui::ChargePhase::DONE, latter_ui::BattLoad::SCREEN, t_ms + 34000, -1, 400);
+    fault_bm.note_charger_phase(true, latter_core::ChargePhase::DONE, t_ms + 33000);
+    fault_bm.update(4180, false, latter_core::ChargePhase::DONE, latter_core::BattLoad::SCREEN, t_ms + 34000, -1, 400);
     LATTER_CHECK(fault_bm.full_latched && std::fabs(fault_bm.soc_display - 100.0f) < 0.01f);
     LATTER_CHECK(fault_bm.state_char() == 'f');
-    LATTER_CHECK(std::string(latter_ui::battery_charge_state_text(false, 4, fault_bm.fault)) == "Full");
+    LATTER_CHECK(std::string(latter_core::battery_charge_state_text(false, 4, fault_bm.fault)) == "Full");
   }
 
   bool foldback_active = false;
   int active_icc_ma = 0;
-  latter_ui::step_thermal_foldback_policy(true, 45.0f, 500, foldback_active, active_icc_ma);
+  latter_core::step_thermal_foldback_policy(true, 45.0f, 500, foldback_active, active_icc_ma);
   LATTER_CHECK(!foldback_active && active_icc_ma == 500);
-  latter_ui::step_thermal_foldback_policy(true, 64.9f, 500, foldback_active, active_icc_ma);
+  latter_core::step_thermal_foldback_policy(true, 64.9f, 500, foldback_active, active_icc_ma);
   LATTER_CHECK(!foldback_active && active_icc_ma == 500);
-  LATTER_CHECK(latter_ui::step_thermal_foldback_policy(true, 65.0f, 500, foldback_active, active_icc_ma));
+  LATTER_CHECK(latter_core::step_thermal_foldback_policy(true, 65.0f, 500, foldback_active, active_icc_ma));
   LATTER_CHECK(foldback_active && active_icc_ma == 100);
-  latter_ui::step_thermal_foldback_policy(true, 60.0f, 500, foldback_active, active_icc_ma);
+  latter_core::step_thermal_foldback_policy(true, 60.0f, 500, foldback_active, active_icc_ma);
   LATTER_CHECK(foldback_active && active_icc_ma == 100);
-  LATTER_CHECK(latter_ui::step_thermal_foldback_policy(true, 58.0f, 500, foldback_active, active_icc_ma));
+  LATTER_CHECK(latter_core::step_thermal_foldback_policy(true, 58.0f, 500, foldback_active, active_icc_ma));
   LATTER_CHECK(!foldback_active && active_icc_ma == 500);
-  latter_ui::step_thermal_foldback_policy(true, 68.0f, 500, foldback_active, active_icc_ma);
+  latter_core::step_thermal_foldback_policy(true, 68.0f, 500, foldback_active, active_icc_ma);
   LATTER_CHECK(foldback_active && active_icc_ma == 100);
-  latter_ui::step_thermal_foldback_policy(false, 68.0f, 500, foldback_active, active_icc_ma);
+  latter_core::step_thermal_foldback_policy(false, 68.0f, 500, foldback_active, active_icc_ma);
   LATTER_CHECK(!foldback_active && active_icc_ma == 500);
 
-  latter_ui::BatteryModel bm;
-  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 1000, -1, 500));
-  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 11000, -1, 500));
-  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 21000, -1, 500));
-  LATTER_CHECK(bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 31000, -1, 500));
+  latter_core::BatteryModel bm;
+  LATTER_CHECK(!bm.update(3280, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 1000, -1, 500));
+  LATTER_CHECK(!bm.update(3280, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 11000, -1, 500));
+  LATTER_CHECK(!bm.update(3280, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 21000, -1, 500));
+  LATTER_CHECK(bm.update(3280, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 31000, -1, 500));
   LATTER_CHECK(bm.cutoff_tripped);
-  LATTER_CHECK(!bm.update(3280, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::QUIET, 41000, -1, 500));
+  LATTER_CHECK(!bm.update(3280, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::QUIET, 41000, -1, 500));
 
   // BatteryModel::update() capacity_mah vs active_chg_ma parameter order regression:
   // Passing capacity=500mAh and active_chg_ma=200mA must compute R=150mOhm (+19mV screen / +28mV audio),
   // never R=330mOhm (+42mV / +62mV) from shifting icc_ma into capacity_mah, and thermal foldback (100mA)
   // must keep R=150mOhm (-15mV CC) instead of R=630mOhm.
   {
-    latter_ui::BatteryModel ir_bm;
-    ir_bm.update(3755, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::SCREEN, 1000, 59, 500, 200);
+    latter_core::BatteryModel ir_bm;
+    ir_bm.update(3755, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::SCREEN, 1000, 59, 500, 200);
     LATTER_CHECK(ir_bm.vrest_mv == 3755 + (130 * 150 / 1000));
-    ir_bm.update(3734, true, latter_ui::ChargePhase::IDLE, latter_ui::BattLoad::AUDIO, 11000, 58, 500, 200);
+    ir_bm.update(3734, true, latter_core::ChargePhase::IDLE, latter_core::BattLoad::AUDIO, 11000, 58, 500, 200);
     LATTER_CHECK(ir_bm.vrest_mv == 3734 + (190 * 150 / 1000));
-    ir_bm.update(4000, false, latter_ui::ChargePhase::CC, latter_ui::BattLoad::SCREEN, 21000, 58, 500, 100);
+    ir_bm.update(4000, false, latter_core::ChargePhase::CC, latter_core::BattLoad::SCREEN, 21000, 58, 500, 100);
     LATTER_CHECK(ir_bm.vrest_mv == 4000 - (100 * 150 / 1000));
   }
 
-  LATTER_CHECK(!latter_ui::can_wake_for_on_battery_alarm_policy(0, 1));
-  LATTER_CHECK(latter_ui::can_wake_for_on_battery_alarm_policy(1, 1));
-  LATTER_CHECK(latter_ui::can_wake_for_on_battery_alarm_policy(0, 0));
-  LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(0, 1, false, false, 3600) == -1);
-  LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(0, 1, false, true, 3600) == 3600);
-  LATTER_CHECK(latter_ui::resolve_alarm_sleep_seconds(1, 1, true, false, 3600) == -1);
+  LATTER_CHECK(!latter_core::can_wake_for_on_battery_alarm_policy(0, 1));
+  LATTER_CHECK(latter_core::can_wake_for_on_battery_alarm_policy(1, 1));
+  LATTER_CHECK(latter_core::can_wake_for_on_battery_alarm_policy(0, 0));
+  LATTER_CHECK(latter_core::resolve_alarm_sleep_seconds(0, 1, false, false, 3600) == -1);
+  LATTER_CHECK(latter_core::resolve_alarm_sleep_seconds(0, 1, false, true, 3600) == 3600);
+  LATTER_CHECK(latter_core::resolve_alarm_sleep_seconds(1, 1, true, false, 3600) == -1);
 
-  LATTER_CHECK(!latter_ui::weak_link_can_sample(4064U, 3899U));
-  LATTER_CHECK(latter_ui::weak_link_can_sample(8900U, 3899U));
-  LATTER_CHECK(latter_ui::weak_link_can_sample(1000U, 0U));
+  LATTER_CHECK(!latter_core::weak_link_can_sample(4064U, 3899U));
+  LATTER_CHECK(latter_core::weak_link_can_sample(8900U, 3899U));
+  LATTER_CHECK(latter_core::weak_link_can_sample(1000U, 0U));
 
-  latter_ui::WeakLinkGate transient_gate{};
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-82, 10000U, transient_gate));
+  latter_core::WeakLinkGate transient_gate{};
+  LATTER_CHECK(!latter_core::weak_link_feed_rssi(-82, 10000U, transient_gate));
   LATTER_CHECK(transient_gate.below_count == 1U);
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-60, 20000U, transient_gate));
+  LATTER_CHECK(!latter_core::weak_link_feed_rssi(-60, 20000U, transient_gate));
   LATTER_CHECK(transient_gate.below_count == 0U && !transient_gate.weak);
 
-  latter_ui::WeakLinkGate gate{};
+  latter_core::WeakLinkGate gate{};
   uint32_t t = 10000;
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-72, t, gate));
+  LATTER_CHECK(!latter_core::weak_link_feed_rssi(-72, t, gate));
   t += 10000;
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-72, t, gate));
+  LATTER_CHECK(!latter_core::weak_link_feed_rssi(-72, t, gate));
   LATTER_CHECK(!gate.weak);
   for (int i = 0; i < 6; ++i) {
     t += 10000;
-    latter_ui::weak_link_feed_rssi(-86, t, gate);
+    latter_core::weak_link_feed_rssi(-86, t, gate);
   }
   LATTER_CHECK(gate.weak);
 
   for (int i = 0; i < 5; ++i) {
     t += 10000;
-    LATTER_CHECK(latter_ui::weak_link_feed_rssi(-76, t, gate));
+    LATTER_CHECK(latter_core::weak_link_feed_rssi(-76, t, gate));
   }
   LATTER_CHECK(gate.above_since_ms == 0);
 
   bool saw_hold_before_clear = false;
   for (int i = 0; i < 20; ++i) {
     t += 10000;
-    const bool w = latter_ui::weak_link_feed_rssi(-60, t, gate);
-    if (gate.above_since_ms != 0 && (t - gate.above_since_ms) < latter_ui::kWeakLinkClearHoldMs) {
+    const bool w = latter_core::weak_link_feed_rssi(-60, t, gate);
+    if (gate.above_since_ms != 0 && (t - gate.above_since_ms) < latter_core::kWeakLinkClearHoldMs) {
       LATTER_CHECK(w);
       saw_hold_before_clear = true;
     }
   }
   LATTER_CHECK(saw_hold_before_clear && !gate.weak);
 
-  latter_ui::WeakLinkGate disc_gate{};
-  LATTER_CHECK(!latter_ui::weak_link_feed_rssi(-84, 10000U, disc_gate));
-  LATTER_CHECK(latter_ui::weak_link_feed_rssi(-84, 20000U, disc_gate));
-  latter_ui::weak_link_note_disconnect(25000U, disc_gate);
+  latter_core::WeakLinkGate disc_gate{};
+  LATTER_CHECK(!latter_core::weak_link_feed_rssi(-84, 10000U, disc_gate));
+  LATTER_CHECK(latter_core::weak_link_feed_rssi(-84, 20000U, disc_gate));
+  latter_core::weak_link_note_disconnect(25000U, disc_gate);
   LATTER_CHECK(!disc_gate.weak && !disc_gate.have && disc_gate.below_count == 0U);
   LATTER_CHECK(disc_gate.weak_total_ms == 5000U);
 
-  latter_ui::last_screen_wake_ms() = 1000U;
-  latter_ui::last_user_touch_ms() = 1000U;
-  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 13000U, 0U));
-  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 35500U, 0U));
+  latter_core::last_screen_wake_ms() = 1000U;
+  latter_core::last_user_touch_ms() = 1000U;
+  LATTER_CHECK(latter_core::battery_motion_allowed(false, 13000U, 0U));
+  LATTER_CHECK(latter_core::battery_motion_allowed(false, 35500U, 0U));
 #if !LATTER_IS_STATIONARY && LATTER_HAS_BATTERY
-  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 36500U, 0U));
-  latter_ui::last_user_touch_ms() = 20000U;
-  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 54000U, 0U));
-  LATTER_CHECK(!latter_ui::battery_motion_allowed(false, 55500U, 0U));
+  LATTER_CHECK(!latter_core::battery_motion_allowed(false, 36500U, 0U));
+  latter_core::last_user_touch_ms() = 20000U;
+  LATTER_CHECK(latter_core::battery_motion_allowed(false, 54000U, 0U));
+  LATTER_CHECK(!latter_core::battery_motion_allowed(false, 55500U, 0U));
 #else
-  LATTER_CHECK(latter_ui::battery_motion_allowed(false, 90000U, 0U));
+  LATTER_CHECK(latter_core::battery_motion_allowed(false, 90000U, 0U));
 #endif
-  LATTER_CHECK(latter_ui::battery_motion_allowed(true, 90000U, 0U));
+  LATTER_CHECK(latter_core::battery_motion_allowed(true, 90000U, 0U));
 
   const std::string batt_h = read_repo_file("../../include/hal_battery.h");
   const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
@@ -259,7 +294,7 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(comp_h.find("sync_disp_poller_for_anim(") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("dispatch_cadence_20ms(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("dispatch_cadence_screensaver_20ms(") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("speaker_audio_busy") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("au.speaker_busy()") != std::string::npos);
   LATTER_CHECK(comp_cpp.find("app_weather_active") != std::string::npos);
   LATTER_CHECK(comp_cpp.find("mww_running") != std::string::npos);
   LATTER_CHECK(weather_cpp.find("cloud_shape_get(") != std::string::npos);
@@ -276,42 +311,42 @@ void test_battery_model_and_power_policy() {
   LATTER_CHECK(pmu_cpp.find("!can_wake_for_on_battery_alarm()") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("kBattCapacityMah, tel.icc_ma") != std::string::npos);
   const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
-  LATTER_CHECK(axp_yaml.find("latter_ui::kBattCapacityMah") != std::string::npos);
+  LATTER_CHECK(axp_yaml.find("latter_core::kBattCapacityMah") != std::string::npos);
   const std::string va_yaml = read_repo_file("../../modules/voice_assistant.yaml");
   LATTER_CHECK(va_yaml.find("art_canvas_drop_all()") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("art_canvas_drop_all()") != std::string::npos);
-  LATTER_CHECK(latter_ui::kWeakLinkEnterDbm == -78);
-  LATTER_CHECK(latter_ui::kWeakLinkClearDbm == -74);
+  LATTER_CHECK(latter_core::kWeakLinkEnterDbm == -78);
+  LATTER_CHECK(latter_core::kWeakLinkClearDbm == -74);
   LATTER_CHECK(link_h.find("LATTER_WEAK_LINK_ENTER_DBM") != std::string::npos);
   LATTER_CHECK(link_h.find("kWeakLinkClearHoldMs = 120000U") != std::string::npos);
 }
 
 void test_beacon_boot_gate_and_touch_reboot_safety() {
-  LATTER_CHECK(!latter_ui::beacon_boot_gate_open(false, true, 4000U, 8000U));
-  LATTER_CHECK(!latter_ui::beacon_boot_gate_open(true, false, 0U, 8000U));
-  LATTER_CHECK(!latter_ui::beacon_boot_gate_open(true, true, 4500U, 6000U));
-  LATTER_CHECK(latter_ui::beacon_boot_gate_open(true, true, 4500U, 6500U));
-  LATTER_CHECK(latter_ui::beacon_boot_gate_open(true, false, 0U, 12500U));
+  LATTER_CHECK(!latter_core::beacon_boot_gate_open(false, true, 4000U, 8000U));
+  LATTER_CHECK(!latter_core::beacon_boot_gate_open(true, false, 0U, 8000U));
+  LATTER_CHECK(!latter_core::beacon_boot_gate_open(true, true, 4500U, 6000U));
+  LATTER_CHECK(latter_core::beacon_boot_gate_open(true, true, 4500U, 6500U));
+  LATTER_CHECK(latter_core::beacon_boot_gate_open(true, false, 0U, 12500U));
 
   MockBleCtrl ble{};
   MockWifiCtrl wifi{};
-  latter_ui::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 5500U, true, 4500U);
+  latter_core::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 5500U, true, 4500U);
   LATTER_CHECK(!ble.is_active() && ble.enables == 0);
-  latter_ui::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 6600U, true, 4500U);
+  latter_core::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 6600U, true, 4500U);
   LATTER_CHECK(ble.is_active() && ble.enables == 1);
 
   MockTouchscreen ts{};
   MockTouchscreen *const ts_const_ptr = &ts;
-  latter_ui::hal_recover_touchscreen_if_failed(&ts, 0U, true);
-  latter_ui::hal_recover_touchscreen_if_failed(&ts, 1000U);
+  latter_core::hal_recover_touchscreen_if_failed(&ts, 0U, true);
+  latter_core::hal_recover_touchscreen_if_failed(&ts, 1000U);
   LATTER_CHECK(ts.setup_calls == 0);
-  latter_ui::hal_recover_touchscreen_if_failed(&ts, 2000U);
+  latter_core::hal_recover_touchscreen_if_failed(&ts, 2000U);
   LATTER_CHECK(ts.setup_calls == 1 && ts.clear_err_calls == 1 && ts.reset_calls == 1 && ts.enable_loop_calls == 1);
-  latter_ui::hal_recover_touchscreen_if_failed(&ts_const_ptr, 3200U);
+  latter_core::hal_recover_touchscreen_if_failed(&ts_const_ptr, 3200U);
   LATTER_CHECK(ts.setup_calls == 1);
-  latter_ui::hal_recover_touchscreen_if_failed(&ts_const_ptr, 4100U);
+  latter_core::hal_recover_touchscreen_if_failed(&ts_const_ptr, 4100U);
   LATTER_CHECK(ts.setup_calls == 2 && ts.enable_loop_calls == 2);
-  latter_ui::hal_recover_touchscreen_if_failed(&ts, 7000U);
+  latter_core::hal_recover_touchscreen_if_failed(&ts, 7000U);
   LATTER_CHECK(ts.setup_calls == 2);
 
   const std::string touch_eng_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
@@ -332,168 +367,257 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   LATTER_CHECK(touch_eng_cpp.substr(0, on_up_pos).find("handle_tap_system_tools_(") == std::string::npos);
   LATTER_CHECK(touch_all_cpp.find("UiHostCmd::RESTART_DEVICE") != std::string::npos);
 
+  const std::string gui_touch_yaml = read_repo_file("../../guis/universal/gui_touch.yaml");
   LATTER_CHECK(panel_h.find("hal_prepare_touch_for_restart()") != std::string::npos);
   LATTER_CHECK(panel_h.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("hal_prepare_touch_for_restart()") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("flush_persisted_prefs_if_dirty()") != std::string::npos);
-  LATTER_CHECK(pwr_yaml.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("rs.hw_recover_touchscreen(") != std::string::npos);
+  LATTER_CHECK(gui_touch_yaml.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("emit_device_telemetry(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("/*hibernating=*/true") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("area_changed") != std::string::npos);
+
+  // Explicit driver-identity I2C guards, FocalTech 0x38 chip-ID filter, ImuPowerMode,
+  // backlight en_inverted / custom callback, and #ifdef USE_WIFI guards.
+  static_assert(latter_core::is_known_focaltech_chip_id(0x55));
+  static_assert(latter_core::is_known_focaltech_chip_id(0x08));
+  static_assert(latter_core::is_known_focaltech_chip_id(0x54));
+  static_assert(latter_core::is_known_focaltech_chip_id(0x58));
+  static_assert(latter_core::is_known_focaltech_chip_id(0x64));
+  static_assert(!latter_core::is_known_focaltech_chip_id(0x00));  // PCA9554A
+  static_assert(!latter_core::is_known_focaltech_chip_id(0xFF));  // PCA9554A / floating bus
+  static_assert(!latter_core::is_known_focaltech_chip_id(0x18));  // AHT20 status
+  static_assert(!latter_core::is_known_focaltech_chip_id(0x1C));  // AHT20 status
+  static_assert(!latter_core::is_known_focaltech_chip_id(0xA3));
+
+  static_assert(latter_core::qmi8658_ctrl7_for_power_mode(latter_core::ImuPowerMode::Off) == 0x00U);
+  static_assert(latter_core::qmi8658_ctrl7_for_power_mode(latter_core::ImuPowerMode::AccelOnly) == 0x01U);
+  static_assert(latter_core::qmi8658_ctrl7_for_power_mode(latter_core::ImuPowerMode::AccelAndGyro) == 0x03U);
+  static_assert(latter_core::qmi8658_ctrl7_for_power_mode(latter_core::ImuPowerMode::WakeOnMotion) == 0x01U);
+
+  static_assert(latter_core::hal_backlight_en_gpio_level(true, false) == 1);
+  static_assert(latter_core::hal_backlight_en_gpio_level(false, false) == 0);
+  static_assert(latter_core::hal_backlight_en_gpio_level(true, true) == 0);
+  static_assert(latter_core::hal_backlight_en_gpio_level(false, true) == 1);
+  LATTER_CHECK(latter_core::hal_backlight_float_to_pct(0.0f) == 0U);
+  LATTER_CHECK(latter_core::hal_backlight_float_to_pct(0.004f) == 1U);
+  LATTER_CHECK(latter_core::hal_backlight_float_to_pct(0.75f) == 75U);
+  LATTER_CHECK(latter_core::hal_backlight_float_to_pct(1.0f) == 100U);
+
+  {
+    // Custom I2C-expander backlight path: must compile for display drivers without set_brightness().
+    struct MockNoBrightnessDisplay {};
+    MockNoBrightnessDisplay mock_disp{};
+    static int s_last_custom_bl = -1;
+    static int s_custom_bl_calls = 0;
+    s_last_custom_bl = -1;
+    s_custom_bl_calls = 0;
+    auto &rs = latter_core::runtime_state();
+    auto prev_cb = rs.hw_set_backlight_level;
+    rs.hw_set_backlight_level = +[](uint8_t pct) {
+      s_last_custom_bl = static_cast<int>(pct);
+      ++s_custom_bl_calls;
+    };
+    latter_core::hal_set_display_brightness_impl<true>(&mock_disp, 0.75f);
+    LATTER_CHECK(s_custom_bl_calls == 1 && s_last_custom_bl == 75);
+    latter_core::hal_set_display_brightness_impl<true>(&mock_disp, 0.0f);
+    LATTER_CHECK(s_custom_bl_calls == 2 && s_last_custom_bl == 0);
+    rs.hw_set_backlight_level = prev_cb;
+  }
+
+  const std::string audio_cpp = read_repo_file("../../components/latter_core/audio_es8311.cpp");
+  const std::string imu_cpp = read_repo_file("../../components/latter_core/imu_qmi8658.cpp");
+  const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
+  const std::string panel_cpp = read_repo_file("../../components/latter_core/panel_power.cpp");
+  const std::string radio_h = read_repo_file("../../include/hal_radio_policy.h");
+  const std::string weak_cpp = read_repo_file("../../components/latter_core/weak_link_policy.cpp");
+  const std::string b216_yaml = read_repo_file("../../boards/waveshare_s3_216.yaml");
+  const std::string chip_p4_yaml = read_repo_file("../../modules/hal/chip_esp32p4.yaml");
+  const std::string radio_c6_yaml = read_repo_file("../../modules/hal/radio_esp32c6_sdio.yaml");
+  const std::string imu_yaml = read_repo_file("../../modules/hal/imu_qmi8658.yaml");
+  const std::string pmu_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+  const std::string disp_only_yaml = read_repo_file("../../modules/latter_display_only_firmware.yaml");
+
+  LATTER_CHECK(audio_cpp.find("#if LATTER_DRV_CODEC_ES8311") != std::string::npos);
+  LATTER_CHECK(audio_cpp.find("#if LATTER_DRV_IMU_QMI8658") != std::string::npos);
+  LATTER_CHECK(imu_cpp.find("#if LATTER_DRV_IMU_QMI8658") != std::string::npos);
+  LATTER_CHECK(pmu_cpp.find("LATTER_DRV_PMU_AXP2101") != std::string::npos);
+  LATTER_CHECK(pmu_cpp.find("LATTER_DRV_RTC_PCF85063") != std::string::npos);
+  LATTER_CHECK(panel_cpp.find("LATTER_DRV_TOUCH_FT5X06") != std::string::npos);
+  LATTER_CHECK(panel_cpp.find("is_known_focaltech_chip_id(") != std::string::npos);
+  LATTER_CHECK(b216_yaml.find("touch_ft5x06: false") != std::string::npos);
+  LATTER_CHECK(radio_h.find("#ifdef USE_WIFI") != std::string::npos);
+  LATTER_CHECK(weak_cpp.find("#if defined(USE_ESP32) && defined(USE_WIFI)") != std::string::npos);
+  LATTER_CHECK(chip_p4_yaml.find("esp32_hosted:") == std::string::npos);
+  LATTER_CHECK(radio_c6_yaml.find("esp32_hosted:") != std::string::npos);
+  LATTER_CHECK(imu_yaml.find("latter_ui::") == std::string::npos);
+  LATTER_CHECK(imu_yaml.find("coin_state") == std::string::npos);
+  LATTER_CHECK(pmu_yaml.find("latter_ui::") == std::string::npos);
+  LATTER_CHECK(pmu_yaml.find("gui_page") == std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("Mode::WakeOnMotion") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("0x80") == std::string::npos);
+  const auto pkgs_pos = disp_only_yaml.find("packages:");
+  LATTER_CHECK(pkgs_pos != std::string::npos);
+  const std::string disp_only_pkgs = disp_only_yaml.substr(pkgs_pos);
+  LATTER_CHECK(disp_only_pkgs.find("audio_pipeline.yaml") == std::string::npos);
+  LATTER_CHECK(disp_only_pkgs.find("voice_assistant.yaml") == std::string::npos);
+  LATTER_CHECK(disp_only_pkgs.find("audio_scripts.yaml") == std::string::npos);
+  LATTER_CHECK(disp_only_pkgs.find("gui_touch.yaml") == std::string::npos);
 }
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
-  static_assert(std::is_trivially_copyable_v<latter_ui::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_SDK_REV == 2026112302L);
-  LATTER_CHECK(latter_ui::kHibernateSnapshotVersion == 3U);
+  static_assert(std::is_trivially_copyable_v<latter_core::HibernateSnapshot>);
+  LATTER_CHECK(LATTER_CORE_REV == 2026112303L);
+  LATTER_CHECK(latter_core::kHibernateSnapshotVersion == 1U);
 
-  latter_ui::reset_hibernate_snapshot_for_test();
-  latter_ui::reset_all_v3_rev_guards();
-  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
-  latter_ui::weather_state() = latter_ui::WeatherState{};
-  latter_ui::shortcuts_state() = latter_ui::ShortcutsState{};
-  latter_ui::runtime_state().area = latter_ui::AreaRuntimeState{};
-  latter_ui::persisted_prefs() = latter_ui::PersistedDevicePrefs{};
+  latter_core::reset_hibernate_snapshot_for_test();
+  latter_core::reset_all_v3_rev_guards();
+  latter_core::area_ctx_state() = latter_core::AreaContextState{};
+  latter_core::weather_state() = latter_core::WeatherState{};
+  latter_core::shortcuts_state() = latter_core::ShortcutsState{};
+  latter_core::runtime_state().area = latter_core::AreaRuntimeState{};
+  latter_core::persisted_prefs() = latter_core::PersistedDevicePrefs{};
 
-  LATTER_CHECK(!latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(!latter_ui::shortcuts_state().dock_configured);
-  LATTER_CHECK(latter_ui::weather_state().condition.empty());
+  LATTER_CHECK(!latter_core::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(!latter_core::shortcuts_state().dock_configured);
+  LATTER_CHECK(latter_core::weather_state().condition.empty());
 
-  latter_ui::area_ctx_state().epoch = 42U;
-  latter_ui::area_ctx_state().rev = 9U;
-  latter_ui::area_ctx_state().area_name = "Primary Suite";
-  latter_ui::weather_state().epoch = 42U;
-  latter_ui::weather_state().rev = 5U;
-  latter_ui::weather_state().condition = "partlycloudy";
-  latter_ui::weather_state().temperature = 68.5f;
-  latter_ui::weather_state().sun_state = "below_horizon";
+  latter_core::area_ctx_state().epoch = 42U;
+  latter_core::area_ctx_state().rev = 9U;
+  latter_core::area_ctx_state().area_name = "Primary Suite";
+  latter_core::weather_state().epoch = 42U;
+  latter_core::weather_state().rev = 5U;
+  latter_core::weather_state().condition = "partlycloudy";
+  latter_core::weather_state().temperature = 68.5f;
+  latter_core::weather_state().sun_state = "below_horizon";
 
-  auto &sc_save = latter_ui::shortcuts_state();
+  auto &sc_save = latter_core::shortcuts_state();
   sc_save.epoch = 42U;
   sc_save.rev = 3U;
   sc_save.dock_configured = true;
   sc_save.live_received = true;
-  sc_save.dock_items.push_back(latter_ui::ShortcutItem{
-      latter_ui::ShortcutKind::ROUTE, latter_ui::RouteId::APP_PINNED, "app:pinned", "", "Pinned", "", false, -1});
-  sc_save.dock_items.push_back(latter_ui::ShortcutItem{
-      latter_ui::ShortcutKind::ENTITY, latter_ui::RouteId::NONE, "script.call_help", "turn_on",
+  sc_save.dock_items.push_back(latter_core::ShortcutItem{
+      latter_core::ShortcutKind::ROUTE, latter_core::RouteId::APP_PINNED, "app:pinned", "", "Pinned", "", false, -1});
+  sc_save.dock_items.push_back(latter_core::ShortcutItem{
+      latter_core::ShortcutKind::ENTITY, latter_core::RouteId::NONE, "script.call_help", "turn_on",
       "Call Jordan", "mdi:bell-ring", true, -1});
-  sc_save.pinned_items.push_back(latter_ui::ShortcutItem{
-      latter_ui::ShortcutKind::ROUTE, latter_ui::RouteId::WEATHER_MOON, "weather:moon", "", "Moon Phase", "", false, -1});
-  LATTER_CHECK(latter_ui::save_hibernate_snapshot("PST8PDT,M3.2.0,M11.1.0/2"));
+  sc_save.pinned_items.push_back(latter_core::ShortcutItem{
+      latter_core::ShortcutKind::ROUTE, latter_core::RouteId::WEATHER_MOON, "weather:moon", "", "Moon Phase", "", false, -1});
+  LATTER_CHECK(latter_core::save_hibernate_snapshot("PST8PDT,M3.2.0,M11.1.0/2"));
 
-  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
-  latter_ui::weather_state() = latter_ui::WeatherState{};
-  latter_ui::shortcuts_state() = latter_ui::ShortcutsState{};
-  latter_ui::runtime_state().area = latter_ui::AreaRuntimeState{};
-  latter_ui::persisted_prefs() = latter_ui::PersistedDevicePrefs{};
-  latter_ui::device_prefs_state() = latter_ui::DevicePrefsState{};
-  latter_ui::hydrated_posix_tz().clear();
+  latter_core::area_ctx_state() = latter_core::AreaContextState{};
+  latter_core::weather_state() = latter_core::WeatherState{};
+  latter_core::shortcuts_state() = latter_core::ShortcutsState{};
+  latter_core::runtime_state().area = latter_core::AreaRuntimeState{};
+  latter_core::persisted_prefs() = latter_core::PersistedDevicePrefs{};
+  latter_core::device_prefs_state() = latter_core::DevicePrefsState{};
+  latter_core::hydrated_posix_tz().clear();
 
-  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(latter_ui::hydrated_posix_tz() == "PST8PDT,M3.2.0,M11.1.0/2");
-  LATTER_CHECK(latter_ui::shortcuts_state().dock_configured);
-  LATTER_CHECK(latter_ui::shortcuts_state().dock_items.size() == 2U);
-  LATTER_CHECK(latter_ui::shortcuts_state().dock_items[1].target == "script.call_help");
-  LATTER_CHECK(latter_ui::shortcuts_state().dock_items[1].confirm);
-  LATTER_CHECK(latter_ui::shortcuts_state().pinned_items.size() == 1U);
-  LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Primary Suite");
-  LATTER_CHECK(latter_ui::weather_state().condition == "partlycloudy");
-  LATTER_CHECK(latter_ui::area_ctx_state().epoch == 0U && latter_ui::area_ctx_state().rev == 0U);
-  LATTER_CHECK(latter_ui::weather_state().epoch == 0U && latter_ui::weather_state().rev == 0U);
-  LATTER_CHECK(latter_ui::shortcuts_state().epoch == 0U && latter_ui::shortcuts_state().rev == 0U);
+  LATTER_CHECK(latter_core::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_core::hydrated_posix_tz() == "PST8PDT,M3.2.0,M11.1.0/2");
+  LATTER_CHECK(latter_core::shortcuts_state().dock_configured);
+  LATTER_CHECK(latter_core::shortcuts_state().dock_items.size() == 2U);
+  LATTER_CHECK(latter_core::shortcuts_state().dock_items[1].target == "script.call_help");
+  LATTER_CHECK(latter_core::shortcuts_state().dock_items[1].confirm);
+  LATTER_CHECK(latter_core::shortcuts_state().pinned_items.size() == 1U);
+  LATTER_CHECK(latter_core::area_ctx_state().area_name == "Primary Suite");
+  LATTER_CHECK(latter_core::weather_state().condition == "partlycloudy");
+  LATTER_CHECK(latter_core::area_ctx_state().epoch == 0U && latter_core::area_ctx_state().rev == 0U);
+  LATTER_CHECK(latter_core::weather_state().epoch == 0U && latter_core::weather_state().rev == 0U);
+  LATTER_CHECK(latter_core::shortcuts_state().epoch == 0U && latter_core::shortcuts_state().rev == 0U);
 
-  latter_ui::shortcuts_state().live_received = true;
-  latter_ui::shortcuts_state().dock_items.clear();
-  latter_ui::area_ctx_state().area_name = "Office";
-  latter_ui::weather_state().condition = "sunny";
-  latter_ui::weather_state().temperature = 74.0f;
-  latter_ui::weather_state().sun_state = "above_horizon";
-  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(latter_ui::shortcuts_state().dock_items.empty());
-  LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Office");
+  latter_core::shortcuts_state().live_received = true;
+  latter_core::shortcuts_state().dock_items.clear();
+  latter_core::area_ctx_state().area_name = "Office";
+  latter_core::weather_state().condition = "sunny";
+  latter_core::weather_state().temperature = 74.0f;
+  latter_core::weather_state().sun_state = "above_horizon";
+  LATTER_CHECK(latter_core::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_core::shortcuts_state().dock_items.empty());
+  LATTER_CHECK(latter_core::area_ctx_state().area_name == "Office");
 
-  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
-  latter_ui::weather_state() = latter_ui::WeatherState{};
-  latter_ui::shortcuts_state() = latter_ui::ShortcutsState{};
-  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
+  latter_core::area_ctx_state() = latter_core::AreaContextState{};
+  latter_core::weather_state() = latter_core::WeatherState{};
+  latter_core::shortcuts_state() = latter_core::ShortcutsState{};
+  LATTER_CHECK(latter_core::load_hibernate_snapshot_if_cold());
 
-  std::vector<std::string> ac_tok(static_cast<size_t>(latter_ui::AreaCtxField::COUNT), "");
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_ID)] = "kitchen";
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::AREA_NAME)] = "Kitchen";
-  ac_tok[static_cast<size_t>(latter_ui::AreaCtxField::COVERS_OPEN)] = "3";
-  LATTER_CHECK(latter_ui::parse_v3_area_ctx_payload(build_v3_packet(1, 1, ac_tok)));
-  LATTER_CHECK(latter_ui::area_ctx_state().area_name == "Kitchen" && latter_ui::area_ctx_state().covers_open == 3);
+  std::vector<std::string> ac_tok(static_cast<size_t>(latter_core::AreaCtxField::COUNT), "");
+  ac_tok[static_cast<size_t>(latter_core::AreaCtxField::AREA_ID)] = "kitchen";
+  ac_tok[static_cast<size_t>(latter_core::AreaCtxField::AREA_NAME)] = "Kitchen";
+  ac_tok[static_cast<size_t>(latter_core::AreaCtxField::COVERS_OPEN)] = "3";
+  LATTER_CHECK(latter_core::parse_v3_area_ctx_payload(build_v3_packet(1, 1, ac_tok)));
+  LATTER_CHECK(latter_core::area_ctx_state().area_name == "Kitchen" && latter_core::area_ctx_state().covers_open == 3);
 
-  std::vector<std::string> wx_tok(static_cast<size_t>(latter_ui::WeatherField::COUNT), "");
-  wx_tok[static_cast<size_t>(latter_ui::WeatherField::CONDITION)] = "rainy";
-  wx_tok[static_cast<size_t>(latter_ui::WeatherField::TEMPERATURE)] = "59.0";
-  wx_tok[static_cast<size_t>(latter_ui::WeatherField::SUN_STATE)] = "above_horizon";
-  LATTER_CHECK(latter_ui::parse_v3_weather_payload(build_v3_packet(1, 1, wx_tok)));
-  LATTER_CHECK(latter_ui::weather_state().condition == "rainy");
+  std::vector<std::string> wx_tok(static_cast<size_t>(latter_core::WeatherField::COUNT), "");
+  wx_tok[static_cast<size_t>(latter_core::WeatherField::CONDITION)] = "rainy";
+  wx_tok[static_cast<size_t>(latter_core::WeatherField::TEMPERATURE)] = "59.0";
+  wx_tok[static_cast<size_t>(latter_core::WeatherField::SUN_STATE)] = "above_horizon";
+  LATTER_CHECK(latter_core::parse_v3_weather_payload(build_v3_packet(1, 1, wx_tok)));
+  LATTER_CHECK(latter_core::weather_state().condition == "rainy");
 
-  latter_ui::area_ctx_state().area_name = std::string(80, 'y');
-  latter_ui::weather_state().sun_state = "above_horizon";
-  LATTER_CHECK(latter_ui::save_hibernate_snapshot("EST5EDT,M3.2.0,M11.1.0/2"));
-  latter_ui::area_ctx_state() = latter_ui::AreaContextState{};
-  latter_ui::weather_state() = latter_ui::WeatherState{};
-  LATTER_CHECK(latter_ui::load_hibernate_snapshot_if_cold());
-  LATTER_CHECK(latter_ui::area_ctx_state().area_name.size() == 47U);
-  LATTER_CHECK(latter_ui::weather_state().sun_state == "above_horizon");
+  latter_core::area_ctx_state().area_name = std::string(80, 'y');
+  latter_core::weather_state().sun_state = "above_horizon";
+  LATTER_CHECK(latter_core::save_hibernate_snapshot("EST5EDT,M3.2.0,M11.1.0/2"));
+  latter_core::area_ctx_state() = latter_core::AreaContextState{};
+  latter_core::weather_state() = latter_core::WeatherState{};
+  LATTER_CHECK(latter_core::load_hibernate_snapshot_if_cold());
+  LATTER_CHECK(latter_core::area_ctx_state().area_name.size() == 47U);
+  LATTER_CHECK(latter_core::weather_state().sun_state == "above_horizon");
 
   {
-    latter_ui::PersistedDevicePrefs p_wall{};
-    latter_ui::seed_hardware_sleep_defaults_for_traits(p_wall, true, false, false, false);
-    LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_wall)) == "Always On");
-    LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_mode_cstr(p_wall)) == "Never");
-    LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(p_wall)) == "Handheld Only");
-    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_wall)) == "Minimal Digital");
+    latter_core::PersistedDevicePrefs p_wall{};
+    latter_core::seed_hardware_sleep_defaults_for_traits(p_wall, true, false, false, false);
+    LATTER_CHECK(std::string_view(latter_core::pref_wake_word_mode_cstr(p_wall)) == "Always On");
+    LATTER_CHECK(std::string_view(latter_core::pref_screensaver_mode_cstr(p_wall)) == "Never");
+    LATTER_CHECK(std::string_view(latter_core::pref_ble_beacon_mode_cstr(p_wall)) == "Handheld Only");
+    LATTER_CHECK(std::string_view(latter_core::pref_clock_face_cstr(p_wall)) == "Minimal Digital");
 
-    latter_ui::PersistedDevicePrefs p_pocket{};
-    latter_ui::seed_hardware_sleep_defaults_for_traits(p_pocket, false, false, true, true);
-    LATTER_CHECK(std::string_view(latter_ui::pref_wake_word_mode_cstr(p_pocket)) == "Docked Only");
-    LATTER_CHECK(std::string_view(latter_ui::pref_screensaver_mode_cstr(p_pocket)) == "Docked Only");
-    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_pocket)) == "Modern Analog");
+    latter_core::PersistedDevicePrefs p_pocket{};
+    latter_core::seed_hardware_sleep_defaults_for_traits(p_pocket, false, false, true, true);
+    LATTER_CHECK(std::string_view(latter_core::pref_wake_word_mode_cstr(p_pocket)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_core::pref_screensaver_mode_cstr(p_pocket)) == "Docked Only");
+    LATTER_CHECK(std::string_view(latter_core::pref_clock_face_cstr(p_pocket)) == "Modern Analog");
 
-    latter_ui::PersistedDevicePrefs p_wear{};
-    latter_ui::seed_hardware_sleep_defaults_for_traits(p_wear, false, true, false, true);
-    LATTER_CHECK(std::string_view(latter_ui::pref_tap_to_wake_cstr(p_wear)) == "Double Tap");
+    latter_core::PersistedDevicePrefs p_wear{};
+    latter_core::seed_hardware_sleep_defaults_for_traits(p_wear, false, true, false, true);
+    LATTER_CHECK(std::string_view(latter_core::pref_tap_to_wake_cstr(p_wear)) == "Double Tap");
     LATTER_CHECK(p_wear.day_brightness_pct() == 80U && p_wear.night_brightness_pct() == 25U);
-    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_wear)) == "Minimal Digital");
+    LATTER_CHECK(std::string_view(latter_core::pref_clock_face_cstr(p_wear)) == "Minimal Digital");
 
-    latter_ui::PersistedDevicePrefs p_hand{};
-    latter_ui::seed_hardware_sleep_defaults_for_traits(p_hand, false, false, false, true);
-    LATTER_CHECK(std::string_view(latter_ui::pref_battery_hibernate_timeout_cstr(p_hand)) == "30 min");
-    LATTER_CHECK(std::string_view(latter_ui::pref_clock_face_cstr(p_hand)) == "Minimal Digital");
+    latter_core::PersistedDevicePrefs p_hand{};
+    latter_core::seed_hardware_sleep_defaults_for_traits(p_hand, false, false, false, true);
+    LATTER_CHECK(std::string_view(latter_core::pref_battery_hibernate_timeout_cstr(p_hand)) == "30 min");
+    LATTER_CHECK(std::string_view(latter_core::pref_clock_face_cstr(p_hand)) == "Minimal Digital");
   }
 
-  auto &prefs = latter_ui::persisted_prefs();
-  prefs = latter_ui::PersistedDevicePrefs{};
-  latter_ui::seed_hardware_sleep_defaults(prefs);
+  auto &prefs = latter_core::persisted_prefs();
+  prefs = latter_core::PersistedDevicePrefs{};
+  latter_core::seed_hardware_sleep_defaults(prefs);
 #if LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
   LATTER_CHECK(prefs.ble_beacon_mode == 1U);
-  LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld + Screen Off");
+  LATTER_CHECK(std::string_view(latter_core::pref_ble_beacon_mode_cstr(prefs)) == "Handheld + Screen Off");
 #else
   LATTER_CHECK(prefs.ble_beacon_mode == 0U);
-  LATTER_CHECK(std::string_view(latter_ui::pref_ble_beacon_mode_cstr(prefs)) == "Handheld Only");
+  LATTER_CHECK(std::string_view(latter_core::pref_ble_beacon_mode_cstr(prefs)) == "Handheld Only");
 #endif
 
   prefs.ble_beacon_mode = 1U;
-  latter_ui::PrefMask chg{};
+  latter_core::PrefMask chg{};
   uint32_t eff = 0U;
-  LATTER_CHECK(latter_ui::set_pref_by_key_str(
-      prefs, latter_ui::PrefKey::BLE_BEACON_MODE, "Handheld Only", true, chg, eff));
+  LATTER_CHECK(latter_core::set_pref_by_key_str(
+      prefs, latter_core::PrefKey::BLE_BEACON_MODE, "Handheld Only", chg, eff));
   LATTER_CHECK(prefs.ble_beacon_mode == 0U);
-  LATTER_CHECK((chg & latter_ui::pref_key_bit(latter_ui::PrefKey::BLE_BEACON_MODE)).any());
-  LATTER_CHECK((eff & latter_ui::kPrefEffectPowerPolicy) != 0U);
+  LATTER_CHECK((chg & latter_core::pref_key_bit(latter_core::PrefKey::BLE_BEACON_MODE)).any());
+  LATTER_CHECK((eff & latter_core::kPrefEffectPowerPolicy) != 0U);
 
   MockRpcOutbox roam_outbox{};
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
-  latter_ui::link_state().ha_connected = true;
+  latter_core::link_state().ha_connected = true;
   prefs.dirty_mask = 0ULL;
   eff = 0U;
-  LATTER_CHECK(latter_actions::record_local_pref_edit(
-      latter_ui::PrefKey::BLE_BEACON_MODE, "Handheld + Screen Off", 3000U, eff, &roam_outbox));
+  LATTER_CHECK(latter_core::record_local_pref_edit(
+      latter_core::PrefKey::BLE_BEACON_MODE, "Handheld + Screen Off", 3000U, eff, &roam_outbox));
   uint32_t pump_t = 3100U;
   while (latter_rpc::has_pending_frames()) {
     latter_rpc::step_outbox_loop(pump_t);
@@ -506,56 +630,56 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   MockBleCtrl ble{};
   MockWifiCtrl wifi{};
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 0, false, false, false, 0, true, 7000U, true, 4000U, false);
   LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 0, false, false, false, 0, true, 7500U, true, 4000U, true);
   LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 0, false, false, false, 0, true, 8000U, true, 4000U, false);
   LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
 
 #if LATTER_HAS_BATTERY
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 0, false, false, false, 2, false, 9000U, true, 4000U, false);
   LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 0, true, false, false, 2, false, 9250U, true, 4000U, false);
   LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 0, false, false, false, 2, false, 9400U, true, 4000U, false);
   LATTER_CHECK(!ble.is_active() && ble.is_paused() && ble.is_transport_up());
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 1, false, false, false, 2, false, 9500U, true, 4000U, false);
   LATTER_CHECK(ble.is_active() && !ble.is_paused() && ble.is_transport_up());
 #endif
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 1, true, false, false, 0, true, 10250U, true, 4000U, true);
   LATTER_CHECK(!ble.is_active() && ble.is_paused());
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, false, 1, true, false, false, 0, true, 10500U, true, 4000U, false);
   LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up());
 
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, true, true, 1, false, false, false, 2, false, 11000U, true, 4000U, false);
   LATTER_CHECK(ble.is_active());
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, false, true, 1, false, false, false, 2, false, 11500U, false, 4000U, false);
   LATTER_CHECK(!ble.is_active() && ble.is_paused());
-  latter_ui::evaluate_radio_policy(
+  latter_core::evaluate_radio_policy(
       &ble, &wifi, false, true, 1, false, true, false, 2, false, 12000U, false, 4000U, false);
   LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up());
 
-  auto &r2w = latter_ui::raise_wake_detector();
+  auto &r2w = latter_core::raise_wake_detector();
   r2w.reset();
-  const float thresh = latter_ui::get_pickup_motion_threshold(false);
+  const float thresh = latter_core::get_pickup_motion_threshold(false);
   LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10000U));
   r2w.arm_from_wom(10000U);
   LATTER_CHECK(r2w.armed);
@@ -568,29 +692,29 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 21600U));
   LATTER_CHECK(!r2w.armed);
 
-  latter_ui::reset_hello_sync_on_connect();
-  LATTER_CHECK(latter_ui::should_trigger_hello_on_ping(1000U, 0ULL));
-  latter_ui::mark_hello_in_flight(true, 1000U);
-  LATTER_CHECK(!latter_ui::should_trigger_hello_on_ping(1150U, 0ULL));
-  latter_ui::mark_hello_sent(1300U, 0ULL);
-  LATTER_CHECK(!latter_ui::should_trigger_hello_on_ping(1800U, 0ULL));
-  LATTER_CHECK(latter_ui::should_trigger_hello_on_ping(1800U, 4ULL));
-  LATTER_CHECK(latter_ui::should_trigger_hello_on_ping(2900U, 0ULL));
+  latter_core::reset_hello_sync_on_connect();
+  LATTER_CHECK(latter_core::should_trigger_hello_on_ping(1000U, 0ULL));
+  latter_core::mark_hello_in_flight(true, 1000U);
+  LATTER_CHECK(!latter_core::should_trigger_hello_on_ping(1150U, 0ULL));
+  latter_core::mark_hello_sent(1300U, 0ULL);
+  LATTER_CHECK(!latter_core::should_trigger_hello_on_ping(1800U, 0ULL));
+  LATTER_CHECK(latter_core::should_trigger_hello_on_ping(1800U, 4ULL));
+  LATTER_CHECK(latter_core::should_trigger_hello_on_ping(2900U, 0ULL));
 
   MockAnimPoller anim{};
-  latter_ui::ui_anim_poller_running() = true;
-  latter_ui::ensure_ui_anim_poller(&anim);
+  latter_core::ui_anim_poller_running() = true;
+  latter_core::ensure_ui_anim_poller(&anim);
   LATTER_CHECK(anim.starts == 0 && anim.stops == 0);
-  latter_ui::set_ui_anim_poller(&anim, false);
-  LATTER_CHECK(!latter_ui::ui_anim_poller_running() && anim.stops == 1);
-  latter_ui::ensure_ui_anim_poller(&anim);
-  LATTER_CHECK(latter_ui::ui_anim_poller_running() && anim.starts == 1);
+  latter_core::set_ui_anim_poller(&anim, false);
+  LATTER_CHECK(!latter_core::ui_anim_poller_running() && anim.stops == 1);
+  latter_core::ensure_ui_anim_poller(&anim);
+  LATTER_CHECK(latter_core::ui_anim_poller_running() && anim.starts == 1);
 }
 
 void test_phase4_audio_session_and_music_pause_timeout() {
-  using latter_ui::AudioSessionController;
-  using latter_ui::AudioSessionPhase;
-  using latter_ui::MusicPlayIntent;
+  using latter_core::AudioSessionController;
+  using latter_core::AudioSessionPhase;
+  using latter_core::MusicPlayIntent;
 
   LATTER_CHECK(AudioSessionController::kRecentPausedMusicTimeoutMs == 300000U);
 
@@ -631,26 +755,26 @@ void test_phase4_audio_session_and_music_pause_timeout() {
   LATTER_CHECK(!ctrl.should_auto_open_music_page(1, true, 1, false, 10100U, true));
 
   {
-    auto &sess = latter_ui::audio_session();
+    auto &sess = latter_core::audio_session();
     sess.reset();
-    latter_ui::music_queue_cleared() = false;
-    latter_ui::clear_remote_play_override();
-    auto &ms = latter_ui::media_state();
-    auto &ac = latter_ui::area_ctx_state();
-    ms = latter_ui::MediaState{};
+    latter_core::music_queue_cleared() = false;
+    latter_core::clear_remote_play_override();
+    auto &ms = latter_core::media_state();
+    auto &ac = latter_core::area_ctx_state();
+    ms = latter_core::MediaState{};
     ms.is_local = true;
     ms.state = "playing";
     ms.title = "Track 1";
     ms.active_speaker = "media_player.local_puck";
     ac.area_id = "living_room";
 
-    latter_ui::sync_audio_session_media_observation(true, false, 11000U, ms, ac);
+    latter_core::sync_audio_session_media_observation(true, false, 11000U, ms, ac);
     LATTER_CHECK(sess.should_auto_open_music_page(1, true, 1, false, 11000U));
-    latter_ui::sync_audio_session_media_observation(false, false, 11400U, ms, ac);
+    latter_core::sync_audio_session_media_observation(false, false, 11400U, ms, ac);
     LATTER_CHECK(sess.is_music_visible_on_home_activity(
-        false, latter_ui::is_music_paused_effective(false, ms.is_local, ms.state), true, 11400U));
+        false, latter_core::is_music_paused_effective(false, ms.is_local, ms.state), true, 11400U));
     ms.title = "Track 2";
-    latter_ui::sync_audio_session_media_observation(true, false, 11800U, ms, ac);
+    latter_core::sync_audio_session_media_observation(true, false, 11800U, ms, ac);
     LATTER_CHECK(!sess.should_auto_open_music_page(1, true, 1, false, 11800U));
   }
 
@@ -692,7 +816,7 @@ void test_phase4_audio_session_and_music_pause_timeout() {
 
   LATTER_CHECK(audio_yaml.find("- id: preempt_va_for_alert") != std::string::npos);
   LATTER_CHECK(audio_yaml.find("- script.execute: preempt_va_for_alert") != std::string::npos);
-  LATTER_CHECK(timers_yaml.find("id(preempt_va_for_alert).execute();") != std::string::npos);
+  LATTER_CHECK(timers_yaml.find("preempt_va_for_alert_now()") != std::string::npos);
   LATTER_CHECK(timers_yaml.find("cancel_voice_assistant") == std::string::npos);
   LATTER_CHECK(comp_cpp.find("paused_music_expiry_due_ms(") != std::string::npos);
   LATTER_CHECK(touch_cpp.find("set_play_intent(MusicPlayIntent::HomeQuickToggle") != std::string::npos);
@@ -702,6 +826,7 @@ void test_phase4_audio_session_and_music_pause_timeout() {
 
 void test_panel_dcs_timeout_isolation_and_wake_grace() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(kTimeoutPanelDcsId == 0x4C410010U);
   static_assert(kTimeoutPanelDcsId != kTimeoutAsyncDrawId);
@@ -735,18 +860,19 @@ void test_panel_dcs_timeout_isolation_and_wake_grace() {
       "../../modules/power_policy.yaml",
       "../../modules/sleep_lifecycle.yaml",
   });
-  const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+  const std::string batt_svc_yaml = read_repo_file("../../modules/battery_service.yaml");
   const std::string core_h = read_repo_file("../../components/latter_core/latter_core.h");
   const std::string pm_cpp = read_repo_glob("../../components/latter_core", "pm_", ".cpp");
 
-  LATTER_CHECK(pm_yaml.find("latter_ui::hal_panel_dcs_poll(&id(disp1));") != std::string::npos);
-  LATTER_CHECK(axp_yaml.find("latter_ui::PanelDcsState::AWAKE") != std::string::npos);
-  LATTER_CHECK(core_h.find("::latter_ui::pm_poll_loop(now);") != std::string::npos);
+  LATTER_CHECK(pm_yaml.find("latter_core::hal_panel_dcs_poll(&id(disp1));") != std::string::npos);
+  LATTER_CHECK(batt_svc_yaml.find("latter_core::PanelDcsState::AWAKE") != std::string::npos);
+  LATTER_CHECK(core_h.find("pm_poll_loop(now);") != std::string::npos);
   LATTER_CHECK(pm_cpp.find("PmWakeGraceWindow grace") != std::string::npos);
 }
 
 void test_display_lifecycle_controller() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(resolve_idle_screen_timeout_ms(false, true, 0U, "15s", "30s") == 15000U);
   static_assert(resolve_idle_screen_timeout_ms(false, false, 0U, "5 min", "2 min") == 120000U);
@@ -817,6 +943,7 @@ void test_display_lifecycle_controller() {
 
 void test_audio_path_and_intercom_arbitrator() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(match_local_media_voice_cmd("stop") == LocalVoiceMediaCmd::PauseOrStop);
   static_assert(match_local_media_voice_cmd("  Pause!  ") == LocalVoiceMediaCmd::PauseOrStop);
@@ -889,6 +1016,7 @@ void test_audio_path_and_intercom_arbitrator() {
 
 void test_profiler_timer_and_logging_policy() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   static_assert(kProfilerDefaultTimeoutMs == 24UL * 3600UL * 1000UL);
 
@@ -958,6 +1086,7 @@ void test_profiler_timer_and_logging_policy() {
   const std::string pwr_yaml = read_repo_file("../../modules/power_policy.yaml");
   const std::string sleep_yaml = read_repo_file("../../modules/sleep_lifecycle.yaml");
   const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
+  const std::string batt_svc_yaml = read_repo_file("../../modules/battery_service.yaml");
 
   LATTER_CHECK(prof_h.find("log_heap_summary()") != std::string::npos);
   LATTER_CHECK(prof_h.find("log_memory_report") == std::string::npos);
@@ -971,8 +1100,8 @@ void test_profiler_timer_and_logging_policy() {
   LATTER_CHECK(sleep_yaml.find("Entering hibernate (reason=%s") != std::string::npos);
   LATTER_CHECK(sys_core_yaml.find("900000U") != std::string::npos);
   LATTER_CHECK(sys_core_yaml.find("delta: 2.0") != std::string::npos);
-  LATTER_CHECK(axp_yaml.find("delta: 0.01") != std::string::npos);
-  LATTER_CHECK(axp_yaml.find("!bm.fault && latter_ui::profiler_enabled()") != std::string::npos);
+  LATTER_CHECK(batt_svc_yaml.find("delta: 0.01") != std::string::npos);
+  LATTER_CHECK(axp_yaml.find("!bm.fault && latter_core::profiler_enabled()") != std::string::npos);
 }
 
 }  // namespace

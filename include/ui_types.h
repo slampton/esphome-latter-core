@@ -321,15 +321,6 @@ inline bool disp_render_in_flight(uint32_t now_ms) {
          ((now_ms - start_ms) < 250U);
 }
 
-inline uint32_t min_interactive_frame_gap_ms(bool mww_running) {
-#if LATTER_CHIP_P4
-  (void)mww_running;
-  return 36U;
-#else
-  return mww_running ? 54U : 36U;
-#endif
-}
-
 inline constexpr uint32_t min_ambient_frame_gap_ms(bool speaker_audio_busy,
                                                    bool va_busy = false, bool alert_busy = false,
                                                    bool mww_passive_busy = false) noexcept {
@@ -340,23 +331,6 @@ inline constexpr uint32_t min_ambient_frame_gap_ms(bool speaker_audio_busy,
 #else
   return (speaker_audio_busy || mww_passive_busy) ? 80U : 60U;
 #endif
-}
-
-inline bool should_step_ambient_anim(uint32_t now_ms, bool speaker_audio_busy,
-                                     bool va_busy = false, bool alert_busy = false,
-                                     bool mww_passive_busy = false) {
-  if (va_busy || disp_render_in_flight(now_ms)) return false;
-#if LATTER_CHIP_P4
-  (void)mww_passive_busy;
-  const uint32_t min_post_idle = speaker_audio_busy ? 26U : 16U;
-  const uint32_t min_period = alert_busy ? 120U : (speaker_audio_busy ? 74U : 54U);
-#else
-  const bool audio_or_mww = speaker_audio_busy || mww_passive_busy;
-  const uint32_t min_post_idle = audio_or_mww ? 32U : 18U;
-  const uint32_t min_period = alert_busy ? 120U : (audio_or_mww ? 74U : 54U);
-#endif
-  if (now_ms - last_disp_update_end_ms() < min_post_idle) return false;
-  return (now_ms - last_ambient_anim_ms() >= min_period);
 }
 
 inline int menu_scroll_shift_elapsed(int span_px, uint32_t elapsed_ms) {
@@ -479,6 +453,16 @@ inline bool compute_synodic_moon_phase(bool time_valid, int64_t epoch_sec, const
   if (out_illum != nullptr) *out_illum = illum_pct;
   if (out_label != nullptr) *out_label = mp_label;
   return true;
+}
+
+inline std::string strip_trailing_paren_state(const std::string &s) {
+  if (s.size() > 4U && s.back() == ')') {
+    const size_t lp = s.rfind(" (");
+    if (lp != std::string::npos && lp > 0U) {
+      return s.substr(0U, lp);
+    }
+  }
+  return s;
 }
 
 }  // namespace latter_ui

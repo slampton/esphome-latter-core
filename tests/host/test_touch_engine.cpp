@@ -6,6 +6,7 @@ namespace {
 
 void test_touch_hal_kinematic_gestures_and_d049_d050() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   {
     const uint8_t ft_down[5] = {0x01U, 0x81U, 0x2CU, 0x00U, 0xF0U};
@@ -113,6 +114,7 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
 
 void test_quick_actions_d074() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   LATTER_CHECK(WidgetId::QUICK_VOL_SLIDER == 70);
   LATTER_CHECK(WidgetId::QUICK_DND_TOGGLE == 76);
@@ -126,18 +128,18 @@ void test_quick_actions_d074() {
   p.night_start_hour = 20U;
 
   p.bedtime_active = true;
-  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Sun Synchronized"));
+  p.auto_brightness_mode = static_cast<uint8_t>(find_pref_option_index(kPrefOptsAutoBrightnessMode, "Sun Synchronized"));
   LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 12).kind == ActiveBrightnessTargetKind::BEDTIME);
 
   p.bedtime_active = false;
-  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Disabled"));
+  p.auto_brightness_mode = static_cast<uint8_t>(find_pref_option_index(kPrefOptsAutoBrightnessMode, "Disabled"));
   LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 12).pct == 62U);
 
-  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Sun Synchronized"));
+  p.auto_brightness_mode = static_cast<uint8_t>(find_pref_option_index(kPrefOptsAutoBrightnessMode, "Sun Synchronized"));
   LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 22).pct == 84U);
   LATTER_CHECK(resolve_active_brightness_target(p, "below_horizon", true, 13).pct == 28U);
 
-  p.auto_brightness_mode = static_cast<uint8_t>(find_opt_index(kAutoBrightnessModeOpts, "Time Schedule"));
+  p.auto_brightness_mode = static_cast<uint8_t>(find_pref_option_index(kPrefOptsAutoBrightnessMode, "Time Schedule"));
   LATTER_CHECK(resolve_active_brightness_target(p, "above_horizon", true, 6).kind == ActiveBrightnessTargetKind::NIGHT);
   LATTER_CHECK(resolve_active_brightness_target(p, "below_horizon", true, 12).kind == ActiveBrightnessTargetKind::DAY);
 
@@ -175,6 +177,7 @@ void test_quick_actions_d074() {
 
 void test_time_app_world_clocks_alarms_and_horology() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   reset_runtime_state();
   auto &p = persisted_prefs();
@@ -196,11 +199,11 @@ void test_time_app_world_clocks_alarms_and_horology() {
 
   PrefMask chg{};
   uint32_t eff = 0U;
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::SHOW_UTC_CLOCK, "1", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::SHOW_UTC_CLOCK, "1", chg, eff));
   LATTER_CHECK(set_pref_by_key_str(
       p, PrefKey::WORLD_CLOCKS,
       "Kyoto|Asia/Tokyo;Bengaluru|Asia/Kolkata;Hanoi|Asia/Bangkok;Bangkok|Asia/Bangkok",
-      false, chg, eff));
+      chg, eff));
   auto &ac = area_ctx_state();
   ac = AreaContextState{};
   ac.world_clocks_summary =
@@ -215,7 +218,7 @@ void test_time_app_world_clocks_alarms_and_horology() {
   LATTER_CHECK(h24 == 11 && mm == 0 && day_delta == 1);
 
   chg = 0ULL;
-  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::ALARMS_SUMMARY, "06:47|1|1;08:15|0|2;21:05|1|3", false, chg, eff));
+  LATTER_CHECK(set_pref_by_key_str(p, PrefKey::ALARMS_SUMMARY, "06:47|1|1;08:15|0|2;21:05|1|3", chg, eff));
   LATTER_CHECK(format_alarms_summary(p) == "06:47|1|1;08:15|0|2;21:05|1|3");
 
   StopwatchRuntimeState sw{};
@@ -236,6 +239,7 @@ void test_time_app_world_clocks_alarms_and_horology() {
 
 void test_live_touch_engine_end_to_end_5geom() {
   using namespace latter_ui;
+  using namespace latter_core;
 
   HostSurfaceFixture fix{};
   reset_runtime_state();
@@ -571,6 +575,171 @@ void test_live_touch_engine_end_to_end_5geom() {
   eng.runtime().exec_cmd = nullptr;
 }
 
+void test_rotary_navigation_and_glass_style_display_setting() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  prefs = PersistedDevicePrefs{};
+  prefs.home_screen_enabled = true;
+  prefs.glass_style = static_cast<uint8_t>(GlassStyle::Auto);
+
+  auto &eng = touch_engine();
+  eng.runtime().exec_cmd = [](UiHostCmd, int, int) {};
+
+  // 1. Rotary escape from PageId::CLOCK when focus_count == 0 (never permanently trapped!)
+  rs.nav.gui_page = PageId::CLOCK;
+  frame_hits().clear();
+  eng.on_input_event("select", 0, 1000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  rs.nav.gui_page = PageId::CLOCK;
+  frame_hits().clear();
+  eng.on_input_event("back", 0, 1500U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::HOME);
+
+  // Also works when home_screen_enabled == false and CLOCK is not the anchor root.
+  prefs.home_screen_enabled = false;
+  prefs.start_screen = 1;  // Pinned
+  rs.nav.gui_page = PageId::CLOCK;
+  frame_hits().clear();
+  eng.on_input_event("select", 0, 2000U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::PINNED);
+  prefs.home_screen_enabled = true;
+  prefs.start_screen = 0;
+
+  // 2. Focusable kHitFocusSlot on pagination chevrons, back button, Home Dock pages, mode-bar, VA cancel
+  std::vector<uint16_t> fb(static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H), 0U);
+  Rgb565Surface surf = bind_host_surface(fb.data(), SCREEN_W, SCREEN_H, 1);
+  UiFrameContext ctx{};
+  ctx.now_ms = 5000U;
+  ctx.now.year = 2026;
+  ctx.now.month = 11;
+  ctx.now.day_of_month = 22;
+  ctx.now.hour = 14;
+  ctx.now.minute = 30;
+  ctx.font_time = UiFontView::make_host_font(48);
+  ctx.font_chrono_time = UiFontView::make_host_font(42);
+  ctx.font_date = UiFontView::make_host_font(22);
+  ctx.font_btn_bold = UiFontView::make_host_font(20);
+  ctx.font_small = UiFontView::make_host_font(16);
+  ctx.font_micro = UiFontView::make_host_font(12);
+  ctx.font_games_title = UiFontView::make_host_font(26);
+
+  // Home Dock multi-page focusable MODE_BAR_RIGHT / MODE_BAR_LEFT
+  shortcuts_state().dock_configured = true;
+  shortcuts_state().dock_items.clear();
+  static constexpr RouteId kTestDockRoutes[6] = {
+      RouteId::MUSIC_LIBRARY, RouteId::CALENDAR_OVERVIEW, RouteId::TIME_ALARMS,
+      RouteId::TIME_STOPWATCH, RouteId::TOOLS_CALCULATOR, RouteId::TOOLS_DICE,
+  };
+  for (int i = 0; i < 6; ++i) {
+    ShortcutItem it{};
+    it.kind = ShortcutKind::ROUTE;
+    it.route_id = kTestDockRoutes[i];
+    it.label = "App " + std::to_string(i);
+    shortcuts_state().dock_items.push_back(it);
+  }
+  home_dock_page() = 0;
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  dirty_band() = DirtyBandTracker{};
+  reset_clip_y_band();
+  frame_hits().clear();
+  frame_base_begin();
+  render_active_page(surf, ctx);
+  const HitRegion *dock_right = frame_hits().find_by_id(WidgetId::MODE_BAR_RIGHT);
+  LATTER_CHECK(dock_right != nullptr && (dock_right->flags & kHitFocusSlot) != 0U);
+  eng.on_touch_down(dock_right->cx(), dock_right->cy(), 5100U);
+  eng.on_touch_up(5160U);
+  LATTER_CHECK(home_dock_page() == 1);
+
+  frame_hits().clear();
+  frame_base_begin();
+  render_active_page(surf, ctx);
+  const HitRegion *dock_left = frame_hits().find_by_id(WidgetId::MODE_BAR_LEFT);
+  LATTER_CHECK(dock_left != nullptr && (dock_left->flags & kHitFocusSlot) != 0U);
+  eng.on_touch_down(dock_left->cx(), dock_left->cy(), 5600U);
+  eng.on_touch_up(5660U);
+  LATTER_CHECK(home_dock_page() == 0);
+
+  // Voice Assistant cancel pill has kHitFocusSlot
+  frame_hits().clear();
+  frame_base_begin();
+  SystemTakeoverState va_st{};
+  va_st.va_active = true;
+  va_st.now_ms = 5700U;
+  render_voice_assistant_overlay(surf, ctx, va_st);
+  const HitRegion *va_cancel = frame_hits().find_by_id(WidgetId::VA_CANCEL_BTN);
+  LATTER_CHECK(va_cancel != nullptr && (va_cancel->flags & kHitFocusSlot) != 0U);
+
+  // 3. Settings -> Display: BACK_BUTTON & CHEVRON_DOWN focusable, 3-page pagination, and "Glass Style" cycling
+  MockRpcOutbox pref_box{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_rpc::bind_sensor_sink(&pref_box);
+  link_state().ha_connected = true;
+
+  rs.nav.gui_page = PageId::SYSTEM;
+  rs.nav.system_menu_mode = SystemMenuMode::DISPLAY;
+  rs.nav.display_menu_page = 1;
+  rs.nav.menu_scroll_active = false;
+  frame_hits().clear();
+  frame_base_begin();
+  render_active_page(surf, ctx);
+
+  const HitRegion *back_btn = frame_hits().find_by_id(WidgetId::BACK_BUTTON);
+  const HitRegion *chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+  const HitRegion *glass_row = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 4));
+  LATTER_CHECK(back_btn != nullptr && (back_btn->flags & kHitFocusSlot) != 0U);
+  LATTER_CHECK(chev_dn != nullptr && (chev_dn->flags & kHitFocusSlot) != 0U);
+  LATTER_CHECK(glass_row != nullptr && (glass_row->flags & kHitFocusSlot) != 0U && glass_row->param == 4);
+
+  // Cycle Glass Style: Auto -> Clear -> Dark -> Auto
+  auto tap_region = [&](const HitRegion *r, uint32_t t_ms) {
+    eng.on_touch_down(r->cx(), r->cy(), t_ms);
+    eng.on_touch_up(t_ms + 50U);
+  };
+  tap_region(glass_row, 6200U);
+  LATTER_CHECK(prefs.glass_style_enum() == GlassStyle::Clear);
+  LATTER_CHECK(build_hello_dirty_prefs(prefs).find("glass_style=Clear") != std::string::npos);
+  tap_region(glass_row, 6800U);
+  LATTER_CHECK(prefs.glass_style_enum() == GlassStyle::Dark);
+  LATTER_CHECK(build_hello_dirty_prefs(prefs).find("glass_style=Dark") != std::string::npos);
+  tap_region(glass_row, 7400U);
+  LATTER_CHECK(prefs.glass_style_enum() == GlassStyle::Auto);
+  LATTER_CHECK(build_hello_dirty_prefs(prefs).find("glass_style=Auto") != std::string::npos);
+
+  // Chevron pagination reaches Page 2 and Page 3 cleanly
+  tap_region(chev_dn, 8000U);
+  LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_target_page == 2);
+  rs.nav.menu_scroll_active = false;
+  rs.nav.display_menu_page = 2;
+
+  frame_hits().clear();
+  frame_base_begin();
+  render_active_page(surf, ctx);
+  const HitRegion *chev_up2 = frame_hits().find_by_id(WidgetId::CHEVRON_UP);
+  const HitRegion *chev_dn2 = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+  LATTER_CHECK(chev_up2 != nullptr && (chev_up2->flags & kHitFocusSlot) != 0U);
+  LATTER_CHECK(chev_dn2 != nullptr && (chev_dn2->flags & kHitFocusSlot) != 0U);
+  tap_region(chev_dn2, 8600U);
+  LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_target_page == 3);
+  rs.nav.menu_scroll_active = false;
+  rs.nav.display_menu_page = 3;
+
+  frame_hits().clear();
+  frame_base_begin();
+  render_active_page(surf, ctx);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_UP) != nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_DOWN) == nullptr);
+
+  latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
+  eng.runtime().exec_cmd = nullptr;
+}
+
 }  // namespace
 
 void run_touch_engine_tests() {
@@ -578,6 +747,7 @@ void run_touch_engine_tests() {
   test_quick_actions_d074();
   test_time_app_world_clocks_alarms_and_horology();
   test_live_touch_engine_end_to_end_5geom();
+  test_rotary_navigation_and_glass_style_display_setting();
 }
 
 }  // namespace latter_test

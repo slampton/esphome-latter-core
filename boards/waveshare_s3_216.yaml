@@ -53,47 +53,57 @@ substitutions:
   i2s_din_pin: GPIO10
   i2s_dout_pin: GPIO8
 
-esphome:
-  build_flags:
-    - '-DLATTER_BOARD_ID=\"waveshare_s3_216\"'
-    - "-DLATTER_BLE_MINOR=3"
-    - "-DLATTER_SCREEN_W=480"
-    - "-DLATTER_SCREEN_H=480"
-    - "-DLATTER_ROUND_DISPLAY=0"
-    - "-DLATTER_HAS_DISPLAY=1"
-    - "-DLATTER_HAS_TOUCH=1"
-    - "-DLATTER_HAS_AUDIO=1"
-    - "-DLATTER_HAS_IMU=1"
-    - "-DLATTER_HAS_BATTERY=1"
-    - "-DLATTER_HAS_RTC=1"
-    - "-DLATTER_IS_STATIONARY=0"
-    - "-DLATTER_IS_WEARABLE=0"
-    - "-DLATTER_PANEL_IPS=0"
-    - "-DLATTER_PANEL_DCS_SLEEP=1"
+latter_core:
+  board_id: waveshare_s3_216
+  ble_minor: 3
+  gui: universal
+  chip: esp32s3
+  psram_mb: 8
+  display:
+    width: 480
+    height: 480
     # Waveshare outline drawing: 38.99 x 38.99 mm active area for 480 x 480 = 312.7 ppi (2.17" diagonal)
-    - "-DLATTER_PANEL_PPI=313"
+    ppi: 313
+    round: false
+    ips: false
+    dcs_sleep: true
     # Waveshare 2D CAD (ESP32-S3-Touch-AMOLED-2.16-2D-20260209.dxf): VA corner spline cuts 21.85 px at 45 deg
-    - "-DLATTER_CORNER_R=76"
-    - "-DLATTER_CHIP_P4=0"
-    - "-DLATTER_PSRAM_MB=8"
-    - "-DLATTER_PWR_KEY_PIN=16"
-    - "-DLATTER_PWR_KEY_ACTIVE_HIGH=1"
-    - "-DLATTER_PWR_KEY_DEEP_SLEEP_WAKE=1"
-    # Light-sleep wake pins (include/hal_power_pm.h): Key3 action button, touch INT, QMI8658 INT1
-    - "-DLATTER_ACTION_BTN_PIN=18"
-    - "-DLATTER_TOUCH_INT_PIN=11"
-    - "-DLATTER_TOUCH_RST_PIN=40"
-    - "-DLATTER_IMU_INT1_PIN=17"
-    - "-DLATTER_PMU_TS_DISABLE=1"
-    - "-DLATTER_PMU_DCDC_KEEP_MASK=0x01"
-    - "-DLATTER_PMU_LDO_KEEP_MASK=0x001"
+    corner_r: 76
+    touch_int_pin: 11
+    touch_rst_pin: 40
+  power:
     # Fitted cell (boards/facts power.battery_mah): the charge profile, state of charge and cutoff derive
     # from it (include/hal_battery.h)
-    - "-DLATTER_BATTERY_MAH=1000"
-    - "-DLATTER_AUDIO_OUT_RATE=48000"
-    - "-DLATTER_AUDIO_OUT_CH=1"
-    - "-DLATTER_AUDIO_OUT_BITS=16"
-    - "-DLATTER_AUDIO_IN_RATE=16000"
+    battery_mah: 1000
+    pwr_key_pin: 16
+    pwr_key_active_high: true
+    pwr_key_deep_sleep_wake: true
+    # Light-sleep wake pins (include/hal_sleep_pm.h): Key3 action button, touch INT, QMI8658 INT1
+    action_btn_pin: 18
+    imu_int1_pin: 17
+    pmu_ts_disable: true
+    pmu_dcdc_keep_mask: 0x01
+    pmu_ldo_keep_mask: 0x001
+  audio:
+    out_rate: 48000
+    out_channels: 1
+    out_bits: 16
+    in_rate: 16000
+  capabilities:
+    display: true
+    touch: true
+    audio: true
+    imu: true
+    battery: true
+    rtc: true
+    stationary: false
+    wearable: false
+  drivers:
+    pmu_axp2101: true
+    rtc_pcf85063: true
+    imu_qmi8658: true
+    codec_es8311: true
+    touch_ft5x06: false
 
 esp32:
   flash_size: 16MB
@@ -123,6 +133,7 @@ packages:
   latter_audio_hal: !include ../modules/hal/audio_es8311_es7210_duplex.yaml
   latter_imu: !include ../modules/hal/imu_qmi8658.yaml
   latter_pmu: !include ../modules/hal/pmu_axp2101.yaml
+  latter_battery_service: !include ../modules/battery_service.yaml
 
 i2s_audio:
   - id: !extend i2s_shared_bus
@@ -208,7 +219,7 @@ script:
     mode: restart
     then:
       - lambda: |-
-          latter_ui::hal_power_down_audio_and_imu_for_hibernate(id(bus_internal), true, true);
+          latter_core::hal_power_down_audio_and_imu_for_hibernate(id(bus_internal), true, true);
 
           gpio_set_direction(GPIO_NUM_46, GPIO_MODE_OUTPUT);
           gpio_set_level(GPIO_NUM_46, 0);
@@ -229,12 +240,12 @@ script:
           gpio_deep_sleep_hold_en();
           global_preferences->sync();
 
-          const auto &rs = latter_ui::runtime_state();
-          const auto &ap = latter_ui::persisted_prefs().alarms;
-          int32_t sec_to_alarm = latter_ui::seconds_until_next_armed_alarm(
+          const auto &rs = latter_core::runtime_state();
+          const auto &ap = latter_core::persisted_prefs().alarms;
+          int32_t sec_to_alarm = latter_core::seconds_until_next_armed_alarm(
               id(ha_time).now().is_valid() ? id(ha_time).now() : id(sntp_time).now(),
               rs.alarms.snooze_until,
               ap[0].hour, ap[0].minute, ap[0].enabled, ap[0].recurrence,
               ap[1].hour, ap[1].minute, ap[1].enabled, ap[1].recurrence,
               ap[2].hour, ap[2].minute, ap[2].enabled, ap[2].recurrence);
-          latter_ui::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);
+          latter_core::enter_axp2101_hibernate_or_alarm_sleep(id(bus_internal), sec_to_alarm);
