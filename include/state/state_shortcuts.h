@@ -6,6 +6,7 @@
 // ==============================================================================
 
 #include "state/state_common.h"
+#include "state/state_tile_grid.h"
 
 namespace latter_core {
 
@@ -46,11 +47,22 @@ struct ShortcutItem {
   int8_t state = -1;       // -1 = stateless/route, 0 = off/closed/locked, 1 = on/open/unlocked, 2 = unavailable
   ShortcutBadgeStyle badge_style = ShortcutBadgeStyle::GLASS;
   ShortcutAccent accent = ShortcutAccent::DEFAULT;
+  int8_t page = -1;        // 0..31 explicit logical page, -1 = auto-flow
+  int8_t col = -1;         // 0..3 explicit column, -1 = auto-flow
+  int8_t row = -1;         // 0..2 explicit row, -1 = auto-flow
+  uint8_t col_span = 1;    // 1..4 column span
+  uint8_t row_span = 1;    // 1..3 row span
+};
+
+struct PinnedPageTitle {
+  uint8_t page = 0;
+  std::string title = "";
 };
 
 struct ShortcutsState {
   static constexpr size_t kMaxDockItems = 24;
   static constexpr size_t kMaxPinnedItems = 256;
+  static constexpr size_t kMaxPinnedPageTitles = 32;
   uint32_t epoch = 0;
   uint32_t rev = 0;
   bool dock_configured = false;
@@ -58,6 +70,7 @@ struct ShortcutsState {
   uint16_t cold_pinned_total = 0;
   std::vector<ShortcutItem> dock_items{};
   std::vector<ShortcutItem> pinned_items{};
+  std::vector<PinnedPageTitle> pinned_page_titles{};
   // Multi-chunk assembly buffer (commits atomically when chunk_index + 1 == chunk_count)
   uint32_t staging_epoch = 0;
   uint32_t staging_rev = 0;
@@ -66,6 +79,21 @@ struct ShortcutsState {
   uint16_t staging_pinned_total = 0;
   std::vector<ShortcutItem> staging_dock_items{};
   std::vector<ShortcutItem> staging_pinned_items{};
+  std::vector<PinnedPageTitle> staged_pinned_page_titles{};
+
+  void clear() {
+    *this = ShortcutsState{};
+  }
+
+  std::string_view find_pinned_page_title(int logical_page) const noexcept {
+    if (logical_page < 0 || logical_page >= kTileGridMaxLogicalPages) return {};
+    for (const auto &entry : pinned_page_titles) {
+      if (static_cast<int>(entry.page) == logical_page && !entry.title.empty()) {
+        return entry.title;
+      }
+    }
+    return {};
+  }
 };
 
 struct ShortcutConfirmState {
@@ -147,6 +175,18 @@ inline uint32_t compute_shortcuts_ui_sig(const ShortcutsState &st = shortcuts_st
     h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.state + 2))) * 16777619U;
     h = (h ^ static_cast<uint32_t>(it.badge_style)) * 16777619U;
     h = (h ^ static_cast<uint32_t>(it.accent)) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.page + 1))) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.col + 1))) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(static_cast<uint8_t>(it.row + 1))) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(it.col_span)) * 16777619U;
+    h = (h ^ static_cast<uint32_t>(it.row_span)) * 16777619U;
+  }
+  for (const auto &pt : st.pinned_page_titles) {
+    h = (h ^ static_cast<uint32_t>(pt.page)) * 16777619U;
+    for (unsigned char c : pt.title) {
+      h = (h ^ static_cast<uint32_t>(c)) * 16777619U;
+    }
+    h = (h ^ 0xFFU) * 16777619U;
   }
   return h;
 }
@@ -164,9 +204,41 @@ int collect_effective_dock_items(ShortcutItem *out_items,
                                  int max_items = kMaxEffectiveDockItems,
                                  const ShortcutsState &st = shortcuts_state());
 
+inline TileGridLayoutResult resolve_pinned_grid_layout(
+    const ShortcutsState &st,
+    int cols,
+    int rows,
+    TileGridPlacement *out_placements,
+    int out_cap,
+    int8_t *out_page_source_pages = nullptr,
+    int max_pages = kTileGridMaxLogicalPages) noexcept {
+  const int count = static_cast<int>(std::min<size_t>(st.pinned_items.size(), ShortcutsState::kMaxPinnedItems));
+  if (count <= 0) {
+    return resolve_tile_grid_layout(nullptr, 0, cols, rows, out_placements, out_cap,
+                                    out_page_source_pages, max_pages);
+  }
+  TileGridInputItem in[ShortcutsState::kMaxPinnedItems]{};
+  for (int i = 0; i < count; ++i) {
+    const auto &it = st.pinned_items[static_cast<size_t>(i)];
+    in[i] = TileGridInputItem{it.page, it.col, it.row, it.col_span, it.row_span, i};
+  }
+  return resolve_tile_grid_layout(in, count, cols, rows, out_placements, out_cap,
+                                  out_page_source_pages, max_pages);
+}
+
+inline int pinned_total_pages_for(const ShortcutsState &st, int cols, int rows) noexcept {
+  const auto res = resolve_pinned_grid_layout(st, cols, rows, nullptr, 0, nullptr, kTileGridMaxLogicalPages);
+  return std::max(1, res.total_pages);
+}
+
 inline int pinned_total_pages(const ShortcutsState &st = shortcuts_state()) noexcept {
-  const size_t n = st.pinned_items.size();
-  return (n == 0U) ? 1 : static_cast<int>((n + 5U) / 6U);
+  const int cols = tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  const int rows = tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  return pinned_total_pages_for(st, cols, rows);
+}
+
+inline std::string_view resolve_pinned_page_title(const ShortcutsState &st, int logical_page) noexcept {
+  return st.find_pinned_page_title(logical_page);
 }
 
 inline int get_mode_bar_start_index(int total_count, int win_start) {

@@ -1,14 +1,21 @@
 #include "ui_pages.h"
-#include "ui_touch_recognizer.h"
+#include "ui_tile_grid.h"
 
 #include <algorithm>
-#include <cstdio>
 #include <string>
 
 namespace latter_ui {
 using namespace latter_core;
 
 namespace {
+
+std::string to_ascii_upper(std::string_view sv) {
+  std::string out(sv);
+  for (char &ch : out) {
+    if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - ('a' - 'A'));
+  }
+  return out;
+}
 
 void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
                            UiColor icon_c, bool shadow, void *user_ctx) {
@@ -34,92 +41,81 @@ void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
 void render_pinned_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &sc = shortcuts_state();
-  const auto &ly = layout();
 
-  const int total_items = static_cast<int>(sc.pinned_items.size());
-  if (total_items <= 0) {
-    render_page_header(it, ctx.cx, "PINNED", ctx.font_small, ctx.col_white);
-    render_empty_state(it, ctx.cx, ctx.cy, "Add pinned items in Latter Studio",
-                       ctx.font_small, ctx.col_slate);
+  if (sc.pinned_items.empty()) {
+    ui::TileGridPageSpec empty_spec{};
+    empty_spec.page_id = PageId::PINNED;
+    empty_spec.card_widget_base = WidgetId::PINNED_CARD_BASE;
+    empty_spec.page_title_upper = "PINNED";
+    empty_spec.empty_message = "Add pinned items in Latter Studio";
+    ui::render_tile_grid_page(it, ctx, empty_spec);
     return;
   }
 
-  const int total_pages = std::max(1, (total_items + 5) / 6);
-  const int raw_w = (SCREEN_W < 380) ? 110 : 122;
-  const int eff_w = (SCREEN_W > 520) ? scale_x(raw_w) : raw_w;
-  const int eff_h = (SCREEN_W > 520) ? scale_y(86) : 86;
-  const int col_cx[2] = {ctx.cx - ly.tools_col_off, ctx.cx + ly.tools_col_off};
-  const int row_cy[3] = {ly.tools_row_y(0), ly.tools_row_y(1), ly.tools_row_y(2)};
-  const int min_vis_y = scale_y(75);
-  const int max_vis_y = scale_y(395);
-
-  auto draw_grid_for_page = [&](int pg_idx, int y_shift, bool register_hits) {
-    const int base_idx = pg_idx * 6;
-    for (int r = 0; r < 3; r++) {
-      const int cy_card = row_cy[r] + y_shift;
-      if (cy_card < min_vis_y || cy_card > max_vis_y) continue;
-      for (int c = 0; c < 2; c++) {
-        const int item_idx = base_idx + r * 2 + c;
-        if (item_idx < 0 || item_idx >= total_items) continue;
-        const int cx_card = col_cx[c];
-        const auto &item = sc.pinned_items[static_cast<size_t>(item_idx)];
-        const bool is_active = (item.kind == ShortcutKind::ENTITY && item.state == 1);
-        const bool is_unavail = (item.kind == ShortcutKind::ENTITY && item.state == 2);
-        const bool is_inverted = (item.badge_style == ShortcutBadgeStyle::INVERTED);
-        const bool has_accent = (item.accent != ShortcutAccent::DEFAULT);
-        const UiColor accent_c = ui::resolve_shortcut_accent_color(item.accent, ctx, ctx.theme_primary);
-        const uint16_t wid = register_hits
-                                 ? static_cast<uint16_t>(WidgetId::PINNED_CARD_BASE + (r * 2 + c))
-                                 : WidgetId::NONE;
-        ui::grid_tile(it, cx_card, cy_card, eff_w, eff_h, item.label.c_str(),
-                      is_active, is_unavail, accent_c,
-                      is_unavail ? ctx.col_gray : ctx.col_white, ctx.font_small,
-                      draw_pinned_tile_icon, const_cast<ShortcutItem *>(&item),
-                      wid, static_cast<int16_t>(item_idx),
-                      is_inverted, has_accent);
-      }
-    }
-  };
-
+  const int cols = tile_grid_cols_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  const int rows = tile_grid_rows_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  TileGridPlacement placements[ShortcutsState::kMaxPinnedItems]{};
+  int8_t page_sources[kTileGridMaxLogicalPages]{};
+  const auto layout_res = resolve_pinned_grid_layout(
+      sc, cols, rows, placements, static_cast<int>(ShortcutsState::kMaxPinnedItems),
+      page_sources, kTileGridMaxLogicalPages);
+  const int total_pages = std::max(1, layout_res.total_pages);
   const int cur_pg = std::clamp(rs.nav.pinned_menu_page, 0, total_pages - 1);
-  if (rs.nav.menu_scroll_active && total_pages > 1) {
-    const int full_span = scale_y(252);
-    const int offset = menu_scroll_shift(full_span, ctx.now_ms);
-    const int out_dy = -rs.nav.menu_scroll_dir * offset;
-    const int in_dy  = rs.nav.menu_scroll_dir * (full_span - offset);
-    const int tgt_pg = std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1);
-    draw_grid_for_page(cur_pg, out_dy, false);
-    draw_grid_for_page(tgt_pg, in_dy, false);
-  } else {
-    const int bounce_y = edge_bounce().offset_px(
-        PageId::PINNED, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
-    draw_grid_for_page(cur_pg, bounce_y, true);
+  const int active_pg = (rs.nav.menu_scroll_active && total_pages > 1)
+                            ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
+                            : cur_pg;
+
+  ui::TileGridEntry entries[2 * kTileGridMaxSlotsPerPage]{};
+  int entry_count = 0;
+  for (int i = 0; i < layout_res.placement_count && entry_count < 2 * kTileGridMaxSlotsPerPage; ++i) {
+    const auto &pl = placements[i];
+    if (pl.visual_page != cur_pg && (!rs.nav.menu_scroll_active || pl.visual_page != active_pg)) {
+      continue;
+    }
+    if (pl.item_index < 0 || static_cast<size_t>(pl.item_index) >= sc.pinned_items.size()) continue;
+    const auto &item = sc.pinned_items[static_cast<size_t>(pl.item_index)];
+    const bool is_active = (item.kind == ShortcutKind::ENTITY && item.state == 1);
+    const bool is_unavail = (item.kind == ShortcutKind::ENTITY && item.state == 2);
+    ui::TileGridEntry e{};
+    e.label = item.label.c_str();
+    e.active = is_active;
+    e.disabled = is_unavail;
+    e.state = (item.kind == ShortcutKind::ENTITY) ? item.state : static_cast<int8_t>(-1);
+    e.inverted_badge = (item.badge_style == ShortcutBadgeStyle::INVERTED);
+    e.has_accent = (item.accent != ShortcutAccent::DEFAULT);
+    e.accent_c = ui::resolve_shortcut_accent_color(item.accent, ctx, ctx.theme_primary);
+    e.text_c = is_unavail ? ctx.col_gray : ctx.col_white;
+    e.draw_icon_fn = draw_pinned_tile_icon;
+    e.icon_ctx = const_cast<ShortcutItem *>(&item);
+    e.widget_param = static_cast<int16_t>(pl.item_index);
+    e.col_span = pl.col_span;
+    e.row_span = pl.row_span;
+    e.col = pl.col;
+    e.row = pl.row;
+    e.visual_page = pl.visual_page;
+    entries[entry_count++] = e;
   }
 
-  if (rs.nav.menu_scroll_active && total_pages > 1 && !backdrop_active()) {
-    fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), ctx.col_bg);
-    fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
-  }
+  const int src_pg = static_cast<int>(page_sources[active_pg]);
+  const std::string_view custom_title = resolve_pinned_page_title(sc, src_pg);
+  const std::string title_upper =
+      custom_title.empty() ? std::string("PINNED") : to_ascii_upper(custom_title);
 
-  render_page_header(it, ctx.cx, "PINNED", ctx.font_small, ctx.col_white);
+  const bool show_fb = !rs.nav.pinned_feedback.empty() &&
+                       rs.nav.pinned_feedback_ms > 0U &&
+                       static_cast<uint32_t>(ctx.now_ms - rs.nav.pinned_feedback_ms) < 1800U;
 
-  const int active_pip_pg = (rs.nav.menu_scroll_active && total_pages > 1)
-                                ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
-                                : cur_pg;
-  if (!rs.nav.pinned_feedback.empty() &&
-      rs.nav.pinned_feedback_ms > 0U &&
-      static_cast<uint32_t>(ctx.now_ms - rs.nav.pinned_feedback_ms) < 1800U) {
-    const std::string fit_fb = fit_text_to_width_font(
-        rs.nav.pinned_feedback, safe_span(ly.sub_hdr_y, 20), ctx.font_small);
-    render_sub_header(it, ctx.cx, fit_fb, ctx.font_small, ctx.theme_secondary);
-  } else if (total_pages > 1) {
-    char pg_buf[24];
-    std::snprintf(pg_buf, sizeof(pg_buf), "Page %d of %d", active_pip_pg + 1, total_pages);
-    render_sub_header(it, ctx.cx, pg_buf, ctx.font_small, ctx.col_slate);
-  }
-
-  render_vertical_page_pips(it, active_pip_pg > 0, (active_pip_pg + 1) < total_pages,
-                            ctx.col_bg, ctx.col_white, kChromePipInactive);
+  ui::TileGridPageSpec spec{};
+  spec.page_id = PageId::PINNED;
+  spec.card_widget_base = WidgetId::PINNED_CARD_BASE;
+  spec.cur_page = cur_pg;
+  spec.total_pages = total_pages;
+  spec.page_title_upper = title_upper.c_str();
+  spec.empty_message = "Add pinned items in Latter Studio";
+  spec.feedback_text = show_fb ? rs.nav.pinned_feedback.c_str() : nullptr;
+  spec.entries = entries;
+  spec.entry_count = entry_count;
+  ui::render_tile_grid_page(it, ctx, spec);
 }
 
 }  // namespace latter_ui

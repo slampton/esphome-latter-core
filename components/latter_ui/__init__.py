@@ -37,6 +37,7 @@ STAGED_HEADERS: tuple[str, ...] = (
     "ui_gfx.h",
     "ui_layout.h",
     "ui_widgets.h",
+    "ui_tile_grid.h",
     "ui_compositor.h",
     "ui_pages.h",
     # Touch Engine & ESPHome Display Bridge

@@ -270,6 +270,8 @@ display:
       }
       const bool dock_anim_now =
           latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
+      const bool page_horiz_bounce_now =
+          latter_ui::any_page_horiz_bounce_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
       const bool vert_bounce_now =
           latter_ui::any_vert_bounce_active(rs.nav.gui_page, ctx.now_ms);
       const bool lyrics_anim_now =
@@ -288,6 +290,7 @@ display:
             lyrics_anim_now ||
             latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
             vert_bounce_now ||
+            page_horiz_bounce_now ||
             rs.nav.menu_scroll_active ||
             (rs.nav.gui_page == 3 && rs.nav.active_game > 0)));
       const bool photo_frame_no_clock =
@@ -398,7 +401,8 @@ display:
       int act_y0 = 0, act_y1 = 0;
       const bool has_act_band = latter_ui::home_activity_band(act_y0, act_y1);
       const bool act_sliding_now = latter_ui::home_activity_slide_active(ctx.now_ms);
-      if (rs.nav.menu_scroll_active || vert_bounce_now || coin_toss_active || greet_fading_now || lyrics_anim_now) {
+      if (rs.nav.menu_scroll_active || vert_bounce_now || page_horiz_bounce_now ||
+          coin_toss_active || greet_fading_now || lyrics_anim_now) {
         latter_ui::schedule_anim_disp_update(&id(disp1));
       } else if (dock_anim_now) {
         latter_ui::schedule_anim_band_disp_update(

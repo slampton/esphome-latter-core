@@ -1,4 +1,5 @@
 #include "ui_pages.h"
+#include "ui_tile_grid.h"
 #include "ui_touch_recognizer.h"
 
 #include <algorithm>
@@ -656,75 +657,64 @@ void render_tools_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
                            const DeviceRuntimeState &rs) {
   ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
   const int total_items = collect_tools_launcher_items(items, device_prefs());
-  const int total_pages = tools_launcher_page_count(total_items);
 
   if (total_items <= 0) {
     runtime_state().nav.tools_menu_page = 0;
-    render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.col_white);
-    render_empty_state(it, ctx.cx, ctx.cy, "No tools enabled", ctx.font_small, ctx.col_slate);
+    ui::TileGridPageSpec empty_spec{};
+    empty_spec.page_id = PageId::TOOLS;
+    empty_spec.card_widget_base = WidgetId::TOOLS_CARD_BASE;
+    empty_spec.page_title_upper = "TOOLS";
+    empty_spec.empty_message = "No tools enabled";
+    ui::render_tile_grid_page(it, ctx, empty_spec);
     return;
   }
 
-  const auto &ly = layout();
-  const int raw_w = (SCREEN_W < 380) ? 110 : 122;
-  const int eff_w = (SCREEN_W > 520) ? scale_x(raw_w) : raw_w;
-  const int eff_h = (SCREEN_W > 520) ? scale_y(86) : 86;
-  const int col_cx[2] = {ctx.cx - ly.tools_col_off, ctx.cx + ly.tools_col_off};
-  const int row_cy[3] = {ly.tools_row_y(0), ly.tools_row_y(1), ly.tools_row_y(2)};
-  const int min_vis_y = scale_y(75);
-  const int max_vis_y = scale_y(395);
-
-  auto draw_grid_for_page = [&](int pg_idx, int y_shift, bool register_hits) {
-    const int base_idx = pg_idx * 6;
-    for (int r = 0; r < 3; r++) {
-      const int cy_card = row_cy[r] + y_shift;
-      if (cy_card < min_vis_y || cy_card > max_vis_y) continue;
-      for (int c = 0; c < 2; c++) {
-        const int item_idx = base_idx + r * 2 + c;
-        if (item_idx >= total_items) continue;
-        const int app_id = items[item_idx].id;
-        if (app_id == 0) continue;
-        const int cx_card = col_cx[c];
-        const uint16_t wid = register_hits
-                                 ? static_cast<uint16_t>(WidgetId::TOOLS_CARD_BASE + (r * 2 + c))
-                                 : WidgetId::NONE;
-        ui::grid_tile(it, cx_card, cy_card, eff_w, eff_h, items[item_idx].label,
-                      false, false, ctx.theme_primary, ctx.col_white, ctx.font_small,
-                      draw_tool_tile_icon, reinterpret_cast<void *>(static_cast<intptr_t>(app_id)),
-                      wid, static_cast<int16_t>(app_id));
-      }
-    }
-  };
-
+  const int cols = tile_grid_cols_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  const int rows = tile_grid_rows_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  const int per_page = std::max(1, cols * rows);
+  const int total_pages = (total_items <= per_page) ? 1 : ((total_items + per_page - 1) / per_page);
   const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
   if (rs.nav.tools_menu_page != cur_pg) {
     runtime_state().nav.tools_menu_page = cur_pg;
   }
-  if (rs.nav.menu_scroll_active && total_pages > 1) {
-    const int full_span = scale_y(252);
-    const int offset = menu_scroll_shift(full_span, ctx.now_ms);
-    const int out_dy = -rs.nav.menu_scroll_dir * offset;
-    const int in_dy  = rs.nav.menu_scroll_dir * (full_span - offset);
-    const int tgt_pg = std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1);
-    draw_grid_for_page(cur_pg, out_dy, false);
-    draw_grid_for_page(tgt_pg, in_dy, false);
-  } else {
-    const int bounce_y = edge_bounce().offset_px(
-        PageId::TOOLS, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
-    draw_grid_for_page(cur_pg, bounce_y, true);
+
+  ui::TileGridEntry entries[kMaxToolsLauncherItems]{};
+  int entry_count = 0;
+  for (int i = 0; i < total_items && entry_count < kMaxToolsLauncherItems; ++i) {
+    const int app_id = items[i].id;
+    if (app_id == 0) continue;
+    const int pg = i / per_page;
+    const int local = i % per_page;
+    ui::TileGridEntry e{};
+    e.label = items[i].label;
+    e.active = false;
+    e.disabled = false;
+    e.state = -1;
+    e.inverted_badge = false;
+    e.has_accent = false;
+    e.accent_c = ctx.theme_primary;
+    e.text_c = ctx.col_white;
+    e.draw_icon_fn = draw_tool_tile_icon;
+    e.icon_ctx = reinterpret_cast<void *>(static_cast<intptr_t>(app_id));
+    e.widget_param = static_cast<int16_t>(app_id);
+    e.col_span = 1U;
+    e.row_span = 1U;
+    e.col = static_cast<int8_t>(local % cols);
+    e.row = static_cast<int8_t>(local / cols);
+    e.visual_page = static_cast<int8_t>(pg);
+    entries[entry_count++] = e;
   }
 
-  if (rs.nav.menu_scroll_active && total_pages > 1 && !backdrop_active()) {
-    fill_rect_row_major(it, 0, 0, SCREEN_W, scale_y(82), ctx.col_bg);
-    fill_rect_row_major(it, 0, scale_y(388), SCREEN_W, SCREEN_H - scale_y(388), ctx.col_bg);
-  }
-
-  render_page_header(it, ctx.cx, "TOOLS", ctx.font_small, ctx.col_white);
-  const int active_pip_pg = (rs.nav.menu_scroll_active && total_pages > 1)
-                                ? std::clamp(rs.nav.menu_scroll_target_page, 0, total_pages - 1)
-                                : cur_pg;
-  render_vertical_page_pips(it, active_pip_pg > 0, (active_pip_pg + 1) < total_pages,
-                            ctx.col_bg, ctx.col_white, kChromePipInactive);
+  ui::TileGridPageSpec spec{};
+  spec.page_id = PageId::TOOLS;
+  spec.card_widget_base = WidgetId::TOOLS_CARD_BASE;
+  spec.cur_page = cur_pg;
+  spec.total_pages = total_pages;
+  spec.page_title_upper = "TOOLS";
+  spec.empty_message = "No tools enabled";
+  spec.entries = entries;
+  spec.entry_count = entry_count;
+  ui::render_tile_grid_page(it, ctx, spec);
 }
 
 #if LATTER_ROUND_DISPLAY

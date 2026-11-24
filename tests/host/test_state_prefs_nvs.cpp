@@ -10,7 +10,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(static_cast<size_t>(latter_core::PrefKey::COUNT) == 72U);
   LATTER_CHECK(static_cast<size_t>(latter_core::DevicePrefsField::COUNT) == 78U);
   LATTER_CHECK(static_cast<size_t>(latter_core::AreaCtxField::COUNT) == 43U);
-  LATTER_CHECK(static_cast<size_t>(latter_core::ShortcutsField::COUNT) == 8U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::ShortcutsField::COUNT) == 9U);
 
   LATTER_CHECK(latter_core::PageId::HOME_HUB == 9);
   LATTER_CHECK(latter_core::PageId::TIME == 10);
@@ -76,8 +76,10 @@ void test_device_prefs_v2_and_event_timer_sync() {
   const std::string full_manifest = latter_core::build_hardware_manifest_json();
   LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"grid_cols\":") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"grid_rows\":3") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112402") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112403") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"sdk\":") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"max_payload_bytes\"") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"beacon\":null") != std::string::npos);
@@ -291,8 +293,11 @@ void test_universal_shortcuts_and_pinned_app() {
   LATTER_CHECK(shortcuts_state().pinned_items.empty());
   LATTER_CHECK(parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 2, 3, "", 60, make_pin_slice(48, 12))));
   LATTER_CHECK(shortcuts_state().epoch == 7U && shortcuts_state().rev == 1U);
+  const int per_pg = tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0) *
+                     tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+  const int expected_pages = (60 + per_pg - 1) / per_pg;
   LATTER_CHECK(shortcuts_state().pinned_items.size() == 60U);
-  LATTER_CHECK(pinned_total_pages() == 10);
+  LATTER_CHECK(pinned_total_pages() == expected_pages);
   LATTER_CHECK(!parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 0, 1, dock_blob, 0, "")));
 
   cnt = collect_effective_dock_items(dock_eff, kMaxEffectiveDockItems);
@@ -308,7 +313,7 @@ void test_universal_shortcuts_and_pinned_app() {
   V3ReduceContext rctx{};
   rctx.now_ms = 9000U;
   const auto eff = v3_domain_reducer().reduce("shortcuts", rctx);
-  LATTER_CHECK(rt.nav.pinned_menu_page == 9);
+  LATTER_CHECK(rt.nav.pinned_menu_page == expected_pages - 1);
   LATTER_CHECK(eff.mark_dirty_full && eff.schedule_disp_update);
 
   std::string title, l1, l2, verb;
@@ -1131,7 +1136,7 @@ void test_wave2_overhaul_contracts() {
   static_assert(static_cast<size_t>(PrefKey::COUNT) == 72U);
   static_assert(static_cast<uint8_t>(PrefKey::GLASS_STYLE) == 66U);
   static_assert(static_cast<uint8_t>(PrefKey::HOME_SHOW_BATTERY) == 71U);
-  static_assert(kHibernateSnapshotVersion == 2U);
+  static_assert(kHibernateSnapshotVersion == 3U);
   static_assert(kPersistedPrefsMinSize == offsetof(PersistedDevicePrefs, glass_style) + sizeof(PersistedDevicePrefs::glass_style));
 
   // 2. device_hello clean-boot byte ceiling (zero unchanged defaults dumped; compact RPC payload)
@@ -1156,10 +1161,13 @@ void test_wave2_overhaul_contracts() {
     std::string combined;
     for (const auto &fr : outbox.published) {
       total_bytes += fr.size();
-      combined += fr;
+      const size_t sep = fr.find('|');
+      combined += (sep != std::string::npos) ? fr.substr(sep + 1U) : fr;
     }
     LATTER_CHECK(total_bytes < 1024U);
     LATTER_CHECK(combined.find("core_rev") != std::string::npos);
+    LATTER_CHECK(combined.find("grid_cols") != std::string::npos);
+    LATTER_CHECK(combined.find("grid_rows") != std::string::npos);
     LATTER_CHECK(combined.find("max_payload_bytes") == std::string::npos);
     LATTER_CHECK(combined.find("wake_word_mode=") == std::string::npos);
 

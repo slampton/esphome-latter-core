@@ -71,7 +71,11 @@ inline int active_tools_launcher_item_count(const PersistedDevicePrefs &p = pers
 
 inline int active_tools_launcher_page_count(const PersistedDevicePrefs &p = persisted_prefs()) noexcept {
   const int cnt = active_tools_launcher_item_count(p);
-  return (cnt <= 6) ? 1 : ((cnt + 5) / 6);
+  const int per_page = std::max(
+      1,
+      tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0) *
+          tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0));
+  return (cnt <= per_page) ? 1 : ((cnt + per_page - 1) / per_page);
 }
 
 inline int collect_enabled_games_for(std::string_view csv,

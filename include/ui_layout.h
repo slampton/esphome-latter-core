@@ -623,9 +623,14 @@ inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0, uint32
       mode_bar_anim().act_animating = false;
     }
   }
-  const bool bounce_h = (now_ms != 0U && gui_page >= 0) &&
-                        edge_bounce().is_active(gui_page, GestureAxisLock::Horizontal, now_ms);
-  return home_dock_anim().is_animating() || mode_bar_anim().is_animating() || bounce_h;
+  const bool dock_horiz_bounce = (now_ms != 0U && gui_page == 1 && home_subpage == 0) &&
+                                 edge_bounce().is_active(gui_page, GestureAxisLock::Horizontal, now_ms);
+  return home_dock_anim().is_animating() || mode_bar_anim().is_animating() || dock_horiz_bounce;
+}
+
+inline bool any_page_horiz_bounce_active(int gui_page, int home_subpage, uint32_t now_ms) {
+  return (now_ms != 0U && gui_page >= 0 && !(gui_page == 1 && home_subpage == 0)) &&
+         edge_bounce().is_active(gui_page, GestureAxisLock::Horizontal, now_ms);
 }
 
 inline bool any_vert_bounce_active(int gui_page, uint32_t now_ms) {

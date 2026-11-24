@@ -346,6 +346,7 @@ script:
                       ((rs.nav.gui_page == 10 && rs.nav.time_subpage == 3) ||
                        (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 3))) ||
                      latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage) ||
+                     latter_ui::any_page_horiz_bounce_active(rs.nav.gui_page, rs.nav.home_subpage, millis()) ||
                      rs.nav.menu_scroll_active) {
             latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
           }

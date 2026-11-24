@@ -760,6 +760,20 @@ std::string build_verify_wire_dump() {
   out += std::to_string(sc.pinned_items.empty() ? 0 : static_cast<int>(sc.pinned_items[0].badge_style));
   out += ",\"first_pinned_accent\":";
   out += std::to_string(sc.pinned_items.empty() ? 0 : static_cast<int>(sc.pinned_items[0].accent));
+  out += ",\"first_pinned_page\":";
+  out += std::to_string(sc.pinned_items.empty() ? -1 : static_cast<int>(sc.pinned_items[0].page));
+  out += ",\"first_pinned_col\":";
+  out += std::to_string(sc.pinned_items.empty() ? -1 : static_cast<int>(sc.pinned_items[0].col));
+  out += ",\"first_pinned_row\":";
+  out += std::to_string(sc.pinned_items.empty() ? -1 : static_cast<int>(sc.pinned_items[0].row));
+  out += ",\"first_pinned_col_span\":";
+  out += std::to_string(sc.pinned_items.empty() ? 1 : static_cast<int>(sc.pinned_items[0].col_span));
+  out += ",\"first_pinned_row_span\":";
+  out += std::to_string(sc.pinned_items.empty() ? 1 : static_cast<int>(sc.pinned_items[0].row_span));
+  out += ",\"pinned_page_title_count\":";
+  out += std::to_string(sc.pinned_page_titles.size());
+  out += ",\"first_pinned_page_title\":";
+  json_append_escaped(out, sc.pinned_page_titles.empty() ? std::string_view{} : std::string_view(sc.pinned_page_titles[0].title));
   out += ",\"activity_text\":";
   json_append_escaped(out, ac.activity_sources);
   out += ",\"activity_source_mask\":";
@@ -975,6 +989,7 @@ int main(int argc, char **argv) {
   latter_test::run_showcase_nav_tests();
   latter_test::run_mdi_plus_tests();
   latter_test::run_games_tests();
+  latter_test::run_tile_grid_tests();
   latter_test::test_music_app_v3_d059();
 
   std::printf(

@@ -212,7 +212,8 @@ void header_pager_bar(Rgb565Surface &it, int cx, int cy,
                       UiColor col_white, bool show_arrows,
                       uint16_t prev_wid = WidgetId::NONE,
                       uint16_t next_wid = WidgetId::NONE,
-                      int16_t prev_param = -1, int16_t next_param = 1);
+                      int16_t prev_param = -1, int16_t next_param = 1,
+                      bool prev_enabled = true, bool next_enabled = true);
 
 void action_pill(Rgb565Surface &it, int x0, int w, int y_mid, int h,
                  UiColor border_c, UiColor bg_c,
@@ -313,7 +314,9 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
                UiFontView font,
                TileDrawIconFn draw_icon_fn, void *user_ctx,
                uint16_t widget_id = WidgetId::NONE, int16_t param = 0,
-               bool inverted_badge = false, bool has_accent = false);
+               bool inverted_badge = false, bool has_accent = false,
+               uint8_t col_span = 1, uint8_t row_span = 1,
+               int8_t entity_state = -1, UiFontView hero_font = nullptr);
 
 void icon_circle_button(Rgb565Surface &it, int cx, int cy, int r,
                         UiColor bg_c, UiColor brd_c,

@@ -852,7 +852,9 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
                UiColor accent_c, UiColor text_c, UiFontView font,
                TileDrawIconFn draw_icon_fn, void *user_ctx,
                uint16_t widget_id, int16_t param,
-               bool inverted_badge, bool has_accent) {
+               bool inverted_badge, bool has_accent,
+               uint8_t col_span, uint8_t row_span,
+               int8_t entity_state, UiFontView hero_font) {
   const int eff_w = std::max(48, w);
   const int eff_h = std::max(48, h);
   const int x0 = cx - eff_w / 2;
@@ -864,28 +866,169 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
 
   render_card_box(it, x0, y0, eff_w, eff_h, bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, text_c);
 
-  const int icon_r = std::min(card_icon_r(eff_h), std::max(10, eff_h / 4));
-  const int icon_cy = cy - eff_h / 6;
-  const int lbl_y = cy + (eff_h * 27) / 100;
-  if (inverted_badge) {
+  const bool is_hero = (col_span >= 2U && row_span >= 2U);
+  const bool is_wide = !is_hero && ((col_span >= 2U && row_span == 1U) || (eff_w * 10 >= eff_h * 16));
+  const bool is_tall = !is_hero && !is_wide && ((col_span == 1U && row_span >= 2U) || (eff_h * 10 >= eff_w * 14));
+  const char *state_caption = (entity_state == 1)
+                                  ? "On"
+                                  : ((entity_state == 0) ? "Off" : ((entity_state == 2) ? "Unavailable" : nullptr));
+  const UiColor state_caption_c = active ? accent_c : kChromeBackLabel;
+  const bool has_label = (label != nullptr && label[0] != '\0' && font != nullptr);
+
+  auto draw_glyph_badge = [&](int ix, int iy, int icon_r, int max_disc_r) {
+    if (inverted_badge) {
+      const int clamped_max = std::max(icon_r, max_disc_r);
+      const int disc_r = std::clamp(icon_r + scale_s(4), icon_r, clamped_max);
+      const UiColor disc_c = disabled ? text_c : (has_accent ? accent_c : text_c);
+      fast_filled_circle_aa(it, ix, iy, disc_r, disc_c);
+      if (draw_icon_fn != nullptr) {
+        const int inset_r = std::max(7, std::max(14, (icon_r * 16) / 10) / 2);
+        draw_icon_fn(it, ix, iy, inset_r, kChromeShadow, false, user_ctx);
+      }
+    } else if (draw_icon_fn != nullptr) {
+      const UiColor icon_c = disabled ? text_c : ((active || has_accent) ? accent_c : text_c);
+      draw_icon_fn(it, ix, iy, icon_r, icon_c, true, user_ctx);
+    }
+  };
+
+  auto measure_line_h = [](UiFontView f) -> int {
+    if (f == nullptr) return 14;
+    int tw = 0, x_off = 0, base = 0, th = 0;
+    f->measure("Ag", &tw, &x_off, &base, &th);
+    return std::max(12, th);
+  };
+
+  if (is_hero) {
+    // Hero (2x2+): oversized icon + medium/bold title (falling back to font_small) + centered state subtitle
+    const int icon_r = std::clamp(std::min(eff_w, eff_h) / 5, std::max(16, scale_s(20)), scale_s(42));
+    const int icon_cy = y0 + (eff_h * 34) / 100;
+    const int max_disc_r = std::min((icon_cy - y0) - std::max(4, scale_s(6)), eff_w / 2 - scale_s(10));
+    draw_glyph_badge(cx, icon_cy, icon_r, max_disc_r);
+
+    const int lbl_max_w = std::max(40, eff_w - scale_s(24));
+    const int lbl_cy = (state_caption != nullptr) ? (y0 + (eff_h * 66) / 100) : (y0 + (eff_h * 72) / 100);
+    if (has_label) {
+      bool use_hero_font = false;
+      if (hero_font != nullptr) {
+        int tw = 0, x_off = 0, base = 0, th = 0;
+        const std::string clean = sanitize_utf8_for_font(std::string(label), hero_font);
+        hero_font->measure(clean.c_str(), &tw, &x_off, &base, &th);
+        use_hero_font = (tw <= lbl_max_w);
+      }
+      if (use_hero_font && hero_font != nullptr) {
+        const std::string fit = fit_text_to_width_font(std::string(label), lbl_max_w, hero_font);
+        shadow_print(it, cx, lbl_cy, hero_font, text_c, UiTextAlign::CENTER, fit.c_str());
+      } else {
+        std::string lines[2];
+        const int n = wrap_text_lines(std::string(label), lbl_max_w, font, lines, 2);
+        if (n <= 1) {
+          const std::string fit = fit_text_to_width_font(std::string(label), lbl_max_w, font);
+          shadow_print(it, cx, lbl_cy, font, text_c, UiTextAlign::CENTER, fit.c_str());
+        } else {
+          const int half_step = (measure_line_h(font) + 4) / 2;
+          shadow_print(it, cx, lbl_cy - half_step, font, text_c, UiTextAlign::CENTER, lines[0].c_str());
+          shadow_print(it, cx, lbl_cy + half_step, font, text_c, UiTextAlign::CENTER, lines[1].c_str());
+        }
+      }
+    }
+    if (state_caption != nullptr && font != nullptr) {
+      const int sub_y = y0 + (eff_h * 84) / 100;
+      const std::string fit_sub = fit_text_to_width_font(std::string(state_caption), lbl_max_w, font);
+      shadow_print(it, cx, sub_y, font, state_caption_c, UiTextAlign::CENTER, fit_sub.c_str());
+    }
+  } else if (is_wide) {
+    // Wide (2x1+): left-anchored icon + left-aligned 1-2 line label + right-edge state dot when stateful
+    const int pad_x = std::max(12, scale_s(14));
+    const int icon_r = std::clamp(std::min(card_icon_r(eff_h), (eff_h * 26) / 100), 10, scale_s(26));
+    const int disc_extra = inverted_badge ? scale_s(4) : 0;
+    const int icon_cx = x0 + pad_x + icon_r + disc_extra;
+    const int max_disc_r = std::min((eff_h / 2) - std::max(4, scale_s(5)), icon_r + disc_extra);
+    draw_glyph_badge(icon_cx, cy, icon_r, max_disc_r);
+
+    int right_limit = x0 + eff_w - pad_x;
+    if (entity_state == 0 || entity_state == 1) {
+      const int dot_r = std::max(3, scale_s(4));
+      const int dot_cx = right_limit - dot_r;
+      const UiColor dot_c = active ? accent_c : kChromePipInactive;
+      fast_filled_circle_aa(it, dot_cx + 1, cy + 1, dot_r, kChromeShadow);
+      fast_filled_circle_aa(it, dot_cx, cy, dot_r, dot_c);
+      right_limit = dot_cx - dot_r - std::max(8, scale_s(10));
+    }
+
+    if (has_label) {
+      const int txt_x0 = icon_cx + icon_r + disc_extra + std::max(10, scale_s(12));
+      const int max_txt_w = std::max(36, right_limit - txt_x0);
+      const int line_h = measure_line_h(font);
+      std::string lines[2];
+      const int n = (eff_h >= 2 * line_h + 22)
+                        ? wrap_text_lines(std::string(label), max_txt_w, font, lines, 2)
+                        : 1;
+      if (n <= 1) {
+        const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+        shadow_print(it, txt_x0, cy, font, text_c, UiTextAlign::CENTER_LEFT, fit.c_str());
+      } else {
+        const int half_step = (line_h + 4) / 2;
+        shadow_print(it, txt_x0, cy - half_step, font, text_c, UiTextAlign::CENTER_LEFT, lines[0].c_str());
+        shadow_print(it, txt_x0, cy + half_step, font, text_c, UiTextAlign::CENTER_LEFT, lines[1].c_str());
+      }
+    }
+  } else if (is_tall) {
+    // Tall (1x2+): larger upper icon + wrapped 2-line label + optional On/Off/Unavailable caption
+    const int icon_r = std::clamp(std::min(eff_w / 4, eff_h / 6), 14, scale_s(34));
+    const int icon_cy = y0 + (eff_h * 30) / 100;
+    const int max_disc_r = std::min((icon_cy - y0) - std::max(4, scale_s(5)), eff_w / 2 - scale_s(8));
+    draw_glyph_badge(cx, icon_cy, icon_r, max_disc_r);
+
+    const int lbl_max_w = std::max(36, eff_w - scale_s(16));
+    const int lbl_cy = (state_caption != nullptr) ? (y0 + (eff_h * 64) / 100) : (y0 + (eff_h * 70) / 100);
+    if (has_label) {
+      std::string lines[2];
+      const int n = wrap_text_lines(std::string(label), lbl_max_w, font, lines, 2);
+      if (n <= 1) {
+        const std::string fit = fit_text_to_width_font(std::string(label), lbl_max_w, font);
+        shadow_print(it, cx, lbl_cy, font, text_c, UiTextAlign::CENTER, fit.c_str());
+      } else {
+        const int half_step = (measure_line_h(font) + 4) / 2;
+        shadow_print(it, cx, lbl_cy - half_step, font, text_c, UiTextAlign::CENTER, lines[0].c_str());
+        shadow_print(it, cx, lbl_cy + half_step, font, text_c, UiTextAlign::CENTER, lines[1].c_str());
+      }
+    }
+    if (state_caption != nullptr && font != nullptr) {
+      const int sub_y = y0 + (eff_h * 84) / 100;
+      const std::string fit_sub = fit_text_to_width_font(std::string(state_caption), lbl_max_w, font);
+      shadow_print(it, cx, sub_y, font, state_caption_c, UiTextAlign::CENTER, fit_sub.c_str());
+    }
+  } else {
+    // 1x1 standard tile: centered icon above centered 1-2 line font_small label
+    const int icon_r = std::min(card_icon_r(eff_h), std::max(10, eff_h / 4));
+    const int line_h = measure_line_h(font);
+    const int lbl_max_w = std::max(32, eff_w - scale_s(14));
+    std::string lines[2];
+    int line_cnt = 0;
+    if (has_label) {
+      const bool allow_two_lines = (eff_h >= 2 * line_h + 2 * icon_r + 24);
+      line_cnt = allow_two_lines ? wrap_text_lines(std::string(label), lbl_max_w, font, lines, 2) : 1;
+      if (line_cnt <= 1) {
+        lines[0] = fit_text_to_width_font(std::string(label), lbl_max_w, font);
+        line_cnt = 1;
+      }
+    }
+    const int icon_cy = (line_cnt >= 2) ? (y0 + (eff_h * 33) / 100) : (cy - eff_h / 6);
+    const int lbl_y = (line_cnt >= 2) ? (y0 + (eff_h * 74) / 100) : (cy + (eff_h * 27) / 100);
     const int max_top = (icon_cy - y0) - std::max(3, scale_s(4));
     const int max_bot = (lbl_y - icon_cy) - std::max(11, eff_h / 7);
-    const int max_r = std::max(icon_r, std::min({max_top, max_bot, eff_w / 2 - scale_s(6)}));
-    const int disc_r = std::clamp(icon_r + scale_s(4), icon_r, max_r);
-    const UiColor disc_c = disabled ? text_c : (has_accent ? accent_c : text_c);
-    fast_filled_circle_aa(it, cx, icon_cy, disc_r, disc_c);
-    if (draw_icon_fn != nullptr) {
-      const int inset_r = std::max(7, std::max(14, (icon_r * 16) / 10) / 2);
-      draw_icon_fn(it, cx, icon_cy, inset_r, kChromeShadow, false, user_ctx);
+    const int max_disc_r = std::min({max_top, max_bot, eff_w / 2 - scale_s(6)});
+    draw_glyph_badge(cx, icon_cy, icon_r, max_disc_r);
+
+    if (line_cnt == 1) {
+      shadow_print(it, cx, lbl_y, font, text_c, UiTextAlign::CENTER, lines[0].c_str());
+    } else if (line_cnt >= 2) {
+      const int half_step = (line_h + 3) / 2;
+      shadow_print(it, cx, lbl_y - half_step, font, text_c, UiTextAlign::CENTER, lines[0].c_str());
+      shadow_print(it, cx, lbl_y + half_step, font, text_c, UiTextAlign::CENTER, lines[1].c_str());
     }
-  } else if (draw_icon_fn != nullptr) {
-    const UiColor icon_c = disabled ? text_c : ((active || has_accent) ? accent_c : text_c);
-    draw_icon_fn(it, cx, icon_cy, icon_r, icon_c, true, user_ctx);
   }
-  if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    const std::string fit = fit_text_to_width_font(std::string(label), std::max(32, eff_w - scale_x(12)), font);
-    shadow_print(it, cx, lbl_y, font, text_c, UiTextAlign::CENTER, fit.c_str());
-  }
+
   if (widget_id != WidgetId::NONE && !disabled) {
     frame_hits().add_centered_rect(cx, cy, eff_w, eff_h, widget_id, kHitTap | kHitFocusSlot, param);
   }
@@ -1313,14 +1456,26 @@ void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_i
 void render_dock_page_pips(Rgb565Surface &it, int cx, int y_pos, int total_pages,
                            int active_page, UiColor col_active, UiColor col_inactive) {
   if (total_pages <= 1) return;
-  const int spacing = scale_s(14);
   const int dot_r = (SCREEN_MIN_DIM > 520) ? 3 : 2;
-  const int total_w = (total_pages - 1) * spacing;
+  const int max_span = std::max(40, layout().safe_span(y_pos, 24));
+  const int base_spacing = scale_s(14);
+  int vis_count = total_pages;
+  int win_start = 0;
+  int spacing = base_spacing;
+  if ((vis_count - 1) * spacing > max_span) {
+    spacing = std::max(8, max_span / std::max(1, vis_count - 1));
+    if ((vis_count - 1) * spacing > max_span) {
+      vis_count = std::max(3, (max_span / spacing) + 1);
+      win_start = std::clamp(active_page - vis_count / 2, 0, total_pages - vis_count);
+    }
+  }
+  const int total_w = (vis_count - 1) * spacing;
   const int start_x = cx - (total_w / 2);
-  for (int p = 0; p < total_pages; p++) {
-    const int px = start_x + p * spacing;
+  for (int i = 0; i < vis_count; i++) {
+    const int p = win_start + i;
+    const int px = start_x + i * spacing;
     if (p == active_page) {
-      const int pw = scale_s(7);
+      const int pw = std::min(scale_s(7), std::max(3, spacing - 2 * dot_r - 2));
       const int ph = dot_r * 2 + 1;
       const int sx0 = px - pw / 2 - dot_r;
       const int sw = pw + 2 * dot_r + 1;
@@ -1654,7 +1809,8 @@ void header_pager_bar(Rgb565Surface &it, int cx, int cy,
                       const std::string &title, UiFontView font,
                       UiColor col_white, bool show_arrows,
                       uint16_t prev_wid, uint16_t next_wid,
-                      int16_t prev_param, int16_t next_param) {
+                      int16_t prev_param, int16_t next_param,
+                      bool prev_enabled, bool next_enabled) {
   if (font == nullptr) return;
   const auto &ly = layout();
   if (!show_arrows) {
@@ -1676,16 +1832,20 @@ void header_pager_bar(Rgb565Surface &it, int cx, int cy,
   const int hit_pad = std::max(scale_s(6), min_r - btn_r);
   const int ir = dock_icon_r(btn_r);
 
-  render_glass_circle(it, lx, cy, btn_r, chrome_card_bg_off(), chrome_card_brd_on());
-  draw_icon_chevron(it, lx, cy, ir, false, col_white, true);
-  if (prev_wid != WidgetId::NONE) {
+  render_glass_circle(it, lx, cy, btn_r, chrome_card_bg_off(),
+                      prev_enabled ? chrome_card_brd_on() : chrome_card_brd_off());
+  draw_icon_chevron(it, lx, cy, ir, false,
+                    prev_enabled ? col_white : kChromePipInactive, prev_enabled);
+  if (prev_enabled && prev_wid != WidgetId::NONE) {
     frame_hits().add_circle(lx, cy, btn_r, prev_wid,
                             kHitTap | kHitFocusSlot | kHitFocusCircle, prev_param, hit_pad);
   }
 
-  render_glass_circle(it, rx, cy, btn_r, chrome_card_bg_off(), chrome_card_brd_on());
-  draw_icon_chevron(it, rx, cy, ir, true, col_white, true);
-  if (next_wid != WidgetId::NONE) {
+  render_glass_circle(it, rx, cy, btn_r, chrome_card_bg_off(),
+                      next_enabled ? chrome_card_brd_on() : chrome_card_brd_off());
+  draw_icon_chevron(it, rx, cy, ir, true,
+                    next_enabled ? col_white : kChromePipInactive, next_enabled);
+  if (next_enabled && next_wid != WidgetId::NONE) {
     frame_hits().add_circle(rx, cy, btn_r, next_wid,
                             kHitTap | kHitFocusSlot | kHitFocusCircle, next_param, hit_pad);
   }

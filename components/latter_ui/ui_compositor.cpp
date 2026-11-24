@@ -350,6 +350,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     }
   } else if (rs.nav.gui_page == PageId::PINNED) {
     sig ^= (compute_shortcuts_ui_sig() | 1U);
+    sig ^= (static_cast<uint32_t>(rs.nav.pinned_menu_page + 1) * 2654435761U);
   } else if (rs.nav.gui_page == PageId::TIME) {
     uint32_t th = 2166136261U;
     for (int i = 0; i < 3; ++i) {
@@ -409,6 +410,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   } else if (rs.nav.gui_page == PageId::TOOLS) {
     uint32_t tl_sig = 2166136261U;
     for (unsigned char c : effective_tools_items_sv(prefs)) tl_sig = (tl_sig ^ c) * 16777619U;
+    tl_sig = (tl_sig ^ static_cast<uint32_t>(rs.nav.tools_menu_page + 1)) * 16777619U;
     tl_sig = (tl_sig ^ rs.stopwatch.elapsed_ms ^ (static_cast<uint32_t>(rs.stopwatch.lap_count) << 24)) * 16777619U;
     sig ^= (tl_sig | 1U);
   } else if (rs.nav.gui_page == PageId::GAMES) {

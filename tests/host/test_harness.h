@@ -51,6 +51,7 @@
 #include "../../include/ui_pages.h"
 #include "../../include/ui_panel_metrics.h"
 #include "../../include/ui_surface.h"
+#include "../../include/ui_tile_grid.h"
 #include "../../include/ui_touch_engine.h"
 #include "../../include/ui_touch_recognizer.h"
 #include "../../include/ui_types.h"
@@ -240,5 +241,6 @@ void run_pages_apps_tests();
 void run_showcase_nav_tests();
 void run_mdi_plus_tests();
 void run_games_tests();
+void run_tile_grid_tests();
 
 }  // namespace latter_test

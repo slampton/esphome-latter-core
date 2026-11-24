@@ -290,6 +290,7 @@ STAGED_HEADERS: tuple[str, ...] = (
     "latter_rpc.h",
     "audio_router.h",
     "state/state_common.h",
+    "state/state_tile_grid.h",
     "state/state_prefs.h",
     "state/state_shortcuts.h",
     "state/state_nav.h",

@@ -240,7 +240,7 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `76` | `home_weather_tap_action` | `DevicePrefsField::HOME_WEATHER_TAP_ACTION` | `string` | Action when tapping the weather summary on the Home Screen (Current Weather|5-Day Forecast|None) |
 | `77` | `home_show_battery` | `DevicePrefsField::HOME_SHOW_BATTERY` | `bool` | 1 = show battery indicator on Home screen on battery-powered devices, else 0 |
 
-### `shortcuts` (`ShortcutsField`, `8` total fields)
+### `shortcuts` (`ShortcutsField`, `9` total fields)
 
 App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant entity actions with live state), chunked across <=24-item frames for unlimited pages.
 
@@ -248,9 +248,10 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | :---: | :--- | :--- | :---: | :--- |
 | `3` | `chunk_index` | `ShortcutsField::CHUNK_INDEX` | `u16` | 0-based chunk index (0 .. chunk_count - 1) |
 | `4` | `chunk_count` | `ShortcutsField::CHUNK_COUNT` | `u16` | Total chunks in this shortcuts snapshot (>= 1; commits atomically on chunk_index + 1 == chunk_count) |
-| `5` | `dock_items` | `ShortcutsField::DOCK_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state|badge_style|accent App Dock shortcut records (sent on chunk_index == 0, up to 24; badge_style is empty/glass or inverted; accent is empty/default or primary|gold|green|red|orange; empty until configured so device uses defaults.dock_routes; Settings is always appended last) |
+| `5` | `dock_items` | `ShortcutsField::DOCK_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state|badge_style|accent|page|col|row|col_span|row_span App Dock shortcut records (sent on chunk_index == 0, up to 24; badge_style is empty/glass or inverted; accent is empty/default or primary|gold|green|red|orange; page/col/row/col_span/row_span empty on App Dock; empty until configured so device uses defaults.dock_routes; Settings is always appended last) |
 | `6` | `pinned_total` | `ShortcutsField::PINNED_TOTAL` | `u16` | Total configured Pinned App items across all chunks (0 auto-hides app:pinned on the App Dock) |
-| `7` | `pinned_items` | `ShortcutsField::PINNED_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state|badge_style|accent Pinned App shortcut records for this chunk (up to 24 per chunk, rendered 6 per page; badge_style is empty/glass or inverted; accent is empty/default or primary|gold|green|red|orange) |
+| `7` | `pinned_items` | `ShortcutsField::PINNED_ITEMS` | `records` | 0x1E-joined kind|target|action|label|icon|confirm|state|badge_style|accent|page|col|row|col_span|row_span Pinned App shortcut records for this chunk (up to 24 per chunk; badge_style is empty/glass or inverted; accent is empty/default or primary|gold|green|red|orange; page 0..31, col 0..3, row 0..2 empty when auto-flow; col_span 1..4, row_span 1..3 empty/1 for 1x1) |
+| `8` | `pinned_page_titles` | `ShortcutsField::PINNED_PAGE_TITLES` | `records` | 0x1E-joined page_index|title optional custom titles for Pinned App pages (sent on chunk_index == 0, up to 32 entries, title max 24 chars; absent pages render the default PINNED header) |
 
 ## 3. ESPHome Device Actions (`esphome.<node>_<action>`)
 

@@ -34,16 +34,20 @@ namespace latter_core {
 // Hibernate Snapshot POD & Cold-Boot Hydration (NVS-backed Frame #1 Seed)
 // ==============================================================================
 static constexpr uint32_t kHibernateSnapshotMagic   = 0x4C485350U;  // "LHSP"
-static constexpr uint16_t kHibernateSnapshotVersion = 2U;
+static constexpr uint16_t kHibernateSnapshotVersion = 3U;
 static constexpr uint32_t kHibernateSnapshotHash    = 0x4C484942U;  // "LHIB"
 static constexpr size_t kHibernateDockSlots         = 10U;
-static constexpr size_t kHibernatePinnedPage1Slots  = 6U;
+static constexpr size_t kHibernatePinnedPage1Slots  = 12U;
 
 struct DockSnapshotSlot {
   uint8_t kind = 0;         // 0 = empty, 1 = ROUTE, 2 = ENTITY
   uint8_t confirm = 0;      // 0 = direct, 1 = confirm
   uint8_t route_id = 0;     // RouteId when kind == 1
   int8_t state = -1;        // -1 = neutral/pending (live entity state arrives via HA shortcuts)
+  int8_t col = -1;          // Resolved page-0 column (0..3) or -1 = auto-flow
+  int8_t row = -1;          // Resolved page-0 row (0..2) or -1 = auto-flow
+  uint8_t col_span = 1;     // Column span (1..4)
+  uint8_t row_span = 1;     // Row span (1..3)
   char icon_slug[24]{};     // MDI slug without "mdi:" prefix (or empty for default route glyph)
   char label[22]{};         // Display label
   char target[38]{};        // Entity ID when kind == 2 (route token resolved via route_id)
@@ -59,6 +63,7 @@ struct HibernateSnapshot {
   uint16_t pinned_total = 0;
   DockSnapshotSlot dock_slots[kHibernateDockSlots]{};
   DockSnapshotSlot pinned_page1[kHibernatePinnedPage1Slots]{};
+  char pinned_page0_title[28]{};
   char area_name[48]{};
   char area_icon[32]{};
   char posix_tz[48]{};
@@ -67,7 +72,12 @@ struct HibernateSnapshot {
 static_assert(std::is_trivially_copyable_v<HibernateSnapshot>,
               "HibernateSnapshot must remain a POD blob for ESPPreferenceObject.");
 
-inline void pack_snapshot_shortcut_slot(const ShortcutItem &src, DockSnapshotSlot &dst) {
+inline void pack_snapshot_shortcut_slot(const ShortcutItem &src,
+                                        DockSnapshotSlot &dst,
+                                        int8_t resolved_col = -1,
+                                        int8_t resolved_row = -1,
+                                        uint8_t resolved_col_span = 1,
+                                        uint8_t resolved_row_span = 1) {
   dst = DockSnapshotSlot{};
   dst.kind = (src.kind == ShortcutKind::ENTITY) ? 2U : 1U;
   const uint8_t confirm_bit = (src.kind == ShortcutKind::ENTITY && src.confirm) ? 0x01U : 0x00U;
@@ -76,6 +86,13 @@ inline void pack_snapshot_shortcut_slot(const ShortcutItem &src, DockSnapshotSlo
   dst.confirm = static_cast<uint8_t>(confirm_bit | inv_bit | acc_bits);
   dst.route_id = static_cast<uint8_t>(src.route_id);
   dst.state = -1;  // Never persist volatile live entity states across cold boots (D-085)
+  dst.col = (resolved_col >= 0 && resolved_col < kTileGridMaxCols &&
+             resolved_row >= 0 && resolved_row < kTileGridMaxRows)
+                ? resolved_col
+                : static_cast<int8_t>(-1);
+  dst.row = (dst.col >= 0) ? resolved_row : static_cast<int8_t>(-1);
+  dst.col_span = static_cast<uint8_t>(std::clamp(static_cast<int>(resolved_col_span), 1, kTileGridMaxCols));
+  dst.row_span = static_cast<uint8_t>(std::clamp(static_cast<int>(resolved_row_span), 1, kTileGridMaxRows));
   std::string_view slug(src.icon);
   if (slug.rfind("mdi:", 0) == 0) slug.remove_prefix(4);
   copy_bounded_cstr(dst.icon_slug, slug);
@@ -105,6 +122,16 @@ inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutI
   const size_t lbl_len = (lbl_end != nullptr) ? static_cast<size_t>(lbl_end - src.label) : (sizeof(src.label) - 1U);
   const std::string_view lbl_sv(src.label, lbl_len);
 
+  const bool has_placed_pos =
+      (src.col >= 0 && src.col < kTileGridMaxCols && src.row >= 0 && src.row < kTileGridMaxRows);
+  const int8_t unpacked_page = has_placed_pos ? static_cast<int8_t>(0) : static_cast<int8_t>(-1);
+  const int8_t unpacked_col = has_placed_pos ? src.col : static_cast<int8_t>(-1);
+  const int8_t unpacked_row = has_placed_pos ? src.row : static_cast<int8_t>(-1);
+  const uint8_t unpacked_col_span =
+      static_cast<uint8_t>(std::clamp(static_cast<int>(src.col_span), 1, kTileGridMaxCols));
+  const uint8_t unpacked_row_span =
+      static_cast<uint8_t>(std::clamp(static_cast<int>(src.row_span), 1, kTileGridMaxRows));
+
   if (src.kind == 1U) {
     const auto rid = static_cast<RouteId>(src.route_id);
     if (rid == RouteId::SETTINGS_ROOT) {
@@ -125,6 +152,11 @@ inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutI
     dst.state = -1;
     dst.badge_style = unpacked_badge;
     dst.accent = unpacked_accent;
+    dst.page = unpacked_page;
+    dst.col = unpacked_col;
+    dst.row = unpacked_row;
+    dst.col_span = unpacked_col_span;
+    dst.row_span = unpacked_row_span;
     return true;
   }
 
@@ -147,6 +179,11 @@ inline bool unpack_snapshot_shortcut_slot(const DockSnapshotSlot &src, ShortcutI
   dst.state = -1;  // Neutral/pending until live HA shortcuts arrive (D-085)
   dst.badge_style = unpacked_badge;
   dst.accent = unpacked_accent;
+  dst.page = unpacked_page;
+  dst.col = unpacked_col;
+  dst.row = unpacked_row;
+  dst.col_span = unpacked_col_span;
+  dst.row_span = unpacked_row_span;
   return true;
 }
 
@@ -208,9 +245,32 @@ inline bool save_hibernate_snapshot(const char *tz_override = nullptr) {
   snap.pinned_total = sc.live_received
                           ? static_cast<uint16_t>(std::min<size_t>(sc.pinned_items.size(), ShortcutsState::kMaxPinnedItems))
                           : sc.cold_pinned_total;
-  const size_t pcnt = std::min<size_t>(sc.pinned_items.size(), kHibernatePinnedPage1Slots);
-  for (size_t i = 0; i < pcnt; ++i) {
-    pack_snapshot_shortcut_slot(sc.pinned_items[i], snap.pinned_page1[i]);
+  if (!sc.pinned_items.empty()) {
+    const int grid_cols = tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+    const int grid_rows = tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+    auto placements = std::make_unique<TileGridPlacement[]>(ShortcutsState::kMaxPinnedItems);
+    int8_t page_sources[kTileGridMaxLogicalPages]{};
+    const auto layout_res = resolve_pinned_grid_layout(
+        sc, grid_cols, grid_rows, placements.get(), static_cast<int>(ShortcutsState::kMaxPinnedItems),
+        page_sources, kTileGridMaxLogicalPages);
+    size_t packed = 0U;
+    for (int i = 0; i < layout_res.placement_count && packed < kHibernatePinnedPage1Slots; ++i) {
+      const auto &pl = placements[static_cast<size_t>(i)];
+      if (pl.visual_page != 0) continue;
+      if (pl.item_index < 0 || static_cast<size_t>(pl.item_index) >= sc.pinned_items.size()) continue;
+      pack_snapshot_shortcut_slot(sc.pinned_items[static_cast<size_t>(pl.item_index)],
+                                  snap.pinned_page1[packed++],
+                                  pl.col, pl.row, pl.col_span, pl.row_span);
+    }
+    const std::string_view pg0_title = resolve_pinned_page_title(sc, static_cast<int>(page_sources[0]));
+    if (!pg0_title.empty()) {
+      copy_bounded_cstr(snap.pinned_page0_title, pg0_title);
+    }
+  } else {
+    const std::string_view pg0_title = resolve_pinned_page_title(sc, 0);
+    if (!pg0_title.empty()) {
+      copy_bounded_cstr(snap.pinned_page0_title, pg0_title);
+    }
   }
 
   copy_bounded_cstr(snap.area_name, ac.area_name);
@@ -253,6 +313,7 @@ inline bool load_hibernate_snapshot_if_cold() {
   if (snap.magic != kHibernateSnapshotMagic || snap.version != kHibernateSnapshotVersion) {
     return false;
   }
+  snap.pinned_page0_title[sizeof(snap.pinned_page0_title) - 1] = '\0';
   snap.area_name[sizeof(snap.area_name) - 1] = '\0';
   snap.area_icon[sizeof(snap.area_icon) - 1] = '\0';
   snap.posix_tz[sizeof(snap.posix_tz) - 1] = '\0';
@@ -279,13 +340,15 @@ inline bool load_hibernate_snapshot_if_cold() {
       }
     }
     if (sc.pinned_items.empty() && snap.pinned_total > 0U) {
-      const size_t pcnt = std::min<size_t>(snap.pinned_total, kHibernatePinnedPage1Slots);
-      for (size_t i = 0; i < pcnt; ++i) {
+      for (size_t i = 0; i < kHibernatePinnedPage1Slots; ++i) {
         ShortcutItem item{};
         if (unpack_snapshot_shortcut_slot(snap.pinned_page1[i], item)) {
           sc.pinned_items.push_back(std::move(item));
         }
       }
+    }
+    if (sc.pinned_page_titles.empty() && snap.pinned_page0_title[0] != '\0') {
+      sc.pinned_page_titles.push_back(PinnedPageTitle{0U, std::string(snap.pinned_page0_title)});
     }
   }
 

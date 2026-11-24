@@ -1682,12 +1682,13 @@ bool TouchGestureEngine::handle_tap_home_area_(
   if (rs.nav.gui_page == PageId::PINNED) {
     if (!rs.nav.menu_scroll_active) {
       const int total_pages = pinned_total_pages();
-      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+      if ((wid == WidgetId::CHEVRON_LEFT || wid == WidgetId::CHEVRON_RIGHT) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
         if (total_pages > 1) {
           const int cur_pg = std::clamp(rs.nav.pinned_menu_page, 0, total_pages - 1);
           rs.nav.pinned_menu_page = cur_pg;
-          const int target_pg = std::clamp(cur_pg + ((wid == WidgetId::CHEVRON_DOWN) ? 1 : -1), 0, total_pages - 1);
+          const int target_pg =
+              std::clamp(cur_pg + ((wid == WidgetId::CHEVRON_RIGHT) ? 1 : -1), 0, total_pages - 1);
           if (target_pg != cur_pg) {
             rs.nav.menu_scroll_active = true;
             rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
@@ -1695,7 +1696,7 @@ bool TouchGestureEngine::handle_tap_home_area_(
             rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
           }
         }
-      } else if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 6 &&
+      } else if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 16 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const auto &sc = shortcuts_state();
         const int idx = hit->param;
@@ -4596,12 +4597,13 @@ bool TouchGestureEngine::handle_tap_system_tools_(
 
   if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active) {
     const int total_pages = active_tools_launcher_page_count(device_prefs());
-    if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+    if ((wid == WidgetId::CHEVRON_LEFT || wid == WidgetId::CHEVRON_RIGHT) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       if (total_pages > 1) {
         const int cur_pg = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
         rs.nav.tools_menu_page = cur_pg;
-        const int target_pg = std::clamp(cur_pg + ((wid == WidgetId::CHEVRON_DOWN) ? 1 : -1), 0, total_pages - 1);
+        const int target_pg =
+            std::clamp(cur_pg + ((wid == WidgetId::CHEVRON_RIGHT) ? 1 : -1), 0, total_pages - 1);
         if (target_pg != cur_pg) {
           rs.nav.menu_scroll_active = true;
           rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
@@ -4609,7 +4611,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
           rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
         }
       }
-    } else if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6 &&
+    } else if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 16 &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       const int target_sub = hit->param;
       if (target_sub > 0) {

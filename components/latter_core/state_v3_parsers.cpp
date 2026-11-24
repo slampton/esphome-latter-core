@@ -1020,10 +1020,72 @@ bool parse_v3_calendar_payload(std::string_view payload, CalendarState &st) {
   return true;
 }
 
+namespace {
+
+bool parse_strict_nonneg_int(std::string_view raw, int &out) noexcept {
+  const std::string_view sv = trim_ascii_ws(raw);
+  if (sv.empty()) return false;
+  int val = 0;
+  for (char ch : sv) {
+    if (ch < '0' || ch > '9') return false;
+    if (val > 100000) return false;
+    val = val * 10 + (ch - '0');
+  }
+  out = val;
+  return true;
+}
+
+std::string clamp_utf8_prefix(std::string_view sv, size_t max_bytes) {
+  if (sv.size() <= max_bytes) return std::string(sv);
+  size_t cut = max_bytes;
+  while (cut > 0U && (static_cast<uint8_t>(sv[cut]) & 0xC0U) == 0x80U) {
+    --cut;
+  }
+  return std::string(sv.substr(0U, cut));
+}
+
+void parse_pinned_page_titles_blob(std::string_view blob, std::vector<PinnedPageTitle> &dst) {
+  dst.clear();
+  if (blob.empty()) return;
+  size_t start = 0;
+  while (start <= blob.size() && dst.size() < ShortcutsState::kMaxPinnedPageTitles) {
+    const size_t pos = blob.find(kProtocolRecordSep, start);
+    const std::string_view rec =
+        (pos == std::string_view::npos) ? blob.substr(start) : blob.substr(start, pos - start);
+    const size_t bar = rec.find('|');
+    if (bar != std::string_view::npos) {
+      int pg_idx = -1;
+      if (parse_strict_nonneg_int(rec.substr(0U, bar), pg_idx) &&
+          pg_idx >= 0 && pg_idx < kTileGridMaxLogicalPages) {
+        const std::string unescaped = v3_unescape_subfield(rec.substr(bar + 1U));
+        const std::string_view trimmed = trim_ascii_ws(unescaped);
+        if (!trimmed.empty()) {
+          std::string clamped = clamp_utf8_prefix(trimmed, 24U);
+          bool updated = false;
+          for (auto &existing : dst) {
+            if (static_cast<int>(existing.page) == pg_idx) {
+              existing.title = std::move(clamped);
+              updated = true;
+              break;
+            }
+          }
+          if (!updated) {
+            dst.push_back(PinnedPageTitle{static_cast<uint8_t>(pg_idx), std::move(clamped)});
+          }
+        }
+      }
+    }
+    if (pos == std::string_view::npos) break;
+    start = pos + 1U;
+  }
+}
+
+}  // namespace
+
 bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
   if (rec.empty()) return false;
-  std::string_view cols[9]{};
-  const size_t n = v3_split_fields(rec, cols, 9, '|');
+  std::string_view cols[14]{};
+  const size_t n = v3_split_fields(rec, cols, 14, '|');
   if (n < 4) return false;
   out_item = ShortcutItem{};
   const std::string_view kind_sv = cols[0];
@@ -1035,6 +1097,28 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
   const std::string_view state_sv = (n >= 7) ? cols[6] : std::string_view{};
   const std::string_view badge_sv = (n >= 8) ? trim_ascii_ws(cols[7]) : std::string_view{};
   const std::string_view accent_sv = (n >= 9) ? trim_ascii_ws(cols[8]) : std::string_view{};
+
+  int p_val = -1;
+  int c_val = -1;
+  int r_val = -1;
+  const bool explicit_pos =
+      (n >= 12) &&
+      parse_strict_nonneg_int(cols[9], p_val) && p_val >= 0 && p_val < kTileGridMaxLogicalPages &&
+      parse_strict_nonneg_int(cols[10], c_val) && c_val >= 0 && c_val < kTileGridMaxCols &&
+      parse_strict_nonneg_int(cols[11], r_val) && r_val >= 0 && r_val < kTileGridMaxRows;
+  const int8_t parsed_page = explicit_pos ? static_cast<int8_t>(p_val) : static_cast<int8_t>(-1);
+  const int8_t parsed_col  = explicit_pos ? static_cast<int8_t>(c_val) : static_cast<int8_t>(-1);
+  const int8_t parsed_row  = explicit_pos ? static_cast<int8_t>(r_val) : static_cast<int8_t>(-1);
+  int cs_val = 1;
+  int rs_val = 1;
+  const uint8_t parsed_col_span =
+      ((n >= 13) && parse_strict_nonneg_int(cols[12], cs_val))
+          ? static_cast<uint8_t>(std::clamp(cs_val, 1, kTileGridMaxCols))
+          : 1U;
+  const uint8_t parsed_row_span =
+      ((n >= 14) && parse_strict_nonneg_int(cols[13], rs_val))
+          ? static_cast<uint8_t>(std::clamp(rs_val, 1, kTileGridMaxRows))
+          : 1U;
 
   auto parse_badge_style = [](std::string_view sv) noexcept -> ShortcutBadgeStyle {
     if (eq_ascii_ci_sv(sv, "inverted")) return ShortcutBadgeStyle::INVERTED;
@@ -1069,6 +1153,11 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
     out_item.state = -1;
     out_item.badge_style = parsed_badge;
     out_item.accent = parsed_accent;
+    out_item.page = parsed_page;
+    out_item.col = parsed_col;
+    out_item.row = parsed_row;
+    out_item.col_span = parsed_col_span;
+    out_item.row_span = parsed_row_span;
     return true;
   }
 
@@ -1087,6 +1176,11 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
     out_item.state = static_cast<int8_t>(std::clamp(parsed_state, -1, 2));
     out_item.badge_style = parsed_badge;
     out_item.accent = parsed_accent;
+    out_item.page = parsed_page;
+    out_item.col = parsed_col;
+    out_item.row = parsed_row;
+    out_item.col_span = parsed_col_span;
+    out_item.row_span = parsed_row_span;
     return true;
   }
 
@@ -1149,6 +1243,7 @@ bool parse_v3_shortcuts_payload(std::string_view payload, ShortcutsState &st) {
     st.staging_pinned_total = pinned_total;
     st.staging_dock_items.clear();
     st.staging_pinned_items.clear();
+    st.staged_pinned_page_titles.clear();
     if (pinned_total > 0U) {
       st.staging_pinned_items.reserve(pinned_total);
     }
@@ -1156,6 +1251,8 @@ bool parse_v3_shortcuts_payload(std::string_view payload, ShortcutsState &st) {
                                  st.staging_dock_items, ShortcutsState::kMaxDockItems, false);
     append_shortcut_records_blob(f[static_cast<size_t>(ShortcutsField::PINNED_ITEMS)],
                                  st.staging_pinned_items, ShortcutsState::kMaxPinnedItems, true);
+    parse_pinned_page_titles_blob(f[static_cast<size_t>(ShortcutsField::PINNED_PAGE_TITLES)],
+                                  st.staged_pinned_page_titles);
   } else {
     if (st.staging_epoch != epoch ||
         st.staging_rev != rev ||
@@ -1167,6 +1264,7 @@ bool parse_v3_shortcuts_payload(std::string_view payload, ShortcutsState &st) {
       st.staging_next_chunk = 0;
       st.staging_dock_items.clear();
       st.staging_pinned_items.clear();
+      st.staged_pinned_page_titles.clear();
       return false;
     }
     st.staging_next_chunk = static_cast<uint16_t>(chunk_idx + 1U);
@@ -1185,6 +1283,7 @@ bool parse_v3_shortcuts_payload(std::string_view payload, ShortcutsState &st) {
   st.cold_pinned_total = static_cast<uint16_t>(st.staging_pinned_items.size());
   st.dock_items = std::move(st.staging_dock_items);
   st.pinned_items = std::move(st.staging_pinned_items);
+  st.pinned_page_titles = std::move(st.staged_pinned_page_titles);
   st.staging_epoch = 0;
   st.staging_rev = 0;
   st.staging_chunk_count = 0;
@@ -1192,6 +1291,7 @@ bool parse_v3_shortcuts_payload(std::string_view payload, ShortcutsState &st) {
   st.staging_pinned_total = 0;
   st.staging_dock_items.clear();
   st.staging_pinned_items.clear();
+  st.staged_pinned_page_titles.clear();
   return true;
 }
 

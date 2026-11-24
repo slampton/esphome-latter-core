@@ -219,8 +219,8 @@ bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
          wid == WidgetId::HOME_DATE_HERO ||
          (wid >= WidgetId::HOME_ACT_ROW_0 && wid <= WidgetId::HOME_ACT_EXPAND) ||
          (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) ||
-         (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6) ||
-         (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 6) ||
+         (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 16) ||
+         (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 16) ||
          (wid >= WidgetId::CAL_WEEK_DAY_BASE && wid < WidgetId::CAL_WEEK_DAY_BASE + 7) ||
          (wid >= WidgetId::CAL_MONTH_WEEK_BASE && wid < WidgetId::CAL_MONTH_WEEK_BASE + 6) ||
          (wid >= WidgetId::CAL_MONTH_CELL_BASE && wid < WidgetId::CAL_MONTH_CELL_BASE + 42) ||
@@ -240,9 +240,9 @@ int sibling_family_key(uint16_t wid) noexcept {
   if (wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5) return 8;
   if (wid >= WidgetId::VACUUM_ACTION_BASE && wid < WidgetId::VACUUM_ACTION_BASE + 6) return 9;
   if (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) return 10;
-  if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 6) return 11;
+  if (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 16) return 11;
   if (wid >= WidgetId::CALC_KEY_BASE && wid < WidgetId::CALC_KEY_BASE + 20) return 12;
-  if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 6) return 13;
+  if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 16) return 13;
   if (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) return 14;
   return 0;
 }
@@ -291,11 +291,10 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
                      label, static_cast<unsigned>(r.widget_id), pw, ph, min_7mm, min_slot5_h);
         std::exit(1);
       }
-    } else if ((r.widget_id >= WidgetId::TOOLS_CARD_BASE && r.widget_id < WidgetId::TOOLS_CARD_BASE + 6) ||
-               (r.widget_id >= WidgetId::PINNED_CARD_BASE && r.widget_id < WidgetId::PINNED_CARD_BASE + 6)) {
-      // 2x3 launcher grid cards (>= 6.90 mm on Wrist 315 PPI; >= 7.0 mm on all other geometries).
-      const int min_grid_px = mm_to_px(6.90f);
-      LATTER_CHECK(pw >= min_7mm && ph >= min_grid_px);
+    } else if ((r.widget_id >= WidgetId::TOOLS_CARD_BASE && r.widget_id < WidgetId::TOOLS_CARD_BASE + 16) ||
+               (r.widget_id >= WidgetId::PINNED_CARD_BASE && r.widget_id < WidgetId::PINNED_CARD_BASE + 16)) {
+      // Adaptive 2x3 / 3x3 / 4x3 variable-span tile-grid cards strictly >= 7.0 mm across all 6 geometries (D-086).
+      LATTER_CHECK(pw >= min_7mm && ph >= min_7mm);
     } else if (!is_dense_grid_or_gutter_widget(r.widget_id)) {
       if (pw < min_7mm || ph < min_7mm) {
         std::fprintf(stderr, "[HOST TEST FAIL] %s widget %u padded=%dx%d < 7.0mm (%dpx)\n",
@@ -605,7 +604,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  static_assert(LATTER_CORE_REV == 2026112402L, "LATTER_CORE_REV must match 2026112402L");
+  static_assert(LATTER_CORE_REV == 2026112403L, "LATTER_CORE_REV must match 2026112403L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);

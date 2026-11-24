@@ -22,6 +22,8 @@ namespace WidgetId {
 
   // Universal navigation & list/grid primitives
   static constexpr uint16_t BACK_BUTTON        = 10;
+  static constexpr uint16_t CHEVRON_LEFT       = 13;
+  static constexpr uint16_t CHEVRON_RIGHT      = 14;
   static constexpr uint16_t CHEVRON_UP         = 15;
   static constexpr uint16_t CHEVRON_DOWN       = 16;
   static constexpr uint16_t MODE_BAR_LEFT      = 17;
@@ -144,7 +146,6 @@ namespace WidgetId {
   static constexpr uint16_t VACUUM_NEXT_BTN     = 677;
 
   // Tools, Time & Home Hub Comms (Page 8 / Page 9 / Page 10)
-  static constexpr uint16_t TOOLS_CARD_BASE     = 700;  // 700..705 (param = subpage)
   static constexpr uint16_t TIMER_TAB_BASE      = 710;  // 710..712 (param = slot 0..2)
   static constexpr uint16_t TIMER_PRESET_BASE   = 715;  // 715..718 (param = minutes/seconds)
   static constexpr uint16_t TIMER_PRIMARY_BTN   = 720;
@@ -178,7 +179,6 @@ namespace WidgetId {
   static constexpr uint16_t CAM_ORIENT_BTN      = 826;
   static constexpr uint16_t CAM_UNLOCK_BTN      = 828;
   static constexpr uint16_t CAM_REPLY_BASE      = 830;  // 830..833 (param = reply idx)
-  static constexpr uint16_t PINNED_CARD_BASE    = 840;  // 840..845 (param = global pinned item idx)
 
   // Dedicated Calendar App (Page 12)
   static constexpr uint16_t CAL_WEEK_DAY_BASE    = 850;  // 850..856 (param = day offset 0..6)
@@ -244,6 +244,10 @@ namespace WidgetId {
   static constexpr uint16_t GAME_MODE_AI               = 1016;
   static constexpr uint16_t GAME_MODE_2P               = 1017;
   static constexpr uint16_t GAME_COL_BASE              = 1020; // 1020..1026 (param = col 0..6)
+
+  // Unified Variable-Span Tile-Grid Engine (Pinned + Tools Launcher — D-086)
+  static constexpr uint16_t PINNED_CARD_BASE           = 1040; // 1040..1055 (16 slots; param = global pinned item idx)
+  static constexpr uint16_t TOOLS_CARD_BASE            = 1060; // 1060..1075 (16 slots; param = tool subpage)
 }  // namespace WidgetId
 
 }  // namespace latter_ui

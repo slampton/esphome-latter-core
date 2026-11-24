@@ -914,6 +914,23 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     }
     return true;
   };
+  auto step_h_pager = [&](int cur, int lo, int hi, bool wrap, int page_id, bool &changed) {
+    commit_swipe();
+    return step_pager_index(cur, lo, hi, h_dir, wrap, GestureAxisLock::Horizontal, page_id, now_ms, changed);
+  };
+  auto step_anim_h_pager = [&](int cur, int lo, int hi, int page_id) {
+    bool changed = false;
+    const int target_pg = step_h_pager(cur, lo, hi, false, page_id, changed);
+    if (changed) {
+      rs.nav.menu_scroll_active = true;
+      rs.nav.menu_scroll_dir = (target_pg > cur) ? 1 : -1;
+      rs.nav.menu_scroll_target_page = target_pg;
+      rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+    } else {
+      rt_.schedule_disp();
+    }
+    return true;
+  };
 
   // 0. Quick Actions Overlay Takeover: bottom-edge swipe-up dismisses; block all underlying swipes
   if (rs.nav.quick_actions_open) {
@@ -1159,13 +1176,12 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return true;
   }
 
-  // 9. Page 8: Tools Launcher Grid Vertical Paging
+  // 9. Page 8: Tools Launcher Tile-Grid Horizontal Paging (D-086)
   if (rs.nav.gui_page == PageId::TOOLS) {
-    if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active &&
-        v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+    if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active && h_dir != 0) {
       const int total_pages = std::max(1, active_tools_launcher_page_count(device_prefs()));
       rs.nav.tools_menu_page = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
-      return step_anim_v_pager(rs.nav.tools_menu_page, 0, total_pages - 1, PageId::TOOLS);
+      return step_anim_h_pager(rs.nav.tools_menu_page, 0, total_pages - 1, PageId::TOOLS);
     }
     return false;
   }
@@ -1307,12 +1323,12 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 12. Page 11: Pinned App (6-Button-Per-Page Vertical Paging)
+  // 12. Page 11: Pinned App Tile-Grid Horizontal Paging (D-086)
   if (rs.nav.gui_page == PageId::PINNED) {
-    if (!rs.nav.menu_scroll_active && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+    if (!rs.nav.menu_scroll_active && h_dir != 0) {
       const int total_pages = pinned_total_pages();
       rs.nav.pinned_menu_page = std::clamp(rs.nav.pinned_menu_page, 0, total_pages - 1);
-      return step_anim_v_pager(rs.nav.pinned_menu_page, 0, total_pages - 1, PageId::PINNED);
+      return step_anim_h_pager(rs.nav.pinned_menu_page, 0, total_pages - 1, PageId::PINNED);
     }
     return false;
   }

@@ -414,7 +414,8 @@ enum class ShortcutsField : size_t {
   DOCK_ITEMS = 5,  // dock_items (records)
   PINNED_TOTAL = 6,  // pinned_total (u16)
   PINNED_ITEMS = 7,  // pinned_items (records)
-  COUNT = 8
+  PINNED_PAGE_TITLES = 8,  // pinned_page_titles (records)
+  COUNT = 9
 };
 
 enum class PrefContractDomain : uint8_t {

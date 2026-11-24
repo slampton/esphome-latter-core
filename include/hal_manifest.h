@@ -13,9 +13,10 @@
 #include <string>
 
 #include "latter_traits.h"
+#include "state/state_tile_grid.h"
 
 #ifndef LATTER_CORE_REV
-#define LATTER_CORE_REV 2026112402L
+#define LATTER_CORE_REV 2026112403L
 #endif
 
 namespace latter_core {
@@ -77,6 +78,12 @@ inline bool firmware_rolled_back() { return false; }
 inline std::string build_hardware_manifest_json() {
   const int disp_w = LATTER_HAS_DISPLAY ? LATTER_SCREEN_W : 0;
   const int disp_h = LATTER_HAS_DISPLAY ? LATTER_SCREEN_H : 0;
+  const int grid_cols = LATTER_HAS_DISPLAY
+                            ? tile_grid_cols_for(disp_w, disp_h, LATTER_ROUND_DISPLAY != 0)
+                            : 0;
+  const int grid_rows = LATTER_HAS_DISPLAY
+                            ? tile_grid_rows_for(disp_w, disp_h, LATTER_ROUND_DISPLAY != 0)
+                            : 0;
   const char *shape = !LATTER_HAS_DISPLAY ? "none" : (LATTER_ROUND_DISPLAY ? "circle" : "square");
   const char *chip = detect_chip_name();
 #if defined(USE_ESP32) && !defined(CONFIG_SPIRAM)
@@ -123,6 +130,7 @@ inline std::string build_hardware_manifest_json() {
       "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
       "\"video\":{\"hw_jpeg\":%d,\"max_w\":%d,\"max_h\":%d,\"max_fps\":%d,\"grid_fps\":%d},"
       "\"slot_count\":%d,\"card_slot_count\":%d,"
+      "\"grid_cols\":%d,\"grid_rows\":%d,"
       "\"beacon\":%s,"
       "\"core_rev\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
       kManifestProtocolContractVersion, LATTER_BOARD_ID, static_cast<unsigned long>(device_boot_id()),
@@ -134,6 +142,7 @@ inline std::string build_hardware_manifest_json() {
       static_cast<int>(LATTER_PANEL_IPS), chip, psram_mb,
       video_hw_jpeg, video_max_w, video_max_h, video_max_fps, video_grid_fps,
       static_cast<int>(LATTER_SLOT_COUNT), static_cast<int>(LATTER_CARD_SLOT_COUNT),
+      grid_cols, grid_rows,
       beacon_buf,
       static_cast<long>(LATTER_CORE_REV), last_reset_reason(),
       static_cast<int>(crash_record_present()), static_cast<int>(firmware_rolled_back()));
