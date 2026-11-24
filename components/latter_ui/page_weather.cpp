@@ -334,23 +334,31 @@ int lunar_aa_half_span(int moon_r, int my) {
 void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
   const int moon_r = sh.r;
   const float my_sq_f = static_cast<float>(my * my);
-  const int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / (2 * std::max(1, moon_r)));
+  const int two_r = 2 * std::max(1, moon_r);
+  const int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / two_r);
+  const uint8_t *const tex_row = LUNAR_ALBEDO_139[ty_139];
+  const float r_outer = sh.r_f + 0.45f;
+  const float r_outer_sq = r_outer * r_outer;
+  // Hoist 138 / (2 * moon_r) to 16.16 fixed point so the inner pixel loop does zero integer divisions.
+  const uint32_t tx_step_fp =
+      (moon_r == 69) ? 0U : (((138U << 16) + static_cast<uint32_t>(two_r) - 1U) / static_cast<uint32_t>(two_r));
+  uint32_t tx_fp = (moon_r == 69) ? 0U : (static_cast<uint32_t>(moon_r - w_line) * tx_step_fp);
 
   for (int mx = -w_line; mx <= w_line; mx++) {
     const float r2 = static_cast<float>(mx * mx) + my_sq_f;
-    const float dist = std::sqrt(r2);
-    const float edge_t = ((sh.r_f + 0.45f) - dist) * (1.0f / 1.35f);
-    if (edge_t <= 0.0f) {
+    if (r2 >= r_outer_sq) {
       row[mx + w_line] = 0;
+      tx_fp += tx_step_fp;
       continue;
     }
 
     uint8_t tex_u8;
     if (moon_r == 69) {
-      tex_u8 = LUNAR_ALBEDO_139[ty_139][mx + 69];
+      tex_u8 = tex_row[mx + 69];
     } else {
-      const int tx_139 = (mx + moon_r) * 138 / (2 * std::max(1, moon_r));
-      tex_u8 = LUNAR_ALBEDO_139[ty_139][tx_139];
+      const int tx_139 = std::min<int>(138, static_cast<int>(tx_fp >> 16));
+      tex_u8 = tex_row[tx_139];
+      tx_fp += tx_step_fp;
     }
 
     const float mz = (r2 < sh.r_sq) ? std::sqrt(sh.r_sq - r2) : 0.0f;
@@ -1556,13 +1564,13 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
                            double moon_cycle, int cel_cx, int cel_cy, bool show_celestial) {
   uint16_t *fb = active_frame_buf16();
   auto &cache = sky_base_cache();
+  const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
   if (fb != nullptr && cache.px == nullptr &&
       sky_base_cache_allowed(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB)) {
-    const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
     if (LATTER_CHIP_P4 == 0 || bytes > 1536U * 1024U) {
       art_canvas_drop_all();
     }
-    cache.px = static_cast<uint16_t *>(ui_psram_malloc(bytes));
+    cache.px = static_cast<uint16_t *>(ui_psram_aligned_alloc(bytes));
     cache.valid = false;
   }
 
@@ -1584,6 +1592,9 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
       bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
       active_frame_buf16() = fb;
       set_clip_y_band(saved_y0, saved_y1);
+#if !LATTER_ROUND_DISPLAY
+      ui_psram_cache_writeback(cache.px, bytes);
+#endif
 
       cache.valid = true;
       cache.cond_hash = cond_hash;
@@ -1608,8 +1619,7 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
         }
       }
 #else
-      const size_t off = static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W);
-      std::memcpy(fb + off, cache.px + off, static_cast<size_t>(y1 - y0 + 1) * static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+      blit_psram_band_fast(fb, cache.px, y0, y1);
 #endif
     }
   } else {
@@ -1719,6 +1729,38 @@ bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond
   return has_weather_motion_sv(cond, is_night, now_ms);
 }
 
+bool has_fast_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms) {
+  if (cond.find("rain") != std::string_view::npos || cond.find("pouring") != std::string_view::npos ||
+      cond.find("drizzle") != std::string_view::npos || cond.find("snow") != std::string_view::npos ||
+      cond.find("sleet") != std::string_view::npos || cond.find("hail") != std::string_view::npos ||
+      cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos ||
+      cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos) {
+    return true;
+  }
+  const bool is_partly = (cond.find("partly") != std::string_view::npos ||
+                          cond.find("mostlysunny") != std::string_view::npos ||
+                          cond.find("partlysunny") != std::string_view::npos);
+  const bool is_clear_or_partly_night =
+      (is_night && (cond == "clear-night" || cond == "clearnight" ||
+                    cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
+  if (is_clear_or_partly_night) {
+    return has_weather_motion_sv(cond, is_night, now_ms);
+  }
+  return false;
+}
+
+bool evaluate_sky_has_fast_motion(std::string_view sim_opt, std::string_view raw_cond,
+                                  std::string_view sun_state, uint32_t now_ms) {
+  const bool sim_active = (!sim_opt.empty() && sim_opt != "Live (Home Assistant)");
+  const bool sun_ok = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
+  if (!sun_ok && !sim_active) return false;
+  std::string_view cond = raw_cond;
+  bool is_night = (sun_state == "below_horizon" || cond == "clear-night" || cond == "clearnight" ||
+                   (cond.find("night") != std::string_view::npos));
+  resolve_weather_sim_view(sim_opt, cond, is_night);
+  return has_fast_weather_motion_sv(cond, is_night, now_ms);
+}
+
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
                                  bool has_motion_cond) {
   if (!has_motion_cond || touch_gesture().active) return false;
@@ -1825,15 +1867,18 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
 
   auto &eng = particle_engine();
   float dt_s = 0.0f;
+  float phase_dt_s = 0.0f;
   if (!eng.inited || eng.cond_hash != cond_hash) {
     init_particle_engine(eng, cond_hash, rain_tier);
     eng.last_step_ms = now_ms;
   } else if (now_ms != eng.last_step_ms) {
     const uint32_t raw_dt = now_ms - eng.last_step_ms;
     eng.last_step_ms = now_ms;
-    dt_s = std::clamp(static_cast<float>(raw_dt) * 0.001f, 0.0f, 0.12f);
+    const float raw_s = static_cast<float>(raw_dt) * 0.001f;
+    dt_s = std::clamp(raw_s, 0.0f, 0.12f);
+    phase_dt_s = std::clamp(raw_s, 0.0f, 0.35f);
   }
-  eng.phase_s += dt_s;
+  eng.phase_s += phase_dt_s;
   if (eng.phase_s > 62831.853f) eng.phase_s -= 62831.853f;
 
   if (is_clear_or_partly_night) {

@@ -48,6 +48,7 @@ struct Cadence20msInputs {
   bool weather_step_pending = false;
   bool sky_enabled = false;
   bool sky_stepping = false;
+  bool sky_fast_motion = true;
   bool sim_just_changed = false;
   float motion_mag = 0.0f;
   uint32_t home_rotate_due_ms = 0U;
@@ -151,9 +152,14 @@ struct CadenceScreensaverActions {
 };
 
 static constexpr uint32_t kHomeActivityRotateMs = 8000U;
+static constexpr uint32_t kCalmSkyFrameGapMs = 240U;
 static constexpr int kMaxHomeActivity = 12;
 static constexpr int kUpcomingAlarmDeckMinutes = 360;
 static constexpr int kUpcomingAlarmPinMinutes = 120;
+
+inline constexpr int calm_home_sky_band_y1(int dock_y0) noexcept {
+  return (dock_y0 > 1) ? ((dock_y0 & ~1) - 1) : 0;
+}
 
 struct HomeActivityItem {
   int kind = 0;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar, 6 = Intercom/Doorbell
@@ -310,6 +316,7 @@ class FrameCadenceController {
   uint32_t last_cond_eval_ms_ = 0U;
   bool last_sky_enabled_ = false;
   bool cached_has_motion_ = false;
+  bool cached_has_fast_motion_ = false;
   uint8_t idle_anim_ticks_ = 0U;
 
   uint32_t prev_home_slot_ = 0U;
@@ -363,6 +370,8 @@ const HomeActivityItem *home_activity_rendered_items(int &out_count);
 bool &weather_sim_dirty();
 bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond,
                              std::string_view sun_state, uint32_t now_ms);
+bool evaluate_sky_has_fast_motion(std::string_view sim_opt, std::string_view raw_cond,
+                                  std::string_view sun_state, uint32_t now_ms);
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
                                  bool has_motion_cond);
 

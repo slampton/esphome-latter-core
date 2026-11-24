@@ -189,6 +189,39 @@ struct DisplayUpdateScheduler {
   }
 
   template <typename DispT>
+  static void request_weather_band_ptr(DispT *disp, uint32_t target_period_ms, int y0, int y1) {
+    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      constexpr uint32_t kMinPostIdleMs = 8U;
+#else
+      constexpr uint32_t kMinPostIdleMs = 12U;
+#endif
+      const uint32_t now_m = esphome::millis();
+      const bool inside_render = disp_render_in_flight(now_m);
+      const uint32_t elapsed_start = now_m - last_disp_update_ms();
+      uint32_t delay_ms = (elapsed_start < target_period_ms) ? (target_period_ms - elapsed_start) : 0U;
+      if (inside_render) {
+        delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs);
+      } else {
+        const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
+        if (elapsed_end < kMinPostIdleMs) {
+          delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
+        }
+      }
+      weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
+      latter_core::schedule_core_timeout(
+          kTimeoutWeatherStep, delay_ms, [disp, y0, y1]() {
+            weather_due_ms_ref() = 0U;
+            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
+            if (disp_render_in_flight(esphome::millis())) return;
+            mark_dirty_band(y0, y1);
+            disp->update();
+            fb_clear_after_update();
+          });
+    }
+  }
+
+  template <typename DispT>
   static void request_activity_rotate_ptr(DispT *disp, uint32_t delay_ms, int y0, int y1) {
     if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
       latter_core::schedule_core_timeout(
@@ -397,6 +430,17 @@ inline void schedule_weather_disp_update(DispT *disp, uint32_t target_period_ms)
 template <typename DispT>
 inline void schedule_weather_disp_update(DispT *const *disp_ptr, uint32_t target_period_ms) {
   if (disp_ptr != nullptr) DisplayUpdateScheduler::request_weather_ptr(*disp_ptr, target_period_ms);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void schedule_weather_band_disp_update(DispT *disp, uint32_t target_period_ms, int y0, int y1) {
+  DisplayUpdateScheduler::request_weather_band_ptr(disp, target_period_ms, y0, y1);
+}
+
+template <typename DispT>
+inline void schedule_weather_band_disp_update(DispT *const *disp_ptr, uint32_t target_period_ms, int y0, int y1) {
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_weather_band_ptr(*disp_ptr, target_period_ms, y0, y1);
 }
 
 template <typename DispT>

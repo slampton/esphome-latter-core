@@ -239,9 +239,20 @@ display:
       const uint32_t latest_input_ms = std::max(
           latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
       const bool motion_power_gui = rs.hw_usb_connected || rs.showcase.is_active(ctx.now_ms);
+      const bool on_home_main_gui =
+          (rs.nav.gui_page == latter_core::PageId::HOME &&
+           rs.nav.home_subpage == latter_ui::HomeSubpage::MAIN);
+      const bool w_has_motion =
+          weather_sky_active &&
+          latter_ui::evaluate_sky_has_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
+      const bool w_has_fast_motion =
+          w_has_motion &&
+          latter_ui::evaluate_sky_has_fast_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
       const bool weather_sky_stepping_hint =
           weather_sky_active && weather_ready_cad &&
-          latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, true);
+          latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion);
+      const bool weather_sky_full_hint =
+          weather_sky_stepping_hint && (w_has_fast_motion || !on_home_main_gui);
 
       const bool clock_sweep_hint =
           (rs.nav.gui_page == latter_core::PageId::CLOCK) &&
@@ -284,7 +295,7 @@ display:
       const bool anim_or_scroll =
           ((takeover_sig != 0U) && !static_screensaver_only && !quick_actions_only) ||
           (!quick_actions_only &&
-           (weather_sky_stepping_hint ||
+           (weather_sky_full_hint ||
             clock_sweep_hint ||
             time_sw_hint ||
             lyrics_anim_now ||
@@ -408,9 +419,6 @@ display:
         latter_ui::schedule_anim_band_disp_update(
             &id(disp1), latter_ui::dock_dirty_band_y0(), latter_ui::SCREEN_H - 1);
       } else if (weather_sky_active && !va_visible && !alert_ringing) {
-        const bool w_has_motion = latter_ui::evaluate_sky_has_motion(
-            ctx.weather_sim_opt, latter_core::weather_state().condition,
-            latter_core::weather_state().sun_state, ctx.now_ms);
         if (act_sliding_now) {
           latter_ui::schedule_anim_disp_update(&id(disp1));
         } else if (latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion)) {
@@ -418,7 +426,13 @@ display:
           const bool mww_busy = !spk_busy && !LATTER_CHIP_P4 && rs.audio.mww_running();
           const uint32_t target_gap_ms = latter_ui::min_ambient_frame_gap_ms(spk_busy, false, false, mww_busy);
           latter_ui::record_ambient_frame_ms(ctx.now_ms);
-          latter_ui::schedule_weather_disp_update(&id(disp1), target_gap_ms);
+          if (on_home_main_gui && !w_has_fast_motion) {
+            latter_ui::schedule_weather_band_disp_update(
+                &id(disp1), std::max<uint32_t>(target_gap_ms, latter_ui::kCalmSkyFrameGapMs),
+                0, latter_ui::calm_home_sky_band_y1(latter_ui::dock_dirty_band_y0()));
+          } else {
+            latter_ui::schedule_weather_disp_update(&id(disp1), target_gap_ms);
+          }
         }
       } else if (act_sliding_now && has_act_band) {
         latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);

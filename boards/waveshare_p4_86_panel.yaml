@@ -36,7 +36,8 @@ substitutions:
   font_micro_size: "20"
   font_games_size: "56"
   art_resize: "720x720"
-  sendspin_art_resize: "720x720"
+  # 4x fewer pixels decoded on track changes (exact 2x upscale in draw_album_art), avoiding audio/touch stalls
+  sendspin_art_resize: "360x360"
   # Mains-powered stationary panel: reboot after 15 min without an HA API client to recover stalled Wi-Fi/TCP.
   api_reboot_timeout: "15min"
   sendspin_buffer_size: "1048576"

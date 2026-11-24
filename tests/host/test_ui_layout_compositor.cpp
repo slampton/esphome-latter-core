@@ -767,6 +767,219 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
   }
 }
 
+void test_p4_dma_blit_calm_sky_and_dock_clip() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Calm vs fast weather motion classification
+  for (const char *calm : {"sunny", "clear-day", "clear", "partlycloudy", "cloudy", "overcast", "fog", "mist", "haze"}) {
+    LATTER_CHECK(evaluate_sky_has_motion("Live (Home Assistant)", calm, "above_horizon", 10000U));
+    LATTER_CHECK(!evaluate_sky_has_fast_motion("Live (Home Assistant)", calm, "above_horizon", 10000U));
+  }
+  for (const char *calm_night : {"cloudy", "overcast", "fog", "mist", "haze"}) {
+    LATTER_CHECK(evaluate_sky_has_motion("Live (Home Assistant)", calm_night, "below_horizon", 10000U));
+    LATTER_CHECK(!evaluate_sky_has_fast_motion("Live (Home Assistant)", calm_night, "below_horizon", 10000U));
+  }
+  for (const char *fast : {"rainy", "pouring", "drizzle", "snowy", "sleet", "hail", "lightning", "thunderstorm", "windy"}) {
+    LATTER_CHECK(evaluate_sky_has_motion("Live (Home Assistant)", fast, "above_horizon", 10000U));
+    LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", fast, "above_horizon", 10000U));
+  }
+  LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", 10000U));
+  LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", "clear-night", "below_horizon", 10000U) ==
+               evaluate_sky_has_motion("Live (Home Assistant)", "clear-night", "below_horizon", 10000U));
+
+  // 2. Calm-sky cadence (240 ms) + Home dock band clipping vs fast full-screen weather
+  const int dock_y0 = dock_dirty_band_y0();
+  const int calm_y1 = calm_home_sky_band_y1(dock_y0);
+  LATTER_CHECK(calm_y1 > 0 && calm_y1 < dock_y0 && (calm_y1 & 1) == 1);
+  // Calm haze drift bands (3 bands max for fog: center_y <= scale_y(254) + 5, hh = scale_y(8))
+  // stay strictly inside [0, calm_y1] across all compiled geometries.
+  const int max_calm_haze_y = scale_y(118 + 2 * 68) + scale_y(8) + 5;
+  LATTER_CHECK(max_calm_haze_y <= calm_y1);
+
+  FrameCadenceController ctrl{};
+  ctrl.reset();
+  Cadence20msInputs in{};
+  in.panel_on = true;
+  in.display_power_state = 0;
+  in.gui_page = 1;
+  in.home_subpage = 0;
+  in.is_chip_p4 = true;
+  in.dock_y0 = dock_y0;
+  in.dock_y1 = SCREEN_H - 1;
+  in.sky_enabled = true;
+  in.sky_stepping = true;
+  in.sky_fast_motion = false;
+  in.last_ambient_ms = 1000U;
+  in.last_disp_end_ms = 1020U;
+
+  // Before kCalmSkyFrameGapMs (240 ms): calm sky stays warm without triggering an early frame.
+  in.now_ms = 1100U;
+  const auto calm_early = ctrl.evaluate_20ms(in);
+  LATTER_CHECK(calm_early.anim_driving_disp);
+  LATTER_CHECK(!calm_early.schedule_anim_band && !calm_early.schedule_anim_full);
+
+  // At >= kCalmSkyFrameGapMs: calm Home sky schedules upper-band [0, calm_y1] strictly above the Dock.
+  in.now_ms = 1000U + kCalmSkyFrameGapMs;
+  const auto calm_due = ctrl.evaluate_20ms(in);
+  LATTER_CHECK(calm_due.record_ambient_ms);
+  LATTER_CHECK(calm_due.schedule_anim_band && !calm_due.schedule_anim_full);
+  LATTER_CHECK(calm_due.band_y0 == 0 && calm_due.band_y1 == calm_y1);
+
+  // Weather app page (gui_page == 5) with calm sky still renders full frame (no Home Dock).
+  in.gui_page = 5;
+  const auto wx_app_due = ctrl.evaluate_20ms(in);
+  LATTER_CHECK(wx_app_due.schedule_anim_full && !wx_app_due.schedule_anim_band);
+
+  // Fast weather on Home (rain/snow/storm/wind/night-stars) renders full frame at standard ~60 ms cadence.
+  in.gui_page = 1;
+  in.sky_fast_motion = true;
+  in.now_ms = 1080U;
+  const auto fast_due = ctrl.evaluate_20ms(in);
+  LATTER_CHECK(fast_due.schedule_anim_full && !fast_due.schedule_anim_band);
+
+  // 3. Band-clipped Home render skips Dock pixel drawing while keeping Dock hit targets live.
+  {
+    HostSurfaceFixture fx{};
+    constexpr uint16_t kSentinel = 0xA55AU;
+    fx.fill(kSentinel);
+    reset_runtime_state();
+    auto &rs = runtime_state();
+    rs.nav.gui_page = PageId::HOME;
+    rs.nav.home_subpage = HomeSubpage::MAIN;
+    auto &ws = weather_state();
+    ws.temperature = 68.0f;
+    ws.condition = "sunny";
+    ws.sun_state = "above_horizon";
+    fx.ctx.home_weather_bg = true;
+    fx.ctx.weather_sim_opt = "Live (Home Assistant)";
+
+    frame_hits().clear();
+    set_clip_y_band(0, calm_y1);
+    render_home_page(fx.surf, fx.ctx);
+    reset_clip_y_band();
+
+    // Every pixel in the untouched Dock band [dock_y0, SCREEN_H - 1] remains sentinel-intact.
+    for (int y = dock_y0; y < SCREEN_H; ++y) {
+      const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+      for (int x = 0; x < SCREEN_W; ++x) {
+        LATTER_CHECK(fx.pixels[row + static_cast<size_t>(x)] == kSentinel);
+      }
+    }
+    // Dock slot hit regions were still registered despite skipping Dock pixel rendering!
+    bool found_dock_slot = false;
+    for (uint8_t i = 0; i < frame_hits().count; ++i) {
+      if (frame_hits().regions[i].widget_id == WidgetId::DOCK_SLOT_BASE) {
+        found_dock_slot = true;
+        break;
+      }
+    }
+    LATTER_CHECK(found_dock_slot);
+  }
+
+  // 4. blit_psram_band_fast pixel-exact band copy with untouched surrounding rows
+  {
+    const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
+    const size_t bytes = px_count * sizeof(uint16_t);
+    auto *src = static_cast<uint16_t *>(ui_psram_aligned_alloc(bytes));
+    auto *dst = static_cast<uint16_t *>(ui_psram_aligned_calloc(px_count, sizeof(uint16_t)));
+    LATTER_CHECK(src != nullptr && dst != nullptr);
+    for (size_t i = 0; i < px_count; ++i) {
+      src[i] = static_cast<uint16_t>((i * 257U + 13U) & 0xFFFFU);
+      dst[i] = 0x5AA5U;
+    }
+    ui_psram_cache_writeback(src, bytes);
+    const int y_lo = 11;
+    const int y_hi = SCREEN_H - 19;
+    blit_psram_band_fast(dst, src, y_lo, y_hi);
+    for (int y = 0; y < SCREEN_H; ++y) {
+      const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+      const bool in_band = (y >= y_lo && y <= y_hi);
+      for (int x = 0; x < SCREEN_W; ++x) {
+        const size_t idx = row + static_cast<size_t>(x);
+        LATTER_CHECK(dst[idx] == (in_band ? src[idx] : 0x5AA5U));
+      }
+    }
+    ui_psram_free(src);
+    ui_psram_free(dst);
+  }
+
+  // 5. Round/rect frame_base() memset fast path + half-scale album art edge widening regression test
+  {
+    HostSurfaceFixture fx{};
+    constexpr uint16_t kSentinel = 0xA55AU;
+    fx.fill(kSentinel);
+    dirty_band().mark_full();
+    dirty_band().begin_frame(4, 0, 0U, true);
+    frame_base_begin();
+    LATTER_CHECK(frame_base(fx.surf, UiColor{0, 0, 0}));
+    // Center pixel and inner visible chord are cleared to pure black across all geometries.
+    LATTER_CHECK(fx.pixels[static_cast<size_t>(SCREEN_CY) * SCREEN_W + static_cast<size_t>(SCREEN_CX)] == 0U);
+#if LATTER_ROUND_DISPLAY
+    // Hidden outer corner outside circular bezel is intentionally skipped on round panels.
+    LATTER_CHECK(fx.pixels[0] == kSentinel);
+#else
+    LATTER_CHECK(fx.pixels[0] == 0U);
+#endif
+
+    // Half-scale album art (exact 2x upscale): verify upper-half round chord left/right edges
+    // never show stale pixels when repeated source rows widen across consecutive scanlines.
+    const int half_w = std::max(16, SCREEN_W / 2);
+    const int half_h = std::max(16, SCREEN_H / 2);
+    const uint16_t src_fill = encode_hw_rgb565(UiColor{200, 120, 64});
+    std::vector<uint16_t> half_art(static_cast<size_t>(half_w) * static_cast<size_t>(half_h), src_fill);
+    fx.fill(0U);
+    dirty_band().mark_full();
+    dirty_band().begin_frame(2, 0, 0U, true);
+    frame_base_begin();
+    art_canvas_drop_all();
+    LATTER_CHECK(render_album_art_canvas_view(
+        fx.surf, ArtImageView{half_art.data(), half_w, half_h}, SCREEN_CX,
+        /*is_standard=*/false, /*is_letterbox=*/false, /*apply_scrim=*/false,
+        /*show_metadata=*/false, /*dim_level=*/0));
+    // Check both edges of upper-half scanlines where a circular chord widens between consecutive rows.
+    for (int y = SCREEN_H / 8; y < SCREEN_H / 2; ++y) {
+      const int hw = LATTER_ROUND_DISPLAY ? circle_half_span(y, 0) : (SCREEN_W / 2 - 1);
+      const int lx = std::max(0, SCREEN_CX - hw);
+      const int rx = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+      const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+      LATTER_CHECK(fx.pixels[row + static_cast<size_t>(lx)] != 0U);
+      LATTER_CHECK(fx.pixels[row + static_cast<size_t>(rx)] != 0U);
+    }
+    art_canvas_drop_all();
+  }
+
+  // 6. Weather Moon subpage renders shaded lunar disc cleanly without integer division or limb sqrt regressions
+  {
+    HostSurfaceFixture fx{};
+    fx.fill(0U);
+    reset_runtime_state();
+    auto &rs = runtime_state();
+    rs.nav.gui_page = PageId::WEATHER;
+    rs.nav.sky_weather_subpage = 3;
+    auto &ws = weather_state();
+    ws.temperature = 62.0f;
+    ws.condition = "clear-night";
+    ws.sun_state = "below_horizon";
+    ws.moon_phase = "full_moon";
+    fx.ctx.weather_app_bg = false;
+    dirty_band().mark_full();
+    dirty_band().begin_frame(5, 3, 0U, true);
+    frame_base_begin();
+    frame_base(fx.surf, UiColor{0, 0, 0});
+    render_weather_page(fx.surf, fx.ctx);
+    // Count illuminated lunar disc pixels in the upper-middle region where the moon disc sits.
+    int lit_px = 0;
+    for (int y = SCREEN_H / 8; y < (SCREEN_H * 3) / 4; ++y) {
+      const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+      for (int x = SCREEN_CX - SCREEN_W / 4; x <= SCREEN_CX + SCREEN_W / 4; ++x) {
+        if (fx.pixels[row + static_cast<size_t>(x)] != 0U) ++lit_px;
+      }
+    }
+    LATTER_CHECK(lit_px > 4000);
+  }
+}
+
 }  // namespace
 
 void run_ui_layout_compositor_tests() {
@@ -777,6 +990,7 @@ void run_ui_layout_compositor_tests() {
   test_gui_standardization_d070();
   test_photo_frame_screensaver_day_night_sky_d067();
   test_landscape_geoms_psram_budget_and_utf8_probing();
+  test_p4_dma_blit_calm_sky_and_dock_clip();
 }
 
 }  // namespace latter_test

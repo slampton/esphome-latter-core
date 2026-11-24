@@ -1379,93 +1379,97 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
 
     const float anim_start = home_dock_anim().step_window(start_idx, now_ms);
-    const int dock_bounce_x = edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Horizontal, now_ms, LATTER_PANEL_PPI);
-    const int stride = get_dock_slot_stride(win_xs, vis_count);
-    const int left_cx = win_xs[0], right_cx = win_xs[vis_count - 1], clip_pad = stride / 2 + dock_r, icon_r = ui::dock_icon_r(dock_r);
+    // Keep Dock hit-region registration above unconditional (DirtyBandTracker clears frame_hits()
+    // every frame), and skip the Dock pixel-draw pass when rendering an upper-band clip above it.
+    if (clip_y1() >= dock_dirty_band_y0() && clip_y0() < SCREEN_H) {
+      const int dock_bounce_x = edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Horizontal, now_ms, LATTER_PANEL_PPI);
+      const int stride = get_dock_slot_stride(win_xs, vis_count);
+      const int left_cx = win_xs[0], right_cx = win_xs[vis_count - 1], clip_pad = stride / 2 + dock_r, icon_r = ui::dock_icon_r(dock_r);
 
-    for (int g_idx = 0; g_idx < dock_count; g_idx++) {
-      const float rel_slot = static_cast<float>(g_idx) - anim_start;
-      if (rel_slot < -0.85f || rel_slot > static_cast<float>(vis_count - 1) + 0.85f) continue;
-      const int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride))) + dock_bounce_x;
-      if (bx < left_cx - clip_pad || bx > right_cx + clip_pad) continue;
+      for (int g_idx = 0; g_idx < dock_count; g_idx++) {
+        const float rel_slot = static_cast<float>(g_idx) - anim_start;
+        if (rel_slot < -0.85f || rel_slot > static_cast<float>(vis_count - 1) + 0.85f) continue;
+        const int bx = left_cx + static_cast<int>(std::roundf(rel_slot * static_cast<float>(stride))) + dock_bounce_x;
+        if (bx < left_cx - clip_pad || bx > right_cx + clip_pad) continue;
 
-      float alpha = 1.0f;
-      if (rel_slot < 0.0f) alpha = std::max(0.15f, 1.0f + rel_slot * 1.15f);
-      else if (rel_slot > static_cast<float>(vis_count - 1)) alpha = std::max(0.15f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.15f);
+        float alpha = 1.0f;
+        if (rel_slot < 0.0f) alpha = std::max(0.15f, 1.0f + rel_slot * 1.15f);
+        else if (rel_slot > static_cast<float>(vis_count - 1)) alpha = std::max(0.15f, 1.0f - (rel_slot - static_cast<float>(vis_count - 1)) * 1.15f);
 
-      const ShortcutItem &item = dock_items[g_idx];
-      const bool is_entity = (item.kind == ShortcutKind::ENTITY);
-      const bool item_active = is_entity && (item.state == 1);
-      const bool item_off = is_entity && (item.state == 0);
-      const bool item_unavail = is_entity && (item.state == 2);
-      const bool is_inverted = (item.badge_style == ShortcutBadgeStyle::INVERTED);
-      const bool has_accent = (item.accent != ShortcutAccent::DEFAULT);
-      const UiColor accent_col = ui::resolve_shortcut_accent_color(item.accent, ctx, ctx.theme_primary);
-      const int d = 2 * dock_r + 1;
+        const ShortcutItem &item = dock_items[g_idx];
+        const bool is_entity = (item.kind == ShortcutKind::ENTITY);
+        const bool item_active = is_entity && (item.state == 1);
+        const bool item_off = is_entity && (item.state == 0);
+        const bool item_unavail = is_entity && (item.state == 2);
+        const bool is_inverted = (item.badge_style == ShortcutBadgeStyle::INVERTED);
+        const bool has_accent = (item.accent != ShortcutAccent::DEFAULT);
+        const UiColor accent_col = ui::resolve_shortcut_accent_color(item.accent, ctx, ctx.theme_primary);
+        const int d = 2 * dock_r + 1;
 
-      UiColor slot_fg_c = ctx.col_white;
-      UiColor cut_c = kChromeGlassTint;
-      bool icon_shadow = (alpha > 0.55f);
+        UiColor slot_fg_c = ctx.col_white;
+        UiColor cut_c = kChromeGlassTint;
+        bool icon_shadow = (alpha > 0.55f);
 
-      if (is_inverted) {
-        const UiColor base_orb = item_unavail ? ctx.col_gray : (has_accent ? accent_col : ctx.col_white);
-        const int rim_top = static_cast<int>(std::roundf(88.0f * alpha));
-        const int rim_bot = static_cast<int>(std::roundf(24.0f * alpha));
-        if (alpha >= 0.99f) {
-          fill_round_rect_aa(it, bx - dock_r, dock_y - dock_r, d, d,
-                             static_cast<float>(dock_r) + 0.5f, base_orb, base_orb, 0);
+        if (is_inverted) {
+          const UiColor base_orb = item_unavail ? ctx.col_gray : (has_accent ? accent_col : ctx.col_white);
+          const int rim_top = static_cast<int>(std::roundf(88.0f * alpha));
+          const int rim_bot = static_cast<int>(std::roundf(24.0f * alpha));
+          if (alpha >= 0.99f) {
+            fill_round_rect_aa(it, bx - dock_r, dock_y - dock_r, d, d,
+                               static_cast<float>(dock_r) + 0.5f, base_orb, base_orb, 0);
+          } else {
+            const int orb_a = std::clamp(static_cast<int>(std::roundf(256.0f * alpha)), 0, 256);
+            fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d,
+                                  static_cast<float>(dock_r) + 0.5f, base_orb, orb_a, orb_a);
+          }
+          if (rim_top > 0 || rim_bot > 0) {
+            fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d,
+                                  static_cast<float>(dock_r) + 0.5f, kChromeGlassSheen, rim_top, rim_bot, 1);
+          }
+          slot_fg_c = (alpha >= 0.99f) ? kChromeShadow : lerp_color(base_orb, kChromeShadow, alpha);
+          cut_c = base_orb;
+          icon_shadow = false;
         } else {
-          const int orb_a = std::clamp(static_cast<int>(std::roundf(256.0f * alpha)), 0, 256);
-          fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d,
-                                static_cast<float>(dock_r) + 0.5f, base_orb, orb_a, orb_a);
-        }
-        if (rim_top > 0 || rim_bot > 0) {
-          fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d,
-                                static_cast<float>(dock_r) + 0.5f, kChromeGlassSheen, rim_top, rim_bot, 1);
-        }
-        slot_fg_c = (alpha >= 0.99f) ? kChromeShadow : lerp_color(base_orb, kChromeShadow, alpha);
-        cut_c = base_orb;
-        icon_shadow = false;
-      } else {
-        const bool show_tint = !item_unavail && (item_active || (has_accent && !item_off));
-        const UiColor raw_bg = item_active ? ui::chrome_card_bg_on() : kChromeGlassTint;
-        const UiColor raw_brd = show_tint ? accent_col : kChromeCardBorder;
-        GlassBackdrop dock_bd{};
-        UiColor eff_tint{}, rim_col{};
-        int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
-        resolve_styled_glass(bx - dock_r, dock_y - dock_r, d, d, raw_bg, raw_brd,
-                             GlassVariant::Clear, kChromeGlassSheen, -1, false,
-                             dock_bd, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
-        const int a_top = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
-        const int a_bot = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
-        const int rim_boost_top = item_active ? 48 : (show_tint ? 32 : 0);
-        const int rim_boost_bot = item_active ? 36 : (show_tint ? 24 : 0);
-        const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_top + rim_boost_top)) * alpha));
-        const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_bot + rim_boost_bot)) * alpha));
-        fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f, rim_col, sheen_top, sheen_bot, 1);
-        fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
+          const bool show_tint = !item_unavail && (item_active || (has_accent && !item_off));
+          const UiColor raw_bg = item_active ? ui::chrome_card_bg_on() : kChromeGlassTint;
+          const UiColor raw_brd = show_tint ? accent_col : kChromeCardBorder;
+          GlassBackdrop dock_bd{};
+          UiColor eff_tint{}, rim_col{};
+          int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
+          resolve_styled_glass(bx - dock_r, dock_y - dock_r, d, d, raw_bg, raw_brd,
+                               GlassVariant::Clear, kChromeGlassSheen, -1, false,
+                               dock_bd, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
+          const int a_top = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
+          const int a_bot = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));
+          const int rim_boost_top = item_active ? 48 : (show_tint ? 32 : 0);
+          const int rim_boost_bot = item_active ? 36 : (show_tint ? 24 : 0);
+          const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_top + rim_boost_top)) * alpha));
+          const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_bot + rim_boost_bot)) * alpha));
+          fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f, rim_col, sheen_top, sheen_bot, 1);
+          fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
 
-        const UiColor base_fg = item_unavail
-                                    ? ctx.col_gray
-                                    : (item_off
-                                           ? (has_accent ? ctx.col_slate : ctx.col_white)
-                                           : (has_accent ? accent_col : ctx.col_white));
-        slot_fg_c = scale_color(base_fg, alpha);
-        cut_c = eff_tint;
-      }
+          const UiColor base_fg = item_unavail
+                                      ? ctx.col_gray
+                                      : (item_off
+                                             ? (has_accent ? ctx.col_slate : ctx.col_white)
+                                             : (has_accent ? accent_col : ctx.col_white));
+          slot_fg_c = scale_color(base_fg, alpha);
+          cut_c = eff_tint;
+        }
 
-      if (item.kind == ShortcutKind::ROUTE && item.icon.empty()) {
-        ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, cut_c, icon_shadow);
-      } else {
-        char state_slug_buf[96];
-        const std::string_view eff_slug =
-            is_entity ? resolve_state_mdi_slug(item.icon, item.state, state_slug_buf, sizeof(state_slug_buf))
-                      : std::string_view(item.icon);
-        render_mdi_icon(it, eff_slug, bx, dock_y, std::max(16, 2 * icon_r), slot_fg_c, icon_shadow,
-                        (item.kind == ShortcutKind::ROUTE) ? "mdi:apps" : "mdi:gesture-tap-button");
+        if (item.kind == ShortcutKind::ROUTE && item.icon.empty()) {
+          ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, cut_c, icon_shadow);
+        } else {
+          char state_slug_buf[96];
+          const std::string_view eff_slug =
+              is_entity ? resolve_state_mdi_slug(item.icon, item.state, state_slug_buf, sizeof(state_slug_buf))
+                        : std::string_view(item.icon);
+          render_mdi_icon(it, eff_slug, bx, dock_y, std::max(16, 2 * icon_r), slot_fg_c, icon_shadow,
+                          (item.kind == ShortcutKind::ROUTE) ? "mdi:apps" : "mdi:gesture-tap-button");
+        }
       }
+      render_viewport_scrollbar(it, cx, ly.dock_pips_y, dock_count, anim_start, ctx.theme_primary, false);
     }
-    render_viewport_scrollbar(it, cx, ly.dock_pips_y, dock_count, anim_start, ctx.theme_primary, false);
   }
 
 #if LATTER_HAS_BATTERY

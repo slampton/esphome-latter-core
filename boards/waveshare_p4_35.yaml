@@ -26,7 +26,8 @@ substitutions:
   font_micro_size: "14"
   font_games_size: "38"
   art_resize: "320x480"
-  sendspin_art_resize: "480x480"
+  # 4x fewer pixels decoded on track changes (exact 2x height upscale in draw_album_art)
+  sendspin_art_resize: "240x240"
   # Portable battery device: disable Native API watchdog reboot so off-site / HA-restart outages never reboot-loop.
   api_reboot_timeout: "0s"
   sendspin_buffer_size: "1048576"

@@ -26,7 +26,11 @@ namespace latter_ui {
 // ------------------------------------------------------------------------------
 void *ui_psram_malloc(size_t bytes) noexcept;
 void *ui_psram_calloc(size_t count, size_t elem_size) noexcept;
+void *ui_psram_aligned_alloc(size_t bytes) noexcept;
+void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept;
+void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept;
 void ui_psram_free(void *ptr) noexcept;
+void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept;
 
 using PostFrameRequestFn = void (*)(void *owner, void (*fn)());
 void set_fb_post_frame_hook(PostFrameRequestFn hook) noexcept;

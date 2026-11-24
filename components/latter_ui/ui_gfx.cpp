@@ -38,6 +38,19 @@
 namespace latter_ui {
 using namespace latter_core;
 
+namespace {
+#if LATTER_FB_DMA_CLEAR
+#if defined(CONFIG_CACHE_L2_CACHE_LINE_128B)
+constexpr size_t kPsramCacheLineAlign = 128U;
+#else
+constexpr size_t kPsramCacheLineAlign = 64U;
+#endif
+inline constexpr size_t align_up_psram(size_t bytes) noexcept {
+  return (bytes + (kPsramCacheLineAlign - 1U)) & ~(kPsramCacheLineAlign - 1U);
+}
+#endif
+}  // namespace
+
 // 1. Retryable PSRAM / Host Heap Helpers
 void *ui_psram_malloc(size_t bytes) noexcept {
   if (bytes == 0U) return nullptr;
@@ -54,6 +67,41 @@ void *ui_psram_calloc(size_t count, size_t elem_size) noexcept {
   return heap_caps_calloc(count, elem_size, MALLOC_CAP_SPIRAM);
 #else
   return std::calloc(count, elem_size);
+#endif
+}
+
+void *ui_psram_aligned_alloc(size_t bytes) noexcept {
+  if (bytes == 0U) return nullptr;
+#if LATTER_FB_DMA_CLEAR
+  const size_t aligned = align_up_psram(bytes);
+  return heap_caps_aligned_alloc(kPsramCacheLineAlign, aligned, MALLOC_CAP_SPIRAM);
+#else
+  return ui_psram_malloc(bytes);
+#endif
+}
+
+void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept {
+  if (count == 0U || elem_size == 0U) return nullptr;
+#if LATTER_FB_DMA_CLEAR
+  if (count > (SIZE_MAX / elem_size)) return nullptr;
+  const size_t aligned = align_up_psram(count * elem_size);
+  void *p = heap_caps_aligned_alloc(kPsramCacheLineAlign, aligned, MALLOC_CAP_SPIRAM);
+  if (p != nullptr) std::memset(p, 0, aligned);
+  return p;
+#else
+  return ui_psram_calloc(count, elem_size);
+#endif
+}
+
+void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept {
+#if LATTER_FB_DMA_CLEAR
+  if (ptr == nullptr || bytes == 0U) return;
+  if ((reinterpret_cast<uintptr_t>(ptr) & (kPsramCacheLineAlign - 1U)) != 0U) return;
+  const size_t aligned = align_up_psram(bytes);
+  (void)esp_cache_msync(const_cast<void *>(ptr), aligned, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+#else
+  (void)ptr;
+  (void)bytes;
 #endif
 }
 
@@ -357,6 +405,154 @@ void fb_clear_frame_end() {
   if (st.init_tried && !st.ok) return;
   st.pending_start = true;
 #endif
+}
+
+#if LATTER_FB_DMA_CLEAR
+namespace {
+
+struct PsramBandBlitState {
+  bool init_tried = false;
+  bool ok = false;
+  bool verified = false;
+  async_memcpy_handle_t mcp = nullptr;
+};
+
+PsramBandBlitState &psram_band_blit_state() {
+  static PsramBandBlitState st{};
+  return st;
+}
+
+std::atomic<int> g_psram_blit_pending{0};
+
+bool IRAM_ATTR psram_blit_chunk_done(async_memcpy_handle_t, async_memcpy_event_t *, void *) {
+  g_psram_blit_pending.fetch_sub(1, std::memory_order_acq_rel);
+  return false;
+}
+
+bool psram_band_blit_init() noexcept {
+  auto &st = psram_band_blit_state();
+  if (st.init_tried) return st.ok;
+  st.init_tried = true;
+  async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
+  cfg.backlog = kFbClearChunks + 2U;
+  const esp_err_t err = esp_async_memcpy_install_gdma_axi(&cfg, &st.mcp);
+  st.ok = (err == ESP_OK && st.mcp != nullptr);
+  if (!st.ok) {
+    ESP_LOGW("disp_fb", "PSRAM AXI-GDMA band blit unavailable (err=%d); using CPU memcpy",
+             static_cast<int>(err));
+  }
+  return st.ok;
+}
+
+}  // namespace
+#endif
+
+void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept {
+  if (dst_fb == nullptr || src_cache == nullptr) return;
+  const int lo_y = std::max(0, y0);
+  const int hi_y = std::min(SCREEN_H - 1, y1);
+  if (lo_y > hi_y) return;
+
+  const size_t row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
+  const size_t off_bytes = static_cast<size_t>(lo_y) * row_bytes;
+  const size_t total_bytes = static_cast<size_t>(hi_y - lo_y + 1) * row_bytes;
+  uint8_t *const dst_ptr = reinterpret_cast<uint8_t *>(dst_fb) + off_bytes;
+  const uint8_t *const src_ptr = reinterpret_cast<const uint8_t *>(src_cache) + off_bytes;
+
+#if LATTER_FB_DMA_CLEAR
+  constexpr size_t kMinDmaBytes = 32768U;
+  constexpr size_t kAlignMask = kPsramCacheLineAlign - 1U;
+  if (total_bytes >= kMinDmaBytes &&
+      ((reinterpret_cast<uintptr_t>(dst_ptr) & kAlignMask) ==
+       (reinterpret_cast<uintptr_t>(src_ptr) & kAlignMask)) &&
+      psram_band_blit_init()) {
+    const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
+    const uintptr_t lo = (dst_addr + kAlignMask) & ~static_cast<uintptr_t>(kAlignMask);
+    const uintptr_t hi = (dst_addr + total_bytes) & ~static_cast<uintptr_t>(kAlignMask);
+    if (hi > lo) {
+      auto &st = psram_band_blit_state();
+      const size_t head = static_cast<size_t>(lo - dst_addr);
+      const size_t interior_len = static_cast<size_t>(hi - lo);
+      const size_t tail = total_bytes - head - interior_len;
+      uint8_t *const dst_lo = dst_ptr + head;
+      const uint8_t *const src_lo = src_ptr + head;
+
+      // Flush and invalidate only the strictly aligned interior so partial head/tail lines
+      // (which may share a cache line with untouched rows outside [y0, y1]) stay coherent.
+      const esp_err_t pre_err = esp_cache_msync(
+          dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+      if (pre_err == ESP_OK) {
+        const int64_t t0_us = esp_timer_get_time();
+        g_psram_blit_pending.store(0, std::memory_order_release);
+        bool dma_err = false;
+        size_t pos = 0U;
+        while (pos < interior_len) {
+          const size_t chunk = std::min(kFbClearPatternBytes, interior_len - pos);
+          g_psram_blit_pending.fetch_add(1, std::memory_order_acq_rel);
+          const esp_err_t cp_err = esp_async_memcpy(
+              st.mcp, dst_lo + pos, const_cast<uint8_t *>(src_lo + pos), chunk,
+              psram_blit_chunk_done, nullptr);
+          if (cp_err != ESP_OK) {
+            g_psram_blit_pending.fetch_sub(1, std::memory_order_acq_rel);
+            dma_err = true;
+            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit enqueue failed (err=%d); fallback to memcpy",
+                     static_cast<int>(cp_err));
+            break;
+          }
+          pos += chunk;
+        }
+        while (g_psram_blit_pending.load(std::memory_order_acquire) > 0) {
+          if (esp_timer_get_time() - t0_us > 200000) {
+            dma_err = true;
+            st.ok = false;
+            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit timeout; disabling hardware blit");
+            break;
+          }
+          esp_rom_delay_us(20);
+        }
+        if (!dma_err) {
+          const esp_err_t post_err = esp_cache_msync(dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+          if (post_err == ESP_OK) {
+            if (head > 0U) std::memcpy(dst_ptr, src_ptr, head);
+            if (tail > 0U) std::memcpy(dst_lo + interior_len, src_lo + interior_len, tail);
+            if (!st.verified) {
+              st.verified = true;
+              const uint16_t *const dpx = reinterpret_cast<const uint16_t *>(dst_lo);
+              const uint16_t *const spx = reinterpret_cast<const uint16_t *>(src_lo);
+              const size_t n = interior_len / sizeof(uint16_t);
+              bool match = true;
+              for (size_t i = 0U; i < 8U && n > 0U; ++i) {
+                const size_t idx = (n > 1U) ? ((i * (n - 1U)) / 7U) : 0U;
+                if (dpx[idx] != spx[idx]) {
+                  ESP_LOGW("disp_fb",
+                           "PSRAM AXI-GDMA blit mismatch at %u: expected 0x%04X, got 0x%04X; disabling",
+                           static_cast<unsigned>(idx), static_cast<unsigned>(spx[idx]),
+                           static_cast<unsigned>(dpx[idx]));
+                  st.ok = false;
+                  match = false;
+                  break;
+                }
+              }
+              if (!match) {
+                std::memcpy(dst_ptr, src_ptr, total_bytes);
+                return;
+              }
+              ESP_LOGD("disp_fb", "PSRAM AXI-GDMA band blit verified: %u KB in %ld us",
+                       static_cast<unsigned>(interior_len / 1024U),
+                       static_cast<long>(esp_timer_get_time() - t0_us));
+            }
+            return;
+          }
+          st.ok = false;
+          ESP_LOGW("disp_fb", "PSRAM AXI-GDMA post-msync failed (err=%d); disabling",
+                   static_cast<int>(post_err));
+        }
+      }
+    }
+  }
+#endif
+
+  std::memcpy(dst_ptr, src_ptr, total_bytes);
 }
 
 FrameProfileScope::FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {
@@ -997,13 +1193,40 @@ bool frame_base_impl(Rgb565Surface &it, UiColor c) {
   if (fb_clear_consume(hw)) return true;
 
   const uint64_t t0 = profiler_enabled() ? prof_now_us() : 0;
-  if (full) {
-    fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, c);
-  } else {
-    const int y0 = std::max(0, dirty_band().y0());
-    const int y1 = std::min(SCREEN_H - 1, dirty_band().y1());
-    if (y1 >= y0) {
-      fill_rect_row_major(it, 0, y0, SCREEN_W, y1 - y0 + 1, c);
+  const int y0 = full ? 0 : std::max(0, dirty_band().y0());
+  const int y1 = full ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().y1());
+  const int cy0 = std::max(y0, clip_y0());
+  const int cy1 = std::min(y1, clip_y1());
+  if (cy1 >= cy0) {
+    uint16_t *const fb = active_frame_buf16();
+    const bool byte_uniform = ((hw & 0xFFU) == ((hw >> 8) & 0xFFU));
+    if (fb != nullptr) {
+#if LATTER_ROUND_DISPLAY
+      for (int y = cy0; y <= cy1; ++y) {
+        const int hw_span = circle_half_span(y, 0) + 2;
+        const int x0 = std::max(0, SCREEN_CX - hw_span);
+        const int x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw_span);
+        if (x0 > x1) continue;
+        const int len = x1 - x0 + 1;
+        if (byte_uniform) {
+          std::memset(fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0),
+                      static_cast<int>(hw & 0xFFU), static_cast<size_t>(len) * sizeof(uint16_t));
+        } else {
+          fast_hline(it, x0, y, len, c);
+        }
+      }
+#else
+      if (byte_uniform) {
+        const size_t off = static_cast<size_t>(cy0) * static_cast<size_t>(SCREEN_W);
+        const size_t nbytes =
+            static_cast<size_t>(cy1 - cy0 + 1) * static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
+        std::memset(fb + off, static_cast<int>(hw & 0xFFU), nbytes);
+      } else {
+        fill_rect_row_major(it, 0, cy0, SCREEN_W, cy1 - cy0 + 1, c);
+      }
+#endif
+    } else {
+      fill_rect_row_major(it, 0, cy0, SCREEN_W, cy1 - cy0 + 1, c);
     }
   }
   if (t0 != 0) prof_sect_us()[static_cast<size_t>(ProfSect::BASE)] += static_cast<uint32_t>(prof_now_us() - t0);
@@ -1861,6 +2084,8 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
 
     int curr_y = src_y0_fp;
     int prev_sy = -1;
+    int prev_sx0 = SCREEN_W;
+    int prev_sx1 = -1;
     for (int y = start_y; y < end_y; y++) {
       const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
       curr_y += step_fp;
@@ -1875,6 +2100,19 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
           scaled_row[x] = src_row[sx_lut[x]];
         }
         prev_sy = sy;
+        prev_sx0 = start_x;
+        prev_sx1 = end_x;
+      } else if (start_x < prev_sx0 || end_x > prev_sx1) {
+        // On round displays the visible chord widens toward the equator across repeated source rows.
+        const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
+        for (int x = start_x; x < prev_sx0; x++) {
+          scaled_row[x] = src_row[sx_lut[x]];
+        }
+        for (int x = prev_sx1 + 1; x <= end_x; x++) {
+          scaled_row[x] = src_row[sx_lut[x]];
+        }
+        if (start_x < prev_sx0) prev_sx0 = start_x;
+        if (end_x > prev_sx1) prev_sx1 = end_x;
       }
       blit_dimmed_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, mul_q8, row_buf + start_x,
                                   scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
@@ -2083,16 +2321,16 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
 
   if (hit == nullptr) {
     const bool full_rect_overwrite = full_bleed && (LATTER_ROUND_DISPLAY == 0);
+    const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
+    const size_t frame_bytes = px_count * sizeof(uint16_t);
     if (victim->px == nullptr) {
-      const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
-      const size_t frame_bytes = px_count * sizeof(uint16_t);
       if (LATTER_CHIP_P4 == 0 || frame_bytes > 1536U * 1024U) {
         evict_registered_psram_caches();
       }
       victim->px = static_cast<uint16_t *>(
           full_rect_overwrite
-              ? ui_psram_malloc(frame_bytes)
-              : ui_psram_calloc(px_count, sizeof(uint16_t)));
+              ? ui_psram_aligned_alloc(frame_bytes)
+              : ui_psram_aligned_calloc(px_count, sizeof(uint16_t)));
     }
     if (victim->px == nullptr) {
       if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);
@@ -2110,6 +2348,9 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
                    mirror_dst, y_lo, y_hi);
     active_frame_buf16() = fb;
     set_clip_y_band(saved_cy0, saved_cy1);
+    if (full_rect_overwrite) {
+      ui_psram_cache_writeback(victim->px, frame_bytes);
+    }
     art_canvas_spans(*victim, cx, src_w, src_h, is_standard, is_letterbox, apply_scrim, show_metadata);
     victim->data = src_data;
     victim->w = static_cast<int16_t>(src_w);
@@ -2123,9 +2364,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
 
   if (!mirrored_to_fb && y_hi >= y_lo) {
     if (full_bleed && LATTER_ROUND_DISPLAY == 0) {
-      const size_t off = static_cast<size_t>(y_lo) * static_cast<size_t>(SCREEN_W);
-      const size_t count = static_cast<size_t>(y_hi - y_lo + 1) * static_cast<size_t>(SCREEN_W);
-      std::memcpy(fb + off, hit->px + off, count * sizeof(uint16_t));
+      blit_psram_band_fast(fb, hit->px, y_lo, y_hi);
     } else {
       for (int y = y_lo; y <= y_hi; y++) {
         const int len = hit->row_len[y];

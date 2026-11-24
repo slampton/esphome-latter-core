@@ -687,6 +687,7 @@ void FrameCadenceController::reset() {
   last_cond_eval_ms_ = 0U;
   last_sky_enabled_ = false;
   cached_has_motion_ = false;
+  cached_has_fast_motion_ = false;
   idle_anim_ticks_ = 0U;
   prev_home_slot_ = 0U;
   prev_pause_exp_pending_250ms_ = false;
@@ -836,9 +837,17 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
                   ambient_step_ready(in.now_ms, in.last_ambient_ms, in.last_disp_end_ms,
                                      in.render_in_flight, in.is_chip_p4, in.speaker_audio_busy,
                                      in.va_visible, in.ringing_or_critical,
-                                     !in.speaker_audio_busy && !in.is_chip_p4 && in.mww_running))) {
+                                     !in.speaker_audio_busy && !in.is_chip_p4 && in.mww_running) &&
+                  (in.sky_fast_motion || !in.sky_stepping ||
+                   (in.now_ms - in.last_ambient_ms >= kCalmSkyFrameGapMs)))) {
         out.record_ambient_ms = true;
-        out.schedule_anim_full = true;
+        if (on_home_main && !in.sim_just_changed && in.sky_stepping && !in.sky_fast_motion && in.dock_y0 > 1) {
+          out.band_y0 = 0;
+          out.band_y1 = calm_home_sky_band_y1(in.dock_y0);
+          out.schedule_anim_band = true;
+        } else {
+          out.schedule_anim_full = true;
+        }
       }
     }
   }
@@ -1113,12 +1122,17 @@ Cadence20msActions FrameCadenceController::step_20ms(
           in.sky_enabled &&
           evaluate_sky_has_motion(sim_opt, weather_state().condition,
                                   weather_state().sun_state, now_ms);
+      cached_has_fast_motion_ =
+          cached_has_motion_ &&
+          evaluate_sky_has_fast_motion(sim_opt, weather_state().condition,
+                                       weather_state().sun_state, now_ms);
     }
     const uint32_t latest_input_ms =
         std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
     in.sky_stepping =
         in.sky_enabled &&
         weather_sky_motion_stepping(motion_power, now_ms, latest_input_ms, cached_has_motion_);
+    in.sky_fast_motion = cached_has_fast_motion_;
   }
 
   const auto out = evaluate_20ms(in);

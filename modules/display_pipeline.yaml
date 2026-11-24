@@ -20,7 +20,7 @@ image:
     format: JPEG
     buffer_size: 16384
     type: RGB565
-    resize: ${art_resize}
+    resize: ${sendspin_art_resize}
     url: "${initial_art_url}"
     on_download_finished:
       - lambda: |-

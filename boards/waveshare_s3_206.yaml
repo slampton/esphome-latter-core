@@ -25,7 +25,8 @@ substitutions:
   font_micro_size: "17"   # >= 1.3 mm
   font_games_size: "38"
   art_resize: "410x502"
-  sendspin_art_resize: "480x480"
+  # 4x fewer pixels decoded & ~345 KB less PSRAM per album art buffer (clean upscale in draw_album_art)
+  sendspin_art_resize: "240x240"
   # Portable battery device: disable Native API watchdog reboot so off-site / HA-restart outages never reboot-loop.
   api_reboot_timeout: "0s"
   # Music read-ahead (PSRAM). 256 KB (~2.7 s of 48 kHz mono PCM / >5 s FLAC) rides out handheld
