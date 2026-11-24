@@ -738,7 +738,7 @@ void test_wave2_v3_wire_escaping_and_base_fold() {
     const std::string sys_core = read_repo_file("../../modules/system_core.yaml");
     const std::string sys_sync = read_repo_file("../../modules/system_ui_sync.yaml");
     const std::string pmu_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
-    LATTER_CHECK(sys_core.find("LATTER_YAML_REV = 2026112401L") != std::string::npos);
+    LATTER_CHECK(sys_core.find("LATTER_YAML_REV = 2026112402L") != std::string::npos);
     LATTER_CHECK(sys_core.find("base.yaml") == std::string::npos);
     LATTER_CHECK(sys_core.find("send_device_hello") != std::string::npos);
     LATTER_CHECK(sys_core.find("latter_rpc_outbox") != std::string::npos);

@@ -264,60 +264,77 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     sig ^= static_cast<uint32_t>((ctx.free_heap_kb << 16) ^ (rssi_i & 0xFFFF));
     sig ^= static_cast<uint32_t>((mv_c & 0xFFFF) ^ ((imu_t & 0xFFF) << 16) ^
                                  (static_cast<int>(ctx.ip_addr.size() & 0x0FU) << 28));
-  } else if (rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == HomeSubpage::MAIN) {
-    if (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting)) {
-      sig ^= 0x5A17C3E9U ^ (ctx.now_ms << 3);
-    }
-    {
-      const auto &ac = area_ctx_state();
-      uint32_t ah = 2166136261U;
-      for (unsigned char c : ac.area_id) ah = (ah ^ c) * 16777619U;
-      for (unsigned char c : ac.area_icon) ah = (ah ^ c) * 16777619U;
-      sig ^= (ah | 1U);
-    }
-    uint32_t act_mask = 0U;
-    if (is_doorbell_or_intercom_active()) act_mask |= (1U << 0);
-    const auto &ms = media_state();
-    const bool is_playing_eff =
-        is_music_playing_effective(!ms.is_local, ctx.local_media_playing, ms.state, ctx.now_ms);
-    const bool is_paused_st = is_music_paused_effective(is_playing_eff, ms.is_local, ms.state);
-    const bool has_track_title = !ms.title.empty() || !ctx.track_title.empty();
-    if ((is_playing_eff || !music_queue_cleared()) &&
-        audio_session().is_music_visible_on_home_activity(
-            is_playing_eff, is_paused_st, has_track_title, ctx.now_ms)) {
-      act_mask |= (1U << 1);
-    }
-    if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
-      act_mask |= (1U << 2);
-    }
-    if (!rs.stopwatch.running && rs.stopwatch.elapsed_ms > 0U) {
-      act_mask |= (1U << 12);
-    }
-    const int snoozed_slot = (rs.alarms.snooze_until > 0) ? snoozed_alarm_slot() : -1;
-    if (rs.alarms.snooze_until > 0) {
-      act_mask |= (1U << 3);
-    }
-    if (rs.alarms.snooze_until == 0 || snoozed_slot >= 1) {
-      const int cur_h = ctx.now.is_valid() ? ctx.now.hour : -1;
-      const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
-      const int cur_dow = ctx.now.is_valid() ? ctx.now.day_of_week : -1;
-      for (int ai = 0; ai < 3; ++ai) {
-        if (rs.alarms.snooze_until > 0 && (ai + 1) == snoozed_slot) continue;
-        const auto &ap = prefs.alarms[ai];
-        const int mins_u = next_alarm_minutes_until(
-            ap.hour, ap.minute, ap.enabled, ap.recurrence, cur_h, cur_m, cur_dow);
-        if (mins_u > 0 && mins_u <= kUpcomingAlarmDeckMinutes) act_mask |= (1U << (6 + ai * 2));
-        if (mins_u > 0 && mins_u <= kUpcomingAlarmPinMinutes) act_mask |= (1U << (7 + ai * 2));
+  } else if (rs.nav.gui_page == PageId::HOME &&
+             (rs.nav.home_subpage == HomeSubpage::MAIN || rs.nav.home_subpage == HomeSubpage::SETTINGS)) {
+    const uint32_t home_prefs_bits =
+        (prefs.home_show_date ? (1U << 0) : 0U) |
+        (prefs.home_show_time ? (1U << 1) : 0U) |
+        (prefs.home_show_weather ? (1U << 2) : 0U) |
+        (prefs.home_show_battery ? (1U << 3) : 0U) |
+        (prefs.weather_background ? (1U << 4) : 0U) |
+        (prefs.weather_app_background ? (1U << 5) : 0U) |
+        (prefs.home_sun ? (1U << 6) : 0U) |
+        (prefs.home_moon ? (1U << 7) : 0U) |
+        (prefs.wake_greeting ? (1U << 8) : 0U) |
+        ((static_cast<uint32_t>(prefs.home_clock_tap_action) & 0x03U) << 9) |
+        ((static_cast<uint32_t>(prefs.home_date_tap_action) & 0x03U) << 11) |
+        ((static_cast<uint32_t>(prefs.home_weather_tap_action) & 0x03U) << 13);
+    sig ^= (home_prefs_bits * 0x9E3779B1U);
+    if (rs.nav.home_subpage == HomeSubpage::MAIN) {
+      if (rs.nav.wake_greeting_pending || is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting)) {
+        sig ^= 0x5A17C3E9U ^ (ctx.now_ms << 3);
       }
+      {
+        const auto &ac = area_ctx_state();
+        uint32_t ah = 2166136261U;
+        for (unsigned char c : ac.area_id) ah = (ah ^ c) * 16777619U;
+        for (unsigned char c : ac.area_icon) ah = (ah ^ c) * 16777619U;
+        sig ^= (ah | 1U);
+      }
+      uint32_t act_mask = 0U;
+      if (is_doorbell_or_intercom_active()) act_mask |= (1U << 0);
+      const auto &ms = media_state();
+      const bool is_playing_eff =
+          is_music_playing_effective(!ms.is_local, ctx.local_media_playing, ms.state, ctx.now_ms);
+      const bool is_paused_st = is_music_paused_effective(is_playing_eff, ms.is_local, ms.state);
+      const bool has_track_title = !ms.title.empty() || !ctx.track_title.empty();
+      if ((is_playing_eff || !music_queue_cleared()) &&
+          audio_session().is_music_visible_on_home_activity(
+              is_playing_eff, is_paused_st, has_track_title, ctx.now_ms)) {
+        act_mask |= (1U << 1);
+      }
+      if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
+        act_mask |= (1U << 2);
+      }
+      if (!rs.stopwatch.running && rs.stopwatch.elapsed_ms > 0U) {
+        act_mask |= (1U << 12);
+      }
+      const int snoozed_slot = (rs.alarms.snooze_until > 0) ? snoozed_alarm_slot() : -1;
+      if (rs.alarms.snooze_until > 0) {
+        act_mask |= (1U << 3);
+      }
+      if (rs.alarms.snooze_until == 0 || snoozed_slot >= 1) {
+        const int cur_h = ctx.now.is_valid() ? ctx.now.hour : -1;
+        const int cur_m = ctx.now.is_valid() ? ctx.now.minute : -1;
+        const int cur_dow = ctx.now.is_valid() ? ctx.now.day_of_week : -1;
+        for (int ai = 0; ai < 3; ++ai) {
+          if (rs.alarms.snooze_until > 0 && (ai + 1) == snoozed_slot) continue;
+          const auto &ap = prefs.alarms[ai];
+          const int mins_u = next_alarm_minutes_until(
+              ap.hour, ap.minute, ap.enabled, ap.recurrence, cur_h, cur_m, cur_dow);
+          if (mins_u > 0 && mins_u <= kUpcomingAlarmDeckMinutes) act_mask |= (1U << (6 + ai * 2));
+          if (mins_u > 0 && mins_u <= kUpcomingAlarmPinMinutes) act_mask |= (1U << (7 + ai * 2));
+        }
+      }
+      if (calendar_state().count > 0 && !calendar_state().summary.empty()) act_mask |= (1U << 4);
+      if (is_home_activity_fading_out(ctx.now_ms) ||
+          home_activity_slide_active(ctx.now_ms) ||
+          has_pending_home_activity_fade_settle(ctx.now_ms)) {
+        act_mask |= (1U << 5);
+      }
+      sig ^= (act_mask * 0x27D4EB2FU);
+      sig ^= (compute_shortcuts_ui_sig() | 1U);
     }
-    if (calendar_state().count > 0 && !calendar_state().summary.empty()) act_mask |= (1U << 4);
-    if (is_home_activity_fading_out(ctx.now_ms) ||
-        home_activity_slide_active(ctx.now_ms) ||
-        has_pending_home_activity_fade_settle(ctx.now_ms)) {
-      act_mask |= (1U << 5);
-    }
-    sig ^= (act_mask * 0x27D4EB2FU);
-    sig ^= (compute_shortcuts_ui_sig() | 1U);
   } else if (rs.nav.gui_page == PageId::PINNED) {
     sig ^= (compute_shortcuts_ui_sig() | 1U);
   } else if (rs.nav.gui_page == PageId::TIME) {

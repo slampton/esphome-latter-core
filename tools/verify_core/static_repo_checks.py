@@ -21,7 +21,7 @@ from .common import (
 
 NOISE_KEY_BYTES: Final[int] = 32
 AGENTS_MD_MAX_BYTES: Final[int] = 12000
-MIN_CORE_REV: Final[int] = 2026112401
+MIN_CORE_REV: Final[int] = 2026112402
 MAX_MAC_SUFFIX_BASE_NAME_LEN: Final[int] = 24
 REQUIRED_PRODUCT_OPTIONS: Final[tuple[str, ...]] = (
     "Minimal Digital",

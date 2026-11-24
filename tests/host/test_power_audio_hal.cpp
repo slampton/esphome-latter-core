@@ -468,7 +468,7 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_core::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_CORE_REV == 2026112401L);
+  LATTER_CHECK(LATTER_CORE_REV == 2026112402L);
   LATTER_CHECK(latter_core::kHibernateSnapshotVersion == 1U);
 
   latter_core::reset_hibernate_snapshot_for_test();

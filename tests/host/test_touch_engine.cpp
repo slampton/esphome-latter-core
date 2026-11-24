@@ -900,6 +900,169 @@ void test_area_media_player_switches_active_speaker() {
   eng.runtime().exec_cmd = nullptr;
 }
 
+void test_home_screen_customizability_and_settings() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  reset_runtime_state();
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  auto &ws = weather_state();
+  auto &eng = touch_engine();
+
+  prefs = PersistedDevicePrefs{};
+  ws.condition = "sunny";
+  ws.temperature = 72.0f;
+  ws.sun_state = "above_horizon";
+  ws.temp_unit = "F";
+
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  rs.nav.display_power_state = 0;
+  rs.nav.home_settings_page = 1;
+  eng.runtime().panel_is_on = true;
+  eng.runtime().time_valid = true;
+  eng.runtime().time_year = 2026;
+  eng.runtime().time_month = 11;
+  eng.runtime().time_day = 24;
+  eng.runtime().time_hour = 10;
+  eng.runtime().time_minute = 30;
+  eng.runtime().time_day_of_week = 3;
+
+  std::vector<uint16_t> fb(static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H), 0U);
+  Rgb565Surface surf = bind_host_surface(fb.data(), SCREEN_W, SCREEN_H, 1);
+  auto render_home = [&](uint32_t now_ms) {
+    UiFrameContext ctx{};
+    ctx.now_ms = now_ms;
+    ctx.cx = SCREEN_CX;
+    ctx.cy = SCREEN_CY;
+    ctx.col_bg = UiColor(0, 0, 0);
+    ctx.col_white = UiColor(255, 255, 255);
+    ctx.col_black = UiColor(0, 0, 0);
+    ctx.col_slate = UiColor(160, 160, 160);
+    ctx.col_gray = UiColor(90, 90, 90);
+    ctx.col_gold = UiColor(235, 195, 70);
+    ctx.col_green = UiColor(70, 200, 120);
+    ctx.theme_primary = UiColor(107, 142, 158);
+    ctx.theme_secondary = UiColor(192, 192, 192);
+    ctx.font_small = UiFontView::make_host_font(16);
+    ctx.font_date = UiFontView::make_host_font(20);
+    ctx.font_time = UiFontView::make_host_font(48);
+    ctx.font_micro = UiFontView::make_host_font(12);
+    ctx.home_weather_bg = prefs.weather_background;
+    ctx.home_wake_greeting = false;
+    ctx.home_sun_arc = prefs.home_sun;
+    ctx.home_moon_phase = prefs.home_moon;
+    ctx.now.year = 2026;
+    ctx.now.month = 11;
+    ctx.now.day_of_month = 24;
+    ctx.now.hour = 10;
+    ctx.now.minute = 30;
+    ctx.now.day_of_week = 3;
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::HOME, rs.nav.home_subpage, 0U, true);
+    frame_hits().clear();
+    frame_base_begin();
+    set_clip_y_band(0, SCREEN_H - 1);
+    render_active_page(surf, ctx);
+  };
+
+  // 1. Default Home registers Date, Time, and Weather hit targets
+  render_home(1000U);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_DATE_HERO) != nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_TIME_READOUT) != nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO) != nullptr);
+
+  // 2. Hiding Date / Time / Weather omits their hit targets cleanly
+  prefs.home_show_date = false;
+  prefs.home_show_time = false;
+  prefs.home_show_weather = false;
+  render_home(1100U);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_DATE_HERO) == nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_TIME_READOUT) == nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO) == nullptr);
+
+  // 3. Showing Date / Time / Weather with tap action "None" omits hit regions too
+  prefs.home_show_date = true;
+  prefs.home_show_time = true;
+  prefs.home_show_weather = true;
+  prefs.home_date_tap_action = 2U;     // None
+  prefs.home_clock_tap_action = 2U;    // None
+  prefs.home_weather_tap_action = 2U;  // None
+  render_home(1200U);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_DATE_HERO) == nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_TIME_READOUT) == nullptr);
+  LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO) == nullptr);
+
+  // 4. Weather tap "5-Day Forecast" opens Weather Forecast subpage (1), "Current Weather" opens Current (0)
+  prefs.home_weather_tap_action = 1U;
+  render_home(1300U);
+  const HitRegion *w_hit = frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO);
+  LATTER_CHECK(w_hit != nullptr);
+  eng.on_touch_down(w_hit->cx(), w_hit->cy(), 1400U);
+  eng.on_touch_up(1440U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::WEATHER);
+  LATTER_CHECK(rs.nav.sky_weather_subpage == 1);
+
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  prefs.home_weather_tap_action = 0U;
+  render_home(2000U);
+  w_hit = frame_hits().find_by_id(WidgetId::HOME_WEATHER_HERO);
+  LATTER_CHECK(w_hit != nullptr);
+  eng.on_touch_down(w_hit->cx(), w_hit->cy(), 2100U);
+  eng.on_touch_up(2140U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::WEATHER);
+  LATTER_CHECK(rs.nav.sky_weather_subpage == 0);
+
+  // 5. Dynamic on-device Home Settings filtering, pagination, and 3-way cycling through "None"
+  prefs = PersistedDevicePrefs{};
+  HomeSettingsItemId items[12]{};
+  const int full_cnt = collect_home_settings_items(prefs, items);
+  LATTER_CHECK(full_cnt == (LATTER_HAS_BATTERY ? 12 : 11));
+  LATTER_CHECK(home_settings_page_count(prefs) == 3);
+
+  prefs.home_show_time = false;
+  prefs.home_show_date = false;
+  prefs.home_show_weather = false;
+  prefs.weather_background = false;
+  const int min_cnt = collect_home_settings_items(prefs, items);
+  LATTER_CHECK(min_cnt == (LATTER_HAS_BATTERY ? 7 : 6));
+  LATTER_CHECK(home_settings_page_count(prefs) == 2);
+
+  // Re-enable all and step through Home Settings pages + cycle Time Tap -> Clock Face -> None -> Time App
+  prefs = PersistedDevicePrefs{};
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::SETTINGS;
+  rs.nav.home_settings_page = 1;
+  render_home(3000U);
+  const HitRegion *time_tap_hit = frame_hits().find_by_id(WidgetId::LIST_SLOT_BASE + 1);
+  LATTER_CHECK(time_tap_hit != nullptr &&
+               time_tap_hit->param == static_cast<int16_t>(HomeSettingsItemId::TIME_TAP));
+  eng.on_touch_down(time_tap_hit->cx(), time_tap_hit->cy(), 3100U);
+  eng.on_touch_up(3140U);
+  LATTER_CHECK(prefs.home_clock_tap_action == 1U);
+  eng.on_touch_down(time_tap_hit->cx(), time_tap_hit->cy(), 3700U);
+  eng.on_touch_up(3740U);
+  LATTER_CHECK(prefs.home_clock_tap_action == 2U);  // None
+  eng.on_touch_down(time_tap_hit->cx(), time_tap_hit->cy(), 4300U);
+  eng.on_touch_up(4340U);
+  LATTER_CHECK(prefs.home_clock_tap_action == 0U);  // Back to Time App
+
+  // Chevron down steps page 1 -> 2 -> 3
+  const HitRegion *chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+  LATTER_CHECK(chev_dn != nullptr);
+  eng.on_touch_down(chev_dn->cx(), chev_dn->cy(), 4900U);
+  eng.on_touch_up(4940U);
+  LATTER_CHECK(rs.nav.home_settings_page == 2);
+  render_home(5000U);
+  chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+  LATTER_CHECK(chev_dn != nullptr);
+  eng.on_touch_down(chev_dn->cx(), chev_dn->cy(), 5500U);
+  eng.on_touch_up(5540U);
+  LATTER_CHECK(rs.nav.home_settings_page == 3);
+}
+
 }  // namespace
 
 void run_touch_engine_tests() {
@@ -909,6 +1072,7 @@ void run_touch_engine_tests() {
   test_live_touch_engine_end_to_end_5geom();
   test_rotary_navigation_and_glass_style_display_setting();
   test_area_media_player_switches_active_speaker();
+  test_home_screen_customizability_and_settings();
 }
 
 }  // namespace latter_test

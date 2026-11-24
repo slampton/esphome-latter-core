@@ -158,7 +158,7 @@ Upcoming calendar agenda events and next-event headline.
 | `5` | `calendars_meta` | `CalendarField::CALENDARS_META` | `records` | 0x1E-joined entity_id|label|color_idx|can_create|can_delete calendar source records (up to 8; color_idx 0..5, can_create and can_delete 1 or 0) |
 | `6` | `locations_catalog` | `CalendarField::LOCATIONS_CATALOG` | `records` | 0x1E-joined Home Assistant Zone friendly names and recent calendar locations (up to 12) for Add Event location selection |
 
-### `device_prefs` (`DevicePrefsField`, `73` total fields)
+### `device_prefs` (`DevicePrefsField`, `78` total fields)
 
 Authoritative Device preferences, power/sleep policies, audio/wake-word tunables, and UI personalization synced between Latter and NVS.
 
@@ -208,14 +208,14 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `44` | `ble_beacon_mode` | `DevicePrefsField::BLE_BEACON_MODE` | `string` | BLE beacon advertising duty policy (Handheld Only|Handheld + Screen Off|Always) |
 | `45` | `weather_sim_condition` | `DevicePrefsField::WEATHER_SIM_CONDITION` | `string` | Developer weather animation override (Live (Home Assistant) or simulated condition label) |
 | `46` | `theme_color_hex` | `DevicePrefsField::THEME_COLOR_HEX` | `string` | Custom theme accent color (#RRGGBB) synchronized with device_custom_color |
-| `47` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face) |
+| `47` | `home_clock_tap_action` | `DevicePrefsField::HOME_CLOCK_TAP_ACTION` | `string` | Action when tapping the time readout on the Home Screen (Time App|Clock Face|None) |
 | `48` | `show_utc_clock` | `DevicePrefsField::SHOW_UTC_CLOCK` | `bool` | 1 = show a dedicated UTC World Clock card on the Time App Clock tab, else 0 |
 | `49` | `world_clocks` | `DevicePrefsField::WORLD_CLOCKS` | `string` | Semicolon-delimited custom-labeled World Clock entries (up to 4, '<label>|<iana>;...') shown on the Time App Clock tab |
 | `50` | `alarms_summary` | `DevicePrefsField::ALARMS_SUMMARY` | `string` | Semicolon-delimited 3-slot device alarm schedule ('HH:MM|enabled|recurrence;...') |
 | `51` | `local_clock_label` | `DevicePrefsField::LOCAL_CLOCK_LABEL` | `string` | Optional user-defined label shown above local time on the Time App Clock tab (up to 32 chars) |
 | `52` | `tools_items` | `DevicePrefsField::TOOLS_ITEMS` | `csv` | Comma-separated enabled and ordered Tools launcher items (stopwatch,level,flashlight,calculator,dice,coin_flip) |
 | `53` | `games_items` | `DevicePrefsField::GAMES_ITEMS` | `csv` | Comma-separated enabled and ordered Games launcher items (blocks,snake,drop_four,marbles,archery,bricks,chomp) |
-| `54` | `home_date_tap_action` | `DevicePrefsField::HOME_DATE_TAP_ACTION` | `string` | Action when tapping the date readout on the Home Screen (Day View|Overview) |
+| `54` | `home_date_tap_action` | `DevicePrefsField::HOME_DATE_TAP_ACTION` | `string` | Action when tapping the date readout on the Home Screen (Day View|Overview|None) |
 | `55` | `calendar_lookahead_days` | `DevicePrefsField::CALENDAR_LOOKAHEAD_DAYS` | `u16` | Calendar Overview upcoming lookahead horizon in days (7|14|30|60) |
 | `56` | `calendar_week_start` | `DevicePrefsField::CALENDAR_WEEK_START` | `string` | First day of week in Calendar Week and Month views (Sunday|Monday) |
 | `57` | `bedtime_active` | `DevicePrefsField::BEDTIME_ACTIVE` | `bool` | 1 = Bedtime Mode currently active (ultra-dim wake brightness, 15s idle -> bedtime_display, suppressed wake greeting, and silenced non-critical notification chimes/screen wakes), else 0 |
@@ -234,6 +234,11 @@ Authoritative Device preferences, power/sleep policies, audio/wake-word tunables
 | `70` | `do_not_disturb` | `DevicePrefsField::DO_NOT_DISTURB` | `bool` | 1 = Do Not Disturb active, else 0 |
 | `71` | `music_auto_open` | `DevicePrefsField::MUSIC_AUTO_OPEN` | `string` | Auto-open Music view when default speaker starts playing (Now Playing|Lyrics|Off) |
 | `72` | `glass_style` | `DevicePrefsField::GLASS_STYLE` | `string` | Glass chrome surface style (Auto|Clear|Dark); Auto adapts contrast over bright backdrops |
+| `73` | `home_show_date` | `DevicePrefsField::HOME_SHOW_DATE` | `bool` | 1 = show date readout on Home screen, else 0 |
+| `74` | `home_show_time` | `DevicePrefsField::HOME_SHOW_TIME` | `bool` | 1 = show clock readout on Home screen, else 0 |
+| `75` | `home_show_weather` | `DevicePrefsField::HOME_SHOW_WEATHER` | `bool` | 1 = show current weather summary text on Home screen, else 0 |
+| `76` | `home_weather_tap_action` | `DevicePrefsField::HOME_WEATHER_TAP_ACTION` | `string` | Action when tapping the weather summary on the Home Screen (Current Weather|5-Day Forecast|None) |
+| `77` | `home_show_battery` | `DevicePrefsField::HOME_SHOW_BATTERY` | `bool` | 1 = show battery indicator on Home screen on battery-powered devices, else 0 |
 
 ### `shortcuts` (`ShortcutsField`, `8` total fields)
 
@@ -286,7 +291,7 @@ App Dock and Pinned App shortcut tables (Latter OS routes and Home Assistant ent
 | `set_device_prefs` | `base_seq`, `changes` | Persist on-device settings edits back to the Device subentry and increment prefs_seq |
 | `timer_alarm_state` | `timer_running`, `timer_paused`, `remaining_sec`, `ringing`, `stopwatch_running`, `stopwatch_paused`, `stopwatch_elapsed_sec` | Report on-device countdown timer, stopwatch, and alarm ringing state transitions to Home Assistant |
 
-## 5. Declarative Device Preferences (`device_pref_specs`, `65` entries)
+## 5. Declarative Device Preferences (`device_pref_specs`, `70` entries)
 
 Pure wire and behavioral preference contracts compiled into `include/latter_protocol.h` (`kPrefContractSpecs`). Studio/HA presentation metadata lives in `ha-latter/custom_components/latter/studio_contract.json`.
 
@@ -334,8 +339,8 @@ Pure wire and behavioral preference contracts compiled into `include/latter_prot
 | `game_sound_effects` | `switch` | `true` | `0` \| `1` | `display` |
 | `ble_beacon_mode` | `select` | `Handheld Only` | `Handheld Only` \| `Handheld + Screen Off` \| `Always` | `beacon_battery` |
 | `weather_sim_condition` | `select` | `Live (Home Assistant)` | `Live (Home Assistant)` \| `Clear Night` \| `Sunny / Clear Day` \| `Partly Cloudy (Day)` \| `Partly Cloudy (Night)` \| `Cloudy / Overcast (Day)` \| `Cloudy / Overcast (Night)` \| `Fog / Mist (Day)` \| `Fog / Mist (Night)` \| `Rainy (Day)` \| `Rainy (Night)` \| `Pouring / Heavy Rain` \| `Snow (Day)` \| `Snow (Night)` \| `Thunderstorm (Day)` \| `Thunderstorm (Night)` \| `Windy` | `display` |
-| `home_clock_tap_action` | `select` | `Time App` | `Time App` \| `Clock Face` | `display` |
-| `home_date_tap_action` | `select` | `Overview` | `Day View` \| `Overview` | `display` |
+| `home_clock_tap_action` | `select` | `Time App` | `Time App` \| `Clock Face` \| `None` | `display` |
+| `home_date_tap_action` | `select` | `Overview` | `Day View` \| `Overview` \| `None` | `display` |
 | `local_clock_label` | `text` | *(empty)* | *(freeform string)* | `display` |
 | `show_utc_clock` | `switch` | `false` | `0` \| `1` | `display` |
 | `world_clocks` | `text` | *(empty)* | *(freeform string)* | `display` |
@@ -357,3 +362,8 @@ Pure wire and behavioral preference contracts compiled into `include/latter_prot
 | `weather_app_background` | `switch` | `true` | `0` \| `1` | `display` |
 | `do_not_disturb` | `switch` | `false` | `0` \| `1` | `display_or_audio` |
 | `glass_style` | `select` | `Auto` | `Auto` \| `Clear` \| `Dark` | `display` |
+| `home_show_date` | `switch` | `true` | `0` \| `1` | `display` |
+| `home_show_time` | `switch` | `true` | `0` \| `1` | `display` |
+| `home_show_weather` | `switch` | `true` | `0` \| `1` | `display` |
+| `home_weather_tap_action` | `select` | `Current Weather` | `Current Weather` \| `5-Day Forecast` \| `None` | `display` |
+| `home_show_battery` | `switch` | `true` | `0` \| `1` | `display_battery` |

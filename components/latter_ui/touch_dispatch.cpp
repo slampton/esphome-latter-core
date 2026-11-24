@@ -1557,12 +1557,14 @@ bool TouchGestureEngine::handle_tap_home_area_(
         rs.nav.sky_weather_subpage = (weather_state().sun_state == "below_horizon") ? 3 : 2;
         mark_dirty_full();
         rt_.schedule_disp();
-      } else if (wid == WidgetId::HOME_DATE_HERO && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      } else if (wid == WidgetId::HOME_DATE_HERO && prefs.home_show_date && prefs.home_date_tap_action != 2U &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         TouchGestureEngine::launch_dock_app_(PageId::CALENDAR, rs, rt_, now_rel);
         rs.cal.subpage = (prefs.home_date_tap_action == 0U) ? CalendarSubpage::DAY : CalendarSubpage::OVERVIEW;
         mark_dirty_full();
         rt_.schedule_disp();
-      } else if (wid == WidgetId::HOME_TIME_READOUT && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      } else if (wid == WidgetId::HOME_TIME_READOUT && prefs.home_show_time && prefs.home_clock_tap_action != 2U &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         if (prefs.home_clock_tap_action == 0U) {
           TouchGestureEngine::launch_dock_app_(PageId::TIME, rs, rt_, now_rel);
         } else {
@@ -1570,9 +1572,10 @@ bool TouchGestureEngine::handle_tap_home_area_(
           mark_dirty_full();
           rt_.schedule_disp();
         }
-      } else if (wid == WidgetId::HOME_WEATHER_HERO && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      } else if (wid == WidgetId::HOME_WEATHER_HERO && prefs.home_show_weather && prefs.home_weather_tap_action != 2U &&
+                 touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.gui_page = PageId::WEATHER;
-        rs.nav.sky_weather_subpage = 0;
+        rs.nav.sky_weather_subpage = (prefs.home_weather_tap_action == 1U) ? 1 : 0;
         mark_dirty_full();
         rt_.schedule_disp();
       } else if (wid == WidgetId::HOME_ACT_EXPAND && act_count > 0 &&
@@ -1591,34 +1594,67 @@ bool TouchGestureEngine::handle_tap_home_area_(
     }
 
     if (rs.nav.home_subpage == 1) {
+      const int total_pages = home_settings_page_count(prefs);
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        rs.nav.home_settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+        const int next_pg = std::clamp(
+            rs.nav.home_settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, total_pages);
+        rs.nav.home_settings_page = next_pg;
         rt_.schedule_disp();
       } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        const int item_idx = hit->param;
-        if (item_idx == 0) {
-          rt_.set_select_opt(UiSelectId::HOME_CLOCK_TAP_ACTION,
-                             (prefs.home_clock_tap_action == 0U) ? "Clock Face" : "Time App");
-        } else if (item_idx == 1) {
-          rt_.set_select_opt(UiSelectId::HOME_DATE_TAP_ACTION,
-                             (prefs.home_date_tap_action == 0U) ? "Overview" : "Day View");
-        } else if (item_idx == 2) {
-          rt_.sw_toggle(UiSwitchId::HOME_WEATHER_BG);
-        } else if (item_idx == 3) {
-          rt_.sw_toggle(UiSwitchId::HOME_WAKE_GREETING);
-        } else if (item_idx == 4 || item_idx == 5) {
-          const PrefKey pk = (item_idx == 4) ? PrefKey::HOME_SUN : PrefKey::HOME_MOON;
-          const bool next_v = (item_idx == 4) ? !prefs.home_sun : !prefs.home_moon;
-          uint32_t eff = 0U;
-          if (latter_core::record_local_pref_edit(pk, next_v ? "1" : "0", now_rel, eff)) {
-            device_prefs_state().last_effects |= eff;
-            rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
+        const auto item = static_cast<HomeSettingsItemId>(hit->param);
+        switch (item) {
+          case HomeSettingsItemId::SHOW_TIME:
+            rt_.sw_toggle(UiSwitchId::HOME_SHOW_TIME);
+            break;
+          case HomeSettingsItemId::TIME_TAP: {
+            const size_t next_i = (static_cast<size_t>(prefs.home_clock_tap_action) + 1U) % kPrefOptsHomeClockTapAction.size();
+            rt_.set_select_opt(UiSelectId::HOME_CLOCK_TAP_ACTION, kPrefOptsHomeClockTapAction[next_i]);
+            break;
           }
-        } else if (item_idx == 6) {
-          rt_.sw_toggle(UiSwitchId::WEATHER_APP_BG);
+          case HomeSettingsItemId::SHOW_DATE:
+            rt_.sw_toggle(UiSwitchId::HOME_SHOW_DATE);
+            break;
+          case HomeSettingsItemId::DATE_TAP: {
+            const size_t next_i = (static_cast<size_t>(prefs.home_date_tap_action) + 1U) % kPrefOptsHomeDateTapAction.size();
+            rt_.set_select_opt(UiSelectId::HOME_DATE_TAP_ACTION, kPrefOptsHomeDateTapAction[next_i]);
+            break;
+          }
+          case HomeSettingsItemId::SHOW_WEATHER:
+            rt_.sw_toggle(UiSwitchId::HOME_SHOW_WEATHER);
+            break;
+          case HomeSettingsItemId::WEATHER_TAP: {
+            const size_t next_i = (static_cast<size_t>(prefs.home_weather_tap_action) + 1U) % kPrefOptsHomeWeatherTapAction.size();
+            rt_.set_select_opt(UiSelectId::HOME_WEATHER_TAP_ACTION, kPrefOptsHomeWeatherTapAction[next_i]);
+            break;
+          }
+          case HomeSettingsItemId::SHOW_BATTERY:
+            rt_.sw_toggle(UiSwitchId::HOME_SHOW_BATTERY);
+            break;
+          case HomeSettingsItemId::WAKE_GREETING:
+            rt_.sw_toggle(UiSwitchId::HOME_WAKE_GREETING);
+            break;
+          case HomeSettingsItemId::WEATHER_BG:
+            rt_.sw_toggle(UiSwitchId::HOME_WEATHER_BG);
+            break;
+          case HomeSettingsItemId::HOME_SUN:
+          case HomeSettingsItemId::HOME_MOON: {
+            const bool is_sun = (item == HomeSettingsItemId::HOME_SUN);
+            const PrefKey pk = is_sun ? PrefKey::HOME_SUN : PrefKey::HOME_MOON;
+            const bool next_v = is_sun ? !prefs.home_sun : !prefs.home_moon;
+            uint32_t eff = 0U;
+            if (latter_core::record_local_pref_edit(pk, next_v ? "1" : "0", now_rel, eff)) {
+              device_prefs_state().last_effects |= eff;
+              rt_.cmd(UiHostCmd::APPLY_DEVICE_PREFS_EFFECTS);
+            }
+            break;
+          }
+          case HomeSettingsItemId::WEATHER_APP_BG:
+            rt_.sw_toggle(UiSwitchId::WEATHER_APP_BG);
+            break;
         }
+        rs.nav.home_settings_page = std::clamp(rs.nav.home_settings_page, 1, home_settings_page_count(prefs));
         rt_.schedule_disp();
       }
       return true;

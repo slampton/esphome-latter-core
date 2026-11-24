@@ -20,7 +20,7 @@ Every hand-authored header, translation unit, YAML package, and tool is organize
   - `modules/system_core.yaml`: Unified foundation (`version: "3.0.0"`, `latter_asset_ref: "main"`, Native API `batch_delay: 0ms` / Noise `encryption:` / `outgoing_connection:`, `time:`, `send_device_hello`, `System: RPC Outbox`, all 9 Native API actions, and factored `ota_on_begin` / `ota_on_error_or_abort` / `handle_time_sync`).
   - `modules/latter_display_only_firmware.yaml` & `modules/latter_display_firmware.yaml`: Display-only umbrella (`system_{core,ui_sync}.yaml`, `power_policy.yaml`, `sleep_lifecycle.yaml`, `motion_service.yaml`, `display_pipeline.yaml`, `timers_and_fetchers.yaml`, `guis/universal/gui.yaml`), extended directly by `latter_display_firmware.yaml` with `audio_pipeline.yaml`, `voice_assistant.yaml`, `audio_scripts.yaml`, and `guis/universal/gui_touch.yaml`. Battery boards include `modules/battery_service.yaml`.
   - `modules/hal/`: Pure chip HAL packages (`chip_esp32s3.yaml`, `chip_esp32p4.yaml`, `radio_esp32c6_sdio.yaml`, `audio_es8311_duplex.yaml`, `audio_es8311_es7210_duplex.yaml`, `pmu_axp2101.yaml`, `imu_qmi8658.yaml`) with zero UI/audio UX coupling.
-  - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_core::runtime_state()`) and persisted preferences live in `PersistedDevicePrefs` v1 + `HibernateSnapshot` v1 (`LATTER_CORE_REV == LATTER_YAML_REV == 2026112401L`).
+  - **Zero YAML `globals:`**: All volatile runtime state lives in `DeviceRuntimeState` (`latter_core::runtime_state()`) and persisted preferences live in `PersistedDevicePrefs` v1 + `HibernateSnapshot` v1 (`LATTER_CORE_REV == LATTER_YAML_REV == 2026112402L`).
 
 ## 2. Verification & Tooling Commands
 

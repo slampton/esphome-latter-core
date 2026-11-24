@@ -85,7 +85,12 @@ enum class PrefKey : uint8_t {
   DO_NOT_DISTURB = 64,
   MUSIC_AUTO_OPEN = 65,
   GLASS_STYLE = 66,
-  COUNT = 67,
+  HOME_SHOW_DATE = 67,
+  HOME_SHOW_TIME = 68,
+  HOME_SHOW_WEATHER = 69,
+  HOME_WEATHER_TAP_ACTION = 70,
+  HOME_SHOW_BATTERY = 71,
+  COUNT = 72,
 };
 static_assert(static_cast<uint8_t>(PrefKey::COUNT) < 128U,
               "PrefKey::COUNT must remain < 128 to fit in 128-bit PrefMask.");
@@ -260,6 +265,11 @@ struct PersistedDevicePrefs {
   uint8_t music_auto_open = kPrefDefaultMusicAutoOpenIdx;
   int32_t high_score_drop_four = 0;        // Appended v3.0+ tail field: Drop Four AI streak high score
   uint8_t glass_style = kPrefDefaultGlassStyleIdx;
+  bool home_show_date = kPrefDefaultHomeShowDate;
+  bool home_show_time = kPrefDefaultHomeShowTime;
+  bool home_show_weather = kPrefDefaultHomeShowWeather;
+  uint8_t home_weather_tap_action = kPrefDefaultHomeWeatherTapActionIdx;
+  bool home_show_battery = kPrefDefaultHomeShowBattery;
 
   // Zero-size constexpr typed preference accessors (preserves exact NVS POD layout)
   constexpr GlassStyle glass_style_enum() const noexcept {
@@ -617,6 +627,7 @@ inline const char *pref_clock_face_cstr(const PersistedDevicePrefs &p = persiste
 inline const char *pref_time_format_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsTimeFormat, p.time_format, kPrefDefaultTimeFormatIdx); }
 inline const char *pref_home_clock_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsHomeClockTapAction, p.home_clock_tap_action, kPrefDefaultHomeClockTapActionIdx); }
 inline const char *pref_home_date_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsHomeDateTapAction, p.home_date_tap_action, kPrefDefaultHomeDateTapActionIdx); }
+inline const char *pref_home_weather_tap_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsHomeWeatherTapAction, p.home_weather_tap_action, kPrefDefaultHomeWeatherTapActionIdx); }
 inline const char *pref_calendar_week_start_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsCalendarWeekStart, p.calendar_week_start, kPrefDefaultCalendarWeekStartIdx); }
 inline const char *pref_album_art_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsAlbumArtStyle, p.album_art_style, kPrefDefaultAlbumArtStyleIdx); }
 inline const char *pref_music_overlay_style_cstr(const PersistedDevicePrefs &p = persisted_prefs()) { return pref_opt_cstr(kPrefOptsMusicOverlayStyle, p.music_overlay_style, kPrefDefaultMusicOverlayStyleIdx); }
@@ -737,6 +748,7 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
   clamp_opt(p.time_format, kPrefOptsTimeFormat, kPrefDefaultTimeFormatIdx);
   clamp_opt(p.home_clock_tap_action, kPrefOptsHomeClockTapAction, kPrefDefaultHomeClockTapActionIdx);
   clamp_opt(p.home_date_tap_action, kPrefOptsHomeDateTapAction, kPrefDefaultHomeDateTapActionIdx);
+  clamp_opt(p.home_weather_tap_action, kPrefOptsHomeWeatherTapAction, kPrefDefaultHomeWeatherTapActionIdx);
   p.calendar_lookahead_days = snap_calendar_lookahead_days(p.calendar_lookahead_days);
   clamp_opt(p.calendar_week_start, kPrefOptsCalendarWeekStart, kPrefDefaultCalendarWeekStartIdx);
   clamp_opt(p.bedtime_display, kPrefOptsBedtimeDisplay, kPrefDefaultBedtimeDisplayIdx);
@@ -960,6 +972,11 @@ inline constexpr std::array<DevicePrefsField, static_cast<size_t>(PrefKey::COUNT
     DevicePrefsField::DO_NOT_DISTURB,
     DevicePrefsField::MUSIC_AUTO_OPEN,
     DevicePrefsField::GLASS_STYLE,
+    DevicePrefsField::HOME_SHOW_DATE,
+    DevicePrefsField::HOME_SHOW_TIME,
+    DevicePrefsField::HOME_SHOW_WEATHER,
+    DevicePrefsField::HOME_WEATHER_TAP_ACTION,
+    DevicePrefsField::HOME_SHOW_BATTERY,
 }};
 
 inline constexpr const char *pref_key_name(PrefKey key) noexcept {
@@ -979,6 +996,11 @@ static_assert(std::string_view(pref_key_name(PrefKey::BLE_BEACON_ENABLED)) == "b
 static_assert(std::string_view(pref_key_name(PrefKey::TOOLS_ITEMS)) == "tools_items");
 static_assert(std::string_view(pref_key_name(PrefKey::GAMES_ITEMS)) == "games_items");
 static_assert(std::string_view(pref_key_name(PrefKey::GLASS_STYLE)) == "glass_style");
+static_assert(std::string_view(pref_key_name(PrefKey::HOME_SHOW_DATE)) == "home_show_date");
+static_assert(std::string_view(pref_key_name(PrefKey::HOME_SHOW_TIME)) == "home_show_time");
+static_assert(std::string_view(pref_key_name(PrefKey::HOME_SHOW_WEATHER)) == "home_show_weather");
+static_assert(std::string_view(pref_key_name(PrefKey::HOME_WEATHER_TAP_ACTION)) == "home_weather_tap_action");
+static_assert(std::string_view(pref_key_name(PrefKey::HOME_SHOW_BATTERY)) == "home_show_battery");
 std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = persisted_prefs());
 bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
                          PrefMask &changed_mask, uint32_t &effects_mask);

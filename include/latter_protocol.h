@@ -396,7 +396,12 @@ enum class DevicePrefsField : size_t {
   DO_NOT_DISTURB = 70,  // do_not_disturb (bool)
   MUSIC_AUTO_OPEN = 71,  // music_auto_open (string)
   GLASS_STYLE = 72,  // glass_style (string)
-  COUNT = 73
+  HOME_SHOW_DATE = 73,  // home_show_date (bool)
+  HOME_SHOW_TIME = 74,  // home_show_time (bool)
+  HOME_SHOW_WEATHER = 75,  // home_show_weather (bool)
+  HOME_WEATHER_TAP_ACTION = 76,  // home_weather_tap_action (string)
+  HOME_SHOW_BATTERY = 77,  // home_show_battery (bool)
+  COUNT = 78
 };
 
 // Domain: shortcuts
@@ -550,10 +555,10 @@ inline constexpr std::string_view kPrefDefaultBleBeaconMode = "Handheld Only";
 inline constexpr std::array<std::string_view, 17> kPrefOptsWeatherSimCondition = {{"Live (Home Assistant)", "Clear Night", "Sunny / Clear Day", "Partly Cloudy (Day)", "Partly Cloudy (Night)", "Cloudy / Overcast (Day)", "Cloudy / Overcast (Night)", "Fog / Mist (Day)", "Fog / Mist (Night)", "Rainy (Day)", "Rainy (Night)", "Pouring / Heavy Rain", "Snow (Day)", "Snow (Night)", "Thunderstorm (Day)", "Thunderstorm (Night)", "Windy"}};
 inline constexpr uint8_t kPrefDefaultWeatherSimConditionIdx = 0U;
 inline constexpr std::string_view kPrefDefaultWeatherSimCondition = "Live (Home Assistant)";
-inline constexpr std::array<std::string_view, 2> kPrefOptsHomeClockTapAction = {{"Time App", "Clock Face"}};
+inline constexpr std::array<std::string_view, 3> kPrefOptsHomeClockTapAction = {{"Time App", "Clock Face", "None"}};
 inline constexpr uint8_t kPrefDefaultHomeClockTapActionIdx = 0U;
 inline constexpr std::string_view kPrefDefaultHomeClockTapAction = "Time App";
-inline constexpr std::array<std::string_view, 2> kPrefOptsHomeDateTapAction = {{"Day View", "Overview"}};
+inline constexpr std::array<std::string_view, 3> kPrefOptsHomeDateTapAction = {{"Day View", "Overview", "None"}};
 inline constexpr uint8_t kPrefDefaultHomeDateTapActionIdx = 1U;
 inline constexpr std::string_view kPrefDefaultHomeDateTapAction = "Overview";
 inline constexpr std::string_view kPrefDefaultLocalClockLabel = "";
@@ -605,6 +610,13 @@ inline constexpr bool kPrefDefaultDoNotDisturb = false;
 inline constexpr std::array<std::string_view, 3> kPrefOptsGlassStyle = {{"Auto", "Clear", "Dark"}};
 inline constexpr uint8_t kPrefDefaultGlassStyleIdx = 0U;
 inline constexpr std::string_view kPrefDefaultGlassStyle = "Auto";
+inline constexpr bool kPrefDefaultHomeShowDate = true;
+inline constexpr bool kPrefDefaultHomeShowTime = true;
+inline constexpr bool kPrefDefaultHomeShowWeather = true;
+inline constexpr std::array<std::string_view, 3> kPrefOptsHomeWeatherTapAction = {{"Current Weather", "5-Day Forecast", "None"}};
+inline constexpr uint8_t kPrefDefaultHomeWeatherTapActionIdx = 0U;
+inline constexpr std::string_view kPrefDefaultHomeWeatherTapAction = "Current Weather";
+inline constexpr bool kPrefDefaultHomeShowBattery = true;
 
 struct PrefContractSpec {
   DevicePrefsField field;
@@ -622,7 +634,7 @@ struct PrefContractSpec {
   int32_t step;
 };
 
-inline constexpr std::array<PrefContractSpec, 65> kPrefContractSpecs = {{
+inline constexpr std::array<PrefContractSpec, 70> kPrefContractSpecs = {{
     {DevicePrefsField::WAKE_WORD_MODE, "wake_word_mode", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWakeWordMode}, kPrefDefaultWakeWordMode, false, 0, kPrefDefaultWakeWordModeIdx, false, 0, 0, 0},
     {DevicePrefsField::TAP_TO_WAKE, "tap_to_wake", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsTapToWake}, kPrefDefaultTapToWake, false, 2, kPrefDefaultTapToWakeIdx, false, 0, 0, 0},
     {DevicePrefsField::PICKUP_TO_WAKE, "pickup_to_wake", PrefContractDomain::SELECT, PrefContractCap::DISPLAY_IMU, std::span<const std::string_view>{kPrefOptsPickupToWake}, kPrefDefaultPickupToWake, false, 1, kPrefDefaultPickupToWakeIdx, false, 0, 0, 0},
@@ -688,6 +700,11 @@ inline constexpr std::array<PrefContractSpec, 65> kPrefContractSpecs = {{
     {DevicePrefsField::WEATHER_APP_BACKGROUND, "weather_app_background", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultWeatherAppBackground, 1, 0U, false, 0, 0, 0},
     {DevicePrefsField::DO_NOT_DISTURB, "do_not_disturb", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY_OR_AUDIO, std::span<const std::string_view>{}, "0", kPrefDefaultDoNotDisturb, 0, 0U, false, 0, 0, 0},
     {DevicePrefsField::GLASS_STYLE, "glass_style", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsGlassStyle}, kPrefDefaultGlassStyle, false, 0, kPrefDefaultGlassStyleIdx, false, 0, 0, 0},
+    {DevicePrefsField::HOME_SHOW_DATE, "home_show_date", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeShowDate, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::HOME_SHOW_TIME, "home_show_time", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeShowTime, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::HOME_SHOW_WEATHER, "home_show_weather", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeShowWeather, 1, 0U, false, 0, 0, 0},
+    {DevicePrefsField::HOME_WEATHER_TAP_ACTION, "home_weather_tap_action", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsHomeWeatherTapAction}, kPrefDefaultHomeWeatherTapAction, false, 0, kPrefDefaultHomeWeatherTapActionIdx, false, 0, 0, 0},
+    {DevicePrefsField::HOME_SHOW_BATTERY, "home_show_battery", PrefContractDomain::SWITCH, PrefContractCap::DISPLAY_BATTERY, std::span<const std::string_view>{}, "1", kPrefDefaultHomeShowBattery, 1, 0U, false, 0, 0, 0},
 }};
 
 inline constexpr const PrefContractSpec *find_pref_contract(std::string_view key) noexcept {

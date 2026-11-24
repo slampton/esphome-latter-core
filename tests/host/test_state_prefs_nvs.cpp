@@ -7,8 +7,8 @@ namespace {
 void test_device_prefs_v2_and_event_timer_sync() {
   static_assert(std::is_trivially_copyable_v<latter_core::PersistedDevicePrefs>);
   LATTER_CHECK(latter_core::kPersistedPrefsVersion == 1U);
-  LATTER_CHECK(static_cast<size_t>(latter_core::PrefKey::COUNT) == 67U);
-  LATTER_CHECK(static_cast<size_t>(latter_core::DevicePrefsField::COUNT) == 73U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::PrefKey::COUNT) == 72U);
+  LATTER_CHECK(static_cast<size_t>(latter_core::DevicePrefsField::COUNT) == 78U);
   LATTER_CHECK(static_cast<size_t>(latter_core::AreaCtxField::COUNT) == 43U);
   LATTER_CHECK(static_cast<size_t>(latter_core::ShortcutsField::COUNT) == 8U);
 
@@ -77,7 +77,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112401") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112402") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"sdk\":") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"max_payload_bytes\"") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"beacon\":null") != std::string::npos);
@@ -348,13 +348,15 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   static_assert(static_cast<size_t>(DevicePrefsField::DO_NOT_DISTURB) == 70U);
   static_assert(static_cast<size_t>(DevicePrefsField::MUSIC_AUTO_OPEN) == 71U);
   static_assert(static_cast<size_t>(DevicePrefsField::GLASS_STYLE) == 72U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 73U);
+  static_assert(static_cast<size_t>(DevicePrefsField::HOME_SHOW_BATTERY) == 77U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 78U);
   static_assert(static_cast<uint8_t>(PrefKey::TOOLS_ITEMS) == 46U);
   static_assert(static_cast<uint8_t>(PrefKey::GAMES_ITEMS) == 47U);
   static_assert(static_cast<uint8_t>(PrefKey::DO_NOT_DISTURB) == 64U);
   static_assert(static_cast<uint8_t>(PrefKey::MUSIC_AUTO_OPEN) == 65U);
   static_assert(static_cast<uint8_t>(PrefKey::GLASS_STYLE) == 66U);
-  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 67U);
+  static_assert(static_cast<uint8_t>(PrefKey::HOME_SHOW_BATTERY) == 71U);
+  static_assert(static_cast<uint8_t>(PrefKey::COUNT) == 72U);
 
   LATTER_CHECK(std::string_view(kDefaultToolsItems) ==
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
@@ -1115,9 +1117,10 @@ void test_wave2_overhaul_contracts() {
   // 1. Static schema & limit invariants
   static_assert(latter_rpc::kMaxRpcSlices == 32U);
   static_assert(FrameHitTable::kMaxRegions == 128U);
-  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 73U);
-  static_assert(static_cast<size_t>(PrefKey::COUNT) == 67U);
+  static_assert(static_cast<size_t>(DevicePrefsField::COUNT) == 78U);
+  static_assert(static_cast<size_t>(PrefKey::COUNT) == 72U);
   static_assert(static_cast<uint8_t>(PrefKey::GLASS_STYLE) == 66U);
+  static_assert(static_cast<uint8_t>(PrefKey::HOME_SHOW_BATTERY) == 71U);
   static_assert(kHibernateSnapshotVersion == 1U);
   static_assert(kPersistedPrefsMinSize == offsetof(PersistedDevicePrefs, glass_style) + sizeof(PersistedDevicePrefs::glass_style));
 
@@ -1191,14 +1194,24 @@ void test_wave2_overhaul_contracts() {
     bad_ver.version = kPersistedPrefsVersion + 1U;
     LATTER_CHECK(!load_persisted_prefs_from_buffer(&bad_ver, sizeof(bad_ver), dst));
 
-    // Accept exact v3.0 GA floor (kPersistedPrefsMinSize) and full sizeof
+    // Accept exact v3.0 GA floor (kPersistedPrefsMinSize) and full sizeof:
+    // appended tail fields (home_show_date/time/weather/battery, home_weather_tap_action) auto-default cleanly
+    src.home_show_date = false;
+    src.home_show_time = false;
+    src.home_show_weather = false;
+    src.home_weather_tap_action = 2U;
+    src.home_show_battery = false;
     dst = PersistedDevicePrefs{};
     LATTER_CHECK(load_persisted_prefs_from_buffer(&src, kPersistedPrefsMinSize, dst));
     LATTER_CHECK(dst.prefs_seq == 42U && dst.glass_style == 2U && dst.do_not_disturb);
+    LATTER_CHECK(dst.home_show_date && dst.home_show_time && dst.home_show_weather &&
+                 dst.home_weather_tap_action == 0U && dst.home_show_battery);
 
     dst = PersistedDevicePrefs{};
     LATTER_CHECK(load_persisted_prefs_from_buffer(&src, sizeof(src), dst));
     LATTER_CHECK(dst.prefs_seq == 42U && dst.glass_style == 2U && dst.do_not_disturb);
+    LATTER_CHECK(!dst.home_show_date && !dst.home_show_time && !dst.home_show_weather &&
+                 dst.home_weather_tap_action == 2U && !dst.home_show_battery);
 
     // Accept future oversized v3.1+ append-only blob (rollback resilience: copies our prefix cleanly)
     std::vector<uint8_t> future_blob(sizeof(PersistedDevicePrefs) + 32U, 0xA5U);
@@ -1232,16 +1245,32 @@ void test_wave2_overhaul_contracts() {
     p.glass_style = 99U;
     LATTER_CHECK(std::string_view(pref_glass_style_cstr(p)) == "Auto");
 
-    // 73-field DevicePrefs v3 wire parse sets glass_style cleanly
+    // 78-field DevicePrefs v3 wire parse sets glass_style and Home screen visibility/tap prefs cleanly
     reset_all_v3_rev_guards();
     persisted_prefs() = PersistedDevicePrefs{};
     device_prefs_state() = DevicePrefsState{};
     std::vector<std::string> dp_tok(static_cast<size_t>(DevicePrefsField::COUNT), "");
     dp_tok[static_cast<size_t>(DevicePrefsField::PREFS_SEQ)] = "88";
     dp_tok[static_cast<size_t>(DevicePrefsField::GLASS_STYLE)] = "Clear";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_CLOCK_TAP_ACTION)] = "None";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_DATE_TAP_ACTION)] = "None";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_SHOW_DATE)] = "0";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_SHOW_TIME)] = "0";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_SHOW_WEATHER)] = "0";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_WEATHER_TAP_ACTION)] = "5-Day Forecast";
+    dp_tok[static_cast<size_t>(DevicePrefsField::HOME_SHOW_BATTERY)] = "0";
     uint32_t p_eff = 0U;
     LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(99, 1, dp_tok), p_eff, 5000U));
     LATTER_CHECK(persisted_prefs().glass_style == 1U);
+    LATTER_CHECK(persisted_prefs().home_clock_tap_action == 2U &&
+                 std::string_view(pref_home_clock_tap_cstr(persisted_prefs())) == "None");
+    LATTER_CHECK(persisted_prefs().home_date_tap_action == 2U &&
+                 std::string_view(pref_home_date_tap_cstr(persisted_prefs())) == "None");
+    LATTER_CHECK(!persisted_prefs().home_show_date && !persisted_prefs().home_show_time &&
+                 !persisted_prefs().home_show_weather && !persisted_prefs().home_show_battery);
+    LATTER_CHECK(persisted_prefs().home_weather_tap_action == 1U &&
+                 std::string_view(pref_home_weather_tap_cstr(persisted_prefs())) == "5-Day Forecast");
+    LATTER_CHECK(get_pref_value_str(PrefKey::HOME_WEATHER_TAP_ACTION, persisted_prefs()) == "5-Day Forecast");
     LATTER_CHECK((p_eff & kPrefEffectRedraw) != 0U);
   }
 
@@ -1274,14 +1303,19 @@ void test_wave2_reconnect_dirty_prefs_and_contract_wiring() {
       ++contract_matched;
     }
   }
-  LATTER_CHECK(contract_matched == 64U);
+  LATTER_CHECK(contract_matched == 69U);
   LATTER_CHECK(std::string_view(pref_key_name(PrefKey::BLE_BEACON_ENABLED)) == "ble_beacon_enabled");
   LATTER_CHECK(std::string_view(pref_key_name(PrefKey::TOOLS_ITEMS)) == "tools_items");
   LATTER_CHECK(std::string_view(pref_key_name(PrefKey::GAMES_ITEMS)) == "games_items");
   LATTER_CHECK(std::string_view(pref_key_name(PrefKey::MANUAL_BRIGHTNESS)) == "manual_brightness");
   LATTER_CHECK(std::string_view(pref_key_name(PrefKey::GLASS_STYLE)) == "glass_style");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::HOME_SHOW_DATE)) == "home_show_date");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::HOME_SHOW_TIME)) == "home_show_time");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::HOME_SHOW_WEATHER)) == "home_show_weather");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::HOME_WEATHER_TAP_ACTION)) == "home_weather_tap_action");
+  LATTER_CHECK(std::string_view(pref_key_name(PrefKey::HOME_SHOW_BATTERY)) == "home_show_battery");
   // The single non-PersistedDevicePrefs contract spec is volatile weather_sim_condition.
-  LATTER_CHECK(kPrefContractSpecs.size() == 65U);
+  LATTER_CHECK(kPrefContractSpecs.size() == 70U);
   LATTER_CHECK(find_pref_contract("weather_sim_condition") != nullptr);
 
   // Generated default & clamp wiring on PersistedDevicePrefs.

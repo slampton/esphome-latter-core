@@ -290,7 +290,12 @@ display:
           (takeover_st.screensaver_style_opt == "Photo Frame") &&
           !takeover_st.screensaver_photo_clock &&
           photo_frame_art_ready;
-      const int hhmm_key = (photo_frame_no_clock || quick_actions_only) ? -1 : latter_ui::compute_hhmm_key(ctx.now);
+      const bool home_no_clock_or_date =
+          (takeover_sig == 0U) &&
+          (rs.nav.gui_page == latter_core::PageId::HOME) &&
+          (rs.nav.home_subpage == latter_ui::HomeSubpage::MAIN) &&
+          !prefs.home_show_date && !prefs.home_show_time;
+      const int hhmm_key = (photo_frame_no_clock || quick_actions_only || home_no_clock_or_date) ? -1 : latter_ui::compute_hhmm_key(ctx.now);
       const uint32_t idle_state_sig = latter_ui::compute_idle_state_signature(ctx);
       const bool live_sec_active = latter_ui::compute_live_sec_active(ctx);
       const int home_clock_band_y1 =

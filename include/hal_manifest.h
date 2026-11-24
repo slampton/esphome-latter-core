@@ -15,7 +15,7 @@
 #include "latter_traits.h"
 
 #ifndef LATTER_CORE_REV
-#define LATTER_CORE_REV 2026112401L
+#define LATTER_CORE_REV 2026112402L
 #endif
 
 namespace latter_core {

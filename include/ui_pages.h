@@ -53,8 +53,27 @@ void render_camera_video_placeholder(Rgb565Surface &it, const UiFrameContext &ct
                                      UiColor icon_col);
 
 // ------------------------------------------------------------------------------
-// 2. Shared Home Activity Collector & Weather / Area / Tools / Games Helpers
+// 2. Shared Home Settings & Activity Collector / Weather / Area / Tools / Games Helpers
 // ------------------------------------------------------------------------------
+enum class HomeSettingsItemId : uint8_t {
+  SHOW_TIME = 0,
+  TIME_TAP = 1,
+  SHOW_DATE = 2,
+  DATE_TAP = 3,
+  SHOW_WEATHER = 4,
+  WEATHER_TAP = 5,
+  SHOW_BATTERY = 6,
+  WAKE_GREETING = 7,
+  WEATHER_BG = 8,
+  HOME_SUN = 9,
+  HOME_MOON = 10,
+  WEATHER_APP_BG = 11,
+};
+
+int collect_home_settings_items(const latter_core::PersistedDevicePrefs &prefs,
+                                HomeSettingsItemId out[12]) noexcept;
+int home_settings_page_count(const latter_core::PersistedDevicePrefs &prefs) noexcept;
+
 int collect_home_activities(
     uint32_t now_ms, bool is_24h_format,
     bool stopwatch_running, uint32_t stopwatch_start_time, uint32_t stopwatch_elapsed_ms,

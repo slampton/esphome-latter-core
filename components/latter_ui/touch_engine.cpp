@@ -458,7 +458,9 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_RAPID, tkey)) {
         gest.active = false;
-        rs.nav.home_settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+        const int total_pages = home_settings_page_count(prefs);
+        rs.nav.home_settings_page = std::clamp(
+            rs.nav.home_settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, total_pages);
         rt_.schedule_disp();
       }
       return;
@@ -969,9 +971,10 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       return false;
     }
     if (rs.nav.home_subpage == 1 && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      const int total_pages = home_settings_page_count(persisted_prefs());
       bool changed = false;
       rs.nav.home_settings_page = step_v_pager(
-          std::clamp(rs.nav.home_settings_page, 1, 2), 1, 2, false, PageId::HOME, changed);
+          std::clamp(rs.nav.home_settings_page, 1, total_pages), 1, total_pages, false, PageId::HOME, changed);
       rt_.schedule_disp();
       return true;
     }
@@ -2053,6 +2056,7 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
     case S::TIME_FORMAT: return pref_time_format_cstr(p);
     case S::HOME_CLOCK_TAP_ACTION: return pref_home_clock_tap_cstr(p);
     case S::HOME_DATE_TAP_ACTION: return pref_home_date_tap_cstr(p);
+    case S::HOME_WEATHER_TAP_ACTION: return pref_home_weather_tap_cstr(p);
     case S::AUTO_BRIGHTNESS_MODE: return pref_auto_brightness_mode_cstr(p);
     case S::BEDTIME_DISPLAY: return pref_bedtime_display_cstr(p);
     case S::CAMERA_DEFAULT_VIEW: return pref_camera_default_view_cstr(p);
@@ -2118,6 +2122,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::TIME_FORMAT: pk = K::TIME_FORMAT; break;
     case S::HOME_CLOCK_TAP_ACTION: pk = K::HOME_CLOCK_TAP_ACTION; break;
     case S::HOME_DATE_TAP_ACTION: pk = K::HOME_DATE_TAP_ACTION; break;
+    case S::HOME_WEATHER_TAP_ACTION: pk = K::HOME_WEATHER_TAP_ACTION; break;
     case S::AUTO_BRIGHTNESS_MODE: pk = K::AUTO_BRIGHTNESS_MODE; break;
     case S::BEDTIME_DISPLAY: pk = K::BEDTIME_DISPLAY; break;
     case S::CAMERA_DEFAULT_VIEW: pk = K::CAMERA_DEFAULT_VIEW; break;
@@ -2141,6 +2146,10 @@ bool UiTouchRuntime::sw_state(UiSwitchId swid) const noexcept {
     case W::HOME_WEATHER_BG: return p.weather_background;
     case W::WEATHER_APP_BG: return p.weather_app_background;
     case W::HOME_WAKE_GREETING: return p.wake_greeting;
+    case W::HOME_SHOW_DATE: return p.home_show_date;
+    case W::HOME_SHOW_TIME: return p.home_show_time;
+    case W::HOME_SHOW_WEATHER: return p.home_show_weather;
+    case W::HOME_SHOW_BATTERY: return p.home_show_battery;
     case W::BLE_AREA_BEACON: return p.ble_beacon_enabled;
     case W::GAME_SOUND: return p.game_sound_effects;
     case W::VA_WAKE_SCREEN: return p.wake_screen_on_assist;
@@ -2161,6 +2170,10 @@ void UiTouchRuntime::sw_toggle(UiSwitchId swid) const {
     case W::HOME_WEATHER_BG: pk = K::WEATHER_BACKGROUND; next_val = !p.weather_background; break;
     case W::WEATHER_APP_BG: pk = K::WEATHER_APP_BACKGROUND; next_val = !p.weather_app_background; break;
     case W::HOME_WAKE_GREETING: pk = K::WAKE_GREETING; next_val = !p.wake_greeting; break;
+    case W::HOME_SHOW_DATE: pk = K::HOME_SHOW_DATE; next_val = !p.home_show_date; break;
+    case W::HOME_SHOW_TIME: pk = K::HOME_SHOW_TIME; next_val = !p.home_show_time; break;
+    case W::HOME_SHOW_WEATHER: pk = K::HOME_SHOW_WEATHER; next_val = !p.home_show_weather; break;
+    case W::HOME_SHOW_BATTERY: pk = K::HOME_SHOW_BATTERY; next_val = !p.home_show_battery; break;
     case W::BLE_AREA_BEACON: pk = K::BLE_BEACON_ENABLED; next_val = !p.ble_beacon_enabled; break;
     case W::GAME_SOUND: pk = K::GAME_SOUND_EFFECTS; next_val = !p.game_sound_effects; break;
     case W::VA_WAKE_SCREEN: pk = K::WAKE_SCREEN_ON_ASSIST; next_val = !p.wake_screen_on_assist; break;

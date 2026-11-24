@@ -829,6 +829,34 @@ bool draw_glass_activity_surface(
 
 }  // namespace
 
+int collect_home_settings_items(const PersistedDevicePrefs &prefs,
+                                HomeSettingsItemId out[12]) noexcept {
+  int n = 0;
+  out[n++] = HomeSettingsItemId::SHOW_TIME;
+  if (prefs.home_show_time) out[n++] = HomeSettingsItemId::TIME_TAP;
+  out[n++] = HomeSettingsItemId::SHOW_DATE;
+  if (prefs.home_show_date) out[n++] = HomeSettingsItemId::DATE_TAP;
+  out[n++] = HomeSettingsItemId::SHOW_WEATHER;
+  if (prefs.home_show_weather) out[n++] = HomeSettingsItemId::WEATHER_TAP;
+#if LATTER_HAS_BATTERY
+  out[n++] = HomeSettingsItemId::SHOW_BATTERY;
+#endif
+  out[n++] = HomeSettingsItemId::WAKE_GREETING;
+  out[n++] = HomeSettingsItemId::WEATHER_BG;
+  if (prefs.weather_background) {
+    out[n++] = HomeSettingsItemId::HOME_SUN;
+    out[n++] = HomeSettingsItemId::HOME_MOON;
+  }
+  out[n++] = HomeSettingsItemId::WEATHER_APP_BG;
+  return n;
+}
+
+int home_settings_page_count(const PersistedDevicePrefs &prefs) noexcept {
+  HomeSettingsItemId items[12]{};
+  const int n = collect_home_settings_items(prefs, items);
+  return std::max(1, (n + 4) / 5);
+}
+
 void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   sync_home_activity_away_sentinel();
 
@@ -872,39 +900,84 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.col_white);
 
-    const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, 2);
+    HomeSettingsItemId items[12]{};
+    const int item_count = collect_home_settings_items(prefs, items);
+    const int total_pages = std::max(1, (item_count + 4) / 5);
+    const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, total_pages);
     rs.nav.home_settings_page = hs_pg;
     const int hs_w = layout().list_card_w, hs_h = layout().slot5_h;
-    if (hs_pg == 1) {
-      char tap_buf[48], dtap_buf[48];
-      std::snprintf(tap_buf, sizeof(tap_buf), "Time Tap: %s", (prefs.home_clock_tap_action == 0U) ? "Time App" : "Clock Face");
-      ui::setting_cycle_row(it, cx, layout().slot5_y(0), hs_w, hs_h, tap_buf, true,
-                            ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
-                            WidgetId::LIST_SLOT_BASE, kHitTap | kHitFocusSlot, 0);
-      std::snprintf(dtap_buf, sizeof(dtap_buf), "Date Tap: %s", pref_home_date_tap_cstr(prefs));
-      ui::setting_cycle_row(it, cx, layout().slot5_y(1), hs_w, hs_h, dtap_buf, true,
-                            ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
-                            WidgetId::LIST_SLOT_BASE + 1, kHitTap | kHitFocusSlot, 1);
-
-      struct HomeBoolRow { const char *label; bool value; int16_t param; };
-      const HomeBoolRow bool_rows[3] = {
-          {"Weather Sky", prefs.weather_background, 2},
-          {"Wake Greeting", prefs.wake_greeting, 3},
-          {"Sun Indicator", prefs.home_sun, 4},
-      };
-      for (int i = 0; i < 3; ++i) {
-        const int row_idx = i + 2;
-        ui::toggle_card_row(it, cx, layout().slot5_y(row_idx), hs_w, hs_h, bool_rows[i].label, bool_rows[i].value,
-                            ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate,
-                            WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row_idx), bool_rows[i].param);
+    const int start_idx = (hs_pg - 1) * 5;
+    const int vis_cnt = std::min(5, std::max(0, item_count - start_idx));
+    for (int row = 0; row < vis_cnt; ++row) {
+      const HomeSettingsItemId item = items[start_idx + row];
+      const int row_y = layout().slot5_y(row);
+      const uint16_t wid = static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + row);
+      const int16_t param = static_cast<int16_t>(item);
+      char buf[48];
+      switch (item) {
+        case HomeSettingsItemId::SHOW_TIME:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Show Time", prefs.home_show_time,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::TIME_TAP:
+          std::snprintf(buf, sizeof(buf), "Time Tap: %s", pref_home_clock_tap_cstr(prefs));
+          ui::setting_cycle_row(it, cx, row_y, hs_w, hs_h, buf, true,
+                                ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                                wid, kHitTap | kHitFocusSlot, param);
+          break;
+        case HomeSettingsItemId::SHOW_DATE:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Show Date", prefs.home_show_date,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::DATE_TAP:
+          std::snprintf(buf, sizeof(buf), "Date Tap: %s", pref_home_date_tap_cstr(prefs));
+          ui::setting_cycle_row(it, cx, row_y, hs_w, hs_h, buf, true,
+                                ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                                wid, kHitTap | kHitFocusSlot, param);
+          break;
+        case HomeSettingsItemId::SHOW_WEATHER:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Show Weather", prefs.home_show_weather,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::WEATHER_TAP: {
+          const char *wt_short = (prefs.home_weather_tap_action == 0U)
+                                     ? "Current"
+                                     : ((prefs.home_weather_tap_action == 1U) ? "Forecast" : "None");
+          std::snprintf(buf, sizeof(buf), "Weather Tap: %s", wt_short);
+          ui::setting_cycle_row(it, cx, row_y, hs_w, hs_h, buf, true,
+                                ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
+                                wid, kHitTap | kHitFocusSlot, param);
+          break;
+        }
+        case HomeSettingsItemId::SHOW_BATTERY:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Show Battery", prefs.home_show_battery,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::WAKE_GREETING:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Wake Greeting", prefs.wake_greeting,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::WEATHER_BG:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Weather Sky", prefs.weather_background,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::HOME_SUN:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Sun Indicator", prefs.home_sun,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::HOME_MOON:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Moon Indicator", prefs.home_moon,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
+        case HomeSettingsItemId::WEATHER_APP_BG:
+          ui::toggle_card_row(it, cx, row_y, hs_w, hs_h, "Weather App Sky", prefs.weather_app_background,
+                              ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, wid, param);
+          break;
       }
-    } else {
-      ui::toggle_card_row(it, cx, layout().slot5_y(0), hs_w, hs_h, "Moon Indicator", prefs.home_moon,
-                          ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, WidgetId::LIST_SLOT_BASE, 5);
-      ui::toggle_card_row(it, cx, layout().slot5_y(1), hs_w, hs_h, "Weather App Sky", prefs.weather_app_background,
-                          ctx.font_small, ctx.theme_primary, ctx.col_white, ctx.col_slate, WidgetId::LIST_SLOT_BASE + 1, 6);
     }
-    render_vertical_page_pips(it, hs_pg == 2, hs_pg == 1, ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
+    if (total_pages > 1) {
+      render_vertical_page_pips(it, hs_pg > 1, hs_pg < total_pages, ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
+    }
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
     return;
   }
@@ -1016,22 +1089,28 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int z_date_y = layout().home_date_y, z_clock_y = layout().home_clock_y, z_weath_y = layout().home_weather_y;
 
   ProfLap home_lap;
-  if (ctx.now.is_valid()) {
+  if (prefs.home_show_date && ctx.now.is_valid()) {
     char date_bar[32];
     ctx.now.strftime(date_bar, sizeof(date_bar), "%a, %b %d");
     ui::shadow_print(it, cx, z_date_y, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, date_bar);
-    const int date_hit_w = std::min(scale_x(230), safe_span(z_date_y, 16));
-    const int date_hit_h = std::min(scale_y(34), std::max(24, (z_clock_y - scale_y(38) - z_date_y) * 2));
-    frame_hits().add_centered_rect(cx, z_date_y, date_hit_w, date_hit_h, WidgetId::HOME_DATE_HERO, kHitTap | kHitFocusSlot);
+    if (prefs.home_date_tap_action != 2U) {
+      const int date_hit_w = std::min(scale_x(230), safe_span(z_date_y, 16));
+      const int date_hit_h = std::min(scale_y(34), std::max(24, (z_clock_y - scale_y(38) - z_date_y) * 2));
+      frame_hits().add_centered_rect(cx, z_date_y, date_hit_w, date_hit_h, WidgetId::HOME_DATE_HERO, kHitTap | kHitFocusSlot);
+    }
   }
 
-  char time_str[16];
-  std::snprintf(time_str, sizeof(time_str), "%s", kUnknownGlyph);
-  if (ctx.now.is_valid()) format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, time_str, sizeof(time_str));
-  ui::shadow_print(it, cx, z_clock_y, ctx.font_time, ctx.col_white, UiTextAlign::CENTER, time_str);
-  frame_hits().add_centered_rect(cx, z_clock_y, scale_x(260), scale_y(72), WidgetId::HOME_TIME_READOUT, kHitTap | kHitFocusSlot);
+  if (prefs.home_show_time) {
+    char time_str[16];
+    std::snprintf(time_str, sizeof(time_str), "%s", kUnknownGlyph);
+    if (ctx.now.is_valid()) format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, time_str, sizeof(time_str));
+    ui::shadow_print(it, cx, z_clock_y, ctx.font_time, ctx.col_white, UiTextAlign::CENTER, time_str);
+    if (prefs.home_clock_tap_action != 2U) {
+      frame_hits().add_centered_rect(cx, z_clock_y, scale_x(260), scale_y(72), WidgetId::HOME_TIME_READOUT, kHitTap | kHitFocusSlot);
+    }
+  }
 
-  if (weather_ready) {
+  if (prefs.home_show_weather && weather_ready) {
     char w_line[64];
     if (!std::isnan(ws.temperature)) std::snprintf(w_line, sizeof(w_line), "%.0f° • %s", ws.temperature, cond_title.c_str());
     else std::snprintf(w_line, sizeof(w_line), "%s", cond_title.c_str());
@@ -1039,8 +1118,10 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const std::string fit_w = fit_text_to_width_font(std::string(w_line), max_w_span, ctx.font_date);
     fast_print(it, cx + 1, z_weath_y + 1, ctx.font_date, ctx.col_black, UiTextAlign::CENTER, fit_w.c_str());
     fast_print(it, cx, z_weath_y, ctx.font_date, fg_home_cond, UiTextAlign::CENTER, fit_w.c_str());
-    frame_hits().add_centered_rect(cx, z_weath_y, std::min(scale_x(300), max_w_span), scale_y(36),
-                                   WidgetId::HOME_WEATHER_HERO, kHitTap | kHitFocusSlot);
+    if (prefs.home_weather_tap_action != 2U) {
+      frame_hits().add_centered_rect(cx, z_weath_y, std::min(scale_x(300), max_w_span), scale_y(36),
+                                     WidgetId::HOME_WEATHER_HERO, kHitTap | kHitFocusSlot);
+    }
   }
 
   const auto &ly = layout();
@@ -1351,9 +1432,11 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
 #if LATTER_HAS_BATTERY
-  render_battery_indicator(it, ly.battery_cx, ly.battery_y, rs.hw_batt_level, rs.hw_batt_charging,
-                           (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small,
-                           ctx.theme_secondary, ctx.col_gold, ctx.col_green);
+  if (prefs.home_show_battery) {
+    render_battery_indicator(it, ly.battery_cx, ly.battery_y, rs.hw_batt_level, rs.hw_batt_charging,
+                             (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small,
+                             ctx.theme_secondary, ctx.col_gold, ctx.col_green);
+  }
 #endif
   home_lap.mark(ProfSect::HOME_DOCK);
 }

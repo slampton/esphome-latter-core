@@ -2,7 +2,7 @@
 
 This guide explains how an ESPHome Device running **Latter Core** and the **[Latter (`ha-latter`)](https://github.com/slampton/ha-latter)** Home Assistant integration discover, authenticate, and synchronize state at runtime.
 
-> **Canonical Wire Schema:** Exact field indices (`LATTER_CORE_REV = 2026112401`, `STUDIO_REV = 49`), enum constants, `constexpr` `PrefContractSpec` bounds, action variables, and outbound RPC methods are auto-generated from [`protocol/latter_v3.json`](../protocol/latter_v3.json) into **[`DEVICE_CONTRACT.md`](../DEVICE_CONTRACT.md)** and [`include/latter_protocol.h`](../include/latter_protocol.h) (while `ha-latter/custom_components/latter/studio_contract.json` owns HA services, Studio WS commands, world-clock catalogs, and UI preference metadata). This page explains how the pieces work together at runtime.
+> **Canonical Wire Schema:** Exact field indices (`LATTER_CORE_REV = 2026112402`, `STUDIO_REV = 50`), enum constants, `constexpr` `PrefContractSpec` bounds, action variables, and outbound RPC methods are auto-generated from [`protocol/latter_v3.json`](../protocol/latter_v3.json) into **[`DEVICE_CONTRACT.md`](../DEVICE_CONTRACT.md)** and [`include/latter_protocol.h`](../include/latter_protocol.h) (while `ha-latter/custom_components/latter/studio_contract.json` owns HA services, Studio WS commands, world-clock catalogs, and UI preference metadata). This page explains how the pieces work together at runtime.
 
 The contract has four moving parts:
 1. **Discovery & Bound Identity.** How `ha-latter` identifies and binds to an ESPHome Device by `esphome_device_id` and MAC address.
@@ -45,7 +45,7 @@ Each Device describes its hardware at compile time from `LATTER_*` flags via [`i
 | `slot_count`, `card_slot_count` | Sizes paginated browse lists (`5` or `7`) and Area entity card pages (`3`, `5`, or `6`) to the panel geometry |
 | `audio` (`out_rate`, `out_ch`, `out_bits`, `in_rate`), `mic`, `spk` | Matches FFmpeg sample rate/channels for doorbell audio streams and gates wake-word / alert-volume / DND entities |
 | `beacon` (`uuid`, `major`, `minor`, or `null` without `latter_beacon`), `board`, `chip`, `psram_mb` | Pairs BLE iBeacon advertisements (`minor` + MAC + provisioned 128-bit System UUID) and populates Studio diagnostics |
-| `core_rev`, `fw`, `boot_id`, `reset`, `crash`, `rollback` | Checks `MIN_FIRMWARE_CORE_REV` (`2026112401`) lockstep (raising a non-blocking auto-clearing `outdated_firmware` HA Repair & Studio warning banner if older) and raises Repairs on panics, brownouts, or OTA rollbacks |
+| `core_rev`, `fw`, `boot_id`, `reset`, `crash`, `rollback` | Checks `MIN_FIRMWARE_CORE_REV` (`2026112402`) lockstep (raising a non-blocking auto-clearing `outdated_firmware` HA Repair & Studio warning banner if older) and raises Repairs on panics, brownouts, or OTA rollbacks |
 
 **Sleep-Safe Two-Way `device_prefs` Reconciliation:**
 - Studio and sleep-safe Home Assistant policy entities (`select.<slug>_device_group`, `select.<slug>_wake_word_mode`, `switch.<slug>_bedtime_mode`, `switch.<slug>_do_not_disturb`, `number.<slug>_alert_volume`) write preferences immediately to the Device's subentry—even while a battery Device is hibernating—incrementing `prefs_seq` and pushing the `device_prefs` domain when connected.

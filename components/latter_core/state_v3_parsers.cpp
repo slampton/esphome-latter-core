@@ -250,6 +250,11 @@ std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p) {
     case PrefKey::WEATHER_APP_BACKGROUND: return p.weather_app_background ? "1" : "0";
     case PrefKey::DO_NOT_DISTURB: return p.do_not_disturb ? "1" : "0";
     case PrefKey::GLASS_STYLE: return pref_glass_style_cstr(p);
+    case PrefKey::HOME_SHOW_DATE: return p.home_show_date ? "1" : "0";
+    case PrefKey::HOME_SHOW_TIME: return p.home_show_time ? "1" : "0";
+    case PrefKey::HOME_SHOW_WEATHER: return p.home_show_weather ? "1" : "0";
+    case PrefKey::HOME_WEATHER_TAP_ACTION: return pref_home_weather_tap_cstr(p);
+    case PrefKey::HOME_SHOW_BATTERY: return p.home_show_battery ? "1" : "0";
     case PrefKey::COUNT: break;
   }
   return "";
@@ -493,6 +498,16 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
       return apply_bool(p.do_not_disturb, kPrefEffectNone);
     case PrefKey::GLASS_STYLE:
       return apply_enum(p.glass_style, kPrefOptsGlassStyle, 0);
+    case PrefKey::HOME_SHOW_DATE:
+      return apply_bool(p.home_show_date, 0);
+    case PrefKey::HOME_SHOW_TIME:
+      return apply_bool(p.home_show_time, 0);
+    case PrefKey::HOME_SHOW_WEATHER:
+      return apply_bool(p.home_show_weather, 0);
+    case PrefKey::HOME_WEATHER_TAP_ACTION:
+      return apply_enum(p.home_weather_tap_action, kPrefOptsHomeWeatherTapAction, 0);
+    case PrefKey::HOME_SHOW_BATTERY:
+      return apply_bool(p.home_show_battery, 0);
     case PrefKey::COUNT:
       break;
   }
@@ -621,6 +636,11 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
   apply_f(DevicePrefsField::DO_NOT_DISTURB, PrefKey::DO_NOT_DISTURB);
   apply_f(DevicePrefsField::MUSIC_AUTO_OPEN, PrefKey::MUSIC_AUTO_OPEN);
   apply_f(DevicePrefsField::GLASS_STYLE, PrefKey::GLASS_STYLE);
+  apply_f(DevicePrefsField::HOME_SHOW_DATE, PrefKey::HOME_SHOW_DATE);
+  apply_f(DevicePrefsField::HOME_SHOW_TIME, PrefKey::HOME_SHOW_TIME);
+  apply_f(DevicePrefsField::HOME_SHOW_WEATHER, PrefKey::HOME_SHOW_WEATHER);
+  apply_f(DevicePrefsField::HOME_WEATHER_TAP_ACTION, PrefKey::HOME_WEATHER_TAP_ACTION);
+  apply_f(DevicePrefsField::HOME_SHOW_BATTERY, PrefKey::HOME_SHOW_BATTERY);
 
   const std::string_view sim_sv = f[static_cast<size_t>(DevicePrefsField::WEATHER_SIM_CONDITION)];
   if (!sim_sv.empty()) {

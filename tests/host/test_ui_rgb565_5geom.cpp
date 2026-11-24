@@ -605,7 +605,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  static_assert(LATTER_CORE_REV == 2026112401L, "LATTER_CORE_REV must match 2026112401L");
+  static_assert(LATTER_CORE_REV == 2026112402L, "LATTER_CORE_REV must match 2026112402L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);
