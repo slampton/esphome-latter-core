@@ -691,7 +691,7 @@ void draw_home_activity_row_contents(
     UiColor btn_eff{}, btn_rim{};
     int raw_at = 0, raw_ab = 0, raw_rt = 0, raw_rb = 0;
     resolve_styled_glass(act_bx - btn_r, row_y - btn_r, d, d, fg_btn, fg_sec,
-                         GlassVariant::Clear, fg_sec, -1, false,
+                         GlassVariant::Clear, kChromeGlassSheen, -1, false,
                          btn_bd, btn_eff, btn_rim, raw_at, raw_ab, raw_rt, raw_rb);
     const int at = static_cast<int>(std::lround(static_cast<float>(raw_at) * alpha));
     const int ab = static_cast<int>(std::lround(static_cast<float>(raw_ab) * alpha));
@@ -1316,7 +1316,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         UiColor eff_tint{}, rim_col{};
         int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
         resolve_styled_glass(bx - dock_r, dock_y - dock_r, d, d, raw_bg, raw_brd,
-                             GlassVariant::Clear, show_tint ? accent_col : kChromeGlassSheen, -1, false,
+                             GlassVariant::Clear, kChromeGlassSheen, -1, false,
                              dock_bd, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
         const int a_top = static_cast<int>(std::roundf(static_cast<float>(raw_a_top) * alpha));
         const int a_bot = static_cast<int>(std::roundf(static_cast<float>(raw_a_bot) * alpha));

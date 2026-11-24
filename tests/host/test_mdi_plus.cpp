@@ -471,6 +471,109 @@ void test_outline_solid_helpers_and_5geom_shortcut_rendering() {
   reset_all_v3_rev_guards();
 }
 
+void test_home_dock_custom_shortcut_adaptive_glass() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  HostSurfaceFixture fix{};
+  const uint8_t saved_gs = persisted_prefs().glass_style;
+
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+  home_dock_anim().snap(0);
+
+  auto &rs = runtime_state();
+  auto &sc = shortcuts_state();
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  rs.nav.home_dock_page = 0;
+
+  sc = ShortcutsState{};
+  sc.dock_configured = true;
+  sc.live_received = true;
+
+  ShortcutItem d0{};
+  LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1|glass|default", d0));
+  ShortcutItem d1{};
+  LATTER_CHECK(parse_shortcut_record("entity|automation.bear|trigger|Bear|mdi:teddy-bear|1|1|glass|default", d1));
+  ShortcutItem d2{};
+  LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk|mdi:lightbulb|0|1|glass|primary", d2));
+  ShortcutItem d3{};
+  LATTER_CHECK(parse_shortcut_record("entity|automation.bear|trigger|Bear|mdi:teddy-bear|1|-1|glass|default", d3));
+  sc.dock_items = {d0, d1, d2, d3};
+
+  fix.ctx.home_weather_bg = false;
+  fix.ctx.home_wake_greeting = false;
+
+  auto decode_px = [](uint16_t hw) -> UiColor {
+    const uint16_t p = decode_hw_rgb565_raw(hw);
+    const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1FU);
+    const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3FU);
+    const uint8_t b5 = static_cast<uint8_t>(p & 0x1FU);
+    return UiColor{
+        static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+        static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+        static_cast<uint8_t>((b5 << 3) | (b5 >> 2)),
+    };
+  };
+  auto avg_luma = [](UiColor c) -> int {
+    return (static_cast<int>(c.r) + static_cast<int>(c.g) + static_cast<int>(c.b)) / 3;
+  };
+  auto render_and_sample = [&](UiColor wall_bg, GlassStyle style, int out_luma[4]) {
+    persisted_prefs().glass_style = static_cast<uint8_t>(style);
+    fix.fill(encode_hw_rgb565(wall_bg));
+    frame_base_claim();
+    backdrop_active() = true;
+    frame_hits().clear();
+    render_home_page(fix.surf, fix.ctx);
+    const int r = layout().dock_r;
+    const int off = std::max(4, r - 3);
+    for (int i = 0; i < 4; ++i) {
+      const HitRegion *hit = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::DOCK_SLOT_BASE + i));
+      LATTER_CHECK(hit != nullptr);
+      const int sx = std::clamp(hit->cx() - off, 0, SCREEN_W - 1);
+      const int sy = std::clamp(hit->cy(), 0, SCREEN_H - 1);
+      out_luma[i] = avg_luma(decode_px(fix.pixels[static_cast<size_t>(sy) * SCREEN_W + sx]));
+    }
+  };
+
+  // Medium wallpaper + GlassStyle::Auto: active & accented GLASS custom shortcuts must stay
+  // translucent frosted glass matching built-in route buttons (never collapsing to opaque black).
+  int med_auto[4]{};
+  render_and_sample(UiColor(88, 108, 132), GlassStyle::Auto, med_auto);
+  LATTER_CHECK(med_auto[0] >= 55);
+  LATTER_CHECK(med_auto[1] >= 55);
+  LATTER_CHECK(med_auto[2] >= 55);
+  LATTER_CHECK(med_auto[3] >= 55);
+  LATTER_CHECK(std::abs(med_auto[1] - med_auto[0]) <= 12);
+  LATTER_CHECK(std::abs(med_auto[2] - med_auto[0]) <= 12);
+  LATTER_CHECK(std::abs(med_auto[3] - med_auto[0]) <= 4);
+
+  // Bright wallpaper: Auto darkens all glass dock buttons uniformly for contrast,
+  // Clear keeps them airy, and Dark switches all of them to ReadableDark.
+  int bright_auto[4]{};
+  int bright_clear[4]{};
+  int bright_dark[4]{};
+  render_and_sample(UiColor(235, 245, 255), GlassStyle::Auto, bright_auto);
+  render_and_sample(UiColor(235, 245, 255), GlassStyle::Clear, bright_clear);
+  render_and_sample(UiColor(235, 245, 255), GlassStyle::Dark, bright_dark);
+  for (int i = 0; i < 4; ++i) {
+    LATTER_CHECK(bright_clear[i] >= 130);
+    LATTER_CHECK(bright_auto[i] < bright_clear[i] - 25);
+    LATTER_CHECK(bright_dark[i] <= 75);
+  }
+  LATTER_CHECK(std::abs(bright_auto[1] - bright_auto[0]) <= 14);
+  LATTER_CHECK(std::abs(bright_auto[2] - bright_auto[0]) <= 14);
+  LATTER_CHECK(std::abs(bright_auto[3] - bright_auto[0]) <= 4);
+  LATTER_CHECK(std::abs(bright_clear[1] - bright_clear[0]) <= 12);
+  LATTER_CHECK(std::abs(bright_dark[1] - bright_dark[0]) <= 12);
+
+  persisted_prefs().glass_style = saved_gs;
+  home_dock_anim().reset();
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+}
+
 }  // namespace
 
 void run_mdi_plus_tests() {
@@ -478,6 +581,7 @@ void run_mdi_plus_tests() {
   test_all_builtin_route_icons_solid();
   test_shortcut_record_parsing_and_ui_sig();
   test_outline_solid_helpers_and_5geom_shortcut_rendering();
+  test_home_dock_custom_shortcut_adaptive_glass();
 }
 
 }  // namespace latter_test
