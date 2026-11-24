@@ -394,7 +394,8 @@ void media_seek_relative(int dir, uint32_t now_ms);
 void media_seek_absolute(uint32_t now_ms);
 bool media_play_slot(int slot_1based, uint32_t now_ms);
 
-// Returns true when the newly selected speaker is remote (caller mutes local DAC & turns off speaker_enable).
+// Returns true when caller should mute local DAC & turn off speaker_enable
+// (switching to a remote speaker when transferring queue or when local playback is idle).
 bool speaker_activate_selected(bool transfer_queue,
                                bool local_mp_playing,
                                bool local_mp_paused,

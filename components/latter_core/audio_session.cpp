@@ -640,12 +640,18 @@ bool speaker_activate_selected(bool transfer_queue,
                                uint32_t now_ms) {
   auto &m = runtime_state().music;
   auto &ms = media_state();
+  const std::string prev_spk =
+      !m.active_speaker_entity.empty() ? m.active_speaker_entity : ms.active_speaker;
   const bool was_playing =
       is_music_playing_effective(!ms.is_local, local_mp_playing, ms.state, now_ms);
   const char *prefix = transfer_queue ? "Transferring -> " : "Controlling: ";
+  bool valid_target = false;
+  bool speaker_changed = false;
   if (m.target_speaker_id.rfind("media_player.", 0) == 0) {
-    if (m.active_speaker_entity != m.target_speaker_id && !m.active_speaker_entity.empty()) {
-      ms.last_speaker = m.active_speaker_entity;
+    valid_target = true;
+    speaker_changed = (prev_spk != m.target_speaker_id);
+    if (speaker_changed && !prev_spk.empty()) {
+      ms.last_speaker = prev_spk;
     }
     m.active_speaker_entity = m.target_speaker_id;
     m.active_speaker_name = m.target_speaker_name;
@@ -657,6 +663,13 @@ bool speaker_activate_selected(bool transfer_queue,
     m.action_feedback = "Invalid Speaker";
   }
   m.feedback_timer = now_ms;
+  if (!valid_target) {
+    m.overlay_mode = 0;
+    m.direct_nav = false;
+    m.hud_active = true;
+    m.hud_timer = now_ms;
+    return false;
+  }
   const std::string &loc_spk = ms.local_speaker;
   const bool new_is_local = (!loc_spk.empty() && m.active_speaker_entity == loc_spk);
   ms.active_speaker = m.active_speaker_entity;
@@ -667,6 +680,22 @@ bool speaker_activate_selected(bool transfer_queue,
     set_remote_play_override(true, now_ms);
   } else {
     clear_remote_play_override();
+    if (!transfer_queue && speaker_changed) {
+      ms.state = "idle";
+      ms.playback_state = MediaPlaybackState::Idle;
+      ms.playing = false;
+      ms.title.clear();
+      ms.artist.clear();
+      ms.album.clear();
+      ms.media_type.clear();
+      ms.art_url.clear();
+      ms.duration = 0.0f;
+      ms.position = 0.0f;
+      ms.position_updated_ms = 0U;
+      m.pos_base = 0.0f;
+      m.pos_sync_time = 0U;
+      m.lyrics.clear();
+    }
   }
   sync_audio_session_media_observation(local_mp_playing && new_is_local, local_mp_paused, now_ms);
   m.overlay_mode = 0;
@@ -674,7 +703,7 @@ bool speaker_activate_selected(bool transfer_queue,
   m.hud_active = true;
   m.hud_timer = now_ms;
   latter_core::emit_set_active_speaker(m.active_speaker_entity, transfer_queue);
-  return !new_is_local;
+  return !new_is_local && (transfer_queue || !local_mp_playing);
 }
 
 bool speaker_join_target(uint32_t now_ms) {

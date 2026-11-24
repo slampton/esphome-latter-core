@@ -740,6 +740,166 @@ void test_rotary_navigation_and_glass_style_display_setting() {
   eng.runtime().exec_cmd = nullptr;
 }
 
+void test_area_media_player_switches_active_speaker() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+  auto &rs = runtime_state();
+  auto &ms = media_state();
+  ms = MediaState{};
+  ms.local_speaker = "media_player.pocket_assistant_music";
+  ms.active_speaker = "media_player.pocket_assistant_music";
+  ms.speaker_name = "Pocket Assistant";
+  ms.is_local = true;
+  ms.state = "playing";
+  ms.playback_state = MediaPlaybackState::Playing;
+  ms.playing = true;
+  ms.title = "Old Local Track";
+  ms.artist = "Old Artist";
+  ms.art_url = "http://ha/old_art.jpg";
+  rs.music.active_speaker_entity = ms.active_speaker;
+  rs.music.active_speaker_name = ms.speaker_name;
+  rs.music.loaded_art_url = ms.art_url;
+
+  static std::vector<UiHostCmd> s_area_cmds;
+  s_area_cmds.clear();
+  MockRpcOutbox rpc_box{};
+  latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+  latter_rpc::bind_sensor_sink(&rpc_box);
+  link_state().ha_connected = true;
+
+  auto &eng = touch_engine();
+  eng.runtime().local_mp_playing = false;
+  eng.runtime().exec_cmd = +[](UiHostCmd cmd, int, int) {
+    s_area_cmds.push_back(cmd);
+    if (cmd == UiHostCmd::SPEAKER_CONTROL_TARGET) {
+      (void)latter_core::speaker_activate_selected(false, false, false, 1500U);
+    }
+  };
+
+  // Render Area Control with Living Room media_player slot
+  rs.nav.gui_page = PageId::AREA;
+  rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+  rs.area.browse_mode = "entities";
+  rs.area.active_area_id = "living_room";
+  rs.area.active_area_name = "Living Room";
+  rs.area.domain_filter = "media";
+  rs.area.available_domains_csv = "light,media";
+  auto &sl0 = rs.area_entity_slots()[0];
+  sl0.id = "media_player.living_room_tv";
+  sl0.name = "Speaker: Living Room TV";
+  sl0.type = "media_player";
+  sl0.active = false;
+  sl0.level = -1;
+
+  std::vector<uint16_t> fb(static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H), 0U);
+  Rgb565Surface surf = bind_host_surface(fb.data(), SCREEN_W, SCREEN_H, 1);
+  UiFrameContext ctx{};
+  ctx.now_ms = 1000U;
+  ctx.font_small = UiFontView::make_host_font(16);
+  ctx.font_micro = UiFontView::make_host_font(12);
+  ctx.col_bg = UiColor(0, 0, 0);
+  ctx.col_white = UiColor(255, 255, 255);
+  ctx.col_slate = UiColor(158, 158, 158);
+  ctx.col_gold = UiColor(197, 155, 39);
+  ctx.theme_primary = UiColor(107, 142, 158);
+  ctx.theme_secondary = UiColor(192, 192, 192);
+
+  auto render_area_frame = [&]() {
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::AREA, AreaSubpage::OVERVIEW, 0U, true);
+    frame_hits().clear();
+    frame_base_begin();
+    render_active_page(surf, ctx);
+  };
+  auto drain_rpc = [&](uint32_t t_ms) {
+    while (latter_rpc::has_pending_frames()) {
+      latter_rpc::step_outbox_loop(t_ms);
+      t_ms += 40U;
+    }
+  };
+
+  render_area_frame();
+  const HitRegion *body_hit = frame_hits().find_by_id(WidgetId::AREA_CARD_TAP);
+  LATTER_CHECK(body_hit != nullptr);
+
+  // 1. Tap media_player card body -> switches to Music AND activates Living Room TV speaker
+  eng.on_touch_down(body_hit->cx(), body_hit->cy(), 1500U);
+  eng.on_touch_up(1540U);
+  drain_rpc(1600U);
+
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+  LATTER_CHECK(rs.music.view == MusicView::NOW_PLAYING);
+  LATTER_CHECK(ms.active_speaker == "media_player.living_room_tv");
+  LATTER_CHECK(rs.music.active_speaker_entity == "media_player.living_room_tv");
+  LATTER_CHECK(ms.speaker_name == "Living Room TV");
+  LATTER_CHECK(ms.last_speaker == "media_player.pocket_assistant_music");
+  LATTER_CHECK(!ms.is_local);
+  LATTER_CHECK(ms.title.empty());
+  LATTER_CHECK(ms.state == "idle");
+  LATTER_CHECK(rs.music.action_feedback == "Controlling: Living Room TV");
+  LATTER_CHECK(std::find(s_area_cmds.begin(), s_area_cmds.end(), UiHostCmd::SPEAKER_CONTROL_TARGET) !=
+               s_area_cmds.end());
+  std::string wire;
+  for (const auto &f : rpc_box.published) wire += f;
+  LATTER_CHECK(wire.find("\"s\":\"set_active_speaker\"") != std::string::npos);
+  LATTER_CHECK(wire.find("\"entity_id\":\"media_player.living_room_tv\"") != std::string::npos);
+  LATTER_CHECK(wire.find("\"transfer_queue\":\"false\"") != std::string::npos);
+
+  // 2. Tapping the already-active media_player opens Music without re-issuing SPEAKER_CONTROL_TARGET
+  s_area_cmds.clear();
+  rpc_box.published.clear();
+  ms.title = "TV Movie Audio";
+  ms.state = "playing";
+  rs.nav.gui_page = PageId::AREA;
+  rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+  render_area_frame();
+  body_hit = frame_hits().find_by_id(WidgetId::AREA_CARD_TAP);
+  LATTER_CHECK(body_hit != nullptr);
+  eng.on_touch_down(body_hit->cx(), body_hit->cy(), 2200U);
+  eng.on_touch_up(2240U);
+  drain_rpc(2300U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+  LATTER_CHECK(std::find(s_area_cmds.begin(), s_area_cmds.end(), UiHostCmd::SPEAKER_CONTROL_TARGET) ==
+               s_area_cmds.end());
+  LATTER_CHECK(rpc_box.published.empty());
+  LATTER_CHECK(ms.title == "TV Movie Audio");
+
+  // 3. Tapping the left icon (AREA_CARD_TOGGLE) on a media_player emits area_action "toggle" (play/pause)
+  rpc_box.published.clear();
+  rs.nav.gui_page = PageId::AREA;
+  rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+  render_area_frame();
+  const HitRegion *tog_hit = frame_hits().find_by_id(WidgetId::AREA_CARD_TOGGLE);
+  LATTER_CHECK(tog_hit != nullptr);
+  eng.on_touch_down(tog_hit->cx(), tog_hit->cy(), 3000U);
+  eng.on_touch_up(3040U);
+  drain_rpc(3100U);
+  std::string tog_wire;
+  for (const auto &f : rpc_box.published) tog_wire += f;
+  LATTER_CHECK(tog_wire.find("\"s\":\"area_action\"") != std::string::npos);
+  LATTER_CHECK(tog_wire.find("\"entity_id\":\"media_player.living_room_tv\"") != std::string::npos);
+  LATTER_CHECK(tog_wire.find("\"action\":\"toggle\"") != std::string::npos);
+
+  // 4. Control-only switch does not request local DAC mute while local playback is active; transfer does
+  ms.active_speaker = ms.local_speaker;
+  rs.music.active_speaker_entity = ms.local_speaker;
+  ms.is_local = true;
+  rs.music.target_speaker_id = "media_player.living_room_tv";
+  rs.music.target_speaker_name = "Living Room TV";
+  LATTER_CHECK(!speaker_activate_selected(/*transfer_queue=*/false, /*local_mp_playing=*/true, false, 4000U));
+  ms.active_speaker = ms.local_speaker;
+  rs.music.active_speaker_entity = ms.local_speaker;
+  ms.is_local = true;
+  rs.music.target_speaker_id = "media_player.living_room_tv";
+  LATTER_CHECK(speaker_activate_selected(/*transfer_queue=*/true, /*local_mp_playing=*/true, false, 4100U));
+
+  latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
+  eng.runtime().exec_cmd = nullptr;
+}
+
 }  // namespace
 
 void run_touch_engine_tests() {
@@ -748,6 +908,7 @@ void run_touch_engine_tests() {
   test_time_app_world_clocks_alarms_and_horology();
   test_live_touch_engine_end_to_end_5geom();
   test_rotary_navigation_and_glass_style_display_setting();
+  test_area_media_player_switches_active_speaker();
 }
 
 }  // namespace latter_test

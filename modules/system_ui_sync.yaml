@@ -374,10 +374,22 @@ script:
                 case C::SPEAKER_TRANSFER_TO_TARGET:
                 case C::SPEAKER_CONTROL_TARGET: {
                   const bool xfer = (cmd == C::SPEAKER_TRANSFER_TO_TARGET);
+                  auto &m_spk = latter_core::runtime_state().music;
+                  const std::string &cur_spk =
+                      !m_spk.active_speaker_entity.empty() ? m_spk.active_speaker_entity
+                                                           : latter_core::media_state().active_speaker;
+                  const bool spk_changed =
+                      !m_spk.target_speaker_id.empty() && (m_spk.target_speaker_id != cur_spk);
                   if (latter_core::speaker_activate_selected(xfer, au.local_mp_playing(), au.local_mp_paused(), millis())) {
                     au.mute_speaker_now();
                   }
-                  id(fetch_remote_art_debounced).execute();
+                  if (!xfer && spk_changed) {
+                    id(fetch_remote_art_debounced).stop();
+                    latter_ui::release_art(id(remote_album_art));
+                    m_spk.loaded_art_url.clear();
+                  } else {
+                    id(fetch_remote_art_debounced).execute();
+                  }
                   latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 }

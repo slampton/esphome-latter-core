@@ -1841,7 +1841,21 @@ bool TouchGestureEngine::handle_tap_home_area_(
             mark_dirty_full();
             rt_.schedule_disp();
           } else if (is_card_body && sl.type == "media_player") {
+            const std::string spk_id = sl.id;
+            std::string spk_name = strip_trailing_paren_state(sl.name);
+            if (spk_name.rfind("Speaker: ", 0) == 0 && spk_name.size() > 9U) {
+              spk_name.erase(0, 9U);
+            }
+            if (spk_name.empty()) {
+              spk_name = spk_id;
+            }
+            const std::string cur_spk = TouchGestureEngine::resolve_music_speaker_entity_(rs);
             TouchGestureEngine::launch_dock_app_(PageId::MUSIC, rs, rt_, now_rel);
+            if (spk_id != cur_spk && spk_id.rfind("media_player.", 0) == 0) {
+              rs.music.target_speaker_id = spk_id;
+              rs.music.target_speaker_name = spk_name;
+              rt_.cmd(UiHostCmd::SPEAKER_CONTROL_TARGET);
+            }
           } else {
             rs.area.target_entity_id = sl.id;
             const bool next_act = (sl.type == "scene") ? true : !sl.active;
@@ -1849,6 +1863,7 @@ bool TouchGestureEngine::handle_tap_home_area_(
             if (sl.type == "scene") verb = "turn_on";
             else if (sl.type == "cover") verb = next_act ? "open_cover" : "close_cover";
             else if (sl.type == "lock" || sl.id.rfind("lock.", 0) == 0) verb = next_act ? "unlock" : "lock";
+            else if (sl.type == "media_player") verb = "toggle";
             else verb = next_act ? "turn_on" : "turn_off";
             const std::string ok_fb = strip_trailing_paren_state(sl.name);
             if (gate_or_dispatch_area_action(sl.id, verb, next_act ? 100 : 0,
