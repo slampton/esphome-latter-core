@@ -13,14 +13,14 @@
 #ifdef USE_ESP32
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
-// Hardware between-frames clear is restricted to ESP32-P4, whose 2D PPA Fill engine writes AXI PSRAM
-// in ~2.5 ms without source reads or Flash XIP stalls. On Octal-PSRAM XIP chips without PPA (ESP32-S3),
-// PSRAM-to-PSRAM GDMA + cache msync contends directly with instruction fetches and PSRAM wake-word inference.
+// Hardware framebuffer acceleration is restricted to ESP32-P4, whose 2D PPA Fill/SRM/Blend engines
+// stream AXI PSRAM via DMA2D without Flash XIP stalls or GDMA IRAM-safe conflicts. On Octal-PSRAM XIP
+// chips without PPA (ESP32-S3), PSRAM-to-PSRAM GDMA + cache msync contends directly with instruction
+// fetches and PSRAM wake-word inference.
 #if defined(CONFIG_IDF_TARGET_ESP32P4)
 #define LATTER_FB_DMA_CLEAR 1
 #define LATTER_FB_PPA 1
 #include <driver/ppa.h>
-#include <esp_async_memcpy.h>
 #include <esp_attr.h>
 #include <esp_cache.h>
 #include <esp_rom_sys.h>
@@ -148,7 +148,7 @@ void ui_psram_free(void *ptr) noexcept {
 #endif
 }
 
-// 2. Between-Frames Async GDMA / PPA Framebuffer Clear & FrameProfileScope
+// 2. Between-Frames Async PPA Framebuffer Clear, PPA SRM Band Blit & PPA Blend Wash
 namespace {
 
 struct FbClearState {
@@ -157,21 +157,16 @@ struct FbClearState {
   uint16_t *fb = nullptr;
   bool init_tried = false, ok = false, post_stamp_pending = false;
   bool pending_start = false, active = false, ready = false, error = false;
-  uint16_t color_hw = 0, pattern_hw = 0;
-  bool pattern_valid = false;
+  uint16_t color_hw = 0;
   uint8_t *interior = nullptr;
   size_t interior_len = 0;
   uint32_t hits = 0, misses = 0, starts = 0;
   const char *why = nullptr;
   int why_err = 0;
-#if LATTER_FB_DMA_CLEAR
-  async_memcpy_handle_t mcp = nullptr;
-  uint16_t *pattern = nullptr;
-  size_t align = 64;
-#endif
 #if LATTER_FB_PPA
+  size_t align = 256;
   ppa_client_handle_t ppa = nullptr;
-  bool use_ppa = false, ppa_checked = false;
+  bool ppa_checked = false;
   int64_t ppa_t0_us = 0;
 #endif
 };
@@ -198,25 +193,9 @@ const char *fb_clear_why_err_str() {
 
 std::atomic<int64_t> g_fb_clear_done_us{0};
 
-#if LATTER_FB_DMA_CLEAR
-constexpr size_t kFbClearPatternBytes = 128 * 1024;
-constexpr size_t kFbClearFrameBytes = static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t);
-constexpr size_t kFbClearChunks = (kFbClearFrameBytes + kFbClearPatternBytes - 1) / kFbClearPatternBytes;
-
-void fb_clear_log_heap(const char *when) {
-  ESP_LOGD("disp_fb", "DMA clear heap %s: int_free=%uB int_max_blk=%uB", when,
-           static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-           static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)));
-}
-
+#if LATTER_FB_PPA
 std::atomic<int> g_fb_clear_pending{0};
 
-bool IRAM_ATTR fb_clear_chunk_done(async_memcpy_handle_t, async_memcpy_event_t *, void *) {
-  g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
-  return false;
-}
-
-#if LATTER_FB_PPA
 constexpr uint32_t kFbPpaRowPx = 128;
 constexpr size_t kFbPpaRowBytes = kFbPpaRowPx * sizeof(uint16_t);
 constexpr size_t kFbPpaMaxRows = 16383;
@@ -226,59 +205,39 @@ bool IRAM_ATTR fb_clear_ppa_done(ppa_client_handle_t, ppa_event_data_t *, void *
   g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
   return false;
 }
-#endif
 
 bool fb_clear_init() {
   auto &st = fb_clear_state();
   if (st.init_tried) return st.ok;
   st.init_tried = true;
-#if LATTER_FB_PPA
   const int endian = active_frame_endian_mode();
-  if (endian == 1 || endian == 3) {
-    ppa_client_config_t pcfg = {};
-    pcfg.oper_type = PPA_OPERATION_FILL;
-    pcfg.max_pending_trans_num = 1;
-    esp_err_t perr = ppa_register_client(&pcfg, &st.ppa);
-    if (perr == ESP_OK) {
-      ppa_event_callbacks_t cbs = {};
-      cbs.on_trans_done = fb_clear_ppa_done;
-      perr = ppa_client_register_event_callbacks(st.ppa, &cbs);
-    }
-    if (perr == ESP_OK) {
-      st.use_ppa = true;
-      st.align = kFbPpaRowBytes;
-      st.ok = true;
-      ESP_LOGD("disp_fb", "Between-frames clear enabled: PPA fill (%u px rows)", static_cast<unsigned>(kFbPpaRowPx));
-      return true;
-    }
-    fb_clear_fail("ppa_register", static_cast<int>(perr));
+  if (endian != 1 && endian != 3) {
+    fb_clear_fail("endian", endian);
+    return false;
   }
-#endif
-  fb_clear_log_heap("before install");
-  async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
-  cfg.backlog = kFbClearChunks + 1;
-  esp_err_t err = esp_async_memcpy_install_gdma_axi(&cfg, &st.mcp);
-#if defined(CONFIG_CACHE_L2_CACHE_LINE_128B)
-  st.align = 128;
-#else
-  st.align = 64;
-#endif
-  if (err == ESP_OK) {
-    st.pattern = static_cast<uint16_t *>(heap_caps_aligned_alloc(st.align, kFbClearPatternBytes, MALLOC_CAP_SPIRAM));
+  ppa_client_config_t pcfg = {};
+  pcfg.oper_type = PPA_OPERATION_FILL;
+  pcfg.max_pending_trans_num = 1;
+  esp_err_t perr = ppa_register_client(&pcfg, &st.ppa);
+  if (perr == ESP_OK) {
+    ppa_event_callbacks_t cbs = {};
+    cbs.on_trans_done = fb_clear_ppa_done;
+    perr = ppa_client_register_event_callbacks(st.ppa, &cbs);
   }
-  st.ok = (err == ESP_OK && st.pattern != nullptr);
-  if (err != ESP_OK) fb_clear_fail("install", static_cast<int>(err));
-  else if (st.pattern == nullptr) fb_clear_fail("pattern_alloc");
-  ESP_LOGD("disp_fb", "Between-frames DMA clear %s (err=%d, align=%u, chunks=%u)", st.ok ? "enabled" : "unavailable",
-           static_cast<int>(err), static_cast<unsigned>(st.align), static_cast<unsigned>(kFbClearChunks));
-  fb_clear_log_heap("after install");
-  return st.ok;
+  if (perr == ESP_OK) {
+    st.align = kFbPpaRowBytes;
+    st.ok = true;
+    ESP_LOGD("disp_fb", "Between-frames clear enabled: PPA fill (%u px rows)", static_cast<unsigned>(kFbPpaRowPx));
+    return true;
+  }
+  fb_clear_fail("ppa_register", static_cast<int>(perr));
+  return false;
 }
 #endif
 
 void fb_clear_start() {
   (void)g_fb_clear_done_us;
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   auto &st = fb_clear_state();
   st.pending_start = false;
   if (st.active) return;
@@ -292,64 +251,32 @@ void fb_clear_start() {
   st.interior = reinterpret_cast<uint8_t *>(lo);
   st.interior_len = hi - lo;
   st.color_hw = frame_base_state().color_hw;
-#if LATTER_FB_PPA
-  if (st.use_ppa) {
-    const size_t rows = st.interior_len / kFbPpaRowBytes;
-    if (rows > kFbPpaMaxRows) { fb_clear_fail("ppa_rows", static_cast<int>(rows)); return; }
-    ppa_fill_oper_config_t cfg = {};
-    cfg.out.buffer = st.interior;
-    cfg.out.buffer_size = static_cast<uint32_t>(st.interior_len);
-    cfg.out.pic_w = kFbPpaRowPx;
-    cfg.out.pic_h = static_cast<uint32_t>(rows);
-    cfg.out.fill_cm = PPA_FILL_COLOR_MODE_RGB565;
-    cfg.fill_block_w = kFbPpaRowPx;
-    cfg.fill_block_h = static_cast<uint32_t>(rows);
-    const uint32_t hw = st.color_hw;
-    cfg.fill_argb_color.val = 0xFF000000U | ((((hw >> 11) & 0x1FU) << 3) << 16) |
-                              ((((hw >> 5) & 0x3FU) << 2) << 8) | ((hw & 0x1FU) << 3);
-    cfg.mode = PPA_TRANS_MODE_NON_BLOCKING;
-    st.error = false;
-    st.ready = false;
-    st.active = true;
-    g_fb_clear_pending.store(1, std::memory_order_release);
-    st.ppa_t0_us = esp_timer_get_time();
-    const esp_err_t ppa_err = ppa_do_fill(st.ppa, &cfg);
-    if (ppa_err != ESP_OK) {
-      g_fb_clear_pending.store(0, std::memory_order_release);
-      st.error = true;
-      fb_clear_fail("ppa_fill", static_cast<int>(ppa_err));
-    }
-    st.starts++;
-    return;
-  }
-#endif
-  if (!st.pattern_valid || st.pattern_hw != st.color_hw) {
-    for (size_t i = 0; i < kFbClearPatternBytes / sizeof(uint16_t); i++) st.pattern[i] = st.color_hw;
-    esp_cache_msync(st.pattern, kFbClearPatternBytes, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
-    st.pattern_hw = st.color_hw;
-    st.pattern_valid = true;
-  }
-  const esp_err_t sync_err =
-      esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
-  if (sync_err != ESP_OK) { fb_clear_fail("msync", static_cast<int>(sync_err)); return; }
+  const size_t rows = st.interior_len / kFbPpaRowBytes;
+  if (rows > kFbPpaMaxRows) { fb_clear_fail("ppa_rows", static_cast<int>(rows)); return; }
+  ppa_fill_oper_config_t cfg = {};
+  cfg.out.buffer = st.interior;
+  cfg.out.buffer_size = static_cast<uint32_t>(st.interior_len);
+  cfg.out.pic_w = kFbPpaRowPx;
+  cfg.out.pic_h = static_cast<uint32_t>(rows);
+  cfg.out.fill_cm = PPA_FILL_COLOR_MODE_RGB565;
+  cfg.fill_block_w = kFbPpaRowPx;
+  cfg.fill_block_h = static_cast<uint32_t>(rows);
+  const uint32_t hw = st.color_hw;
+  cfg.fill_argb_color.val = 0xFF000000U | ((((hw >> 11) & 0x1FU) << 3) << 16) |
+                            ((((hw >> 5) & 0x3FU) << 2) << 8) | ((hw & 0x1FU) << 3);
+  cfg.mode = PPA_TRANS_MODE_NON_BLOCKING;
   st.error = false;
   st.ready = false;
   st.active = true;
-  size_t off = 0;
-  while (off < st.interior_len) {
-    const size_t n = std::min(kFbClearPatternBytes, st.interior_len - off);
-    g_fb_clear_pending.fetch_add(1, std::memory_order_acq_rel);
-    const esp_err_t cp_err = esp_async_memcpy(st.mcp, st.interior + off, st.pattern, n, fb_clear_chunk_done, nullptr);
-    if (cp_err != ESP_OK) {
-      g_fb_clear_pending.fetch_sub(1, std::memory_order_acq_rel);
-      st.error = true;
-      fb_clear_fail("memcpy", static_cast<int>(cp_err));
-      break;
-    }
-    off += n;
+  g_fb_clear_pending.store(1, std::memory_order_release);
+  st.ppa_t0_us = esp_timer_get_time();
+  const esp_err_t ppa_err = ppa_do_fill(st.ppa, &cfg);
+  if (ppa_err != ESP_OK) {
+    g_fb_clear_pending.store(0, std::memory_order_release);
+    st.error = true;
+    fb_clear_fail("ppa_fill", static_cast<int>(ppa_err));
   }
   st.starts++;
-  if (st.starts == 1 || st.starts == 256) fb_clear_log_heap(st.starts == 1 ? "after 1st clear" : "after 256 clears");
 #endif
 }
 
@@ -373,7 +300,7 @@ void fb_clear_after_update() {
 }
 
 void fb_clear_wait() {
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   auto &st = fb_clear_state();
   if (!st.active || st.ready) return;
   const int64_t t0 = esp_timer_get_time();
@@ -388,8 +315,7 @@ void fb_clear_wait() {
   esp_cache_msync(st.interior, st.interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
   st.ready = !st.error && st.ok;
   if (!st.ready) st.active = false;
-#if LATTER_FB_PPA
-  if (st.use_ppa && st.ready && !st.ppa_checked) {
+  if (st.ready && !st.ppa_checked) {
     st.ppa_checked = true;
     const uint16_t *px = reinterpret_cast<const uint16_t *>(st.interior);
     const size_t n = st.interior_len / sizeof(uint16_t);
@@ -408,7 +334,6 @@ void fb_clear_wait() {
     ESP_LOGD("disp_fb", "PPA fill verified: %u KB in %ld us", static_cast<unsigned>(st.interior_len / 1024),
              static_cast<long>(g_fb_clear_done_us.load(std::memory_order_acquire) - st.ppa_t0_us));
   }
-#endif
 #endif
 }
 
@@ -431,7 +356,7 @@ bool fb_clear_consume(uint16_t hw) {
 }
 
 void fb_clear_frame_end() {
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   auto &st = fb_clear_state();
   if (st.ready) { st.ready = false; st.active = false; }
   if (frame_base_state().has_color && (st.owner == nullptr || st.fb == nullptr)) fb_clear_fail("no_fb");
@@ -441,46 +366,206 @@ void fb_clear_frame_end() {
 #endif
 }
 
-#if LATTER_FB_DMA_CLEAR
 namespace {
 
-struct PsramBandBlitState {
+#if LATTER_FB_PPA
+constexpr uint32_t kPpaCopyRowPx = 256U;
+constexpr size_t kPpaCopyRowBytes = kPpaCopyRowPx * sizeof(uint16_t);
+constexpr size_t kPpaSrmBufAlign = 256U;
+
+struct PpaSrmBlitState {
   bool init_tried = false;
   bool ok = false;
   bool verified = false;
-  bool logged_skip = false;
-  async_memcpy_handle_t mcp = nullptr;
+  ppa_client_handle_t ppa = nullptr;
 };
 
-PsramBandBlitState &psram_band_blit_state() {
-  static PsramBandBlitState st{};
+PpaSrmBlitState &ppa_srm_blit_state() {
+  static PpaSrmBlitState st{};
   return st;
 }
 
-std::atomic<int> g_psram_blit_pending{0};
-
-bool IRAM_ATTR psram_blit_chunk_done(async_memcpy_handle_t, async_memcpy_event_t *, void *) {
-  g_psram_blit_pending.fetch_sub(1, std::memory_order_acq_rel);
-  return false;
-}
-
-bool psram_band_blit_init() noexcept {
-  auto &st = psram_band_blit_state();
+bool ppa_srm_blit_init() noexcept {
+  auto &st = ppa_srm_blit_state();
   if (st.init_tried) return st.ok;
   st.init_tried = true;
-  async_memcpy_config_t cfg = ASYNC_MEMCPY_DEFAULT_CONFIG();
-  cfg.backlog = kFbClearChunks + 2U;
-  const esp_err_t err = esp_async_memcpy_install_gdma_axi(&cfg, &st.mcp);
-  st.ok = (err == ESP_OK && st.mcp != nullptr);
+  ppa_client_config_t pcfg = {};
+  pcfg.oper_type = PPA_OPERATION_SRM;
+  pcfg.max_pending_trans_num = 1;
+  const esp_err_t err = ppa_register_client(&pcfg, &st.ppa);
+  st.ok = (err == ESP_OK && st.ppa != nullptr);
   if (!st.ok) {
-    ESP_LOGW("disp_fb", "PSRAM AXI-GDMA band blit unavailable (err=%d); using CPU memcpy",
+    ESP_LOGW("disp_fb", "PSRAM PPA SRM band blit unavailable (err=%d); using CPU memcpy",
              static_cast<int>(err));
   }
   return st.ok;
 }
 
-}  // namespace
+struct PpaBlendWashState {
+  bool init_tried = false;
+  bool ok = false;
+  bool verified = false;
+  bool evictor_registered = false;
+  ppa_client_handle_t ppa = nullptr;
+  uint8_t *alpha_mask = nullptr;
+  int cached_falloff_drop = -1;
+};
+
+PpaBlendWashState &ppa_blend_wash_state() {
+  static PpaBlendWashState st{};
+  return st;
+}
+
+void ppa_blend_wash_evict() noexcept {
+  auto &st = ppa_blend_wash_state();
+  if (st.alpha_mask != nullptr) {
+    ui_psram_free(st.alpha_mask);
+    st.alpha_mask = nullptr;
+    st.cached_falloff_drop = -1;
+  }
+}
+
+bool ppa_blend_wash_init() noexcept {
+  auto &st = ppa_blend_wash_state();
+  if (st.init_tried) return st.ok;
+  st.init_tried = true;
+  ppa_client_config_t pcfg = {};
+  pcfg.oper_type = PPA_OPERATION_BLEND;
+  pcfg.max_pending_trans_num = 1;
+  const esp_err_t err = ppa_register_client(&pcfg, &st.ppa);
+  st.ok = (err == ESP_OK && st.ppa != nullptr);
+  if (!st.ok) {
+    ESP_LOGW("disp_fb", "PSRAM PPA Blend wash unavailable (err=%d); using CPU blend",
+             static_cast<int>(err));
+  }
+  return st.ok;
+}
+
+uint8_t *ppa_blend_wash_ensure_mask(int falloff_drop) noexcept {
+  auto &st = ppa_blend_wash_state();
+  const size_t mask_bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
+  if (st.alpha_mask == nullptr) {
+    st.alpha_mask = static_cast<uint8_t *>(ui_psram_aligned_alloc(mask_bytes));
+    if (st.alpha_mask == nullptr) return nullptr;
+    st.cached_falloff_drop = -1;
+    if (!st.evictor_registered) {
+      st.evictor_registered = register_psram_cache_evictor(&ppa_blend_wash_evict);
+    }
+  }
+  if (st.cached_falloff_drop != falloff_drop) {
+    const int span_h = std::max(1, SCREEN_H - 1);
+    for (int py = 0; py < SCREEN_H; ++py) {
+      const int val = std::clamp(255 - ((py * falloff_drop) / span_h), 0, 255);
+      std::memset(st.alpha_mask + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W), val,
+                  static_cast<size_t>(SCREEN_W));
+    }
+    ui_psram_cache_writeback(st.alpha_mask, mask_bytes);
+    st.cached_falloff_drop = falloff_drop;
+  }
+  return st.alpha_mask;
+}
 #endif
+
+template <int Mode>
+void blend_vertical_wash_cpu_mode(uint16_t *dst_fb, const uint16_t *src_bg, int lo_y, int hi_y,
+                                  int sr5, int sg6, int sb5, int sheet_q8, int falloff_drop,
+                                  int round_inset, int cx) noexcept {
+  static constexpr uint8_t kFlashBayer4[4][4] = {
+      {  0, 128,  32, 160},
+      {192,  64, 224,  96},
+      { 48, 176,  16, 144},
+      {240, 112, 208,  80},
+  };
+  const int inset = std::max(0, round_inset);
+  const int span_h = std::max(1, SCREEN_H - 1 - 2 * inset);
+  const bool fused_copy = (src_bg != dst_fb);
+  for (int py = lo_y; py <= hi_y; ++py) {
+    uint16_t *const dst_row = dst_fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W);
+    const uint16_t *const src_row = src_bg + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W);
+    int x0 = 0;
+    int x1 = SCREEN_W - 1;
+    const bool blend_row = (py >= inset && py <= SCREEN_H - 1 - inset);
+#if LATTER_ROUND_DISPLAY
+    if (inset > 0) {
+      const int outer_hw = circle_half_span(py, 0) + 2;
+      const int ox0 = std::max(0, cx - outer_hw);
+      const int ox1 = std::min(SCREEN_W - 1, cx + outer_hw);
+      const int inner_hw = blend_row ? circle_half_span(py, inset) : 0;
+      if (inner_hw <= 0) {
+        if (fused_copy && ox0 <= ox1) {
+          std::memcpy(dst_row + ox0, src_row + ox0, static_cast<size_t>(ox1 - ox0 + 1) * sizeof(uint16_t));
+        }
+        continue;
+      }
+      x0 = std::max(0, cx - inner_hw);
+      x1 = std::min(SCREEN_W - 1, cx + inner_hw);
+      if (fused_copy) {
+        if (ox0 < x0) {
+          std::memcpy(dst_row + ox0, src_row + ox0, static_cast<size_t>(x0 - ox0) * sizeof(uint16_t));
+        }
+        if (ox1 > x1) {
+          std::memcpy(dst_row + x1 + 1, src_row + x1 + 1, static_cast<size_t>(ox1 - x1) * sizeof(uint16_t));
+        }
+      }
+    } else {
+      (void)cx;
+      if (!blend_row) {
+        if (fused_copy) std::memcpy(dst_row, src_row, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+        continue;
+      }
+    }
+#else
+    (void)cx;
+    if (!blend_row) {
+      if (fused_copy) std::memcpy(dst_row, src_row, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+      continue;
+    }
+#endif
+    const int falloff_q8 = 256 - (((py - inset) * falloff_drop) / span_h);
+    const int a = (sheet_q8 * std::clamp(falloff_q8, 0, 256)) >> 8;
+    if (a <= 0) {
+      if (fused_copy && x0 <= x1) {
+        std::memcpy(dst_row + x0, src_row + x0, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
+      }
+      continue;
+    }
+    const int inv = 256 - a;
+    const int sr_a = sr5 * a;
+    const int sg_a = sg6 * a;
+    const int sb_a = sb5 * a;
+    const uint8_t *const bayer = kFlashBayer4[py & 3];
+    const int d0 = bayer[0], d1 = bayer[1], d2 = bayer[2], d3 = bayer[3];
+
+    auto blend_px = [&](uint16_t hw, int d) -> uint16_t {
+      const uint16_t p = decode_hw_rgb565_mode<Mode>(hw);
+      const int dr = (p >> 11) & 0x1F;
+      const int dg = (p >> 5) & 0x3F;
+      const int db = p & 0x1F;
+      const uint16_t out = static_cast<uint16_t>((((sr_a + dr * inv + d) >> 8) << 11) |
+                                                 (((sg_a + dg * inv + d) >> 8) << 5) |
+                                                 ((sb_a + db * inv + d) >> 8));
+      return encode_hw_rgb565_mode<Mode>(out);
+    };
+
+    int px = x0;
+    while (px <= x1 && (px & 3) != 0) {
+      dst_row[px] = blend_px(src_row[px], bayer[px & 3]);
+      ++px;
+    }
+    const int x_end4 = x1 - 3;
+    for (; px <= x_end4; px += 4) {
+      dst_row[px + 0] = blend_px(src_row[px + 0], d0);
+      dst_row[px + 1] = blend_px(src_row[px + 1], d1);
+      dst_row[px + 2] = blend_px(src_row[px + 2], d2);
+      dst_row[px + 3] = blend_px(src_row[px + 3], d3);
+    }
+    for (; px <= x1; ++px) {
+      dst_row[px] = blend_px(src_row[px], bayer[px & 3]);
+    }
+  }
+}
+
+}  // namespace
 
 void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept {
   if (dst_fb == nullptr || src_cache == nullptr) return;
@@ -494,118 +579,90 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
   uint8_t *const dst_ptr = reinterpret_cast<uint8_t *>(dst_fb) + off_bytes;
   const uint8_t *const src_ptr = reinterpret_cast<const uint8_t *>(src_cache) + off_bytes;
 
-#if LATTER_FB_DMA_CLEAR
-  constexpr size_t kMinDmaBytes = 32768U;
-  constexpr size_t kAlignMask = kPsramCacheLineAlign - 1U;
-  if (total_bytes >= kMinDmaBytes) {
-    auto &st = psram_band_blit_state();
-    const bool phase_match =
-        ((reinterpret_cast<uintptr_t>(dst_ptr) & kAlignMask) ==
-         (reinterpret_cast<uintptr_t>(src_ptr) & kAlignMask));
-    if (!phase_match) {
-      if (!st.logged_skip) {
-        st.logged_skip = true;
-        ESP_LOGW("disp_fb",
-                 "PSRAM AXI-GDMA blit skipped: phase mismatch dst=0x%08lX src=0x%08lX align=%u",
-                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(dst_ptr)),
-                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(src_ptr)),
-                 static_cast<unsigned>(kPsramCacheLineAlign));
-      }
-    } else if (psram_band_blit_init()) {
-      const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
-      const uintptr_t lo = (dst_addr + kAlignMask) & ~static_cast<uintptr_t>(kAlignMask);
-      const uintptr_t hi = (dst_addr + total_bytes) & ~static_cast<uintptr_t>(kAlignMask);
-      if (hi > lo) {
-        const size_t head = static_cast<size_t>(lo - dst_addr);
-        const size_t interior_len = static_cast<size_t>(hi - lo);
+#if LATTER_FB_PPA
+  constexpr size_t kMinPpaBytes = 32768U;
+  constexpr uintptr_t kAlignMask = static_cast<uintptr_t>(kPpaSrmBufAlign - 1U);
+  if (total_bytes >= kMinPpaBytes && dst_fb != src_cache && ppa_srm_blit_init()) {
+    auto &st = ppa_srm_blit_state();
+    const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
+    const uintptr_t lo = (dst_addr + kAlignMask) & ~kAlignMask;
+    const uintptr_t hi = (dst_addr + total_bytes) & ~kAlignMask;
+    if (hi > lo) {
+      const size_t head = static_cast<size_t>(lo - dst_addr);
+      const size_t rows = static_cast<size_t>(hi - lo) / kPpaCopyRowBytes;
+      if (rows > 0U && rows <= kFbPpaMaxRows) {
+        const size_t interior_len = rows * kPpaCopyRowBytes;
         const size_t tail = total_bytes - head - interior_len;
         uint8_t *const dst_lo = dst_ptr + head;
         const uint8_t *const src_lo = src_ptr + head;
 
-        // Flush and invalidate only the strictly aligned interior so partial head/tail lines
-        // (which may share a cache line with untouched rows outside [y0, y1]) stay coherent.
+        ppa_srm_oper_config_t cfg = {};
+        cfg.in.buffer = src_lo;
+        cfg.in.pic_w = kPpaCopyRowPx;
+        cfg.in.pic_h = static_cast<uint32_t>(rows);
+        cfg.in.block_w = kPpaCopyRowPx;
+        cfg.in.block_h = static_cast<uint32_t>(rows);
+        cfg.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+        cfg.out.buffer = dst_lo;
+        cfg.out.buffer_size = static_cast<uint32_t>(interior_len);
+        cfg.out.pic_w = kPpaCopyRowPx;
+        cfg.out.pic_h = static_cast<uint32_t>(rows);
+        cfg.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+        cfg.rotation_angle = PPA_SRM_ROTATION_ANGLE_0;
+        cfg.scale_x = 1.0f;
+        cfg.scale_y = 1.0f;
+        cfg.alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+        cfg.mode = PPA_TRANS_MODE_BLOCKING;
+
         const int64_t t0_us = esp_timer_get_time();
-        const esp_err_t pre_err = esp_cache_msync(
-            dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
-        if (pre_err != ESP_OK) {
-          if (!st.logged_skip) {
-            st.logged_skip = true;
-            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA pre-msync failed (err=%d); fallback to memcpy",
-                     static_cast<int>(pre_err));
-          }
-        } else {
-          const int64_t t_pre_us = esp_timer_get_time();
-          g_psram_blit_pending.store(0, std::memory_order_release);
-          bool dma_err = false;
-          size_t pos = 0U;
-          while (pos < interior_len) {
-            const size_t chunk = std::min(kFbClearPatternBytes, interior_len - pos);
-            g_psram_blit_pending.fetch_add(1, std::memory_order_acq_rel);
-            const esp_err_t cp_err = esp_async_memcpy(
-                st.mcp, dst_lo + pos, const_cast<uint8_t *>(src_lo + pos), chunk,
-                psram_blit_chunk_done, nullptr);
-            if (cp_err != ESP_OK) {
-              g_psram_blit_pending.fetch_sub(1, std::memory_order_acq_rel);
-              dma_err = true;
-              ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit enqueue failed (err=%d); fallback to memcpy",
-                       static_cast<int>(cp_err));
-              break;
-            }
-            pos += chunk;
-          }
-          while (g_psram_blit_pending.load(std::memory_order_acquire) > 0) {
-            if (esp_timer_get_time() - t_pre_us > 200000) {
-              dma_err = true;
-              st.ok = false;
-              ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit timeout; disabling hardware blit");
-              break;
-            }
-            esp_rom_delay_us(20);
-          }
-          const int64_t t_dma_us = esp_timer_get_time();
-          if (!dma_err) {
-            const esp_err_t post_err = esp_cache_msync(dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
-            const int64_t t_post_us = esp_timer_get_time();
-            if (post_err == ESP_OK) {
-              if (head > 0U) std::memcpy(dst_ptr, src_ptr, head);
-              if (tail > 0U) std::memcpy(dst_lo + interior_len, src_lo + interior_len, tail);
-              if (!st.verified) {
-                st.verified = true;
-                const uint16_t *const dpx = reinterpret_cast<const uint16_t *>(dst_lo);
-                const uint16_t *const spx = reinterpret_cast<const uint16_t *>(src_lo);
-                const size_t n = interior_len / sizeof(uint16_t);
-                bool match = true;
-                for (size_t i = 0U; i < 8U && n > 0U; ++i) {
-                  const size_t idx = (n > 1U) ? ((i * (n - 1U)) / 7U) : 0U;
-                  if (dpx[idx] != spx[idx]) {
-                    ESP_LOGW("disp_fb",
-                             "PSRAM AXI-GDMA blit mismatch at %u: expected 0x%04X, got 0x%04X; disabling",
-                             static_cast<unsigned>(idx), static_cast<unsigned>(spx[idx]),
-                             static_cast<unsigned>(dpx[idx]));
-                    st.ok = false;
-                    match = false;
-                    break;
-                  }
+        const esp_err_t srm_err = ppa_do_scale_rotate_mirror(st.ppa, &cfg);
+        const int64_t t_srm_us = esp_timer_get_time();
+        if (srm_err == ESP_OK) {
+          const esp_err_t post_err = esp_cache_msync(dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+          const int64_t t_post_us = esp_timer_get_time();
+          if (post_err == ESP_OK) {
+            if (head > 0U) std::memcpy(dst_ptr, src_ptr, head);
+            if (tail > 0U) std::memcpy(dst_lo + interior_len, src_lo + interior_len, tail);
+            if (!st.verified) {
+              st.verified = true;
+              const uint16_t *const dpx = reinterpret_cast<const uint16_t *>(dst_lo);
+              const uint16_t *const spx = reinterpret_cast<const uint16_t *>(src_lo);
+              const size_t n = interior_len / sizeof(uint16_t);
+              bool match = true;
+              for (size_t i = 0U; i < 8U && n > 0U; ++i) {
+                const size_t idx = (n > 1U) ? ((i * (n - 1U)) / 7U) : 0U;
+                if (dpx[idx] != spx[idx]) {
+                  ESP_LOGW("disp_fb",
+                           "PSRAM PPA SRM blit mismatch at %u: expected 0x%04X, got 0x%04X; disabling",
+                           static_cast<unsigned>(idx), static_cast<unsigned>(spx[idx]),
+                           static_cast<unsigned>(dpx[idx]));
+                  st.ok = false;
+                  match = false;
+                  break;
                 }
-                if (!match) {
-                  std::memcpy(dst_ptr, src_ptr, total_bytes);
-                  return;
-                }
-                ESP_LOGI("disp_fb",
-                         "PSRAM AXI-GDMA band blit verified: %u KB in %ld us (pre=%ldus dma=%ldus post=%ldus align=%u)",
-                         static_cast<unsigned>(interior_len / 1024U),
-                         static_cast<long>(t_post_us - t0_us),
-                         static_cast<long>(t_pre_us - t0_us),
-                         static_cast<long>(t_dma_us - t_pre_us),
-                         static_cast<long>(t_post_us - t_dma_us),
-                         static_cast<unsigned>(kPsramCacheLineAlign));
               }
-              return;
+              if (!match) {
+                std::memcpy(dst_ptr, src_ptr, total_bytes);
+                return;
+              }
+              ESP_LOGI("disp_fb",
+                       "PSRAM PPA SRM band blit verified: %u KB (%u x %u px) in %ld us (srm=%ldus post=%ldus)",
+                       static_cast<unsigned>(interior_len / 1024U),
+                       static_cast<unsigned>(kPpaCopyRowPx),
+                       static_cast<unsigned>(rows),
+                       static_cast<long>(t_post_us - t0_us),
+                       static_cast<long>(t_srm_us - t0_us),
+                       static_cast<long>(t_post_us - t_srm_us));
             }
-            st.ok = false;
-            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA post-msync failed (err=%d); disabling",
-                     static_cast<int>(post_err));
+            return;
           }
+          st.ok = false;
+          ESP_LOGW("disp_fb", "PSRAM PPA SRM post-msync failed (err=%d); disabling",
+                   static_cast<int>(post_err));
+        } else {
+          st.ok = false;
+          ESP_LOGW("disp_fb", "PSRAM PPA SRM blit failed (err=%d); disabling",
+                   static_cast<int>(srm_err));
         }
       }
     }
@@ -613,6 +670,121 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
 #endif
 
   std::memcpy(dst_ptr, src_ptr, total_bytes);
+}
+
+bool blend_psram_vertical_wash_fast(uint16_t *dst_fb, const uint16_t *src_bg, int y0, int y1,
+                                    uint8_t wash_r, uint8_t wash_g, uint8_t wash_b,
+                                    int sheet_q8, int falloff_drop, int round_inset, int cx) noexcept {
+  if (dst_fb == nullptr || src_bg == nullptr) return false;
+  const int lo_y = std::max(0, y0);
+  const int hi_y = std::min(SCREEN_H - 1, y1);
+  if (lo_y > hi_y) return false;
+
+  const int clamped_q8 = std::clamp(sheet_q8, 0, 256);
+  if (clamped_q8 <= 0) {
+    if (dst_fb != src_bg) blit_psram_band_fast(dst_fb, src_bg, lo_y, hi_y);
+    return false;
+  }
+
+  const int mode = active_frame_endian_mode();
+#if LATTER_FB_PPA && !LATTER_ROUND_DISPLAY
+  if (dst_fb != src_bg && round_inset <= 0 && (mode == 1 || mode == 3) && ppa_blend_wash_init()) {
+    const size_t row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
+    const size_t off_bytes = static_cast<size_t>(lo_y) * row_bytes;
+    const size_t band_h = static_cast<size_t>(hi_y - lo_y + 1);
+    const size_t band_bytes = band_h * row_bytes;
+    uint8_t *const dst_ptr = reinterpret_cast<uint8_t *>(dst_fb) + off_bytes;
+    const uint8_t *const src_ptr = reinterpret_cast<const uint8_t *>(src_bg) + off_bytes;
+    constexpr uintptr_t kAlignMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+    if ((reinterpret_cast<uintptr_t>(dst_ptr) & kAlignMask) == 0U &&
+        (band_bytes & kAlignMask) == 0U &&
+        band_h <= kFbPpaMaxRows && static_cast<size_t>(SCREEN_W) <= kFbPpaMaxRows) {
+      uint8_t *const alpha_mask = ppa_blend_wash_ensure_mask(falloff_drop);
+      if (alpha_mask != nullptr) {
+        auto &st = ppa_blend_wash_state();
+        ppa_blend_oper_config_t bcfg = {};
+        bcfg.in_bg.buffer = src_ptr;
+        bcfg.in_bg.pic_w = static_cast<uint32_t>(SCREEN_W);
+        bcfg.in_bg.pic_h = static_cast<uint32_t>(band_h);
+        bcfg.in_bg.block_w = static_cast<uint32_t>(SCREEN_W);
+        bcfg.in_bg.block_h = static_cast<uint32_t>(band_h);
+        bcfg.in_bg.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+
+        bcfg.in_fg.buffer = alpha_mask + static_cast<size_t>(lo_y) * static_cast<size_t>(SCREEN_W);
+        bcfg.in_fg.pic_w = static_cast<uint32_t>(SCREEN_W);
+        bcfg.in_fg.pic_h = static_cast<uint32_t>(band_h);
+        bcfg.in_fg.block_w = static_cast<uint32_t>(SCREEN_W);
+        bcfg.in_fg.block_h = static_cast<uint32_t>(band_h);
+        bcfg.in_fg.blend_cm = PPA_BLEND_COLOR_MODE_A8;
+
+        bcfg.out.buffer = dst_ptr;
+        bcfg.out.buffer_size = static_cast<uint32_t>(band_bytes);
+        bcfg.out.pic_w = static_cast<uint32_t>(SCREEN_W);
+        bcfg.out.pic_h = static_cast<uint32_t>(band_h);
+        bcfg.out.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+
+        bcfg.bg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+        bcfg.bg_alpha_fix_val = 255U;
+        if (clamped_q8 >= 256) {
+          bcfg.fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+        } else {
+          bcfg.fg_alpha_update_mode = PPA_ALPHA_SCALE;
+          bcfg.fg_alpha_scale_ratio = static_cast<float>(clamped_q8) * (1.0f / 256.0f);
+        }
+        bcfg.fg_fix_rgb_val.r = (mode == 3) ? wash_b : wash_r;
+        bcfg.fg_fix_rgb_val.g = wash_g;
+        bcfg.fg_fix_rgb_val.b = (mode == 3) ? wash_r : wash_b;
+        bcfg.mode = PPA_TRANS_MODE_BLOCKING;
+
+        const int64_t t0_us = esp_timer_get_time();
+        const esp_err_t blend_err = ppa_do_blend(st.ppa, &bcfg);
+        const int64_t t_blend_us = esp_timer_get_time();
+        if (blend_err == ESP_OK) {
+          const esp_err_t post_err = esp_cache_msync(dst_ptr, band_bytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+          const int64_t t_post_us = esp_timer_get_time();
+          if (post_err == ESP_OK) {
+            if (!st.verified) {
+              st.verified = true;
+              ESP_LOGI("disp_fb",
+                       "PSRAM PPA Blend wash verified: %ux%u (%u KB) in %ld us (blend=%ldus post=%ldus)",
+                       static_cast<unsigned>(SCREEN_W), static_cast<unsigned>(band_h),
+                       static_cast<unsigned>(band_bytes / 1024U),
+                       static_cast<long>(t_post_us - t0_us),
+                       static_cast<long>(t_blend_us - t0_us),
+                       static_cast<long>(t_post_us - t_blend_us));
+            }
+            return true;
+          }
+          st.ok = false;
+          ESP_LOGW("disp_fb", "PSRAM PPA Blend post-msync failed (err=%d); disabling",
+                   static_cast<int>(post_err));
+        } else {
+          st.ok = false;
+          ESP_LOGW("disp_fb", "PSRAM PPA Blend wash failed (err=%d); disabling",
+                   static_cast<int>(blend_err));
+        }
+      }
+    }
+  }
+#endif
+
+  const int sr5 = wash_r >> 3;
+  const int sg6 = wash_g >> 2;
+  const int sb5 = wash_b >> 3;
+  if (mode == 1 || mode < 0) {
+    blend_vertical_wash_cpu_mode<1>(dst_fb, src_bg, lo_y, hi_y, sr5, sg6, sb5, clamped_q8,
+                                    falloff_drop, round_inset, cx);
+  } else if (mode == 2) {
+    blend_vertical_wash_cpu_mode<2>(dst_fb, src_bg, lo_y, hi_y, sr5, sg6, sb5, clamped_q8,
+                                    falloff_drop, round_inset, cx);
+  } else if (mode == 4) {
+    blend_vertical_wash_cpu_mode<4>(dst_fb, src_bg, lo_y, hi_y, sr5, sg6, sb5, clamped_q8,
+                                    falloff_drop, round_inset, cx);
+  } else {
+    blend_vertical_wash_cpu_mode<3>(dst_fb, src_bg, lo_y, hi_y, sr5, sg6, sb5, clamped_q8,
+                                    falloff_drop, round_inset, cx);
+  }
+  return false;
 }
 
 FrameProfileScope::FrameProfileScope(int p, int s, int pw) : page(p), sub(s), pwr(pw) {

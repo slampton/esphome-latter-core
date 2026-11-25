@@ -38,6 +38,10 @@ void ui_psram_phase_free(PsramPhaseBuf &buf) noexcept;
 void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept;
 void ui_psram_free(void *ptr) noexcept;
 void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept;
+bool blend_psram_vertical_wash_fast(uint16_t *dst_fb, const uint16_t *src_bg, int y0, int y1,
+                                    uint8_t wash_r, uint8_t wash_g, uint8_t wash_b,
+                                    int sheet_q8, int falloff_drop = 152, int round_inset = 0,
+                                    int cx = SCREEN_CX) noexcept;
 
 using PostFrameRequestFn = void (*)(void *owner, void (*fn)());
 void set_fb_post_frame_hook(PostFrameRequestFn hook) noexcept;

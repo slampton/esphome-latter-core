@@ -994,6 +994,62 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
     LATTER_CHECK(fx.pixels == first_moon_fb);
     sky_base_cache_drop();
   }
+
+  // 7. blend_psram_vertical_wash_fast fused copy+wash, in-place parity, band preservation & endian modes
+  {
+    const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
+    const int saved_endian = active_frame_endian_mode();
+    for (int mode : {1, 2}) {
+      active_frame_endian_mode() = mode;
+      const uint16_t bg_hw = encode_hw_rgb565(UiColor{16, 32, 48});
+      const uint16_t sentinel = 0x5AA5U;
+      std::vector<uint16_t> src(px_count, bg_hw);
+      std::vector<uint16_t> dst_fused(px_count, sentinel);
+      std::vector<uint16_t> dst_inplace(px_count, sentinel);
+
+      const int y_lo = 12;
+      const int y_hi = SCREEN_H - 13;
+      const int inset = LATTER_ROUND_DISPLAY ? 5 : 0;
+      blend_psram_vertical_wash_fast(dst_fused.data(), src.data(), y_lo, y_hi,
+                                     190U, 220U, 255U, 78, 152, inset, SCREEN_CX);
+      // Verify untouched bands outside [y_lo, y_hi] remain sentinel-intact.
+      for (int y = 0; y < y_lo; ++y) {
+        LATTER_CHECK(dst_fused[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(SCREEN_CX)] == sentinel);
+      }
+      for (int y = y_hi + 1; y < SCREEN_H; ++y) {
+        LATTER_CHECK(dst_fused[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(SCREEN_CX)] == sentinel);
+      }
+
+      // Verify fused src->dst matches copy-then-inplace pixel-for-pixel across the active band.
+      for (int y = y_lo; y <= y_hi; ++y) {
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+        std::memcpy(dst_inplace.data() + row, src.data() + row, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+      }
+      blend_psram_vertical_wash_fast(dst_inplace.data(), dst_inplace.data(), y_lo, y_hi,
+                                     190U, 220U, 255U, 78, 152, inset, SCREEN_CX);
+      for (int y = y_lo; y <= y_hi; ++y) {
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+        const int hw = LATTER_ROUND_DISPLAY ? circle_half_span(y, inset) : (SCREEN_W / 2 - 1);
+        if (hw > 0) {
+          const int lx = std::max(0, SCREEN_CX - hw);
+          const int rx = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+          for (int x = lx; x <= rx; ++x) {
+            LATTER_CHECK(dst_fused[row + static_cast<size_t>(x)] == dst_inplace[row + static_cast<size_t>(x)]);
+          }
+        }
+      }
+
+      // Verify top of wash is strictly brighter than bottom (vertical falloff) and brighter than unwashed sky.
+      const uint16_t top_px = decode_hw_rgb565_raw(
+          dst_fused[static_cast<size_t>(y_lo + 4) * SCREEN_W + static_cast<size_t>(SCREEN_CX)]);
+      const uint16_t bot_px = decode_hw_rgb565_raw(
+          dst_fused[static_cast<size_t>(y_hi - 4) * SCREEN_W + static_cast<size_t>(SCREEN_CX)]);
+      const uint16_t raw_bg = decode_hw_rgb565_raw(bg_hw);
+      LATTER_CHECK((top_px & 0x1FU) > (bot_px & 0x1FU));
+      LATTER_CHECK((bot_px & 0x1FU) > (raw_bg & 0x1FU));
+    }
+    active_frame_endian_mode() = saved_endian;
+  }
 }
 
 }  // namespace

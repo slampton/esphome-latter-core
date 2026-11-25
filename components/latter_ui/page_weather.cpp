@@ -122,8 +122,10 @@ void init_rain_streaks(WeatherParticleEngine &eng, RainTier tier);
 void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night, RainTier tier,
                            float dt_s, float precip_alpha, float par_x, float par_y,
                            WeatherParticleEngine &eng);
-void render_storm_lightning_fx(Rgb565Surface &it, uint16_t *fb, int cx, int cy,
-                               uint32_t now_ms, float precip_alpha, LightningFlashState &lt);
+bool step_storm_lightning_envelope(uint32_t now_ms, float precip_alpha, LightningFlashState &lt,
+                                   float &out_env, int &out_sheet_q8) noexcept;
+void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
+                                  uint32_t now_ms, float env, const LightningFlashState &lt);
 void render_wind_gusts_and_leaves(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night,
                                   float dt_s, float precip_alpha, float par_x, float par_y,
                                   WeatherParticleEngine &eng);
@@ -1561,7 +1563,8 @@ void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view co
 }
 
 void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view cond, bool is_night,
-                           double moon_cycle, int cel_cx, int cel_cy, bool show_celestial) {
+                           double moon_cycle, int cel_cx, int cel_cy, bool show_celestial,
+                           int wash_sheet_q8 = 0) {
   uint16_t *fb = active_frame_buf16();
   auto &cache = sky_base_cache();
   const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
@@ -1609,22 +1612,33 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
     frame_base_claim();
     const int y0 = std::max(0, clip_y0()), y1 = std::min(SCREEN_H - 1, clip_y1());
     if (y0 <= y1) {
+      if (wash_sheet_q8 > 0) {
+        static constexpr int kFlashInset = LATTER_ROUND_DISPLAY ? 5 : 0;
+        blend_psram_vertical_wash_fast(fb, cache.buf.px, y0, y1, 190U, 220U, 255U,
+                                       wash_sheet_q8, 152, kFlashInset, cx);
+      } else {
 #if LATTER_ROUND_DISPLAY
-      for (int y = y0; y <= y1; ++y) {
-        const int hw = circle_half_span(y, 0) + 2;
-        const int x0 = std::max(0, SCREEN_CX - hw), x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
-        if (x0 <= x1) {
-          const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
-          std::memcpy(fb + off, cache.buf.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
+        for (int y = y0; y <= y1; ++y) {
+          const int hw = circle_half_span(y, 0) + 2;
+          const int x0 = std::max(0, SCREEN_CX - hw), x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+          if (x0 <= x1) {
+            const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
+            std::memcpy(fb + off, cache.buf.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
+          }
         }
-      }
 #else
-      blit_psram_band_fast(fb, cache.buf.px, y0, y1);
+        blit_psram_band_fast(fb, cache.buf.px, y0, y1);
 #endif
+      }
     }
   } else {
     frame_base_claim();
     bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
+    if (wash_sheet_q8 > 0 && fb != nullptr) {
+      static constexpr int kFlashInset = LATTER_ROUND_DISPLAY ? 5 : 0;
+      blend_psram_vertical_wash_fast(fb, fb, clip_y0(), clip_y1(), 190U, 220U, 255U,
+                                     wash_sheet_q8, 152, kFlashInset, cx);
+    }
   }
 }
 
@@ -1841,7 +1855,16 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
     par_y += (std::clamp(accel_y * 20.0f, -18.0f, 18.0f) - par_y) * 0.22f;
   }
 
-  blit_or_bake_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
+  const bool is_storm = (cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos);
+  auto &eng = particle_engine();
+  float storm_env = 0.0f;
+  int storm_sheet_q8 = 0;
+  const bool storm_flash_active =
+      is_storm && precip_alpha > 0.0f &&
+      step_storm_lightning_envelope(now_ms, precip_alpha, eng.lightning, storm_env, storm_sheet_q8);
+
+  blit_or_bake_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial,
+                        storm_sheet_q8);
   uint16_t *fb = active_frame_buf16();
   const uint32_t cond_hash = fnv1a_sky_str(cond);
   lap.mark(ProfSect::BG_SKY);
@@ -1858,7 +1881,6 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
   const bool is_partly = (cond.find("partly") != std::string_view::npos ||
                           cond.find("mostlysunny") != std::string_view::npos ||
                           cond.find("partlysunny") != std::string_view::npos);
-  const bool is_storm = (cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos);
   const bool is_rain = (cond.find("rain") != std::string_view::npos ||
                         cond.find("pouring") != std::string_view::npos ||
                         cond.find("drizzle") != std::string_view::npos || is_storm);
@@ -1870,7 +1892,6 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
       (is_night && (cond == "clear-night" || cond == "clearnight" ||
                     cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
 
-  auto &eng = particle_engine();
   float dt_s = 0.0f;
   float phase_dt_s = 0.0f;
   if (!eng.inited || eng.cond_hash != cond_hash) {
@@ -1935,7 +1956,7 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
     }
   }
 
-  if (is_storm) render_storm_lightning_fx(it, fb, cx, cy, now_ms, precip_alpha, eng.lightning);
+  if (storm_flash_active) render_storm_lightning_bolts(it, fb, cy, now_ms, storm_env, eng.lightning);
   lap.mark(ProfSect::BG_CLOUDS);
 
   if (is_windy) render_wind_gusts_and_leaves(it, fb, cy, is_night, dt_s, precip_alpha, par_x, par_y, eng);
@@ -2295,8 +2316,10 @@ void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_nigh
   }
 }
 
-void render_storm_lightning_fx(Rgb565Surface &it, uint16_t *fb, int cx, int cy,
-                               uint32_t now_ms, float precip_alpha, LightningFlashState &lt) {
+bool step_storm_lightning_envelope(uint32_t now_ms, float precip_alpha, LightningFlashState &lt,
+                                   float &out_env, int &out_sheet_q8) noexcept {
+  out_env = 0.0f;
+  out_sheet_q8 = 0;
   if (lt.next_flash_ms == 0U || static_cast<int32_t>(now_ms - lt.next_flash_ms) > 10000) {
     lt.next_flash_ms = now_ms + 850U;
     lt.active = false;
@@ -2309,12 +2332,12 @@ void render_storm_lightning_fx(Rgb565Surface &it, uint16_t *fb, int cx, int cy,
         2600U + static_cast<uint32_t>(hash2d_01(static_cast<int>(lt.flash_seq * 37U + 11U), 29) * 3200.0f);
     lt.next_flash_ms = now_ms + gap_ms;
   }
-  if (!lt.active) return;
+  if (!lt.active) return false;
 
   const uint32_t el_ms = now_ms - lt.flash_start_ms;
   if (el_ms >= 480U) {
     lt.active = false;
-    return;
+    return false;
   }
 
   const float t_ms = static_cast<float>(el_ms);
@@ -2324,50 +2347,14 @@ void render_storm_lightning_fx(Rgb565Surface &it, uint16_t *fb, int cx, int cy,
   const bool has_restrike = ((lt.flash_seq % 3U) != 2U);
   const float dt_re = (t_ms - 185.0f) * (1.0f / 54.0f);
   const float restrike = has_restrike ? (0.88f * std::exp(-dt_re * dt_re)) : 0.0f;
-  const float env = std::min(1.0f, std::max(primary, restrike)) * precip_alpha;
-  const int sheet_q8 = static_cast<int>(env * 78.0f);
-  if (sheet_q8 > 0 && fb != nullptr) {
-    static constexpr uint8_t kFlashBayer4[4][4] = {
-        {  0, 128,  32, 160},
-        {192,  64, 224,  96},
-        { 48, 176,  16, 144},
-        {240, 112, 208,  80},
-    };
-    static constexpr int kFlashInset = LATTER_ROUND_DISPLAY ? 5 : 0;
-    const uint16_t wash_rgb = ((190 >> 3) << 11) | ((220 >> 2) << 5) | (255 >> 3);
-    const int sr = (wash_rgb >> 11) & 0x1F, sg = (wash_rgb >> 5) & 0x3F, sb = wash_rgb & 0x1F;
-    const int y_lo = std::max(kFlashInset, clip_y0());
-    const int y_hi = std::min(SCREEN_H - 1 - kFlashInset, clip_y1());
-    const int span_h = std::max(1, SCREEN_H - 1 - 2 * kFlashInset);
-    for (int py = y_lo; py <= y_hi; py++) {
-      const int falloff_q8 = 256 - (((py - kFlashInset) * 152) / span_h);
-      const int a = (sheet_q8 * std::max(0, falloff_q8)) >> 8;
-      if (a <= 0) continue;
-      const int inv = 256 - a;
-      const uint8_t *bayer_row = kFlashBayer4[py & 3];
-#if LATTER_ROUND_DISPLAY
-      const int hw = circle_half_span(py, 5);
-      if (hw <= 0) continue;
-      const int x0 = std::max(0, cx - hw), x1 = std::min(SCREEN_W - 1, cx + hw);
-#else
-      (void)cx;
-      const int x0 = 0, x1 = SCREEN_W - 1;
-#endif
-      uint16_t *row = fb + static_cast<size_t>(py) * SCREEN_W;
-      for (int px = x0; px <= x1; px++) {
-        const uint16_t dst = decode_hw_rgb565_raw(row[px]);
-        const int dr = (dst >> 11) & 0x1F, dg = (dst >> 5) & 0x3F, db = dst & 0x1F;
-        const int d = bayer_row[px & 3];
-        const uint16_t out = static_cast<uint16_t>((((sr * a + dr * inv + d) >> 8) << 11) |
-                                                   (((sg * a + dg * inv + d) >> 8) << 5) |
-                                                   ((sb * a + db * inv + d) >> 8));
-        row[px] = encode_hw_rgb565_raw(out);
-      }
-    }
-  } else {
-    (void)cx;
-  }
+  out_env = std::min(1.0f, std::max(primary, restrike)) * precip_alpha;
+  out_sheet_q8 = static_cast<int>(out_env * 78.0f);
+  return true;
+}
 
+void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
+                                  uint32_t now_ms, float env, const LightningFlashState &lt) {
+  const uint32_t el_ms = now_ms - lt.flash_start_ms;
   if (el_ms < 430U) {
     const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
     const int b_seed = static_cast<int>(lt.flash_seq * 43U + 19U);
