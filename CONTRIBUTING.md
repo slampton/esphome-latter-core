@@ -1,6 +1,6 @@
 # Contributing to Latter Core (`esphome-latter-core`)
 
-Thank you for contributing to `esphome-latter-core`! Latter Core is an open-source, modular, trait-driven C++20 smart companion OS platform, hardware catalog, and standalone raw-HCI BLE beacon component for Home Assistant displays and wearables (`ESPHome 2026.11.0+`, `ESP-IDF 5.5+`).
+Thank you for contributing to `esphome-latter-core`! Latter Core is an open-source, modular, trait-driven C++20 smart companion OS platform, hardware catalog, and standalone raw-HCI BLE beacon component for Home Assistant displays and wearables (`ESPHome 2026.11.1+`, `ESP-IDF 5.5+`).
 
 ## License & Developer Certificate of Origin (DCO)
 

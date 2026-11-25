@@ -59,7 +59,7 @@ HOST_ESPHOME_STUBS: Final[dict[str, str]] = {
     "esphome/core/version.h": (
         "#pragma once\n"
         "#define VERSION_CODE(major, minor, patch) (((major) << 16) | ((minor) << 8) | (patch))\n"
-        "#define ESPHOME_VERSION_CODE VERSION_CODE(2026, 11, 0)\n"
+        "#define ESPHOME_VERSION_CODE VERSION_CODE(2026, 11, 1)\n"
     ),
     "esphome/core/color.h": (
         "#pragma once\n"

@@ -7,8 +7,8 @@
 #include <vector>
 
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
-static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 0),
-              "Latter requires ESPHome 2026.11.0 or newer (devices/*.yaml min_version).");
+static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 1),
+              "Latter requires ESPHome 2026.11.1 or newer (devices/*.yaml min_version).");
 #if ESPHOME_VERSION_CODE >= VERSION_CODE(2027, 1, 0)
 #warning "esphome_bridge.cpp private-member bridge not validated on this ESPHome version; verify upstream public API"
 #endif
@@ -35,7 +35,7 @@ namespace {
 //      (replacing set_state_, mic_source_, and api_client_; see components/latter_core/README.md).
 //   2. MipiDsi public framebuffer pointer getter
 //      (replacing MipiDsi::buffer_ for zero-copy RGB565 scanlines on ESP32-P4 MIPI-DSI panels).
-// Guarded by the ESPHOME_VERSION_CODE >= 2026.11.0 static_assert and 2027.1.0 #warning above,
+// Guarded by the ESPHOME_VERSION_CODE >= 2026.11.1 static_assert and 2027.1.0 #warning above,
 // plus the weekly .github/workflows/esphome-canary.yml build against upstream esphome:dev.
 template <typename Tag, typename Tag::type M>
 struct BridgeRob {

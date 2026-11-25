@@ -37,4 +37,4 @@ class VoiceAssistant : public Component, ... {
 ```
 
 ### Migration in `esphome-latter-core`
-Until this is merged, `components/latter_core/esphome_bridge.cpp` isolates the `BridgeRob<>` tags in a single translation unit guarded by a `static_assert` requiring ESPHome >= 2026.11.0 and a `#warning` from 2027.1 (`include/esphome_bridge.h`). Once merged, `abort_voice_assistant()` becomes `va->abort_session()`, the hibernate path calls `va->release_api_connection()`, and the `VoiceAssistant` `BridgeRob<>` instantiations are deleted.
+Until this is merged, `components/latter_core/esphome_bridge.cpp` isolates the `BridgeRob<>` tags in a single translation unit guarded by a `static_assert` requiring ESPHome >= 2026.11.1 and a `#warning` from 2027.1 (`include/esphome_bridge.h`). Once merged, `abort_voice_assistant()` becomes `va->abort_session()`, the hibernate path calls `va->release_api_connection()`, and the `VoiceAssistant` `BridgeRob<>` instantiations are deleted.

@@ -794,7 +794,7 @@ def render_device(facts: dict[str, Any], repo: str = DEFAULT_LATTER_REPO) -> str
             "  name: ${name}",
             "  name_add_mac_suffix: ${name_add_mac_suffix}",
             "  friendly_name: ${friendly_name}",
-            "  min_version: 2026.11.0",
+            "  min_version: 2026.11.1",
             "  project:",
             f'    name: "latter.{dev}"',
             '    version: "${version}"',

@@ -33,8 +33,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.11.0
-        run: pip install --upgrade pip esphome==2026.11.0
+      - name: Install ESPHome 2026.11.1
+        run: pip install --upgrade pip esphome==2026.11.1
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
@@ -46,9 +46,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: '**/.esphome/external_files'
-          key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/**/*.yaml') }}
+          key: external-files-esphome-2026.11.1-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/**/*.yaml') }}
           restore-keys: |
-            external-files-esphome-2026.11.0-
+            external-files-esphome-2026.11.1-
 
       - name: Verify static architecture, DAG, protocol, sounds, trait matrices, and 6-geometry C++20 host tests
         run: python tools/verify_core.py
@@ -124,8 +124,8 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install ESPHome 2026.11.0
-        run: pip install --upgrade pip esphome==2026.11.0
+      - name: Install ESPHome 2026.11.1
+        run: pip install --upgrade pip esphome==2026.11.1
 
       # ESP-IDF framework, toolchains, component mirror and its Python environment (~/.cache/esphome/idf),
       # shared by every device. The key carries the exact Python build because that environment points
@@ -135,7 +135,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cache/esphome
-          key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.0
+          key: idf-${{ runner.os }}-py${{ steps.py.outputs.python-version }}-esphome-2026.11.1
 
       - name: Point remote references at this checkout
         run: bash .github/scripts/pin_to_checkout.sh "${{ github.event.pull_request.head.sha || github.sha }}"
@@ -144,9 +144,9 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: '**/.esphome/external_files'
-          key: external-files-esphome-2026.11.0-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/**/*.yaml') }}
+          key: external-files-esphome-2026.11.1-${{ hashFiles('modules/**/*.yaml', 'guis/**/*.yaml', 'examples/**/*.yaml') }}
           restore-keys: |
-            external-files-esphome-2026.11.0-
+            external-files-esphome-2026.11.1-
 
       - name: Compile
         run: bash .github/scripts/esphome_run.sh "esphome compile ${{ matrix.target.slug }}" ${{ matrix.target.subs }} compile devices/${{ matrix.target.file }}.yaml

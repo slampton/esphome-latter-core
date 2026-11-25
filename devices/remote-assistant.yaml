@@ -2,7 +2,7 @@
 # Remote Assistant (v3.0 Modular Architecture)
 # Target: Waveshare ESP32-P4-WIFI6-Touch-LCD-3.5 (320x480 IPS LCD + Camera, SKU 33360)
 #         Ships with ESP32-P4 rev3.x (400 MHz) production silicon (configured in boards/waveshare_p4_35.yaml).
-# Framework: ESPHome 2026.11.0+ (ESP-IDF 5.5+)
+# Framework: ESPHome 2026.11.1+ (ESP-IDF 5.5+)
 # Repository: https://github.com/slampton/esphome-latter-core
 # ==============================================================================
 
@@ -32,7 +32,7 @@ esphome:
   name: ${name}
   name_add_mac_suffix: ${name_add_mac_suffix}
   friendly_name: ${friendly_name}
-  min_version: 2026.11.0
+  min_version: 2026.11.1
   project:
     name: "latter.remote-assistant-p4-35"
     version: "${version}"

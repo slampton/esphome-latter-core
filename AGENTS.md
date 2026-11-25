@@ -1,6 +1,6 @@
 # esphome-latter-core Agent Engineering Guide
 
-Open-source ESPHome smart companion OS platform, Hardware Catalog, and compiled C++20 UI/OS for Latter displays plus standalone `latter_beacon` (ESPHome `2026.11.0+`, ESP-IDF 5.5+, C++20).
+Open-source ESPHome smart companion OS platform, Hardware Catalog, and compiled C++20 UI/OS for Latter displays plus standalone `latter_beacon` (ESPHome `2026.11.1+`, ESP-IDF 5.5+, C++20).
 
 ## 1. Acyclic Repository Architecture (Tarjan SCC DAG & Coarse Component Boundaries)
 

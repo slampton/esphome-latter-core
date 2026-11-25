@@ -257,8 +257,8 @@ def verify_core_rev_and_version_lockstep(failures: list[str]) -> None:
         failures.append(f"[CORE REV LOCKSTEP] LATTER_CORE_REV ({core_revs[0]}) must be >= {MIN_CORE_REV}")
 
     bridge_h = ROOT / "include" / "esphome_bridge.h"
-    if not bridge_h.is_file() or "VERSION_CODE(2026, 11, 0)" not in bridge_h.read_text(encoding="utf-8"):
-        failures.append("[ESPHOME PIN LOCKSTEP] include/esphome_bridge.h must static_assert VERSION_CODE(2026, 11, 0)")
+    if not bridge_h.is_file() or "VERSION_CODE(2026, 11, 1)" not in bridge_h.read_text(encoding="utf-8"):
+        failures.append("[ESPHOME PIN LOCKSTEP] include/esphome_bridge.h must static_assert VERSION_CODE(2026, 11, 1)")
 
     sys_core_txt = (ROOT / "modules" / "system_core.yaml").read_text(encoding="utf-8")
     if not re.search(r'(?m)^\s*latter_asset_ref:\s*"main"\s*$', sys_core_txt):
