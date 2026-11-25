@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 
 #ifdef USE_ESP32
@@ -378,6 +379,7 @@ struct PpaSrmBlitState {
   bool ok = false;
   bool verified = false;
   ppa_client_handle_t ppa = nullptr;
+  uint32_t blits = 0U;
 };
 
 PpaSrmBlitState &ppa_srm_blit_state() {
@@ -409,6 +411,7 @@ struct PpaBlendWashState {
   ppa_client_handle_t ppa = nullptr;
   uint8_t *alpha_mask = nullptr;
   int cached_falloff_drop = -1;
+  uint32_t washes = 0U;
 };
 
 PpaBlendWashState &ppa_blend_wash_state() {
@@ -466,16 +469,109 @@ uint8_t *ppa_blend_wash_ensure_mask(int falloff_drop) noexcept {
 }
 #endif
 
+static constexpr uint8_t kFlashBayer4[4][4] = {
+    {  0, 128,  32, 160},
+    {192,  64, 224,  96},
+    { 48, 176,  16, 144},
+    {240, 112, 208,  80},
+};
+
+// Bit-exact 8-bit Q8 RGB565 blend using 2-lane SWAR (R5+B5 packed with 3 guard bits each,
+// G6 pre-shifted by 5) — mathematically identical to 3-channel scalar Q8 blending with zero
+// clamping branches, zero per-pixel array lookups, and 32-bit aligned PSRAM pair bursts.
+template <int Mode>
+inline uint16_t blend_swar_q8_px(uint16_t hw, uint32_t inv, uint32_t base_rb, uint32_t base_g_s5) noexcept {
+  const uint16_t p = decode_hw_rgb565_mode<Mode>(hw);
+  const uint32_t rb = (static_cast<uint32_t>(p & 0xF800U) << 5) | static_cast<uint32_t>(p & 0x001FU);
+  const uint32_t rb_sum = base_rb + rb * inv;
+  const uint32_t g_sum = base_g_s5 + static_cast<uint32_t>(p & 0x07E0U) * inv;
+  const uint16_t out = static_cast<uint16_t>(((rb_sum >> 13) & 0xF800U) |
+                                             ((g_sum >> 8) & 0x07E0U) |
+                                             ((rb_sum >> 8) & 0x001FU));
+  return encode_hw_rgb565_mode<Mode>(out);
+}
+
+template <int Mode>
+inline void blend_swar_q8_span(uint16_t *dst_row, const uint16_t *src_row, int x0, int x1,
+                               uint32_t inv, const uint32_t base_rb[4],
+                               const uint32_t base_g_s5[4]) noexcept {
+  int px = x0;
+  if (px <= x1 && (reinterpret_cast<uintptr_t>(dst_row + px) & 2U) != 0U) {
+    const int k = px & 3;
+    dst_row[px] = blend_swar_q8_px<Mode>(src_row[px], inv, base_rb[k], base_g_s5[k]);
+    ++px;
+  }
+  const int phase = px & 3;
+  const uint32_t rb0 = base_rb[phase],           rb1 = base_rb[(phase + 1) & 3];
+  const uint32_t rb2 = base_rb[(phase + 2) & 3], rb3 = base_rb[(phase + 3) & 3];
+  const uint32_t g0  = base_g_s5[phase],         g1  = base_g_s5[(phase + 1) & 3];
+  const uint32_t g2  = base_g_s5[(phase + 2) & 3], g3 = base_g_s5[(phase + 3) & 3];
+  const bool src_aligned4 = ((reinterpret_cast<uintptr_t>(src_row + px) & 2U) == 0U);
+  const int x_end4 = x1 - 3;
+  if (src_aligned4) {
+    auto *dst32 = std::assume_aligned<4>(reinterpret_cast<uint8_t *>(dst_row + px));
+    const auto *src32 = std::assume_aligned<4>(reinterpret_cast<const uint8_t *>(src_row + px));
+    for (; px <= x_end4; px += 4, dst32 += 8, src32 += 8) {
+      uint32_t in01 = 0U, in23 = 0U;
+      std::memcpy(&in01, src32, 4U);
+      std::memcpy(&in23, src32 + 4, 4U);
+      const uint32_t out0 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01), inv, rb0, g0);
+      const uint32_t out1 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
+      const uint32_t out2 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23), inv, rb2, g2);
+      const uint32_t out3 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
+      const uint32_t p01 = out0 | (out1 << 16);
+      const uint32_t p23 = out2 | (out3 << 16);
+      std::memcpy(dst32, &p01, 4U);
+      std::memcpy(dst32 + 4, &p23, 4U);
+    }
+  } else {
+    auto *dst32 = std::assume_aligned<4>(reinterpret_cast<uint8_t *>(dst_row + px));
+    for (; px <= x_end4; px += 4, dst32 += 8) {
+      const uint32_t out0 = blend_swar_q8_px<Mode>(src_row[px + 0], inv, rb0, g0);
+      const uint32_t out1 = blend_swar_q8_px<Mode>(src_row[px + 1], inv, rb1, g1);
+      const uint32_t out2 = blend_swar_q8_px<Mode>(src_row[px + 2], inv, rb2, g2);
+      const uint32_t out3 = blend_swar_q8_px<Mode>(src_row[px + 3], inv, rb3, g3);
+      const uint32_t p01 = out0 | (out1 << 16);
+      const uint32_t p23 = out2 | (out3 << 16);
+      std::memcpy(dst32, &p01, 4U);
+      std::memcpy(dst32 + 4, &p23, 4U);
+    }
+  }
+  for (; px <= x1; ++px) {
+    const int k = px & 3;
+    dst_row[px] = blend_swar_q8_px<Mode>(src_row[px], inv, base_rb[k], base_g_s5[k]);
+  }
+}
+
+#if LATTER_FB_PPA && !LATTER_ROUND_DISPLAY
+void blend_linear_wash_edges_cpu(uint16_t *dst_fb, const uint16_t *src_bg, size_t start_px, size_t count_px,
+                                 int sr5, int sg6, int sb5, int sheet_q8, int falloff_drop, int mode) noexcept {
+  const int span_h = std::max(1, SCREEN_H - 1);
+  for (size_t i = 0U; i < count_px; ++i) {
+    const size_t idx = start_px + i;
+    const int py = static_cast<int>(idx / static_cast<size_t>(SCREEN_W));
+    const int px = static_cast<int>(idx - static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W));
+    const int falloff_q8 = 256 - ((py * falloff_drop) / span_h);
+    const int a = (sheet_q8 * std::clamp(falloff_q8, 0, 256)) >> 8;
+    if (a <= 0) {
+      dst_fb[idx] = src_bg[idx];
+      continue;
+    }
+    const uint32_t inv = static_cast<uint32_t>(256 - a);
+    const uint32_t d = kFlashBayer4[py & 3][px & 3];
+    const uint32_t base_rb = ((static_cast<uint32_t>(sr5 * a) + d) << 16) |
+                             (static_cast<uint32_t>(sb5 * a) + d);
+    const uint32_t base_g_s5 = (static_cast<uint32_t>(sg6 * a) + d) << 5;
+    dst_fb[idx] = (mode == 3) ? blend_swar_q8_px<3>(src_bg[idx], inv, base_rb, base_g_s5)
+                              : blend_swar_q8_px<1>(src_bg[idx], inv, base_rb, base_g_s5);
+  }
+}
+#endif
+
 template <int Mode>
 void blend_vertical_wash_cpu_mode(uint16_t *dst_fb, const uint16_t *src_bg, int lo_y, int hi_y,
                                   int sr5, int sg6, int sb5, int sheet_q8, int falloff_drop,
                                   int round_inset, int cx) noexcept {
-  static constexpr uint8_t kFlashBayer4[4][4] = {
-      {  0, 128,  32, 160},
-      {192,  64, 224,  96},
-      { 48, 176,  16, 144},
-      {240, 112, 208,  80},
-  };
   const int inset = std::max(0, round_inset);
   const int span_h = std::max(1, SCREEN_H - 1 - 2 * inset);
   const bool fused_copy = (src_bg != dst_fb);
@@ -529,39 +625,18 @@ void blend_vertical_wash_cpu_mode(uint16_t *dst_fb, const uint16_t *src_bg, int 
       }
       continue;
     }
-    const int inv = 256 - a;
-    const int sr_a = sr5 * a;
-    const int sg_a = sg6 * a;
-    const int sb_a = sb5 * a;
+    const uint32_t inv = static_cast<uint32_t>(256 - a);
+    const uint32_t sr_a = static_cast<uint32_t>(sr5 * a);
+    const uint32_t sg_a = static_cast<uint32_t>(sg6 * a);
+    const uint32_t sb_a = static_cast<uint32_t>(sb5 * a);
     const uint8_t *const bayer = kFlashBayer4[py & 3];
-    const int d0 = bayer[0], d1 = bayer[1], d2 = bayer[2], d3 = bayer[3];
-
-    auto blend_px = [&](uint16_t hw, int d) -> uint16_t {
-      const uint16_t p = decode_hw_rgb565_mode<Mode>(hw);
-      const int dr = (p >> 11) & 0x1F;
-      const int dg = (p >> 5) & 0x3F;
-      const int db = p & 0x1F;
-      const uint16_t out = static_cast<uint16_t>((((sr_a + dr * inv + d) >> 8) << 11) |
-                                                 (((sg_a + dg * inv + d) >> 8) << 5) |
-                                                 ((sb_a + db * inv + d) >> 8));
-      return encode_hw_rgb565_mode<Mode>(out);
-    };
-
-    int px = x0;
-    while (px <= x1 && (px & 3) != 0) {
-      dst_row[px] = blend_px(src_row[px], bayer[px & 3]);
-      ++px;
+    uint32_t base_rb[4], base_g_s5[4];
+    for (int k = 0; k < 4; ++k) {
+      const uint32_t dk = bayer[k];
+      base_rb[k] = ((sr_a + dk) << 16) | (sb_a + dk);
+      base_g_s5[k] = (sg_a + dk) << 5;
     }
-    const int x_end4 = x1 - 3;
-    for (; px <= x_end4; px += 4) {
-      dst_row[px + 0] = blend_px(src_row[px + 0], d0);
-      dst_row[px + 1] = blend_px(src_row[px + 1], d1);
-      dst_row[px + 2] = blend_px(src_row[px + 2], d2);
-      dst_row[px + 3] = blend_px(src_row[px + 3], d3);
-    }
-    for (; px <= x1; ++px) {
-      dst_row[px] = blend_px(src_row[px], bayer[px & 3]);
-    }
+    blend_swar_q8_span<Mode>(dst_row, src_row, x0, x1, inv, base_rb, base_g_s5);
   }
 }
 
@@ -623,6 +698,7 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
           if (post_err == ESP_OK) {
             if (head > 0U) std::memcpy(dst_ptr, src_ptr, head);
             if (tail > 0U) std::memcpy(dst_lo + interior_len, src_lo + interior_len, tail);
+            st.blits++;
             if (!st.verified) {
               st.verified = true;
               const uint16_t *const dpx = reinterpret_cast<const uint16_t *>(dst_lo);
@@ -688,80 +764,106 @@ bool blend_psram_vertical_wash_fast(uint16_t *dst_fb, const uint16_t *src_bg, in
 
   const int mode = active_frame_endian_mode();
 #if LATTER_FB_PPA && !LATTER_ROUND_DISPLAY
-  if (dst_fb != src_bg && round_inset <= 0 && (mode == 1 || mode == 3) && ppa_blend_wash_init()) {
-    const size_t row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
-    const size_t off_bytes = static_cast<size_t>(lo_y) * row_bytes;
-    const size_t band_h = static_cast<size_t>(hi_y - lo_y + 1);
-    const size_t band_bytes = band_h * row_bytes;
+  constexpr size_t kMinPpaBytes = 32768U;
+  constexpr uintptr_t kAlignMask = static_cast<uintptr_t>(kPpaSrmBufAlign - 1U);
+  const size_t row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
+  const size_t off_bytes = static_cast<size_t>(lo_y) * row_bytes;
+  const size_t total_bytes = static_cast<size_t>(hi_y - lo_y + 1) * row_bytes;
+  if (total_bytes >= kMinPpaBytes && dst_fb != src_bg && round_inset <= 0 &&
+      (mode == 1 || mode == 3) && ppa_blend_wash_init()) {
     uint8_t *const dst_ptr = reinterpret_cast<uint8_t *>(dst_fb) + off_bytes;
     const uint8_t *const src_ptr = reinterpret_cast<const uint8_t *>(src_bg) + off_bytes;
-    constexpr uintptr_t kAlignMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
-    if ((reinterpret_cast<uintptr_t>(dst_ptr) & kAlignMask) == 0U &&
-        (band_bytes & kAlignMask) == 0U &&
-        band_h <= kFbPpaMaxRows && static_cast<size_t>(SCREEN_W) <= kFbPpaMaxRows) {
-      uint8_t *const alpha_mask = ppa_blend_wash_ensure_mask(falloff_drop);
-      if (alpha_mask != nullptr) {
-        auto &st = ppa_blend_wash_state();
-        ppa_blend_oper_config_t bcfg = {};
-        bcfg.in_bg.buffer = src_ptr;
-        bcfg.in_bg.pic_w = static_cast<uint32_t>(SCREEN_W);
-        bcfg.in_bg.pic_h = static_cast<uint32_t>(band_h);
-        bcfg.in_bg.block_w = static_cast<uint32_t>(SCREEN_W);
-        bcfg.in_bg.block_h = static_cast<uint32_t>(band_h);
-        bcfg.in_bg.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+    const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
+    const uintptr_t lo = (dst_addr + kAlignMask) & ~kAlignMask;
+    const uintptr_t hi = (dst_addr + total_bytes) & ~kAlignMask;
+    if (hi > lo) {
+      const size_t head_bytes = static_cast<size_t>(lo - dst_addr);
+      const size_t rows = static_cast<size_t>(hi - lo) / kPpaCopyRowBytes;
+      if ((head_bytes & 1U) == 0U && rows > 0U && rows <= kFbPpaMaxRows) {
+        uint8_t *const alpha_mask = ppa_blend_wash_ensure_mask(falloff_drop);
+        if (alpha_mask != nullptr) {
+          const size_t interior_len = rows * kPpaCopyRowBytes;
+          const size_t head_px = head_bytes >> 1;
+          const size_t interior_px = rows * kPpaCopyRowPx;
+          const size_t tail_px = (total_bytes >> 1) - head_px - interior_px;
+          const size_t base_px = static_cast<size_t>(lo_y) * static_cast<size_t>(SCREEN_W);
+          uint8_t *const dst_lo = dst_ptr + head_bytes;
+          const uint8_t *const src_lo = src_ptr + head_bytes;
 
-        bcfg.in_fg.buffer = alpha_mask + static_cast<size_t>(lo_y) * static_cast<size_t>(SCREEN_W);
-        bcfg.in_fg.pic_w = static_cast<uint32_t>(SCREEN_W);
-        bcfg.in_fg.pic_h = static_cast<uint32_t>(band_h);
-        bcfg.in_fg.block_w = static_cast<uint32_t>(SCREEN_W);
-        bcfg.in_fg.block_h = static_cast<uint32_t>(band_h);
-        bcfg.in_fg.blend_cm = PPA_BLEND_COLOR_MODE_A8;
+          auto &st = ppa_blend_wash_state();
+          ppa_blend_oper_config_t bcfg = {};
+          bcfg.in_bg.buffer = src_lo;
+          bcfg.in_bg.pic_w = kPpaCopyRowPx;
+          bcfg.in_bg.pic_h = static_cast<uint32_t>(rows);
+          bcfg.in_bg.block_w = kPpaCopyRowPx;
+          bcfg.in_bg.block_h = static_cast<uint32_t>(rows);
+          bcfg.in_bg.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
 
-        bcfg.out.buffer = dst_ptr;
-        bcfg.out.buffer_size = static_cast<uint32_t>(band_bytes);
-        bcfg.out.pic_w = static_cast<uint32_t>(SCREEN_W);
-        bcfg.out.pic_h = static_cast<uint32_t>(band_h);
-        bcfg.out.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+          bcfg.in_fg.buffer = alpha_mask + base_px + head_px;
+          bcfg.in_fg.pic_w = kPpaCopyRowPx;
+          bcfg.in_fg.pic_h = static_cast<uint32_t>(rows);
+          bcfg.in_fg.block_w = kPpaCopyRowPx;
+          bcfg.in_fg.block_h = static_cast<uint32_t>(rows);
+          bcfg.in_fg.blend_cm = PPA_BLEND_COLOR_MODE_A8;
 
-        bcfg.bg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
-        bcfg.bg_alpha_fix_val = 255U;
-        if (clamped_q8 >= 256) {
-          bcfg.fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
-        } else {
-          bcfg.fg_alpha_update_mode = PPA_ALPHA_SCALE;
-          bcfg.fg_alpha_scale_ratio = static_cast<float>(clamped_q8) * (1.0f / 256.0f);
-        }
-        bcfg.fg_fix_rgb_val.r = (mode == 3) ? wash_b : wash_r;
-        bcfg.fg_fix_rgb_val.g = wash_g;
-        bcfg.fg_fix_rgb_val.b = (mode == 3) ? wash_r : wash_b;
-        bcfg.mode = PPA_TRANS_MODE_BLOCKING;
+          bcfg.out.buffer = dst_lo;
+          bcfg.out.buffer_size = static_cast<uint32_t>(interior_len);
+          bcfg.out.pic_w = kPpaCopyRowPx;
+          bcfg.out.pic_h = static_cast<uint32_t>(rows);
+          bcfg.out.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
 
-        const int64_t t0_us = esp_timer_get_time();
-        const esp_err_t blend_err = ppa_do_blend(st.ppa, &bcfg);
-        const int64_t t_blend_us = esp_timer_get_time();
-        if (blend_err == ESP_OK) {
-          const esp_err_t post_err = esp_cache_msync(dst_ptr, band_bytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
-          const int64_t t_post_us = esp_timer_get_time();
-          if (post_err == ESP_OK) {
-            if (!st.verified) {
-              st.verified = true;
-              ESP_LOGI("disp_fb",
-                       "PSRAM PPA Blend wash verified: %ux%u (%u KB) in %ld us (blend=%ldus post=%ldus)",
-                       static_cast<unsigned>(SCREEN_W), static_cast<unsigned>(band_h),
-                       static_cast<unsigned>(band_bytes / 1024U),
-                       static_cast<long>(t_post_us - t0_us),
-                       static_cast<long>(t_blend_us - t0_us),
-                       static_cast<long>(t_post_us - t_blend_us));
-            }
-            return true;
+          bcfg.bg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+          bcfg.bg_alpha_fix_val = 255U;
+          if (clamped_q8 >= 256) {
+            bcfg.fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+          } else {
+            bcfg.fg_alpha_update_mode = PPA_ALPHA_SCALE;
+            bcfg.fg_alpha_scale_ratio = static_cast<float>(clamped_q8) * (1.0f / 256.0f);
           }
-          st.ok = false;
-          ESP_LOGW("disp_fb", "PSRAM PPA Blend post-msync failed (err=%d); disabling",
-                   static_cast<int>(post_err));
-        } else {
-          st.ok = false;
-          ESP_LOGW("disp_fb", "PSRAM PPA Blend wash failed (err=%d); disabling",
-                   static_cast<int>(blend_err));
+          bcfg.fg_fix_rgb_val.r = (mode == 3) ? wash_b : wash_r;
+          bcfg.fg_fix_rgb_val.g = wash_g;
+          bcfg.fg_fix_rgb_val.b = (mode == 3) ? wash_r : wash_b;
+          bcfg.mode = PPA_TRANS_MODE_BLOCKING;
+
+          const int64_t t0_us = esp_timer_get_time();
+          const esp_err_t blend_err = ppa_do_blend(st.ppa, &bcfg);
+          const int64_t t_blend_us = esp_timer_get_time();
+          if (blend_err == ESP_OK) {
+            const esp_err_t post_err = esp_cache_msync(dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+            const int64_t t_post_us = esp_timer_get_time();
+            if (post_err == ESP_OK) {
+              if (head_px > 0U) {
+                blend_linear_wash_edges_cpu(dst_fb, src_bg, base_px, head_px,
+                                            wash_r >> 3, wash_g >> 2, wash_b >> 3,
+                                            clamped_q8, falloff_drop, mode);
+              }
+              if (tail_px > 0U) {
+                blend_linear_wash_edges_cpu(dst_fb, src_bg, base_px + head_px + interior_px, tail_px,
+                                            wash_r >> 3, wash_g >> 2, wash_b >> 3,
+                                            clamped_q8, falloff_drop, mode);
+              }
+              st.washes++;
+              if (!st.verified) {
+                st.verified = true;
+                ESP_LOGI("disp_fb",
+                         "PSRAM PPA Blend wash verified: %u KB (%u x %u px, head=%u tail=%u) in %ld us (blend=%ldus post=%ldus)",
+                         static_cast<unsigned>(interior_len / 1024U),
+                         static_cast<unsigned>(kPpaCopyRowPx), static_cast<unsigned>(rows),
+                         static_cast<unsigned>(head_px), static_cast<unsigned>(tail_px),
+                         static_cast<long>(t_post_us - t0_us),
+                         static_cast<long>(t_blend_us - t0_us),
+                         static_cast<long>(t_post_us - t_blend_us));
+              }
+              return true;
+            }
+            st.ok = false;
+            ESP_LOGW("disp_fb", "PSRAM PPA Blend post-msync failed (err=%d); disabling",
+                     static_cast<int>(post_err));
+          } else {
+            st.ok = false;
+            ESP_LOGW("disp_fb", "PSRAM PPA Blend wash failed (err=%d); disabling",
+                     static_cast<int>(blend_err));
+          }
         }
       }
     }
@@ -848,6 +950,20 @@ FrameProfileScope::~FrameProfileScope() {
     const float fps = (static_cast<float>(fr.window_frames) * 1000.0f) / static_cast<float>(win_el);
     const uint32_t avg_us = fr.window_render_us / fr.window_frames;
     auto &fbc = fb_clear_state();
+#if LATTER_FB_PPA
+    auto &ppa_srm = ppa_srm_blit_state();
+    auto &ppa_bld = ppa_blend_wash_state();
+    LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu ppa=%lu/%lu%s%s%s",
+                     static_cast<unsigned long>(fr.window_frames), fps, static_cast<unsigned long>(avg_us),
+                     static_cast<unsigned long>(fr.max_render_us), fr.max_render_page, fr.max_render_sub,
+                     static_cast<unsigned long>(fr.slow_frames), static_cast<unsigned long>(fbc.hits),
+                     static_cast<unsigned long>(fbc.hits + fbc.misses),
+                     static_cast<unsigned long>(ppa_srm.blits), static_cast<unsigned long>(ppa_bld.washes),
+                     fbc.why != nullptr ? " dma_off=" : "", fbc.why != nullptr ? fbc.why : "",
+                     fbc.why != nullptr ? fb_clear_why_err_str() : "");
+    ppa_srm.blits = 0U;
+    ppa_bld.washes = 0U;
+#else
     LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu%s%s%s",
                      static_cast<unsigned long>(fr.window_frames), fps, static_cast<unsigned long>(avg_us),
                      static_cast<unsigned long>(fr.max_render_us), fr.max_render_page, fr.max_render_sub,
@@ -855,6 +971,7 @@ FrameProfileScope::~FrameProfileScope() {
                      static_cast<unsigned long>(fbc.hits + fbc.misses),
                      fbc.why != nullptr ? " dma_off=" : "", fbc.why != nullptr ? fbc.why : "",
                      fbc.why != nullptr ? fb_clear_why_err_str() : "");
+#endif
     fbc.hits = fbc.misses = 0;
     uint32_t *sect = prof_sect_us(), any_sect = 0;
     for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
@@ -1302,7 +1419,7 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
     float dy = 0.0f;
     int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
     if (!o.row(py, dy, s0, s1, e0, e1)) continue;
-    const int a = (h > 1) ? (a_top + ((a_bot - a_top) * (py - y0)) / (h - 1)) : a_top;
+    const int a = std::clamp((h > 1) ? (a_top + ((a_bot - a_top) * (py - y0)) / (h - 1)) : a_top, 0, 256);
     if (a <= 0) continue;
     const uint8_t *th = kBayer4[py & 3];
     uint16_t *row = fb + static_cast<size_t>(py) * SCREEN_W;
@@ -1311,27 +1428,16 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
     const uint32_t tr_a = (tr * ua) >> 8;
     const uint32_t tg_a = (tg * ua) >> 8;
     const uint32_t tb_a = (tb * ua) >> 8;
-    uint32_t base_r[4], base_g[4], base_b[4];
+    uint32_t base_rb[4], base_g_s5[4];
     for (int k = 0; k < 4; k++) {
       const uint32_t tk = static_cast<uint32_t>(th[k]) * 16U + 8U;
-      base_r[k] = tr_a + tk;
-      base_g[k] = tg_a + tk;
-      base_b[k] = tb_a + tk;
+      base_rb[k] = ((tr_a + tk) << 16) | (tb_a + tk);
+      base_g_s5[k] = (tg_a + tk) << 5;
     }
     auto span = [&](int xa, int xb) {
       xa = std::max(xa, 0);
       xb = std::min(xb, SCREEN_W - 1);
-      for (int x = xa; x <= xb; x++) {
-        const uint16_t bg = decode_hw_rgb565_mode<Mode>(row[x]);
-        const int k = x & 3;
-        uint32_t r = (base_r[k] + ((bg >> 11) & 0x1FU) * ia) >> 8;
-        uint32_t g = (base_g[k] + ((bg >> 5) & 0x3FU) * ia) >> 8;
-        uint32_t b = (base_b[k] + (bg & 0x1FU) * ia) >> 8;
-        if (r > 31U) r = 31U;
-        if (g > 63U) g = 63U;
-        if (b > 31U) b = 31U;
-        row[x] = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
-      }
+      if (xa <= xb) blend_swar_q8_span<Mode>(row, row, xa, xb, ia, base_rb, base_g_s5);
     };
     auto edge = [&](int px) {
       if (px < 0 || px >= SCREEN_W) return;

@@ -995,21 +995,33 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
     sky_base_cache_drop();
   }
 
-  // 7. blend_psram_vertical_wash_fast fused copy+wash, in-place parity, band preservation & endian modes
+  // 7. blend_psram_vertical_wash_fast & glass SWAR bit-exact Q8 parity across all 4 endian modes
   {
     const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
     const int saved_endian = active_frame_endian_mode();
-    for (int mode : {1, 2}) {
+    static constexpr uint8_t kRefBayer4[4][4] = {
+        {  0, 128,  32, 160},
+        {192,  64, 224,  96},
+        { 48, 176,  16, 144},
+        {240, 112, 208,  80},
+    };
+    for (int mode : {1, 2, 3, 4}) {
       active_frame_endian_mode() = mode;
       const uint16_t bg_hw = encode_hw_rgb565(UiColor{16, 32, 48});
       const uint16_t sentinel = 0x5AA5U;
       std::vector<uint16_t> src(px_count, bg_hw);
-      std::vector<uint16_t> dst_fused(px_count, sentinel);
-      std::vector<uint16_t> dst_inplace(px_count, sentinel);
-
+      // Seed extreme RGB565 corner values in the first active row to verify zero SWAR channel carry.
       const int y_lo = 12;
       const int y_hi = SCREEN_H - 13;
       const int inset = LATTER_ROUND_DISPLAY ? 5 : 0;
+      const uint16_t kExtremes[8] = {0x0000U, 0xFFFFU, 0xF800U, 0x07E0U, 0x001FU, 0xF81FU, 0x07FFU, 0xFFE0U};
+      for (int x = 0; x < SCREEN_W; ++x) {
+        src[static_cast<size_t>(y_lo + 4) * SCREEN_W + static_cast<size_t>(x)] =
+            encode_hw_rgb565_raw(kExtremes[x & 7]);
+      }
+      std::vector<uint16_t> dst_fused(px_count, sentinel);
+      std::vector<uint16_t> dst_inplace(px_count, sentinel);
+
       blend_psram_vertical_wash_fast(dst_fused.data(), src.data(), y_lo, y_hi,
                                      190U, 220U, 255U, 78, 152, inset, SCREEN_CX);
       // Verify untouched bands outside [y_lo, y_hi] remain sentinel-intact.
@@ -1027,6 +1039,12 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
       }
       blend_psram_vertical_wash_fast(dst_inplace.data(), dst_inplace.data(), y_lo, y_hi,
                                      190U, 220U, 255U, 78, 152, inset, SCREEN_CX);
+      const int span_h = std::max(1, SCREEN_H - 1 - 2 * inset);
+      const int check_y = y_lo + 4;
+      const int falloff_q8 = 256 - (((check_y - inset) * 152) / span_h);
+      const int check_a = (78 * std::clamp(falloff_q8, 0, 256)) >> 8;
+      const int check_inv = 256 - check_a;
+      const int sr5 = 190 >> 3, sg6 = 220 >> 2, sb5 = 255 >> 3;
       for (int y = y_lo; y <= y_hi; ++y) {
         const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
         const int hw = LATTER_ROUND_DISPLAY ? circle_half_span(y, inset) : (SCREEN_W / 2 - 1);
@@ -1035,13 +1053,22 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
           const int rx = std::min(SCREEN_W - 1, SCREEN_CX + hw);
           for (int x = lx; x <= rx; ++x) {
             LATTER_CHECK(dst_fused[row + static_cast<size_t>(x)] == dst_inplace[row + static_cast<size_t>(x)]);
+            if (y == check_y) {
+              const uint16_t p = decode_hw_rgb565_raw(src[row + static_cast<size_t>(x)]);
+              const int dr = (p >> 11) & 0x1F, dg = (p >> 5) & 0x3F, db = p & 0x1F;
+              const int d = kRefBayer4[y & 3][x & 3];
+              const uint16_t ref_raw = static_cast<uint16_t>((((sr5 * check_a + dr * check_inv + d) >> 8) << 11) |
+                                                             (((sg6 * check_a + dg * check_inv + d) >> 8) << 5) |
+                                                             ((sb5 * check_a + db * check_inv + d) >> 8));
+              LATTER_CHECK(dst_fused[row + static_cast<size_t>(x)] == encode_hw_rgb565_raw(ref_raw));
+            }
           }
         }
       }
 
       // Verify top of wash is strictly brighter than bottom (vertical falloff) and brighter than unwashed sky.
       const uint16_t top_px = decode_hw_rgb565_raw(
-          dst_fused[static_cast<size_t>(y_lo + 4) * SCREEN_W + static_cast<size_t>(SCREEN_CX)]);
+          dst_fused[static_cast<size_t>(y_lo + 8) * SCREEN_W + static_cast<size_t>(SCREEN_CX)]);
       const uint16_t bot_px = decode_hw_rgb565_raw(
           dst_fused[static_cast<size_t>(y_hi - 4) * SCREEN_W + static_cast<size_t>(SCREEN_CX)]);
       const uint16_t raw_bg = decode_hw_rgb565_raw(bg_hw);
