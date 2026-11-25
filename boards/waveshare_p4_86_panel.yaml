@@ -106,9 +106,10 @@ esp32:
   flash_size: 32MB
   framework:
     # ESPHome 2026.11.0+ mipi_dsi enables CONFIG_LCD_DSI_ISR_CACHE_SAFE + IRAM_ATTR DPI callback
-    # automatically; keep GDMA / DW-GDMA ISRs in IRAM so DPI scanout never stalls during OTA flash erases.
+    # automatically (which also selects DW_GDMA_ISR_IRAM_SAFE in ESP-IDF 6.x); keep
+    # CONFIG_DW_GDMA_ISR_IRAM_SAFE explicitly set so DPI scanout stays tear-free across OTA flash
+    # erases on both ESP-IDF 5.5 and 6.1+ (CONFIG_GDMA_ISR_IRAM_SAFE was removed in ESP-IDF 6.0).
     sdkconfig_options:
-      CONFIG_GDMA_ISR_IRAM_SAFE: "y"
       CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"
 
 i2c:

@@ -41,7 +41,7 @@ struct AudioRuntimeHooks {
   bool (*get_local_album_art)(const uint16_t *&data, int &w, int &h) = nullptr;
   std::string (*primary_wake_word)() = nullptr;
 
-  void (*on_api_client_authenticated)(const std::string &client_info, const std::string &client_address) = nullptr;
+  void (*on_api_client_authenticated)(std::string_view client_info, std::string_view client_address) = nullptr;
   void (*on_clean_disconnect_hibernate)() = nullptr;
   void (*on_boot_init)() = nullptr;
   void (*on_prepare_hibernate)() = nullptr;
@@ -107,7 +107,7 @@ struct AudioRuntimeHooks {
     return (primary_wake_word != nullptr) ? primary_wake_word() : std::string("None");
   }
 
-  void notify_api_client_authenticated(const std::string &ci, const std::string &ca) const {
+  void notify_api_client_authenticated(std::string_view ci, std::string_view ca) const {
     if (on_api_client_authenticated != nullptr) on_api_client_authenticated(ci, ca);
   }
   void run_boot_init() const {

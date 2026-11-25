@@ -60,7 +60,7 @@ esphome:
             au.primary_wake_word = +[]() -> std::string {
               return latter_core::primary_wake_word_name(id(mww));
             };
-            au.on_api_client_authenticated = +[](const std::string &ci, const std::string &ca) {
+            au.on_api_client_authenticated = +[](std::string_view ci, std::string_view ca) {
               latter_core::on_api_client_authenticated(id(va), ci, ca);
             };
             au.on_clean_disconnect_hibernate = +[]() {

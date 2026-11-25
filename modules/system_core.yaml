@@ -146,7 +146,9 @@ api:
             r.nav.last_pub_display_bri_pct = -1;
           }
           latter_core::link_report_api_connected(is_ha, now_ms);
-          r.audio.notify_api_client_authenticated(client_info, client_address);
+          r.audio.notify_api_client_authenticated(
+              client_info.empty() ? std::string_view{} : std::string_view(client_info.c_str(), client_info.size()),
+              client_address.empty() ? std::string_view{} : std::string_view(client_address.c_str(), client_address.size()));
           if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
             latter_ui::schedule_disp_update(&id(disp1));
           }

@@ -92,7 +92,7 @@ CONFIG_SCHEMA = cv.All(
 
 
 def _is_hosted(cfg: Mapping[str, Any] | None = None) -> bool:
-    active_cfg = cfg if cfg is not None else CORE.config
+    active_cfg = cfg if cfg is not None else (CORE.config or {})
     return isinstance(active_cfg, Mapping) and ESP32_HOSTED_DOMAIN in active_cfg
 
 
@@ -126,7 +126,8 @@ def _sdkconfig_flag_enabled(options: dict[str, object], key: str) -> bool:
 
 def _code_runs_from_psram() -> bool:
     """Code and rodata execute from PSRAM (XIP)."""
-    framework = CORE.config.get("esp32", {}).get("framework", {})
+    core_cfg = CORE.config or {}
+    framework = core_cfg.get("esp32", {}).get("framework", {})
     if framework.get("advanced", {}).get("execute_from_psram", False):
         return True
     options = framework.get("sdkconfig_options", {})
@@ -140,7 +141,8 @@ def _code_runs_from_psram() -> bool:
 
 def _light_sleep_enabled() -> bool:
     """Automatic light sleep is configured (enable_light_sleep or tickless idle)."""
-    pm_cfg = CORE.config.get("power_management")
+    core_cfg = CORE.config or {}
+    pm_cfg = core_cfg.get("power_management")
     entries = (
         pm_cfg
         if isinstance(pm_cfg, list)
@@ -149,7 +151,7 @@ def _light_sleep_enabled() -> bool:
     if any(isinstance(e, dict) and e.get("enable_light_sleep") for e in entries):
         return True
     options = (
-        CORE.config.get("esp32", {})
+        core_cfg.get("esp32", {})
         .get("framework", {})
         .get("sdkconfig_options", {})
     )
@@ -173,7 +175,8 @@ async def to_code(config: ConfigType) -> None:
     cg.add(var.set_max_interval(config[CONF_MAX_INTERVAL].total_milliseconds))
     cg.add_define("USE_LATTER_BEACON")
 
-    if _is_hosted(CORE.config):
+    core_cfg = CORE.config or {}
+    if _is_hosted(core_cfg):
         add_idf_sdkconfig_option("CONFIG_ESP_HOSTED_HOST_FEAT_BT", True)
         cg.add_define("USE_LATTER_BEACON_HOSTED")
         return
@@ -181,7 +184,7 @@ async def to_code(config: ConfigType) -> None:
     tx_power = config.get(CONF_TX_POWER, DEFAULT_TX_POWER_DBM)
     cg.add(var.set_tx_power(cg.RawExpression(TX_POWER_LEVELS[tx_power])))
     request_bluetooth()
-    if "wifi" in CORE.config or ESP32_HOSTED_DOMAIN in CORE.config:
+    if "wifi" in core_cfg or ESP32_HOSTED_DOMAIN in core_cfg:
         request_software_coexistence()
     add_idf_sdkconfig_option("CONFIG_BT_CONTROLLER_ONLY", True)
     add_idf_sdkconfig_option("CONFIG_BT_BLUEDROID_ENABLED", False)

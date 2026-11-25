@@ -55,7 +55,9 @@
 
 #ifdef USE_ESP32
 #include <driver/gpio.h>
+#if defined(LATTER_BACKLIGHT_PIN)
 #include <driver/ledc.h>
+#endif
 #include <sdkconfig.h>
 #endif
 #ifdef USE_I2C

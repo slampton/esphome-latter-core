@@ -384,14 +384,14 @@ def _check_board_p4_and_dsi(
         if re.search(r"(?m)^power_management\s*:|\besp32_power_management\b|\bmin_frequency:\s*40MHz\b", uncommented):
             failures.append(f"[P4 PM] {bname} must never enable esp32_power_management / 40MHz XTAL DFS")
     if "platform: mipi_dsi" in uncommented:
-        failures.extend(
-            f"[DSI IRAM] {bname} missing required MIPI-DSI IRAM option: {dsi_req}"
-            for dsi_req in (
-                'CONFIG_GDMA_ISR_IRAM_SAFE: "y"',
-                'CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"',
+        if 'CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"' not in uncommented:
+            failures.append(
+                f'[DSI IRAM] {bname} missing required MIPI-DSI IRAM option: CONFIG_DW_GDMA_ISR_IRAM_SAFE: "y"'
             )
-            if dsi_req not in uncommented
-        )
+        if re.search(r"\bCONFIG_GDMA_ISR_IRAM_SAFE\b", uncommented):
+            failures.append(
+                f"[DSI IRAM] {bname} sets retired CONFIG_GDMA_ISR_IRAM_SAFE (removed in ESP-IDF 6.0)"
+            )
         if flags.get("LATTER_DSI_IRAM_SAFE") != "1":
             failures.append(f"[DSI IRAM] {bname} missing display.dsi_iram_safe: true (LATTER_DSI_IRAM_SAFE=1)")
         if "esp_lcd_dpi_panel_register_event_callbacks" in uncommented:

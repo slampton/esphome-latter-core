@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <type_traits>
 
 #if __has_include("esphome/core/defines.h")
@@ -61,14 +62,14 @@ namespace latter_core {
 void stop_va_microphone(esphome::voice_assistant::VoiceAssistant *va);
 void abort_voice_assistant(esphome::voice_assistant::VoiceAssistant *va);
 void on_api_client_authenticated(esphome::voice_assistant::VoiceAssistant *va,
-                                 const std::string &client_info,
-                                 const std::string &client_address);
+                                 std::string_view client_info,
+                                 std::string_view client_address);
 void clean_disconnect_api_before_hibernate(esphome::voice_assistant::VoiceAssistant *va);
 #else
 inline void stop_va_microphone(esphome::voice_assistant::VoiceAssistant *) {}
 inline void abort_voice_assistant(esphome::voice_assistant::VoiceAssistant *) {}
 inline void on_api_client_authenticated(esphome::voice_assistant::VoiceAssistant *,
-                                        const std::string &, const std::string &) {}
+                                        std::string_view, std::string_view) {}
 inline void clean_disconnect_api_before_hibernate(esphome::voice_assistant::VoiceAssistant *) {}
 #endif
 

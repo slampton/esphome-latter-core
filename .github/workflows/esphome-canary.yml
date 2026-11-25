@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        device: [pocket-assistant, desk-assistant]
+        device: [pocket-assistant, remote-assistant, desk-assistant]
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -9,9 +9,6 @@
 #if defined(ESPHOME_VERSION_CODE) && defined(VERSION_CODE)
 static_assert(ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 11, 1),
               "Latter requires ESPHome 2026.11.1 or newer (devices/*.yaml min_version).");
-#if ESPHOME_VERSION_CODE >= VERSION_CODE(2027, 1, 0)
-#warning "esphome_bridge.cpp private-member bridge not validated on this ESPHome version; verify upstream public API"
-#endif
 #endif
 
 #ifdef USE_API
@@ -35,8 +32,8 @@ namespace {
 //      (replacing set_state_, mic_source_, and api_client_; see components/latter_core/README.md).
 //   2. MipiDsi public framebuffer pointer getter
 //      (replacing MipiDsi::buffer_ for zero-copy RGB565 scanlines on ESP32-P4 MIPI-DSI panels).
-// Guarded by the ESPHOME_VERSION_CODE >= 2026.11.1 static_assert and 2027.1.0 #warning above,
-// plus the weekly .github/workflows/esphome-canary.yml build against upstream esphome:dev.
+// Guarded by the ESPHOME_VERSION_CODE >= 2026.11.1 static_assert above and the weekly
+// .github/workflows/esphome-canary.yml build against upstream esphome:dev (validated through 2026.12).
 template <typename Tag, typename Tag::type M>
 struct BridgeRob {
   friend constexpr typename Tag::type bridge_get(Tag) { return M; }
@@ -119,14 +116,14 @@ void abort_voice_assistant(esphome::voice_assistant::VoiceAssistant *va) {
 }
 
 void on_api_client_authenticated(esphome::voice_assistant::VoiceAssistant *va,
-                                 const std::string &client_info,
-                                 const std::string &client_address) {
+                                 std::string_view client_info,
+                                 std::string_view client_address) {
 #ifdef USE_API
   if (va == nullptr) return;
-  if (client_info.find("Home Assistant") != std::string::npos) {
+  if (client_info.find("Home Assistant") != std::string_view::npos) {
     if (va->get_api_connection() != nullptr) {
-      ESP_LOGD("va_api", "Releasing stale VoiceAssistant API client for new Home Assistant connection (%s)",
-               client_address.c_str());
+      ESP_LOGD("va_api", "Releasing stale VoiceAssistant API client for new Home Assistant connection (%.*s)",
+               static_cast<int>(client_address.size()), client_address.empty() ? "" : client_address.data());
       va->*bridge_get(VA_ApiClient_Tag{}) = nullptr;
     }
   }

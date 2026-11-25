@@ -630,6 +630,13 @@ async def to_code(config: dict[str, Any]) -> None:
         # Required by pm_telemetry_stall.cpp (eTaskGetState in stall_loop_state).
         esp32.add_idf_sdkconfig_option("CONFIG_FREERTOS_USE_TRACE_FACILITY", True)
 
+        # Boards with a PWM backlight pin use ESP-IDF LEDC directly in hal_panel_power.h;
+        # re-include esp_driver_ledc explicitly since ESPHome excludes it by default.
+        if CONF_PIN in config[CONF_BACKLIGHT] and hasattr(
+            esp32, "include_builtin_idf_component"
+        ):
+            esp32.include_builtin_idf_component("esp_driver_ledc")
+
         # Flash-write counters for System: Link Report (pm_telemetry_stall.cpp).
         if config[CONF_DIAGNOSTICS][CONF_NVS_GUARD]:
             cg.add_build_flag("-Wl,--wrap=nvs_set_blob")
