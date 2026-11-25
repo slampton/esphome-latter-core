@@ -9,6 +9,7 @@ from typing import Any
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
+import esphome.final_validate as fv
 from esphome.const import CONF_HEIGHT, CONF_ID, CONF_PIN, CONF_WIDTH, Framework
 from esphome.core import CORE
 
@@ -270,13 +271,14 @@ def _final_validate_latter_core(config: dict[str, Any]) -> dict[str, Any]:
         view_scale_pct=vs_pct,
         is_stationary=bool(caps.get(CONF_STATIONARY, False)),
     )
-    for font_entry in CORE.config.get("font") or ():
+    full_cfg = fv.full_config.get(None) or CORE.config or {}
+    for font_entry in full_cfg.get("font") or ():
         if not isinstance(font_entry, dict):
             continue
         fid = str(font_entry.get(CONF_ID, ""))
         if fid in auto_fonts and int(font_entry.get("size", 0)) == 1:
             font_entry["size"] = auto_fonts[fid]
-    for disp_entry in CORE.config.get("display") or ():
+    for disp_entry in full_cfg.get("display") or ():
         if isinstance(disp_entry, dict) and int(disp_entry.get("rotation", 0) or 0) != 0:
             _LOGGER.warning(
                 "latter_core: display '%s' uses software rotation=%s; "
