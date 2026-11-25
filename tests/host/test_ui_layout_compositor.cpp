@@ -93,7 +93,7 @@ void test_ui_layout_hit_table_and_dirty_band() {
   const auto ref = latter_ui::compute_panel_layout(466, 466, true, false, 266, 233, 100, false);
   const auto ref_kin = latter_ui::KinematicMetrics::for_ppi(266);
   LATTER_CHECK(ref_kin.slider_start_px == 7 && ref_kin.tap_slop_px == 17 && ref_kin.swipe_live_px == 25);
-  LATTER_CHECK(ref.dock_r == 31 && ref.dock_hit_r >= 43);
+  LATTER_CHECK(ref.dock_r == 29 && ref.dock_hit_r >= 41);
   LATTER_CHECK(ref.back_y < ref.home_bar_y && ref.home_bar_y < 466);
   LATTER_CHECK(latter_ui::dp_px_for(233, 1000) == 233);
   LATTER_CHECK(latter_ui::dp_px_for(100, 1184) == 118);
@@ -1210,8 +1210,8 @@ void test_clean_sheet_scaling_9geom() {
   };
   static constexpr ExpectedPanel kExpected[5] = {
       {0,  900, 13, 19, 22, 24, 34,  68, 25, 2, SizeClass::Compact},  // Remote 320x480
-      {1, 1184, 17, 25, 29, 32, 44,  76, 33, 1, SizeClass::Compact},  // Wrist 410x502
-      {2, 1000, 14, 21, 25, 28, 38,  76, 31, 1, SizeClass::Regular},  // Pocket 466x466R
+      {1, 1184, 17, 25, 29, 32, 44,  76, 31, 1, SizeClass::Compact},  // Wrist 410x502
+      {2, 1000, 14, 21, 25, 28, 38,  76, 29, 1, SizeClass::Regular},  // Pocket 466x466R
       {3, 1177, 17, 25, 29, 33, 45,  89, 35, 1, SizeClass::Regular},  // Mobile 480x480
       {4, 1385, 19, 29, 35, 39, 53, 105, 46, 2, SizeClass::Regular},  // Desk 720x720
   };
@@ -1229,6 +1229,30 @@ void test_clean_sheet_scaling_9geom() {
     LATTER_CHECK(dm.dock_r == e.dock_r);
     LATTER_CHECK(act.max_rows == e.act_rows);
     LATTER_CHECK(ly.size_class == e.size_class);
+    // Universal dock spacing parity: every flagship converges to >= 40% diameter gap.
+    const int gap_px = dm.slot_stride - 2 * dm.dock_r;
+    LATTER_CHECK(gap_px * 100 >= 40 * (2 * dm.dock_r));
+    if (!p.round) {
+      // Top-right corner-hugging battery: square corners tuck tightly (cr == 0), rounded corners clear bezel & Date.
+      const int batt_half_h = std::max(6, (af.micro + 1) / 2);
+      const int batt_half_w = std::max(20, (af.micro * 170) / 100);
+      const int batt_top = ly.battery_y - batt_half_h;
+      const int batt_right = ly.battery_cx + batt_half_w;
+      const int batt_left = ly.battery_cx - batt_half_w;
+      LATTER_CHECK(is_inside_bezel_for(batt_right, batt_top, p.w, p.h, false, p.wearable, 1, p.corner_r));
+      if (p.corner_r == 0) {
+        LATTER_CHECK(batt_top <= dp_px_for(10, s));
+      }
+      const int est_date_hw = (af.date * 34) / 10;
+      const bool horiz_clear = (ly.cx + est_date_hw) < batt_left;
+      const bool vert_clear = (ly.home_date_y - af.date / 2) >= (ly.battery_y + batt_half_h + dp_px_for(12, s));
+      LATTER_CHECK(horiz_clear || vert_clear);
+      // Celestial orb sits cleanly below Date and balanced left of Date left edge without crowding.
+      const int min_d = (p.w < p.h) ? p.w : p.h;
+      const int orb_r = std::max(22, (min_d * 32 + 233) / 466);
+      LATTER_CHECK(ly.celestial_y >= ly.home_date_y + dp_px_for(20, s));
+      LATTER_CHECK(ly.celestial_x + orb_r < (ly.cx - est_date_hw) - dp_px_for(10, s));
+    }
   }
 
   // Verify future panels (360x360R, 800x480, 1024x600, 1280x800) hit physical minimums & bezel safety.
@@ -1241,7 +1265,7 @@ void test_clean_sheet_scaling_9geom() {
     LATTER_CHECK(af.small * 25.4 / p.ppi >= 1.95);
     LATTER_CHECK(af.micro * 25.4 / p.ppi >= 1.29);
     LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[3] + dm.dock_r < p.w);
-    LATTER_CHECK(dm.slot_xs[1] - dm.slot_xs[0] > 2 * dm.dock_r);
+    LATTER_CHECK((dm.slot_stride - 2 * dm.dock_r) * 100 >= 40 * (2 * dm.dock_r));
     LATTER_CHECK(ly.home_date_y < ly.home_clock_y && ly.home_clock_y < ly.home_weather_y);
     if (idx == 5) {
       LATTER_CHECK(ly.size_class == SizeClass::Compact);

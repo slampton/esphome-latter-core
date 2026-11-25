@@ -280,44 +280,54 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.dock_hit_r = dm.dock_hit_r;
   L.dock_stride = dm.slot_stride;
 
-  // Celestial orb & Battery indicator (consistent ~2.0 mm readout; clear of large corner_r and Date)
+  // Home Dashboard hero typography, top-right battery, and celestial orb (pure geometry math):
+  // - Round panels keep battery centered in the bottom chin and sun/moon in the upper-left circular arc.
+  // - Non-round panels tuck top-right battery strictly into the corner curve (cr=0 sharp -> symmetric edge pad;
+  //   cr>0 rounded -> exact bezel_x_inset_for at batt_top), push Date below Battery ONLY when horizontal extents
+  //   would crowd, and balance the celestial orb midway between the left bezel at celestial_y and Date left edge.
+  const int est_date_hw = (fonts.date * 34) / 10;  // "Wed, Nov 25" ~= 6.8x font_date height
   if (is_round) {
+    L.home_date_y = std::max(38, (h * 112) / 1000);
+    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(22, s);
+    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(20, s);
     L.celestial_x = (w * 215) / 1000;
     L.celestial_y = (h * 197) / 1000;
     L.battery_cx = L.cx;
     L.battery_y = std::min(h - std::max(20, dp_px_for(24, s)),
                            std::max(L.dock_pips_y + dp_px_for(22, s), (h * 935) / 1000));
   } else {
-    const int top_y = std::max(dp_px_for(24, s), L.hdr_y);
-    const int top_in = bezel_x_inset_for(top_y, w, h, cr, false, dp_px_for(10, s));
-    L.celestial_x = std::max(top_in + dp_px_for(34, s), (w * 155) / 1000);
-    L.celestial_y = std::max(dp_px_for(68, s), (h * 162) / 1000);
-    if (cr >= 84 && sf.w_dp < 400) {
-      // High-corner-radius narrow portrait (e.g. Wrist r98): place battery above Date so 32px Date never collides.
-      L.battery_y = std::max(28, dp_px_for(27, s));
-      const int b_in = bezel_x_inset_for(L.battery_y, w, h, cr, false, dp_px_for(8, s));
-      L.battery_cx = w - b_in - dp_px_for(38, s);
-    } else {
-      L.battery_y = std::max(22, dp_px_for(26, s));
-      const int b_in = bezel_x_inset_for(L.battery_y, w, h, cr, false, dp_px_for(8, s));
-      L.battery_cx = w - b_in - dp_px_for(38, s);
-    }
-  }
+    const int batt_fh = fonts.micro;
+    const int batt_half_h = std::max(6, (batt_fh + 1) / 2);
+    const int batt_half_w = std::max(20, (batt_fh * 170) / 100);
+    const int pad_edge = std::max(6, dp_px_for(8, s));
+    const int batt_top = std::max(pad_edge, (cr * 22) / 100);
+    L.battery_y = batt_top + batt_half_h;
+    const int b_in = bezel_x_inset_for(batt_top, w, h, cr, false, pad_edge);
+    L.battery_cx = w - b_in - batt_half_w;
 
-  // Home Dashboard hero typography vertical positions (coupled to real auto font sizes)
-  if (is_round) {
-    L.home_date_y = std::max(38, (h * 112) / 1000);
-    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(22, s);
-    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(20, s);
-  } else if (cr >= 84 && sf.w_dp < 400) {
-    // Below top-right battery readout so wide Date never crowds Battery.
-    L.home_date_y = L.battery_y + dp_px_for(29, s);
-    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(14, s);
-    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(14, s);
-  } else {
-    L.home_date_y = std::max(36, (h * 104) / 1000);
-    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(18, s);
-    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(16, s);
+    const int base_date_y = std::max(36, (h * 104) / 1000);
+    const int batt_left = L.battery_cx - batt_half_w;
+    const int batt_bot = L.battery_y + batt_half_h;
+    const bool batt_crowds_date = (L.cx + est_date_hw + dp_px_for(12, s)) > batt_left;
+    if (batt_crowds_date) {
+      L.home_date_y = std::max(base_date_y, batt_bot + dp_px_for(14, s) + fonts.date / 2);
+      L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(14, s);
+      L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(14, s);
+    } else {
+      L.home_date_y = base_date_y;
+      L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(18, s);
+      L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(16, s);
+    }
+
+    const int min_d = (w < h) ? w : h;
+    const int orb_r = std::max(22, (min_d * 32 + 233) / 466);
+    L.celestial_y = std::max({dp_px_for(68, s), (h * 162) / 1000, L.home_date_y + dp_px_for(24, s)});
+    const int cel_left = bezel_x_inset_for(L.celestial_y, w, h, cr, false, dp_px_for(4, s));
+    const int date_left = L.cx - est_date_hw;
+    const int cel_mid_x = (cel_left + date_left) / 2;
+    const int cel_min_x = std::max(cel_left + orb_r + dp_px_for(4, s), dp_px_for(34, s) + 2);
+    const int cel_max_x = std::max(cel_min_x, (w * 155) / 1000);
+    L.celestial_x = std::clamp(cel_mid_x, cel_min_x, cel_max_x);
   }
 
   // 5-slot list geometry (safe between hdr_y and back_y, bezel-safe on all 4 corners)

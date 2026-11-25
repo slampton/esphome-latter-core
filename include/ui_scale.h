@@ -275,6 +275,51 @@ struct DockMetrics {
   int slot_xs[4]{119, 195, 271, 347};
 };
 
+// Exact maximum horizontal half-spread (from cx to outer dock slot center) such that BOTH:
+//   (1) the outer dock circle + stadium track (r_track) stays strictly inside the circular/corner bezel, AND
+//   (2) the overflow scroll chevron (r + chev_pad + ch_half) stays strictly inside the bezel at dock_y.
+inline constexpr int compute_dock_max_outer_dx(const UiDisplaySpec &spec, int scale_milli,
+                                               int dock_y, int r) noexcept {
+  const int margin = std::max(8, dp_px_for(10, scale_milli));
+  const int r_track = r + std::max(2, dp_px_for(3, scale_milli));
+  const int chev_pad = std::max(9, dp_px_for(12, scale_milli));
+  const int ch_half = std::max(4, dp_px_for(5, scale_milli));
+  const int half_w = spec.w / 2;
+
+  const int chev_in = bezel_x_inset_for(dock_y, spec.w, spec.h, spec.corner_r, spec.is_round, margin);
+  const int dx_chev = half_w - chev_in - (r + chev_pad + ch_half);
+
+  int dx_circle = half_w - margin - r_track;
+  if (spec.is_round) {
+    const int min_d = (spec.w < spec.h) ? spec.w : spec.h;
+    const int r_avail = (min_d / 2) - margin - r_track;
+    const int dy = (dock_y >= spec.h / 2) ? (dock_y - spec.h / 2) : (spec.h / 2 - dock_y);
+    dx_circle = (r_avail > dy) ? scale_chord_half_span(r_avail, dy, false) : 0;
+  } else {
+    const int cr = (spec.corner_r > 0) ? spec.corner_r : 0;
+    const int arc_cy = spec.h - 1 - cr;
+    if (cr > 0 && dock_y + r_track > arc_cy) {
+      if (cr - margin > r_track) {
+        const int dy_c = (dock_y > arc_cy) ? (dock_y - arc_cy) : 0;
+        const int r_avail = cr - margin - r_track;
+        const int dx_c = (r_avail > dy_c) ? scale_chord_half_span(r_avail, dy_c, false) : 0;
+        const int corner_dx = (half_w - cr) + dx_c;
+        if (corner_dx < dx_circle) dx_circle = corner_dx;
+      } else {
+        const int diag = (r_track * 707) / 1000;
+        const int diag_in = bezel_x_inset_for(dock_y + diag, spec.w, spec.h, cr, false, margin);
+        const int corner_dx = half_w - diag_in - diag;
+        if (corner_dx < dx_circle) dx_circle = corner_dx;
+      }
+    }
+    const int half_cap = dp_px_for(280, scale_milli) - r;
+    if (half_cap < dx_circle) dx_circle = half_cap;
+  }
+
+  const int lim = (dx_circle < dx_chev) ? dx_circle : dx_chev;
+  return (lim > 0) ? lim : 0;
+}
+
 inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noexcept {
   DockMetrics d{};
   const SafeFrame sf = SafeFrame::for_spec(spec);
@@ -287,18 +332,39 @@ inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noe
   // Target dock radius in logical dp scales smoothly from 28 dp (Remote) -> 31 dp (Pocket) -> 34 dp (Desk) -> 42 dp (10" Tablet).
   const int target_r_dp = std::clamp(19 + (min_dp * 28) / 1000, 25, 42);
   int r = dp_px_for(target_r_dp, s);
+  const int min_r = 18;
+  if (r < min_r) r = min_r;
+
+  const int bot_clearance = std::max(26, dp_px_for(30, s));
+  const int round_bar_top = (spec.h * 736) / 1000;  // 343 on 466R, 264 on 360R (zero upward loss)
+  const int rect_max_bar_top = (spec.h * 820) / 1000;
+  auto app_dock_y_for_r = [&](int cur_r) noexcept -> int {
+    if (spec.is_round) return round_bar_top + cur_r;
+    const int y = spec.h - bot_clearance - cur_r;
+    return (y - cur_r > rect_max_bar_top) ? (rect_max_bar_top + cur_r) : y;
+  };
+
+  // Universal joint (r, stride) solver: shrink r by 1 px until exact circular/corner bezel + chevron
+  // tangency accommodates Remote's golden ~45% diameter gap (>= 42.5% floor) across ALL display shapes.
+  int max_stride = 0;
+  while (true) {
+    const int cur_dock_y = app_dock_y_for_r(r);
+    const int max_dx = compute_dock_max_outer_dx(spec, s, cur_dock_y, r);
+    max_stride = (2 * max_dx) / 3;
+    const int min_comfort_stride = (r * 285 + 50) / 100;
+    if (max_stride >= min_comfort_stride || r <= min_r) break;
+    --r;
+  }
+
+  d.dock_r = r;
+  d.app_dock_y = app_dock_y_for_r(r);
+  const int desired_stride = (r * 290 + 50) / 100;  // Remote golden proportion (~0.45x diameter gap)
+  const int min_gap = std::max(6, dp_px_for(8, s));
+  int stride = (desired_stride < max_stride) ? desired_stride : max_stride;
+  if (stride < 2 * r + min_gap) stride = 2 * r + min_gap;
+  d.slot_stride = stride;
 
   if (spec.is_round) {
-    // Round panels: place app_dock_y so top of dock bar stays at ~73.6% of H (343 px on 466R = 0 px lost upward)
-    // and bound dock_r so all 4 circular icons + 4 AABB corners stay strictly inside the circular bezel.
-    const int min_d = (spec.w < spec.h) ? spec.w : spec.h;
-    const int max_r_round = (min_d * 67) / 1000;  // 31 px on 466R, 24 px on 360R
-    if (r > max_r_round) r = max_r_round;
-    if (r < 20) r = 20;
-    d.dock_r = r;
-
-    const int bar_top = (spec.h * 736) / 1000;  // 343 on 466R, 265 on 360R
-    d.app_dock_y = bar_top + r;
     d.dock_y = d.app_dock_y - std::max(2, dp_px_for(4, s));
     d.dock_pips_y = d.dock_y + r + std::max(6, dp_px_for(10, s));
     d.app_dock_pips_y = d.app_dock_y + r + std::max(5, dp_px_for(9, s));
@@ -307,56 +373,12 @@ inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noe
     if (d.app_dock_pips_y >= d.home_bar_y - 6) {
       d.app_dock_pips_y = d.home_bar_y - 6;
     }
-
-    // Solve 4-icon stride inside circular chord at the bottom of the dock band (app_dock_y + r).
-    const int bot_span = sf.safe_span(d.app_dock_y + r, std::max(5, dp_px_for(6, s)));
-    const int max_stride_chord = (bot_span > 2 * r) ? ((bot_span - 2 * r) / 3) : (2 * r + 4);
-    const int desired_stride = (r * 245 + 50) / 100;  // ~0.45x diameter gap
-    int stride = (desired_stride < max_stride_chord) ? desired_stride : max_stride_chord;
-    if (stride < 2 * r + 4) stride = 2 * r + 4;
-    // Shrink r slightly if even tight packing overflows the round chord (tiny <300px panels).
-    while (3 * stride + 2 * r > bot_span && d.dock_r > 18) {
-      d.dock_r--;
-      r = d.dock_r;
-      stride = std::max(2 * r + 3, (bot_span - 2 * r) / 3);
-    }
-    d.slot_stride = stride;
   } else {
-    // Non-round panels (Mobile r76, Wrist r98, Remote r0, Desk r0, 5"/7"/10" landscape):
-    // Tighten bottom home-bar / pip slack so extra dock radius expands downward without stealing upward app space.
     d.home_bar_y = spec.h - std::max(9, dp_px_for(11, s));
     d.back_y = spec.h - std::max(24, dp_px_for(28, s));
-
-    // Reserve pip + home-bar clearance below dock bottom, keeping app_dock_y + r inside bezel.
-    const int bot_clearance = std::max(26, dp_px_for(30, s));
-    int est_dock_y = spec.h - bot_clearance - r;
-    // Check bottom-edge bezel safe span for rounded-rect corners (Mobile r76, Wrist r98).
-    const int bot_margin = std::max(6, dp_px_for(8, s));
-    const int bot_span = sf.safe_span(est_dock_y + r, bot_margin);
-    const int cap_span = std::min(bot_span, dp_px_for(540, s));
-    // Require 4 circles + 3 minimal gaps (>= 8 px each) inside cap_span.
-    const int min_gap = std::max(8, dp_px_for(10, s));
-    const int max_r_span = (cap_span - 3 * min_gap) / 8;
-    if (r > max_r_span) r = max_r_span;
-    if (r < 20) r = 20;
-    d.dock_r = r;
-
-    // Recompute dock_y with final r, anchoring app bar top near 81.5% on tall/square panels (zero upward loss on Remote/Desk).
-    d.app_dock_y = spec.h - bot_clearance - r;
-    const int max_bar_top = (spec.h * 820) / 1000;
-    if (d.app_dock_y - r > max_bar_top) {
-      d.app_dock_y = max_bar_top + r;
-    }
     d.dock_y = d.app_dock_y;
     d.dock_pips_y = d.dock_y + r + std::max(8, (d.home_bar_y - (d.dock_y + r)) / 2);
     d.app_dock_pips_y = d.dock_pips_y;
-
-    const int eff_span = std::min(sf.safe_span(d.app_dock_y + r, bot_margin), dp_px_for(560, s));
-    const int desired_stride = (r * 290 + 50) / 100;  // Remote golden proportion (~0.45x diameter gap)
-    const int max_stride = (eff_span > 2 * r) ? ((eff_span - 2 * r) / 3) : (2 * r + min_gap);
-    int stride = (desired_stride < max_stride) ? desired_stride : max_stride;
-    if (stride < 2 * r + min_gap) stride = 2 * r + min_gap;
-    d.slot_stride = stride;
   }
 
   d.slot_xs[0] = cx - (d.slot_stride * 3) / 2;

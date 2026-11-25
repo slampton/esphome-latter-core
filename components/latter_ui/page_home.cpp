@@ -1470,7 +1470,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 #if LATTER_HAS_BATTERY
   if (prefs.home_show_battery) {
     render_battery_indicator(it, ly.battery_cx, ly.battery_y, rs.hw_batt_level, rs.hw_batt_charging,
-                             (LATTER_PANEL_PPI <= 190 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small,
+                             (!LATTER_ROUND_DISPLAY && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small,
                              ctx.theme_secondary, ctx.col_gold, ctx.col_green);
   }
 #endif
