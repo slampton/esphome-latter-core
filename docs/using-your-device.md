@@ -71,7 +71,7 @@ Instead of cluttering Home Assistant with dozens of internal entities, Latter us
    - **Presence & Spatial:** `device_tracker.<slug>`, `sensor.<slug>_current_area`, `sensor.<slug>_current_floor`, `sensor.<slug>_ble_distance` (native HA distance units).
    - **Live Screen & Ambience** *(honest radio availability)*: `light.<slug>_screen` (`on`/`off` + `1–100%` brightness) and `switch.<slug>_screensaver` (two-way screensaver toggle).
    - **Sleep-Safe Policy Controls** *(queued across hibernate)*: `select.<slug>_device_group`, `select.<slug>_wake_word_mode`, `switch.<slug>_bedtime_mode`, `switch.<slug>_do_not_disturb`, `number.<slug>_alert_volume`.
-   - **Timers, Alarms & Alerts:** `binary_sensor.<slug>_timer_active`, `sensor.<slug>_timer_remaining`, `binary_sensor.<slug>_alarm_ringing`, `button.<slug>_dismiss_alert`, `button.<slug>_find_my_device`. → [Entities reference](https://github.com/slampton/ha-latter/blob/main/docs/reference/entities.md)
+   - **Timers, Alarms & Alerts:** `binary_sensor.<slug>_timer_active`, `sensor.<slug>_timer_ends`, `binary_sensor.<slug>_alarm_ringing`, `button.<slug>_dismiss_alert`, `button.<slug>_find_my_device`. → [Entities reference](https://github.com/slampton/ha-latter/blob/main/docs/reference/entities.md)
 3. **Stock-Clean Hardware Entities on the `ESPHome` Device:**
    - `Music` (Sendspin `media_player`), Assist satellite + `Wake word` / `Wake word 2` selects, `Project Firmware` (`update`, plus `System: C6 Co-Processor Firmware` on ESP32-P4), `Battery` / `Charging` sensors (battery boards), `Wi-Fi Signal`, `IP Address`, `Restart`, and the auto-hidden `System: RPC Outbox` transport pipe.
 
