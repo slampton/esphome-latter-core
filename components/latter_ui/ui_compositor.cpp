@@ -263,10 +263,9 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
   if (!rs.music.action_feedback.empty() && (ctx.now_ms - rs.music.feedback_timer < 3200U)) sig |= (1U << 14);
   if (!rs.area.action_feedback.empty() && (ctx.now_ms - rs.area.feedback_timer < 3200U)) sig |= (1U << 15);
   if (!rs.remote.action_feedback.empty() && (ctx.now_ms - rs.remote.feedback_timer < 3200U)) sig |= (1U << 16);
-  if (!rs.intercom.broadcast_feedback.empty() && (ctx.now_ms - rs.intercom.broadcast_feedback_ms < 3600U)) sig |= (1U << 17);
+  if (!rs.intercom.broadcast_feedback.empty() && (ctx.now_ms - rs.intercom.broadcast_feedback_ms < 2200U)) sig |= (1U << 17);
   if (rs.music.hud_active) sig |= (1U << 18);
   if (ctx.ble_active) sig |= (1U << 19);
-  if (!rs.cal.feedback_text.empty() && (ctx.now_ms - rs.cal.feedback_ms < 2200U)) sig |= (1U << 26);
   if (!rs.nav.pinned_feedback.empty() && (ctx.now_ms - rs.nav.pinned_feedback_ms < 1800U)) sig |= (1U << 27);
 
   if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == SystemMenuMode::SYSTEM_INFO) {
@@ -437,8 +436,11 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     cl_sig = (cl_sig ^ static_cast<uint32_t>(prefs.calendar_week_start)) * 16777619U;
     const bool fb_vis = !rs.cal.feedback_text.empty() &&
                         (ctx.now_ms >= rs.cal.feedback_ms) &&
-                        ((ctx.now_ms - rs.cal.feedback_ms) < 4000U);
+                        ((ctx.now_ms - rs.cal.feedback_ms) < 2400U);
     cl_sig = (cl_sig ^ (fb_vis ? 1U : 0U)) * 16777619U;
+    if (fb_vis) {
+      for (unsigned char c : rs.cal.feedback_text) cl_sig = (cl_sig ^ c) * 16777619U;
+    }
     for (unsigned char c : rs.cal.draft_title) cl_sig = (cl_sig ^ c) * 16777619U;
     for (unsigned char c : rs.cal.draft_location) cl_sig = (cl_sig ^ c) * 16777619U;
     sig ^= (cl_sig | 1U);
@@ -963,8 +965,7 @@ CadenceScreensaverActions FrameCadenceController::evaluate_screensaver_20ms(
   if (in.display_power_state == 1 && !in.va_visible && !in.is_hibernating) {
     if (!in.screensaver_style.empty() &&
         in.screensaver_style != "Ambient Clock" &&
-        in.screensaver_style != "Photo Frame" &&
-        in.screensaver_style != "Screen Off") {
+        in.screensaver_style != "Photo Frame") {
       driving = true;
       if (ambient_step_ready(in.now_ms, in.last_ambient_ms, in.last_disp_end_ms,
                              in.render_in_flight, in.is_chip_p4, in.speaker_audio_busy,
@@ -1058,7 +1059,9 @@ Cadence20msActions FrameCadenceController::step_20ms(
       clock_smooth_sweep_active(motion_power, now_ms, latest_in_20ms,
                                 effective_clock_face(prefs, rs, now_ms));
   in.interactive_slide =
-      rs.nav.menu_scroll_active || any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
+      rs.nav.menu_scroll_active ||
+      any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
+      any_page_horiz_bounce_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms) ||
       is_music_lyrics_anim_active(now_ms, speaker_audio_busy);
   in.dock_anim_active = any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms);
   in.dock_y0 = dock_dirty_band_y0();
@@ -1246,6 +1249,7 @@ Cadence250msActions FrameCadenceController::step_250ms(
     in.nav_scroll_or_sim_dirty =
         any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms) ||
         any_vert_bounce_active(rs.nav.gui_page, now_ms) ||
+        any_page_horiz_bounce_active(rs.nav.gui_page, rs.nav.home_subpage, now_ms) ||
         is_music_lyrics_anim_active(now_ms, false) ||
         is_music_lyrics_sync_imminent(now_ms, false) ||
         rs.nav.menu_scroll_active || weather_sim_dirty();

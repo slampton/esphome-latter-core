@@ -654,7 +654,7 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
     const int sy = crop_y0 + ((y - fit_r.y0) * crop_h) / fit_r.h;
     const uint16_t *src_row = src + std::clamp(sy, 0, src_h - 1) * src_w;
     if (one_to_one) {
-      blit_rgb565_scanline(it, row_x0, y, row_w, src_row + src_x_skip, false);
+      blit_rgb565_scanline(it, row_x0, y, row_w, src_row + src_x_skip);
     } else {
       const uint32_t step_fp = (static_cast<uint32_t>(crop_w) << 16) / static_cast<uint32_t>(fit_r.w);
       uint32_t sx_fp = (static_cast<uint32_t>(crop_x0) << 16) + static_cast<uint32_t>(src_x_skip) * step_fp;
@@ -663,7 +663,7 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
         row_buf[i] = src_row[sx];
         sx_fp += step_fp;
       }
-      blit_rgb565_scanline(it, row_x0, y, row_w, row_buf, false);
+      blit_rgb565_scanline(it, row_x0, y, row_w, row_buf);
     }
   }
   return true;

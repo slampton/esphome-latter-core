@@ -223,12 +223,11 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
   }
 
   // 5. VOICE ASSISTANT TAKEOVER (exempt during live doorbell PTT reply — D-066!)
-  if ((st.va_active || !st.va_status_text.empty()) &&
-      should_va_takeover_preempt(st.va_active, !st.va_status_text.empty(),
+  if (should_va_takeover_preempt(st.va_active, !st.va_status_text.empty(),
                                  st.va_intercom_turn, runtime_state().nav.gui_page,
                                  runtime_state().cameras.doorbell_live_popup_active)) {
     frame_base(it, st.col_bg);
-    render_voice_assistant_overlay(it, ctx, st);
+    render_voice_assistant_overlay(it, st);
     return true;
   }
 

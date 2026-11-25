@@ -346,7 +346,7 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
     case PrefKey::TIME_FORMAT:
       return apply_enum(p.time_format, kPrefOptsTimeFormat, 0);
     case PrefKey::WEATHER_BACKGROUND:
-      return apply_bool(p.weather_background, 0);
+      return apply_bool(p.weather_background, kPrefEffectWeatherSky);
     case PrefKey::HOME_SUN:
       return apply_bool(p.home_sun, 0);
     case PrefKey::HOME_MOON:
@@ -493,7 +493,7 @@ bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view 
     case PrefKey::SCREENSAVER_PHOTO_CLOCK:
       return apply_bool(p.screensaver_photo_clock, kPrefEffectScreensaverChange);
     case PrefKey::WEATHER_APP_BACKGROUND:
-      return apply_bool(p.weather_app_background, 0);
+      return apply_bool(p.weather_app_background, kPrefEffectWeatherSky);
     case PrefKey::DO_NOT_DISTURB:
       return apply_bool(p.do_not_disturb, kPrefEffectNone);
     case PrefKey::GLASS_STYLE:
@@ -647,7 +647,7 @@ bool parse_v3_device_prefs_payload(std::string_view payload,
     const int sim_idx = find_pref_option_index(std::span<const std::string_view>{kPrefOptsWeatherSimCondition}, sim_sv);
     if (sim_idx >= 0 && st.weather_sim_condition != static_cast<uint8_t>(sim_idx)) {
       st.weather_sim_condition = static_cast<uint8_t>(sim_idx);
-      out_effects |= kPrefEffectRedraw;
+      out_effects |= (kPrefEffectWeatherSky | kPrefEffectRedraw);
     }
   }
 
@@ -1938,27 +1938,6 @@ int resolve_active_remote_slot(int active_slot) {
   return 0;
 }
 
-
-std::string resolve_active_carousel_camera_area_id(const std::string &cameras_summary) {
-  const auto &rs = runtime_state();
-  CameraRecord *cams = camera_records_scratch();
-  const int cnt = parse_cameras_records(cameras_summary, cams, MAX_CAMERA_SLOTS);
-  if (rs.alert.active && !rs.alert.camera_entity.empty()) {
-    const int ai = find_camera_index_by_entity(cams, cnt, rs.alert.camera_entity);
-    if (ai >= 0) return cams[ai].area_id;
-  }
-  if (cnt > 0) {
-    int idx = cam_carousel_idx();
-    if (rs.nav.gui_page == PageId::CAMERAS && rs.cameras.tab == CamerasTab::CAROUSEL) {
-      int car[MAX_CAMERA_SLOTS]{};
-      const int cc = collect_carousel_camera_indices(cams, cnt, car, MAX_CAMERA_SLOTS);
-      if (cc > 0) idx = car[std::clamp(rs.cameras.carousel_idx, 0, cc - 1)];
-    }
-    if (idx < 0 || idx >= cnt) idx = 0;
-    return cams[idx].area_id;
-  }
-  return "";
-}
 
 std::string resolve_active_carousel_camera_id(const std::string &cameras_summary,
                                                      const std::string &fallback_cam_url) {

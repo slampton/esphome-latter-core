@@ -1,6 +1,7 @@
 #include "ui_pages.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 
@@ -8,6 +9,16 @@ namespace latter_ui {
 using namespace latter_core;
 
 namespace {
+
+// Reciprocal LUT for Aurora overlapping-ribbon normalization (w_sum in [5..768]):
+// stores round(2^18 / s) in uint16_t (max 52429 at s == 5), living in .rodata Flash.
+static constexpr std::array<uint16_t, 769> kAuroraRecipQ18 = []() constexpr {
+  std::array<uint16_t, 769> lut{};
+  for (uint32_t s = 5U; s <= 768U; ++s) {
+    lut[s] = static_cast<uint16_t>(((1U << 18) + (s >> 1)) / s);
+  }
+  return lut;
+}();
 
 // 64-entry vertical plume intensity LUT in .rodata Flash (0..256 fixed-point scale):
 // - Indices 0..7   (bottom 12%): soft lower bloom (115 -> 254)
@@ -24,8 +35,50 @@ static constexpr uint16_t AURORA_PLUME_LUT[64] = {
      33,  26,  20,  15,  11,   8,   6,   4
 };
 
-void render_screensaver_aurora(Rgb565Surface &it, int cx, int cy, uint32_t now_ms) {
-  (void)cx;
+struct AuroraCol {
+  int16_t x;
+  int16_t col_top, col_bot;
+  int16_t y1, top1, step1_fp;
+  int16_t y2, top2, step2_fp;
+  int16_t y3, top3, step3_fp;
+};
+
+struct Star3D {
+  float x, y, z;
+};
+
+struct ScreensaverFxBuffers {
+  AuroraCol *aurora_cols = nullptr;
+  Star3D *stars = nullptr;
+  bool stars_init = false;
+};
+
+ScreensaverFxBuffers &screensaver_fx_buffers() noexcept {
+  static ScreensaverFxBuffers bufs{};
+  return bufs;
+}
+
+void screensaver_fx_cache_drop() noexcept {
+  auto &bufs = screensaver_fx_buffers();
+  if (bufs.aurora_cols != nullptr) {
+    ui_psram_free(bufs.aurora_cols);
+    bufs.aurora_cols = nullptr;
+  }
+  if (bufs.stars != nullptr) {
+    ui_psram_free(bufs.stars);
+    bufs.stars = nullptr;
+  }
+  bufs.stars_init = false;
+}
+
+struct ScreensaverPsramEvictorRegistrar {
+  ScreensaverPsramEvictorRegistrar() noexcept {
+    register_psram_cache_evictor(&screensaver_fx_cache_drop);
+  }
+};
+const ScreensaverPsramEvictorRegistrar kScreensaverPsramEvictorRegistrar{};
+
+void render_screensaver_aurora(Rgb565Surface &it, int cy, uint32_t now_ms) {
   const float t = static_cast<float>(now_ms) * 0.0010f;
 
   const float b1 = 0.92f + 0.10f * fast_sin(t * 0.9f);
@@ -39,20 +92,13 @@ void render_screensaver_aurora(Rgb565Surface &it, int cx, int cy, uint32_t now_m
   static constexpr int FILL_W = X_STEP;
   static constexpr int MAX_COLS = (SCREEN_W / X_STEP) + 2;
 
-  struct AuroraCol {
-    int16_t x;
-    int16_t col_top, col_bot;
-    int16_t y1, top1, step1_fp;
-    int16_t y2, top2, step2_fp;
-    int16_t y3, top3, step3_fp;
-  };
   // Retryable PSRAM-backed scratch: keeps ~4 KB off ESPHome's 8 KB loopTask stack.
-  static AuroraCol *s_cols = nullptr;
-  if (s_cols == nullptr) {
-    s_cols = static_cast<AuroraCol *>(ui_psram_calloc(static_cast<size_t>(MAX_COLS), sizeof(AuroraCol)));
-    if (s_cols == nullptr) return;
+  auto &bufs = screensaver_fx_buffers();
+  if (bufs.aurora_cols == nullptr) {
+    bufs.aurora_cols = static_cast<AuroraCol *>(ui_psram_calloc(static_cast<size_t>(MAX_COLS), sizeof(AuroraCol)));
+    if (bufs.aurora_cols == nullptr) return;
   }
-  AuroraCol *const cols = s_cols;
+  AuroraCol *const cols = bufs.aurora_cols;
   int num_cols = 0;
   int global_top = SCREEN_H;
   int global_bot = 0;
@@ -107,7 +153,39 @@ void render_screensaver_aurora(Rgb565Surface &it, int cx, int cy, uint32_t now_m
         static_cast<int16_t>(y3), static_cast<int16_t>(top3), static_cast<int16_t>(step3_fp)};
   }
 
-  for (int py = global_top; py <= global_bot; py += 2) {
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  if (global_top > global_bot || global_bot < cy0 || global_top > cy1) return;
+
+  int y_start = global_top;
+  if (y_start + 1 < cy0) {
+    y_start += ((cy0 - y_start) & ~1);
+  }
+  const int y_end = std::min(global_bot, cy1);
+  uint16_t *const fb = active_frame_buf16();
+
+  auto write_span = [](uint16_t *dst, uint16_t px, uint32_t pair) noexcept {
+    if constexpr (FILL_W == 4) {
+      if ((reinterpret_cast<uintptr_t>(dst) & 2U) == 0U) {
+        auto *d32 = reinterpret_cast<uint32_t *>(dst);
+        d32[0] = pair;
+        d32[1] = pair;
+      } else {
+        dst[0] = px;
+        *reinterpret_cast<uint32_t *>(dst + 1) = pair;
+        dst[3] = px;
+      }
+    } else {
+      for (int k = 0; k < FILL_W; ++k) dst[k] = px;
+    }
+  };
+
+  for (int py = y_start; py <= y_end; py += 2) {
+    const bool draw_r0 = (py >= cy0 && py <= cy1);
+    const bool draw_r1_band = (py + 1 >= cy0 && py + 1 <= cy1);
+    uint16_t *const row0 = (fb != nullptr && draw_r0) ? (fb + static_cast<size_t>(py) * SCREEN_W) : nullptr;
+    uint16_t *const row1 = (fb != nullptr && draw_r1_band) ? (fb + static_cast<size_t>(py + 1) * SCREEN_W) : nullptr;
+
     for (int i = 0; i < num_cols; i++) {
       const auto &c = cols[i];
       if (py < c.col_top || py > c.col_bot) continue;
@@ -144,30 +222,41 @@ void render_screensaver_aurora(Rgb565Surface &it, int cx, int cy, uint32_t now_m
         if (w3 > w_max) w_max = w3;
       }
 
-      if (w_sum > w_max && w_sum > 0) {
+      if (w_sum > w_max) {
         const uint32_t w_target = w_max + ((w_sum - w_max) >> 2);
-        r = static_cast<int>((static_cast<uint32_t>(r) * w_target) / w_sum);
-        g = static_cast<int>((static_cast<uint32_t>(g) * w_target) / w_sum);
-        b = static_cast<int>((static_cast<uint32_t>(b) * w_target) / w_sum);
+        const uint32_t scale_q18 = w_target * static_cast<uint32_t>(kAuroraRecipQ18[w_sum]);
+        r = static_cast<int>((static_cast<uint32_t>(r) * scale_q18) >> 18);
+        g = static_cast<int>((static_cast<uint32_t>(g) * scale_q18) >> 18);
+        b = static_cast<int>((static_cast<uint32_t>(b) * scale_q18) >> 18);
       }
 
       if ((r | g | b) > 5) {
         const UiColor veil_col(static_cast<uint8_t>(r > 255 ? 255 : r),
                                static_cast<uint8_t>(g > 255 ? 255 : g),
                                static_cast<uint8_t>(b > 255 ? 255 : b));
-        fast_hline(it, c.x, py, FILL_W, veil_col);
-        if (py + 1 <= c.col_bot) fast_hline(it, c.x, py + 1, FILL_W, veil_col);
+        if (fb != nullptr) {
+          const uint16_t px = encode_hw_rgb565(veil_col);
+          const uint32_t pair = static_cast<uint32_t>(px) | (static_cast<uint32_t>(px) << 16);
+          if (row0 != nullptr) write_span(row0 + c.x, px, pair);
+          if (row1 != nullptr && py + 1 <= c.col_bot) write_span(row1 + c.x, px, pair);
+        } else {
+          if (draw_r0) fast_hline(it, c.x, py, FILL_W, veil_col);
+          if (draw_r1_band && py + 1 <= c.col_bot) fast_hline(it, c.x, py + 1, FILL_W, veil_col);
+        }
       }
     }
   }
 }
 
 void render_screensaver_starfield(Rgb565Surface &it, int cx, int cy, uint32_t now_ms) {
-  struct Star3D {
-    float x, y, z;
-  };
-  static Star3D stars[90];
-  static bool stars_init = false;
+  static constexpr int kStarCount = 90;
+  auto &bufs = screensaver_fx_buffers();
+  if (bufs.stars == nullptr) {
+    bufs.stars = static_cast<Star3D *>(ui_psram_calloc(static_cast<size_t>(kStarCount), sizeof(Star3D)));
+    if (bufs.stars == nullptr) return;
+    bufs.stars_init = false;
+  }
+  Star3D *const stars = bufs.stars;
   static uint32_t star_seed = 123456789U;
   static uint32_t last_star_ms = 0U;
 
@@ -182,9 +271,9 @@ void render_screensaver_starfield(Rgb565Surface &it, int cx, int cy, uint32_t no
     stars[i].y = fast_sin(ang) * dist;
     stars[i].z = init_z ? (30.0f + star_rand() * 950.0f) : (850.0f + star_rand() * 150.0f);
   };
-  if (!stars_init) {
-    for (int i = 0; i < 90; i++) respawn_star(i, true);
-    stars_init = true;
+  if (!bufs.stars_init) {
+    for (int i = 0; i < kStarCount; i++) respawn_star(i, true);
+    bufs.stars_init = true;
     last_star_ms = now_ms;
   }
 
@@ -197,7 +286,7 @@ void render_screensaver_starfield(Rgb565Surface &it, int cx, int cy, uint32_t no
     }
   }
 
-  for (int i = 0; i < 90; i++) {
+  for (int i = 0; i < kStarCount; i++) {
     stars[i].z -= speed;
     if (stars[i].z <= 25.0f) {
       respawn_star(i, false);
@@ -254,9 +343,10 @@ void draw_rain_katakana_glyph(Rgb565Surface &it, int sx, int gy, uint16_t mask,
   if (mask & 0x200) fast_line(it, sx - 2, gy - 2, sx + 2, gy + 2, col);
 }
 
-void render_screensaver_digital_rain(Rgb565Surface &it, int cx, int cy, uint32_t now_ms) {
-  (void)cx;
+void render_screensaver_digital_rain(Rgb565Surface &it, int cy, uint32_t now_ms) {
+#if !LATTER_ROUND_DISPLAY
   (void)cy;
+#endif
   static constexpr int CELL_H = 14;
   static constexpr int NUM_COLS = (SCREEN_W - 24) / 19;
   static constexpr int GRID_ROWS = (SCREEN_H / CELL_H) + 1;
@@ -480,7 +570,7 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
 
     if (bp < 0.16f) {
       const float fl = 1.0f - (bp * 6.25f);
-      const int flash_r = static_cast<int>(4.0f + bp * 90.0f);
+      const int flash_r = static_cast<int>(scale_min_f(4.0f + bp * 90.0f));
       fast_circle(it, bx, by, flash_r, UiColor(
           static_cast<uint8_t>(255.0f * fl),
           static_cast<uint8_t>(240.0f * fl),
@@ -504,7 +594,8 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
 
       const ProjectedPoint p_head = project_3d({dir_3d.x * r_h, dir_3d.y * r_h + grav_head, dir_3d.z * r_h}, bx, by, 260.0f, 320.0f);
       const ProjectedPoint p_tail = project_3d({dir_3d.x * r_t, dir_3d.y * r_t + grav_tail, dir_3d.z * r_t}, bx, by, 260.0f, 320.0f);
-      if (!is_inside_bezel(p_head.x, p_head.y, cy, 5) || !is_inside_bezel(p_tail.x, p_tail.y, cy, 5)) continue;
+      if (!p_head.visible || !p_tail.visible ||
+          !is_inside_bezel(p_head.x, p_head.y, cy, 5) || !is_inside_bezel(p_tail.x, p_tail.y, cy, 5)) continue;
 
       const float depth_boost = std::fmax(0.55f, std::fmin(1.15f, p_head.scale * 1.12f));
       const float bright = std::fmin(1.0f, base_bright * depth_boost);
@@ -632,11 +723,11 @@ void render_docked_screensaver(Rgb565Surface &it, const UiFrameContext &ctx,
   if (ss_style == "Starfield") {
     render_screensaver_starfield(it, cx, cy, now_ms);
   } else if (ss_style == "Digital Rain") {
-    render_screensaver_digital_rain(it, cx, cy, now_ms);
+    render_screensaver_digital_rain(it, cy, now_ms);
   } else if (ss_style == "Fireworks") {
     render_screensaver_fireworks(it, cx, cy, now_ms);
   } else {
-    render_screensaver_aurora(it, cx, cy, now_ms);
+    render_screensaver_aurora(it, cy, now_ms);
   }
 }
 

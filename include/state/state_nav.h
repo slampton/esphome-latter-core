@@ -137,26 +137,6 @@ inline int get_game_high_score(int game_id) {
   }
 }
 
-inline bool update_game_high_score(int game_id, int score) {
-  if (score <= 0) return false;
-  auto &p = persisted_prefs();
-  int32_t *slot = nullptr;
-  switch (game_id) {
-    case 1: slot = &p.high_score_marbles; break;
-    case 2: slot = &p.high_score_archery; break;
-    case 3: slot = &p.high_score_bricks; break;
-    case 4: slot = &p.high_score_chomp; break;
-    case 5: slot = &p.high_score_blocks; break;
-    case 6: slot = &p.high_score_snake; break;
-    case 7: slot = &p.high_score_drop_four; break;
-    default: return false;
-  }
-  if (score <= *slot) return false;
-  *slot = score;
-  save_persisted_prefs();
-  return true;
-}
-
 
 struct VoiceSessionState {
   bool active = false;
@@ -175,7 +155,6 @@ struct NavRuntimeState {
   int gui_page = 1;
   int home_subpage = 0;
   int home_settings_page = 1;
-  int home_activity_idx = 0;
   int home_dock_page = 0;
   int time_subpage = 0;
   int world_clock_page = 0;
@@ -199,7 +178,6 @@ struct NavRuntimeState {
   int system_dashboard_page = 1;
   int system_menu_mode = 0;
   int sleep_menu_page = 1;
-  int audio_menu_parent_page = 4;
   bool menu_scroll_active = false;
   int menu_scroll_dir = 1;
   int menu_scroll_target_page = 1;
@@ -212,7 +190,6 @@ struct NavRuntimeState {
   bool wake_greeting_pending = true;
   bool is_hibernating = false;
   int hibernate_countdown_val = 0;
-  bool hud_wake_finger_released = true;
   bool pwr_key_wake_consumed = false;
   bool ui_anim_poller_running = true;
   bool ui_dirty_full = false;
@@ -375,10 +352,6 @@ inline int resolve_anchor_dock_app(const PersistedDevicePrefs &p = persisted_pre
 
 inline int resolve_start_screen_page(const PersistedDevicePrefs &p = persisted_prefs()) {
   return resolve_anchor_dock_app(p);
-}
-
-inline int resolve_start_screen_page(int app) {
-  return app;
 }
 
 

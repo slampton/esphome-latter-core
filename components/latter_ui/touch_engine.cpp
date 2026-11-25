@@ -679,10 +679,6 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
   const uint64_t rel_t0_us = profiler_enabled() ? prof_now_us() : 0ULL;
   auto &rs = runtime_state();
 
-  if (!rs.nav.hud_wake_finger_released) {
-    rs.nav.hud_wake_finger_released = true;
-  }
-
   const auto &ly = layout();
   const int dx = gest.last_x - gest.start_x;
   const int dy = gest.last_y - gest.start_y;

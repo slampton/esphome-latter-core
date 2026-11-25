@@ -74,8 +74,7 @@ inline int compute_active_subpage_id() {
       (static_cast<int>(rs.music.view) & 0x0F) |
       ((static_cast<int>(rs.music.drilldown) & 0x07) << 4) |
       ((static_cast<int>(rs.music.takeover) & 0x07) << 7) |
-      ((rs.music.mode_bar_win_start & 0x07) << 10) |
-      ((rs.music.overlay_mode & 0x0F) << 13);
+      ((rs.music.mode_bar_win_start & 0x07) << 10);
   const int cam_sub_id =
       (rs.cameras.tab & 0x0F) |
       ((rs.cameras.grid_page & 0x0F) << 4) |
@@ -89,7 +88,7 @@ inline int compute_active_subpage_id() {
       rs.nav.sleep_menu_page, rs.nav.display_menu_page,
       rs.nav.sky_weather_subpage, rs.nav.area_subpage, rs.nav.remote_subpage,
       rs.nav.tools_subpage, rs.nav.tools_menu_page,
-      0, latter_core::timer_view_slot(), latter_core::home_hub_tab(),
+      latter_core::timer_view_slot(), latter_core::home_hub_tab(),
       rs.nav.time_subpage, rs.nav.world_clock_page,
       rs.alarms.edit_idx, rs.nav.home_settings_page,
       latter_core::home_hub_mode_bar_page(), hub_drill, rs.nav.pinned_menu_page,
@@ -104,17 +103,10 @@ bool compute_live_sec_active(const UiFrameContext &ctx);
 void render_active_focus_overlay(Rgb565Surface &it, uint32_t now_ms,
                                  UiColor theme_primary, UiColor col_white);
 
-inline void render_active_focus_overlay(Rgb565Surface &it, int /*page*/, int /*subpage*/,
-                                        uint32_t now_ms, UiColor theme_primary,
-                                        UiColor col_white) {
-  render_active_focus_overlay(it, now_ms, theme_primary, col_white);
-}
-
 // System takeover overlay renderers (implemented in overlay_takeover.cpp)
 void render_alert_ringing_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                   const SystemTakeoverState &st);
-void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
-                                    const SystemTakeoverState &st);
+void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState &st);
 void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                  const SystemTakeoverState &st);
 void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,

@@ -272,7 +272,6 @@ struct MusicRuntimeState {
   bool lyrics_auto_fallback = false;
   MusicLyricsState lyrics{};
 
-  int overlay_mode = 0;
   bool direct_nav = false;
   bool hud_active = false;
   uint32_t hud_timer = 0;
@@ -335,7 +334,6 @@ struct MusicRuntimeState {
     drilldown = MusicDrilldown::NONE;
     takeover = MusicTakeover::NONE;
     takeover_interacted_ms = 0U;
-    overlay_mode = 0;
     target_speaker_id.clear();
     target_speaker_name.clear();
     action_sheet_slot = -1;

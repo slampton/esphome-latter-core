@@ -78,24 +78,6 @@ struct UiLayout {
   int slot5_cy = base.slot5_cy;
   constexpr int slot5_y(int idx_0_to_4) const { return base.slot5_y(idx_0_to_4); }
 
-  template <typename TouchT>
-  constexpr int hit_slot5(const TouchT &t, int x_min, int x_max) const {
-    const int half_w = (w > 520) ? ((w * 150) / 466) : 150;
-    const int scaled_min = (w < 380 && x_min < 60) ? 4 : scale_x(x_min);
-    const int scaled_max = (w < 380) ? (w - 10) : scale_x(x_max);
-    const int eff_min = (w == 466) ? std::min(x_min, 38) : std::max(4, std::min(scaled_min, cx - half_w));
-    const int eff_max = (w == 466) ? x_max : std::min(w - 10, std::max(scaled_max, cx + half_w));
-    if (t.x < eff_min || t.x > eff_max) return -1;
-    const int half_s = slot5_stride / 2;
-    for (int i = 0; i < 5; i++) {
-      const int ym = slot5_y(i);
-      const int y_top = ym - ((i == 0) ? (half_s + 4) : half_s);
-      const int y_bot = ym + ((i == 4) ? (half_s + 10) : half_s);
-      if (t.y >= y_top && t.y <= y_bot) return i;
-    }
-    return -1;
-  }
-
   int area_card3_stride = base.area_card3_stride;
   int area_card3_h = base.area_card3_h;
   int area_card3_w = base.area_card3_w;
@@ -105,78 +87,12 @@ struct UiLayout {
   constexpr int area_card_right() const { return cx + (area_card3_w / 2); }
   constexpr int area_card_div_x() const { return area_card_left() + std::max(scale_x(64), min_hit_px()); }
   constexpr int area_card_orb_x() const { return area_card_right() - scale_x(28); }
-  constexpr int hit_area_card3(int tx, int ty) const {
-    const int hw = (area_card3_w / 2) + 10;
-    if (tx < cx - hw || tx > cx + hw) return -1;
-    const int hs = area_card3_stride / 2;
-    for (int i = 0; i < 3; i++) {
-      const int ym = area_card3_y(i);
-      if (ty >= ym - hs && ty <= ym + hs) return i;
-    }
-    return -1;
-  }
-  constexpr bool is_area_light_orb(int tx) const {
-    const int ox = area_card_orb_x();
-    return (tx >= ox - scale_x(28) && tx <= area_card_right() + 8);
-  }
-  constexpr int area_slider_pct(int tx) const {
-    const int x0 = area_card_div_x() + 4;
-    const int x1 = area_card_right() - 8;
-    if (x1 <= x0) return 100;
-    const int raw = ((tx - x0) * 100) / (x1 - x0);
-    const int stepped = ((raw + 2) / 5) * 5;
-    return (stepped < 5) ? 5 : ((stepped > 100) ? 100 : stepped);
-  }
 
   int tool_card3_stride = base.tool_card3_stride;
-  int tool_card3_h = base.tool_card3_h;
-  int tool_card3_w = base.tool_card3_w;
-  int tool_card3_cy = base.tool_card3_cy;
-  constexpr int tool_card3_y(int idx_0_to_2) const { return base.tool_card3_y(idx_0_to_2); }
-  constexpr int tool_card3_div_x() const { return cx + (tool_card3_w / 2) - scale_x(93); }
-  constexpr int hit_tool_card3(int tx, int ty) const {
-    const int hw = (tool_card3_w / 2) + 12;
-    if (tx < cx - hw || tx > cx + hw) return -1;
-    const int hs = tool_card3_stride / 2;
-    for (int i = 0; i < 3; i++) {
-      const int ym = tool_card3_y(i);
-      if (ty >= ym - hs && ty <= ym + hs) return i;
-    }
-    return -1;
-  }
-
-  int tools_col_off = base.tools_col_off;
-  int tools_row_stride = base.tools_row_stride;
-  int tools_grid_cy = base.tools_grid_cy;
-  constexpr int tools_row_y(int row_0_to_2) const { return base.tools_row_y(row_0_to_2); }
-  constexpr int hit_tools_row(int ty) const {
-    const int hs = tools_row_stride / 2;
-    for (int r = 0; r < 3; r++) {
-      const int ym = tools_row_y(r);
-      if (ty >= ym - hs && ty <= ym + hs) return r;
-    }
-    return -1;
-  }
-  constexpr int hit_tools_col(int tx) const {
-    const int max_dx = tools_col_off * 2 + 12;
-    if (tx >= cx - max_dx && tx <= cx) return 0;
-    if (tx > cx && tx <= cx + max_dx) return 1;
-    return -1;
-  }
 
   int home_date_y = base.home_date_y;
   int home_clock_y = base.home_clock_y;
   int home_weather_y = base.home_weather_y;
-  constexpr bool hit_home_clock(int tx, int ty) const {
-    const int hw = (w > 520) ? 180 : 135;
-    const int hh = (h > 520) ? 64 : 48;
-    return (tx >= cx - hw && tx <= cx + hw && ty >= home_clock_y - hh && ty <= home_clock_y + hh);
-  }
-  constexpr bool hit_home_weather(int tx, int ty) const {
-    const int hw = (w > 520) ? 210 : 165;
-    const int hh = (h > 520) ? 36 : 28;
-    return (tx >= cx - hw && tx <= cx + hw && ty >= home_weather_y - hh && ty <= home_weather_y + hh);
-  }
   constexpr bool home_activity_two_line() const { return !is_round; }
   constexpr int home_activity_max_rows() const { return is_round ? 1 : 2; }
   constexpr int home_activity_w() const {
@@ -203,66 +119,24 @@ struct UiLayout {
   constexpr bool home_activity_has_drop(int front_count) const {
     return front_count > home_activity_max_rows();
   }
-  constexpr int home_dock_zone_top(int weather_h, bool card_shown, int shown_rows = 2) const {
-    const int base_y = scale_y(320);
-    if (!card_shown) return base_y;
-    const int r = (shown_rows <= 1) ? 1 : home_activity_max_rows();
-    const int ch = home_activity_h_for_rows(r);
-    const int ccy = home_activity_cy_for_h(weather_h, ch);
-    const int below_card = ccy + ch / 2 + mm_to_px(1.0f);
-    return std::min(dock_y - dock_hit_r(), std::max(base_y, below_card));
-  }
-  constexpr bool hit_home_activity(int tx, int ty, int weather_h, int shown_rows = 2) const {
-    const int r = (shown_rows <= 1) ? 1 : home_activity_max_rows();
-    const int hw = home_activity_w() / 2;
-    const int hh = home_activity_h_for_rows(r) / 2 + scale_y(4);
-    const int acy = home_activity_cy_for_rows(weather_h, r);
-    return (tx >= cx - hw && tx <= cx + hw && ty >= acy - hh && ty <= acy + hh);
-  }
 
   constexpr int calc_col_x(int col_0_to_3) const {
     const int stride = (w < 380) ? 72 : ((w > 520) ? ((w * 82) / 466) : 82);
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
 
-  int music_art_cy = scale_y(233);
-  constexpr int music_prev_x() const { return cx - (is_round ? scale_w(109) : ((w < 380) ? 96 : scale_x(104))); }
-  constexpr int music_next_x() const { return cx + (is_round ? scale_w(109) : ((w < 380) ? 96 : scale_x(104))); }
-  int music_scrub_y = scale_y(242);
-  constexpr int music_seek_left_x() const { return is_round ? scale_w(50) : scale_x(34); }
-  constexpr int music_seek_right_x() const { return w - music_seek_left_x(); }
-  constexpr int music_scrub_x0() const { return is_round ? scale_w(95) : scale_x(72); }
-  constexpr int music_scrub_x1() const { return w - music_scrub_x0(); }
-  constexpr int music_scrub_w() const { return music_scrub_x1() - music_scrub_x0(); }
-  constexpr float music_scrub_frac(int tx) const {
-    const int bw = music_scrub_w();
-    if (bw <= 10) return 0.0f;
-    const float f = static_cast<float>(tx - music_scrub_x0()) / static_cast<float>(bw);
-    return (f < 0.0f) ? 0.0f : ((f > 1.0f) ? 1.0f : f);
-  }
-
   constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : std::min(kMaxContentColW, scale_x(316)); }
   constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_s(32); }
   constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
-  constexpr int light_bri_bar_w() const { return light_slider_card_w() - scale_s(16); }
-  constexpr int light_bri_bar_x0() const { return cx - (light_bri_bar_w() / 2); }
 
   constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - scale_s(34); }
-  constexpr bool hit_sys_color_swatch(int tx) const { return tx >= (sys_color_swatch_x() - scale_s(22)); }
   constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : scale_x(42)); }
 
   constexpr int drag_start() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).slider_start_px; }
-  constexpr int swipe_flick() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
   constexpr int flick_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
   constexpr int tap_max() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).tap_slop_px; }
   constexpr int axis_lock() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).axis_lock_px; }
-  constexpr int dock_release_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
-  constexpr int swipe_short() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
   constexpr int swipe_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
-  constexpr int list_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
-  constexpr int page_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
-  constexpr int wide_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
-  constexpr int canvas_swipe() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
   constexpr int fast_pan() const { return mm_to_px(10.5f); }
   constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }
   constexpr int top_edge_zone_y() const {
@@ -293,16 +167,8 @@ inline int &home_weather_text_h() {
   return h;
 }
 
-inline constexpr int tools_launcher_item_count() noexcept {
-  return tools_launcher_item_count_for(LATTER_ROUND_DISPLAY != 0, LATTER_HAS_IMU != 0);
-}
-
-inline constexpr int tools_launcher_page_count() noexcept {
-  return tools_launcher_page_count(tools_launcher_item_count());
-}
-
 inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_game,
-                              int music_overlay_mode, int area_subpage, bool area_picker,
+                              int area_subpage, bool area_picker,
                               int remote_subpage, int tools_subpage,
                               const latter_core::PersistedDevicePrefs &p = latter_core::persisted_prefs()) {
   const int anchor = latter_core::resolve_anchor_dock_app(p);
@@ -317,8 +183,7 @@ inline bool is_on_anchor_root(int gui_page, int system_menu_mode, int active_gam
   if (anchor == latter_core::PageId::MUSIC) {
     return gui_page == latter_core::PageId::MUSIC &&
            latter_core::runtime_state().music.drilldown == latter_core::MusicDrilldown::NONE &&
-           latter_core::runtime_state().music.takeover == latter_core::MusicTakeover::NONE &&
-           music_overlay_mode == 0;
+           latter_core::runtime_state().music.takeover == latter_core::MusicTakeover::NONE;
   }
   if (anchor == latter_core::PageId::HOME_HUB) {
     return gui_page == latter_core::PageId::HOME_HUB;
@@ -353,17 +218,16 @@ inline bool is_on_anchor_root(const latter_core::DeviceRuntimeState &rt = latter
   if (latter_core::resolve_anchor_dock_app(p) == latter_core::PageId::MUSIC) {
     return rt.nav.gui_page == latter_core::PageId::MUSIC &&
            rt.music.drilldown == latter_core::MusicDrilldown::NONE &&
-           rt.music.takeover == latter_core::MusicTakeover::NONE &&
-           rt.music.overlay_mode == 0;
+           rt.music.takeover == latter_core::MusicTakeover::NONE;
   }
   return is_on_anchor_root(rt.nav.gui_page, rt.nav.system_menu_mode, rt.nav.active_game,
-                           rt.music.overlay_mode, rt.nav.area_subpage,
+                           rt.nav.area_subpage,
                            rt.area.browse_mode == "areas", rt.nav.remote_subpage,
                            rt.nav.tools_subpage, p);
 }
 
 // Single go-home predicate shared by gui.yaml and TouchGestureEngine ([HOME PREDICATE]).
-inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int music_overlay_mode,
+inline bool can_go_home(int gui_page, int system_menu_mode, int active_game,
                         int area_subpage, bool area_picker, int remote_subpage, int tools_subpage,
                         int alarm_edit_idx, bool alert_ringing) {
   if (gui_page == latter_core::PageId::HOME || gui_page == latter_core::PageId::CLOCK || alert_ringing) return false;
@@ -380,8 +244,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
   if (gui_page == latter_core::PageId::GAMES && active_game > 0) return false;
   if (gui_page == latter_core::PageId::MUSIC &&
       (latter_core::runtime_state().music.drilldown != latter_core::MusicDrilldown::NONE ||
-       latter_core::runtime_state().music.takeover != latter_core::MusicTakeover::NONE ||
-       music_overlay_mode > 0)) {
+       latter_core::runtime_state().music.takeover != latter_core::MusicTakeover::NONE)) {
     return false;
   }
   if (gui_page == latter_core::PageId::AREA && (area_subpage > 0 || area_picker)) {
@@ -401,7 +264,7 @@ inline bool can_go_home(int gui_page, int system_menu_mode, int active_game, int
     return false;
   }
   if (!latter_core::persisted_prefs().home_screen_enabled &&
-      is_on_anchor_root(gui_page, system_menu_mode, active_game, music_overlay_mode,
+      is_on_anchor_root(gui_page, system_menu_mode, active_game,
                         area_subpage, area_picker, remote_subpage, tools_subpage,
                         latter_core::persisted_prefs())) {
     return false;
@@ -425,8 +288,7 @@ inline bool can_go_home(const latter_core::DeviceRuntimeState &rt = latter_core:
   if (rt.nav.gui_page == latter_core::PageId::GAMES && rt.nav.active_game > 0) return false;
   if (rt.nav.gui_page == latter_core::PageId::MUSIC &&
       (rt.music.drilldown != latter_core::MusicDrilldown::NONE ||
-       rt.music.takeover != latter_core::MusicTakeover::NONE ||
-       rt.music.overlay_mode > 0)) {
+       rt.music.takeover != latter_core::MusicTakeover::NONE)) {
     return false;
   }
   const bool area_picker = (rt.area.browse_mode == "areas");
@@ -473,11 +335,7 @@ inline int get_home_dock_start_index(int total_count, int page) {
   return std::max(0, raw_start);
 }
 
-inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_xs[4],
-                                    bool &out_has_left_arrow, bool &out_has_right_arrow) {
-  (void)cx;
-  out_has_left_arrow = false;
-  out_has_right_arrow = false;
+inline void get_home_dock_window_xs(int total_count, int page, int out_xs[4]) {
   if (total_count <= 0) return;
   const int start_idx = get_home_dock_start_index(total_count, page);
   const int vis_count = std::min(4, total_count - start_idx);
@@ -486,13 +344,13 @@ inline void get_home_dock_window_xs(int total_count, int page, int cx, int out_x
 
 inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int out_xs[4],
                                    bool &out_has_left_arrow, bool &out_has_right_arrow) {
+  (void)cx;
   out_has_left_arrow = false;
   out_has_right_arrow = false;
   if (total_count <= 0) return;
   const int start_idx = latter_core::get_mode_bar_start_index(total_count, win_start);
   const int vis_count = std::min(4, total_count - start_idx);
-  bool dl = false, dr = false;
-  get_home_dock_window_xs(vis_count, 0, cx, out_xs, dl, dr);
+  get_home_dock_window_xs(vis_count, 0, out_xs);
   out_has_left_arrow  = (start_idx > 0);
   out_has_right_arrow = (start_idx + 4 < total_count);
 }

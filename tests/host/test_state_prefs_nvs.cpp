@@ -79,7 +79,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(full_manifest.find("\"grid_cols\":") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"grid_rows\":3") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112403") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112404") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"sdk\":") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"max_payload_bytes\"") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"beacon\":null") != std::string::npos);
@@ -210,10 +210,10 @@ void test_device_prefs_v2_and_event_timer_sync() {
   rs.nav.home_subpage = 0;
   LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, false));
   rs.nav.gui_page = 2;
-  rs.music.overlay_mode = 0;
+  rs.music.view = latter_core::MusicView::NOW_PLAYING;
   LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, true));
   LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, false));
-  rs.music.overlay_mode = 2;
+  rs.music.view = latter_core::MusicView::SPEAKERS;
   LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, true));
   rs.nav.gui_page = 10;
   rs.nav.time_subpage = 1;
@@ -439,9 +439,23 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   LATTER_CHECK(get_game_high_score(5) == 12400);
   LATTER_CHECK(get_game_high_score(6) == 320);
   LATTER_CHECK(get_game_high_score(7) == 740);
-  LATTER_CHECK(update_game_high_score(7, 890));
-  LATTER_CHECK(persisted_prefs().high_score_drop_four == 890);
-  LATTER_CHECK(!update_game_high_score(7, 500));
+  persisted_prefs().high_score_drop_four = 890;
+  LATTER_CHECK(get_game_high_score(7) == 890);
+
+  // Scoped kPrefEffectWeatherSky fires only on weather sky / sim preferences, not unrelated toggles.
+  {
+    PersistedDevicePrefs wx_p{};
+    PrefMask wx_chg{};
+    uint32_t wx_eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(wx_p, PrefKey::HOME_SHOW_TIME, "0", wx_chg, wx_eff));
+    LATTER_CHECK((wx_eff & kPrefEffectRedraw) != 0U && (wx_eff & kPrefEffectWeatherSky) == 0U);
+    wx_eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(wx_p, PrefKey::WEATHER_BACKGROUND, "0", wx_chg, wx_eff));
+    LATTER_CHECK((wx_eff & kPrefEffectWeatherSky) != 0U && (wx_eff & kPrefEffectRedraw) != 0U);
+    wx_eff = 0U;
+    LATTER_CHECK(set_pref_by_key_str(wx_p, PrefKey::WEATHER_APP_BACKGROUND, "0", wx_chg, wx_eff));
+    LATTER_CHECK((wx_eff & kPrefEffectWeatherSky) != 0U && (wx_eff & kPrefEffectRedraw) != 0U);
+  }
 
   LATTER_CHECK(save_persisted_prefs());
   alignas(PersistedDevicePrefs) uint8_t raw_nvs[sizeof(PersistedDevicePrefs)]{};

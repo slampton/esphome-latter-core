@@ -196,17 +196,17 @@ void test_ui_layout_hit_table_and_dirty_band() {
   const uint32_t sig_va   = latter_ui::compute_takeover_signature(false, false, true, 0, false, true,  false, false);
   LATTER_CHECK(sig_idle != sig_va);
 
-  const int home_sub_dock0 = latter_ui::compute_subpage_id(1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
-  const int home_sub_dock1 = latter_ui::compute_subpage_id(1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+  const int home_sub_dock0 = latter_ui::compute_subpage_id(1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0);
+  const int home_sub_dock1 = latter_ui::compute_subpage_id(1, 0, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0);
   LATTER_CHECK(home_sub_dock0 != home_sub_dock1);
 
   db.begin_frame(1, home_sub_dock0, sig_idle, false);
-  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+  LATTER_CHECK(db.is_full() && db.band_y0() == 0 && db.band_y1() == latter_ui::SCREEN_H - 1);
 
   latter_ui::mark_dirty_band(13, 60);
   latter_ui::mark_dirty_band(180, 232);
   db.begin_frame(1, home_sub_dock0, sig_idle, false);
-  LATTER_CHECK(!db.is_full() && db.y0() == 12 && db.y1() == 233);
+  LATTER_CHECK(!db.is_full() && db.band_y0() == 12 && db.band_y1() == 233);
 
   latter_ui::mark_dirty_band(40, 80);
   db.begin_frame(1, home_sub_dock1, sig_idle, false);
@@ -232,14 +232,14 @@ void test_phase2_glass_and_scissor_compositor() {
   db = latter_ui::DirtyBandTracker{};
   const uint32_t sig_idle = latter_ui::compute_takeover_signature(false, false, true, 0, false, false, false, false);
   const uint32_t sig_notif = latter_ui::compute_takeover_signature(false, false, true, 0, false, false, false, true);
-  const int home_sub = latter_ui::compute_subpage_id(1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+  const int home_sub = latter_ui::compute_subpage_id(1, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0);
 
   db.begin_frame(1, home_sub, sig_idle, false);
-  LATTER_CHECK(db.is_full() && db.y0() == 0 && db.y1() == latter_ui::SCREEN_H - 1);
+  LATTER_CHECK(db.is_full() && db.band_y0() == 0 && db.band_y1() == latter_ui::SCREEN_H - 1);
 
   latter_ui::mark_dirty_band(93, 168);
   db.begin_frame(1, home_sub, sig_idle, false);
-  LATTER_CHECK(!db.is_full() && db.y0() == 92 && db.y1() == 169);
+  LATTER_CHECK(!db.is_full() && db.band_y0() == 92 && db.band_y1() == 169);
 
   db.begin_frame(1, home_sub, sig_idle, false);
   LATTER_CHECK(db.is_full());
@@ -267,7 +267,7 @@ void test_phase2_glass_and_scissor_compositor() {
   LATTER_CHECK(db.begin_frame(1, home_sub, sig_idle, false, 721, 85U, 174, false));
   LATTER_CHECK(!db.is_full() && db.band_y0() == 0 && db.band_y1() == 175);
 
-  const int home_overlay_sub = latter_ui::compute_subpage_id(1, 2, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+  const int home_overlay_sub = latter_ui::compute_subpage_id(1, 2, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0);
   LATTER_CHECK(db.begin_frame(1, home_overlay_sub, sig_idle, false, 721, 85U, 174, false));
   LATTER_CHECK(db.is_full());
   LATTER_CHECK(!db.begin_frame(1, home_overlay_sub, sig_idle, false, 721, 85U, 174, false));
@@ -403,6 +403,42 @@ void test_frame_cadence_and_typed_prefs() {
   in250.pending_wallpaper_fetch = true;
   auto act250 = fc.evaluate_250ms(in250);
   LATTER_CHECK(act250.ensure_anim_poller && act250.schedule_disp_now && act250.fetch_wallpaper);
+
+  // Horizontal edge-bounce wakes step_250ms animation poller cleanly on pages with horiz bounce.
+  {
+    reset_runtime_state();
+    ui_anim_poller_running() = false;
+    frame_cadence().reset();
+    auto &rs_b = runtime_state();
+    rs_b.nav.gui_page = PageId::AREA;
+    rs_b.nav.home_subpage = HomeSubpage::MAIN;
+    rs_b.nav.display_power_state = 0;
+    edge_bounce().trigger(GestureAxisLock::Horizontal, 1, PageId::AREA, 20000U);
+    LATTER_CHECK(any_page_horiz_bounce_active(PageId::AREA, HomeSubpage::MAIN, 20030U));
+    const auto b_act = frame_cadence().step_250ms(20030U, false, false, "", 8000U);
+    LATTER_CHECK(b_act.ensure_anim_poller);
+    edge_bounce() = EdgeBounceState{};
+  }
+
+  // Calendar idle frame signature distinguishes distinct feedback_text values and clears at 2400 ms.
+  {
+    reset_runtime_state();
+    auto &rs_c = runtime_state();
+    rs_c.nav.gui_page = PageId::CALENDAR;
+    HostSurfaceFixture fx_c{};
+    fx_c.ctx.now_ms = 10000U;
+    rs_c.cal.feedback_text.clear();
+    const uint32_t sig_none = compute_idle_state_signature(fx_c.ctx);
+    rs_c.cal.feedback_text = "Event Saved";
+    rs_c.cal.feedback_ms = 10000U;
+    fx_c.ctx.now_ms = 11000U;
+    const uint32_t sig_saved = compute_idle_state_signature(fx_c.ctx);
+    rs_c.cal.feedback_text = "Deleted";
+    const uint32_t sig_del = compute_idle_state_signature(fx_c.ctx);
+    LATTER_CHECK(sig_saved != sig_none && sig_del != sig_saved);
+    fx_c.ctx.now_ms = 12450U;  // >= 2400 ms expiry
+    LATTER_CHECK(compute_idle_state_signature(fx_c.ctx) == sig_none);
+  }
 
   const std::string sys_yaml = read_repo_files({
       "../../modules/system_core.yaml",

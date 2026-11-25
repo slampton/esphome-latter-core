@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter Concrete Compiled Page & Camera Video Declarations (include/ui_pages.h)
 // Pure C++20 UI page declarations — zero ESPHome includes; compiles cleanly on host via
-// Rgb565Surface across all 5 canonical panel geometries.
+// Rgb565Surface across all 6 canonical panel geometries.
 // ==============================================================================
 
 #include "audio_router.h"
@@ -88,19 +88,15 @@ int collect_home_activities(
     int cur_day_of_week = -1,
     int snoozed_slot = -1);
 
-int get_activity_overlay_card_y(int vis_count, int row_idx);
-
 void resolve_weather_sim_view(std::string_view sim_opt, std::string_view &cond, bool &is_night) noexcept;
 void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night);
 std::string format_weather_title(const std::string &c_in);
 bool &night_meteor_epoch_initialized();
-bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms = 0);
 bool weather_condition_shows_celestial(std::string_view cond, bool is_night) noexcept;
 void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                                      const std::string &cond, bool is_night,
                                      double moon_cycle = 0.5,
                                      int cel_cx = 341, int cel_cy = 91,
-                                     bool mask_hero_temp = true,
                                      float accel_x = 0.0f, float accel_y = 0.0f,
                                      bool show_celestial = true);
 void render_static_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night);
@@ -108,8 +104,6 @@ void render_neutral_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool i
 void sky_base_cache_drop() noexcept;
 void weather_cloud_cache_drop() noexcept;
 void game_arena_drop() noexcept;
-void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz);
-std::string format_iso_time(const std::string &iso_str);
 
 void render_climate_controls_deck(Rgb565Surface &it,
                                   const UiFrameContext &ctx,
@@ -120,11 +114,6 @@ void render_climate_controls_deck(Rgb565Surface &it,
 
 void reset_calculator_state();
 void handle_calculator_keypad_tap(int tx, int ty);
-
-void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
-                          float euler_roll_deg, float euler_pitch_deg,
-                          bool game_just_entered,
-                          float &out_roll_delta, float &out_pitch_delta);
 
 #if !LATTER_HAS_IMU
 bool blocks_can_place(const int8_t board[20][10], int kind, int rot, int px, int py) noexcept;

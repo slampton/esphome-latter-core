@@ -44,12 +44,10 @@ struct IntercomRuntimeState {
   std::string cam_code = "";
   uint32_t cam_status_ms = 0;
   bool broadcast_dictation_active = false;
-  uint32_t broadcast_dictation_started_ms = 0;
   bool cam_call_active = false;
   bool cam_listen_active = false;
   bool cam_intercom_ptt_active = false;
   std::string cam_intercom_status = "";
-  bool cam_expanded_fullscreen = false;
   uint32_t last_cam_live_fetch_ms = 0;
   uint32_t cam_error_backoff_until_ms = 0;
   bool cam_download_in_progress = false;

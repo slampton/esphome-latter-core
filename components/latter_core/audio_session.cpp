@@ -508,7 +508,6 @@ bool media_clear_queue(uint32_t now_ms) {
   m.loaded_art_url.clear();
   m.action_feedback = "Queue Cleared";
   m.feedback_timer = now_ms;
-  m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
   latter_core::emit_media_command("clear_queue");
@@ -626,7 +625,6 @@ bool media_play_slot(int slot_1based, uint32_t now_ms) {
   } else {
     m.active_playback_media_type = "music";
   }
-  m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
   latter_core::emit_media_play_item(
@@ -664,8 +662,7 @@ bool speaker_activate_selected(bool transfer_queue,
   }
   m.feedback_timer = now_ms;
   if (!valid_target) {
-    m.overlay_mode = 0;
-    m.direct_nav = false;
+      m.direct_nav = false;
     m.hud_active = true;
     m.hud_timer = now_ms;
     return false;
@@ -698,7 +695,6 @@ bool speaker_activate_selected(bool transfer_queue,
     }
   }
   sync_audio_session_media_observation(local_mp_playing && new_is_local, local_mp_paused, now_ms);
-  m.overlay_mode = 0;
   m.direct_nav = false;
   m.hud_active = true;
   m.hud_timer = now_ms;
@@ -710,7 +706,6 @@ bool speaker_join_target(uint32_t now_ms) {
   auto &m = runtime_state().music;
   m.action_feedback = "Joining -> " + m.target_speaker_name;
   m.feedback_timer = now_ms;
-  m.overlay_mode = 0;
   m.hud_active = true;
   m.hud_timer = now_ms;
   latter_core::emit_speaker_join(m.active_speaker_entity, m.target_speaker_id);
@@ -731,7 +726,6 @@ void speaker_unjoin_target(std::string_view friendly_name, uint32_t now_ms) {
     ms.is_local = !loc_spk.empty();
     m.loaded_art_url.clear();
   }
-  m.overlay_mode = 0;
   latter_core::emit_set_active_speaker(m.active_speaker_entity, false);
 }
 

@@ -18,18 +18,16 @@ UiColor get_va_radiation_color(bool is_solaris, float t) {
   const UiColor n0(0, 229, 255), n1(138, 43, 226), n2(224, 64, 251), n3(0, 229, 255);
   if (t < 0.333f) return lerp_color(n0, n1, t / 0.333f);
   if (t < 0.667f) return lerp_color(n1, n2, (t - 0.333f) / 0.334f);
-  return lerp_color(UiColor(224, 64, 255), n3, (t - 0.667f) / 0.333f);
+  return lerp_color(n2, n3, (t - 0.667f) / 0.333f);
 }
 
 }  // namespace
 
-void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
-                                    const SystemTakeoverState &st) {
-  (void)ctx;
+void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState &st) {
   const int cx = st.cx, cy = st.cy;
   const uint32_t now_ms = st.now_ms;
-  const bool is_speaking = st.va_tts_received || st.va_status_text == "Responding..." || st.va_status_text == "Speaking...";
-  const bool is_thinking = !is_speaking && (st.va_status_text == "Thinking..." || st.va_status_text == "Processing...");
+  const bool is_speaking = st.va_tts_received || st.va_status_text == "Responding...";
+  const bool is_thinking = !is_speaking && st.va_status_text == "Thinking...";
   const bool va_vad_active = st.va_vad_active;
   const UiStrView profile_opt = st.va_visual_profile_opt;
   const UiColor col_white = st.col_white, col_solaris_gold = st.col_solaris_gold;
@@ -68,10 +66,15 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx
     const float syl_env = is_speaking ? ((0.55f + 0.25f * fast_sin(t_sec * 9.5f) + 0.20f * fast_cos(t_sec * 15.3f)) * smooth_speak) : 0.0f;
     const int max_ring_r = SCREEN_MIN_R - 3, base_ring_r = max_ring_r - 14;
     const int inner_glow_r = (base_ring_r - 6) - static_cast<int>(6.0f * smooth_vad + 8.0f * syl_env);
+    const float inv_glow_span = 1.0f / static_cast<float>(std::max(1, base_ring_r - inner_glow_r));
     for (int r = inner_glow_r; r <= max_ring_r; r++) {
-      UiColor rc = (r < base_ring_r)
-                       ? scale_color(c_bar_deep, std::pow(static_cast<float>(r - inner_glow_r) / static_cast<float>(base_ring_r - inner_glow_r), 2.0f) * 0.85f)
-                       : ((r <= max_ring_r - 3) ? c_bar_blue : c_bar_deep);
+      UiColor rc;
+      if (r < base_ring_r) {
+        const float u = static_cast<float>(r - inner_glow_r) * inv_glow_span;
+        rc = scale_color(c_bar_deep, u * u * 0.85f);
+      } else {
+        rc = (r <= max_ring_r - 3) ? c_bar_blue : c_bar_deep;
+      }
       fast_circle(it, cx, cy, r, rc);
     }
     const float head_f = is_thinking ? std::fmod(t_sec * 52.0f, 60.0f)
@@ -194,35 +197,34 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx
   if (is_rings) {
     const UiColor c_cyan_bright(28, 214, 255), c_cyan_ice(195, 248, 255);
     const UiColor c_cyan_mid(16, 128, 165), c_cyan_dim(8, 62, 84), c_cyan_glow(5, 34, 48);
-    static uint32_t last_j_ms = 0U;
-    static float j_angle = 0.0f;
-    const float dt_j = (last_j_ms > 0U && now_ms >= last_j_ms && (now_ms - last_j_ms) <= 250U)
-                           ? (static_cast<float>(now_ms - last_j_ms) * 0.001f) : 0.045f;
-    last_j_ms = now_ms;
+    static float ring_angle = 0.0f;
+    if (gap_reset) ring_angle = 0.0f;
 
     const float t_sec = static_cast<float>(now_ms % 60000U) * 0.001f;
     const float syl_env = is_speaking
         ? ((0.50f + 0.30f * fast_sin(t_sec * 10.5f) + 0.20f * fast_cos(t_sec * 16.8f)) * smooth_speak) : 0.0f;
     const float energy = std::fmin(1.0f, smooth_vad * 0.85f + syl_env);
     const float rot_speed = is_thinking ? 1.85f : (is_speaking ? 0.85f : (0.48f + 0.45f * smooth_vad));
-    j_angle = std::fmod(j_angle + dt_j * rot_speed, 2.0f * PI_F);
+    ring_angle = std::fmod(ring_angle + dt_sec * rot_speed, 2.0f * PI_F);
 
     auto draw_hud_arc = [&](float r_in, float r_out, float ang_start, float ang_span, UiColor col, int step_deg = 3) {
       const int steps = std::max(2, static_cast<int>((ang_span * (180.0f / PI_F)) / static_cast<float>(step_deg)));
       const float d_ang = ang_span / static_cast<float>(steps);
+      float s0 = 0.0f, c0 = 1.0f;
+      fast_sincos(ang_start, s0, c0);
       for (int s = 0; s < steps; s++) {
-        const float a0 = ang_start + static_cast<float>(s) * d_ang;
-        float s0 = 0.0f, c0 = 1.0f, s1 = 0.0f, c1 = 1.0f;
-        fast_sincos(a0, s0, c0);
-        fast_sincos(a0 + d_ang, s1, c1);
+        float s1 = 0.0f, c1 = 1.0f;
+        fast_sincos(ang_start + static_cast<float>(s + 1) * d_ang, s1, c1);
         for (float r = r_in * va_scale; r <= r_out * va_scale; r += 1.5f) {
           fast_line(it, cx + static_cast<int>(r * s0), cy - static_cast<int>(r * c0),
                     cx + static_cast<int>(r * s1), cy - static_cast<int>(r * c1), col);
         }
+        s0 = s1;
+        c0 = c1;
       }
     };
 
-    const float a_cw1 = j_angle;
+    const float a_cw1 = ring_angle;
     fast_circle(it, cx, cy, static_cast<int>(198.0f * va_scale), c_cyan_glow);
     fast_circle(it, cx, cy, static_cast<int>(188.0f * va_scale), c_cyan_mid);
     fast_circle(it, cx, cy, static_cast<int>(182.0f * va_scale), c_cyan_dim);
@@ -241,7 +243,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx
       }
     }
 
-    const float a_ccw2 = -j_angle * 1.15f;
+    const float a_ccw2 = -ring_angle * 1.15f;
     fast_circle(it, cx, cy, scale_min(160), c_cyan_dim);
     fast_circle(it, cx, cy, scale_min(134), c_cyan_dim);
     draw_hud_arc(155.0f, 160.0f, a_ccw2 - 0.35f, 0.55f, c_cyan_bright);
@@ -280,7 +282,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx
                 cx + static_cast<int>(132.0f * va_scale * ks), cy - static_cast<int>(132.0f * va_scale * kc), c_cyan_bright);
     }
 
-    const float a_cw3 = j_angle * 0.85f;
+    const float a_cw3 = ring_angle * 0.85f;
     fast_circle(it, cx, cy, scale_min(102), c_cyan_mid);
     for (int i = 0; i < 60; i++) {
       float ts = 0.0f, tc = 1.0f;
@@ -330,13 +332,37 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const UiFrameContext &ctx
         const float k = static_cast<float>(7 - b) * (1.0f / 7.0f);
         fast_circle(it, cx, cy, core_r + b, scale_color(outer_col, k * k * 0.76f));
       }
-      const float inv_r = 1.0f / static_cast<float>(core_r > 1 ? core_r : 1);
-      for (int r = core_r; r >= 1; r -= 2) {
-        const float u = 1.0f - static_cast<float>(r) * inv_r;
+      UiColor orb_lut[65];
+      uint16_t orb_lut_hw[65];
+      for (int k = 0; k <= 64; ++k) {
+        const float u = 1.0f - std::sqrt(static_cast<float>(k) * (1.0f / 64.0f));
         const float s = std::clamp(u * u * (3.0f - 2.0f * u) + 0.14f * fast_sin(u * 4.2f - t_sec * 2.3f), 0.0f, 1.0f);
-        fast_filled_circle(it, cx, cy, r,
-                           (s < 0.55f) ? lerp_color(outer_col, mid_col, s * (1.0f / 0.55f))
-                                       : lerp_color(mid_col, inner_col, (s - 0.55f) * (1.0f / 0.45f)));
+        orb_lut[k] = (s < 0.55f) ? lerp_color(outer_col, mid_col, s * (1.0f / 0.55f))
+                                 : lerp_color(mid_col, inner_col, (s - 0.55f) * (1.0f / 0.45f));
+        orb_lut_hw[k] = encode_hw_rgb565(orb_lut[k]);
+      }
+      const int r2_max = std::max(1, core_r * core_r);
+      const int cy0 = clip_y0(), cy1 = clip_y1();
+      uint16_t *const fb = active_frame_buf16();
+      for (int dy = -core_r; dy <= core_r; ++dy) {
+        const int py = cy + dy;
+        if (py < cy0 || py > cy1) continue;
+        const int hw = chord_half_span_int(core_r, dy);
+        const int dy2 = dy * dy;
+        if (fb != nullptr) {
+          uint16_t *const row = fb + static_cast<size_t>(py) * SCREEN_W;
+          const int x_lo = std::max(0, cx - hw), x_hi = std::min(SCREEN_W - 1, cx + hw);
+          for (int px = x_lo; px <= x_hi; ++px) {
+            const int dx = px - cx;
+            const int idx = std::min(64, ((dx * dx + dy2) * 64) / r2_max);
+            row[px] = orb_lut_hw[idx];
+          }
+        } else {
+          for (int dx = -hw; dx <= hw; ++dx) {
+            const int idx = std::min(64, ((dx * dx + dy2) * 64) / r2_max);
+            fast_pixel(it, cx + dx, py, orb_lut[idx]);
+          }
+        }
       }
     };
 

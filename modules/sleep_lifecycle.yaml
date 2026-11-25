@@ -143,8 +143,7 @@ script:
           const std::string_view s_style = latter_core::pref_screensaver_style_cstr(prefs);
           const bool screensaver_allowed =
               latter_core::screensaver_allowed_for_power(
-                  prefs.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected) &&
-              (s_style != "Screen Off");
+                  prefs.screensaver_mode, LATTER_IS_STATIONARY != 0, rs.hw_usb_connected);
           if (screensaver_allowed) {
             latter_core::display_lifecycle().on_enter_screensaver(
                 now_sb_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);

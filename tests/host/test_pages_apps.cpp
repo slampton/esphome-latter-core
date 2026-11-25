@@ -30,7 +30,10 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(music_cpp.find("art_mode == \"None\"") != std::string::npos);
   LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
   LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") == std::string::npos);
-  LATTER_CHECK(gui_yaml.find("rs.nav.gui_page == 7") != std::string::npos);
+  LATTER_CHECK(gui_yaml.find("render_page_wallpaper_base(") != std::string::npos);
+  LATTER_CHECK(latter_ui::resolve_backdrop_mode(
+                   latter_core::PageId::REMOTE, 0, true, true, false, true) ==
+               latter_ui::BackdropMode::CustomWallpaper);
   LATTER_CHECK(state_h.find("kPrefOptsAlbumArtStyle") != std::string::npos);
   LATTER_CHECK(latter_core::kPrefOptsAlbumArtStyle.size() == 4U &&
                latter_core::kPrefOptsAlbumArtStyle[0] == "Full Screen" &&

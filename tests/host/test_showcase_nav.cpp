@@ -764,9 +764,24 @@ void test_showcase_verifier_regressions() {
     device_prefs_state().weather_sim_condition = 5U;  // Cloudy / Overcast (Day)
 
     (void)eng.execute_device_ui_command("showcase:weather:Thunderstorm (Night)", 30000U);
-    LATTER_CHECK(rs.showcase.weather_sim_override == 15);
+    LATTER_CHECK(rs.showcase.weather_sim_override ==
+                 find_pref_option_index(kPrefOptsWeatherSimCondition, "Thunderstorm (Night)"));
+    LATTER_CHECK(rs.showcase.weather_sim_override == 16);
     LATTER_CHECK(device_prefs_state().weather_sim_condition == 5U);
     LATTER_CHECK(std::string_view(effective_weather_sim_cstr(device_prefs_state(), rs, 30100U)) == "Thunderstorm (Night)");
+
+    // Shorthand aliases resolve dynamically without magic-index drift (Pouring & Windy Day/Night parity)
+    (void)eng.execute_device_ui_command("showcase:weather:pouring", 30110U);
+    LATTER_CHECK(std::string_view(effective_weather_sim_cstr(device_prefs_state(), rs, 30110U)) == "Pouring / Heavy Rain (Day)");
+    (void)eng.execute_device_ui_command("showcase:weather:pouring_night", 30120U);
+    LATTER_CHECK(std::string_view(effective_weather_sim_cstr(device_prefs_state(), rs, 30120U)) == "Pouring / Heavy Rain (Night)");
+    (void)eng.execute_device_ui_command("showcase:weather:snow", 30130U);
+    LATTER_CHECK(std::string_view(effective_weather_sim_cstr(device_prefs_state(), rs, 30130U)) == "Snow (Day)");
+    (void)eng.execute_device_ui_command("showcase:weather:windy", 30140U);
+    LATTER_CHECK(std::string_view(effective_weather_sim_cstr(device_prefs_state(), rs, 30140U)) == "Windy (Day)");
+    (void)eng.execute_device_ui_command("showcase:weather:windy_night", 30150U);
+    LATTER_CHECK(std::string_view(effective_weather_sim_cstr(device_prefs_state(), rs, 30150U)) == "Windy (Night)");
+    (void)eng.execute_device_ui_command("showcase:weather:Thunderstorm (Night)", 30160U);
 
     // Simulate inbound HA device_prefs push mid-showcase changing weather_sim_condition to 2 ("Sunny / Clear Day")
     device_prefs_state().weather_sim_condition = 2U;

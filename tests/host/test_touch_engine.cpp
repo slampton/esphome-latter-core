@@ -672,7 +672,7 @@ void test_rotary_navigation_and_glass_style_display_setting() {
   SystemTakeoverState va_st{};
   va_st.va_active = true;
   va_st.now_ms = 5700U;
-  render_voice_assistant_overlay(surf, ctx, va_st);
+  render_voice_assistant_overlay(surf, va_st);
   const HitRegion *va_cancel = frame_hits().find_by_id(WidgetId::VA_CANCEL_BTN);
   LATTER_CHECK(va_cancel != nullptr && (va_cancel->flags & kHitFocusSlot) != 0U);
 
@@ -931,7 +931,7 @@ void test_home_screen_customizability_and_settings() {
 
   std::vector<uint16_t> fb(static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H), 0U);
   Rgb565Surface surf = bind_host_surface(fb.data(), SCREEN_W, SCREEN_H, 1);
-  auto render_home = [&](uint32_t now_ms) {
+  auto render_home = [&](uint32_t now_ms, const char *sim_opt = "Live (Home Assistant)") {
     UiFrameContext ctx{};
     ctx.now_ms = now_ms;
     ctx.cx = SCREEN_CX;
@@ -953,12 +953,14 @@ void test_home_screen_customizability_and_settings() {
     ctx.home_wake_greeting = false;
     ctx.home_sun_arc = prefs.home_sun;
     ctx.home_moon_phase = prefs.home_moon;
+    ctx.weather_sim_opt = sim_opt;
     ctx.now.year = 2026;
     ctx.now.month = 11;
     ctx.now.day_of_month = 24;
     ctx.now.hour = 10;
     ctx.now.minute = 30;
     ctx.now.day_of_week = 3;
+    ctx.now.timestamp = 1795551300LL;
     dirty_band() = DirtyBandTracker{};
     (void)dirty_band().begin_frame(PageId::HOME, rs.nav.home_subpage, 0U, true);
     frame_hits().clear();
@@ -1014,6 +1016,42 @@ void test_home_screen_customizability_and_settings() {
   eng.on_touch_up(2140U);
   LATTER_CHECK(rs.nav.gui_page == PageId::WEATHER);
   LATTER_CHECK(rs.nav.sky_weather_subpage == 0);
+
+  // 4b. HOME_QUICK_BTN routes strictly from rendered celestial orb (Day=Sun subpage 2, Night=Moon subpage 3),
+  //     even when Weather Simulator overrides the live sun_state (e.g., Windy (Day) tested at night).
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  ws.sun_state = "below_horizon";  // Real night
+  ws.moon_phase = "full_moon";
+  prefs.weather_background = true;
+  prefs.home_sun = true;
+  prefs.home_moon = true;
+  render_home(2300U, "Windy (Day)");
+  const HitRegion *orb_hit = frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN);
+  LATTER_CHECK(orb_hit != nullptr && orb_hit->param == 0);
+  eng.on_touch_down(orb_hit->cx(), orb_hit->cy(), 2400U);
+  eng.on_touch_up(2440U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::WEATHER);
+  LATTER_CHECK(rs.nav.sky_weather_subpage == 2);  // Sun subpage, NOT Moon!
+
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  ws.sun_state = "above_horizon";  // Real day
+  render_home(2600U, "Windy (Night)");
+  orb_hit = frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN);
+  LATTER_CHECK(orb_hit != nullptr && orb_hit->param == 1);
+  eng.on_touch_down(orb_hit->cx(), orb_hit->cy(), 2700U);
+  eng.on_touch_up(2740U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::WEATHER);
+  LATTER_CHECK(rs.nav.sky_weather_subpage == 3);  // Moon subpage, NOT Sun!
+
+  // Pouring / Heavy Rain (Day & Night) hide celestial orb and omit HOME_QUICK_BTN.
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::MAIN;
+  for (const char *pour_opt : {"Pouring / Heavy Rain (Day)", "Pouring / Heavy Rain (Night)"}) {
+    render_home(2800U, pour_opt);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) == nullptr);
+  }
 
   // 5. Dynamic on-device Home Settings filtering, pagination, and 3-way cycling through "None"
   prefs = PersistedDevicePrefs{};

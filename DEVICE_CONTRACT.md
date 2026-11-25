@@ -339,7 +339,7 @@ Pure wire and behavioral preference contracts compiled into `include/latter_prot
 | `volume_step_size` | `number` | `5` | `1..10` (step `1`) | `speaker` |
 | `game_sound_effects` | `switch` | `true` | `0` \| `1` | `display` |
 | `ble_beacon_mode` | `select` | `Handheld Only` | `Handheld Only` \| `Handheld + Screen Off` \| `Always` | `beacon_battery` |
-| `weather_sim_condition` | `select` | `Live (Home Assistant)` | `Live (Home Assistant)` \| `Clear Night` \| `Sunny / Clear Day` \| `Partly Cloudy (Day)` \| `Partly Cloudy (Night)` \| `Cloudy / Overcast (Day)` \| `Cloudy / Overcast (Night)` \| `Fog / Mist (Day)` \| `Fog / Mist (Night)` \| `Rainy (Day)` \| `Rainy (Night)` \| `Pouring / Heavy Rain` \| `Snow (Day)` \| `Snow (Night)` \| `Thunderstorm (Day)` \| `Thunderstorm (Night)` \| `Windy` | `display` |
+| `weather_sim_condition` | `select` | `Live (Home Assistant)` | `Live (Home Assistant)` \| `Clear Night` \| `Sunny / Clear Day` \| `Partly Cloudy (Day)` \| `Partly Cloudy (Night)` \| `Cloudy / Overcast (Day)` \| `Cloudy / Overcast (Night)` \| `Fog / Mist (Day)` \| `Fog / Mist (Night)` \| `Rainy (Day)` \| `Rainy (Night)` \| `Pouring / Heavy Rain (Day)` \| `Pouring / Heavy Rain (Night)` \| `Snow (Day)` \| `Snow (Night)` \| `Thunderstorm (Day)` \| `Thunderstorm (Night)` \| `Windy (Day)` \| `Windy (Night)` | `display` |
 | `home_clock_tap_action` | `select` | `Time App` | `Time App` \| `Clock Face` \| `None` | `display` |
 | `home_date_tap_action` | `select` | `Overview` | `Day View` \| `Overview` \| `None` | `display` |
 | `local_clock_label` | `text` | *(empty)* | *(freeform string)* | `display` |

@@ -44,9 +44,9 @@ font:
 
 color:
   - id: theme_primary
-    hex: "6B8E9E"  # Default Soft Steel Ice Blue (Steel & Silver Palette)
+    hex: "6B8E9E"  # Default Soft Steel Ice Blue (Steel Blue palette)
   - id: theme_secondary
-    hex: "C0C0C0"  # Default Brushed Silver (Steel & Silver Palette)
+    hex: "C0C0C0"  # Default Brushed Silver (Steel Blue palette)
   - id: col_bg
     hex: "000000"
   - id: col_black
@@ -67,8 +67,6 @@ color:
     hex: "B85C24"  # Muted earthy terracotta orange
   - id: col_red
     hex: "E06A5E"  # Calibrated vermilion coral (>= 4.5:1 WCAG AA contrast on dark/glass)
-  - id: col_purple
-    hex: "6D4B7D"  # Muted vintage plum amethyst
   - id: col_magenta
     hex: "8E4A7D"  # Muted antique mauve
   - id: col_gray
@@ -136,7 +134,6 @@ display:
       ctx.col_green = id(col_green);
       ctx.col_orange = id(col_orange);
       ctx.col_red = id(col_red);
-      ctx.col_purple = id(col_purple);
       ctx.col_magenta = id(col_magenta);
 
       const auto &prefs = latter_core::persisted_prefs();
@@ -144,7 +141,7 @@ display:
       latter_ui::sync_ctx_link_health(ctx);
       ctx.local_media_playing = rs.audio.local_mp_playing();
       ctx.spk_vol_pct = static_cast<int>(std::round(rs.audio.local_mp_volume_or(0.0f) * 100.0f));
-      ctx.alert_vol_pct = (prefs.alert_volume < 20) ? 70 : static_cast<int>(prefs.alert_volume);
+      ctx.alert_vol_pct = (prefs.alert_volume < 20) ? latter_core::kPrefDefaultAlertVolume : static_cast<int>(prefs.alert_volume);
       ctx.vol_step_pct = (prefs.volume_step_size < 1 || prefs.volume_step_size > 10)
                              ? 5
                              : static_cast<int>(prefs.volume_step_size);
@@ -336,16 +333,16 @@ display:
       it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
       latter_ui::bind_frame_buffer(id(disp1), it);
       latter_ui::frame_base_begin();
-      latter_ui::set_clip_y_band(band_y0, band_y1);
 
       // System-owned global takeovers (OTA -> Hibernate -> Panel Off -> Alarm/Timer/Find-My ->
-      // Voice Assistant -> Security PIN Pad -> Push Notification -> Docked Screensaver).
+      // Voice Assistant -> Security PIN Pad -> Push Notification -> Shortcut Confirm -> Quick Actions -> Docked Screensaver).
       if (latter_ui::render_system_takeovers(it, ctx, takeover_st)) {
         return;
       }
 
       if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
-        // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (rs.nav.gui_page == 7), Tools (8), Hub (9), Cameras (13)
+        // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (7), Tools (8),
+        // Home Hub (9), Time (10), Pinned (11), Calendar (12), Cameras (13)
         // Skip P4 between-frames PPA clear while full-screen live video is active so DPI scanout keeps full PSRAM bandwidth!
         if (cam_live_canvas) {
           latter_ui::frame_base_skip();
@@ -385,7 +382,7 @@ display:
           !cam_hud_hidden && !rs.voice.intercom_turn &&
           rs.nav.display_power_state == 0 &&
           latter_ui::can_go_home(
-              rs.nav.gui_page, rs.nav.system_menu_mode, rs.nav.active_game, rs.music.overlay_mode,
+              rs.nav.gui_page, rs.nav.system_menu_mode, rs.nav.active_game,
               rs.nav.area_subpage, rs.area.browse_mode == "areas", rs.nav.remote_subpage, rs.nav.tools_subpage,
               rs.alarms.edit_idx, alert_ringing) &&
           !latter_ui::music_art_only(rs.nav.gui_page, ctx.music_overlay_style_opt == "Always Visible",
@@ -401,7 +398,7 @@ display:
       }
 
       if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && rs.nav.display_power_state == 0) {
-        latter_ui::render_offline_pill(it, ctx.cx, ctx.now_ms, ctx.font_micro, ctx.col_gold);
+        latter_ui::render_offline_pill(it, ctx);
       }
 
       const bool coin_toss_active =

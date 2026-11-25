@@ -94,7 +94,6 @@ inline void reset_common_nav_fields(DeviceRuntimeState &rs, uint32_t now_ms) {
   rs.cal.drilldown = CalDrilldown::NONE;
   rs.cal.delete_confirm_open = false;
   cam_quick_reply_open() = false;
-  cam_expanded_fullscreen() = false;
   reset_music_to_now_playing(rs, now_ms, false);
   rs.nav.system_menu_mode = 0;
   rs.nav.active_game = 0;
@@ -203,7 +202,6 @@ inline void open_calendar_composer(DeviceRuntimeState &rs,
                                    int32_t today_ymd,
                                    uint32_t now_ms) {
   stop_calendar_dictation_if_active(rs, rt, now_ms);
-  rs.cal.return_subpage = rs.cal.subpage;
   rs.cal.drilldown = CalDrilldown::ADD_STEP1;
   rs.cal.delete_confirm_open = false;
   rs.cal.picker_page = 0;
@@ -337,7 +335,6 @@ void leave_home_hub_cameras_if_active(DeviceRuntimeState &rs, const UiTouchRunti
   }
   rs.cameras.quick_reply_open = false;
   rs.cameras.doorbell_live_popup_active = false;
-  cam_expanded_fullscreen() = false;
   rt.cmd(UiHostCmd::STOP_CAMERA_STREAM);
   rt.cmd(UiHostCmd::RELEASE_CAMERA_ART);
   rs.alert.loaded_camera_url.clear();
@@ -850,7 +847,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       else if (route_id == RouteId::SETTINGS_SLEEP) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
       else if (route_id == RouteId::SETTINGS_SOUND) { rs.nav.system_menu_mode = 7; }
       else if (route_id == RouteId::SETTINGS_VOICE) { rs.nav.system_menu_mode = 11; }
-      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
+      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; }
       else if (route_id == RouteId::SETTINGS_ACTIONS) { rs.nav.system_menu_mode = 3; }
       else if (route_id == RouteId::SETTINGS_UPDATE) { rs.nav.system_menu_mode = 5; rs.nav.update_check_state = 0; }
       else if (route_id == RouteId::SETTINGS_INFO) { rs.nav.system_menu_mode = 8; }
@@ -1554,7 +1551,9 @@ bool TouchGestureEngine::handle_tap_home_area_(
           TouchGestureEngine::resolve_home_activities_(now_rel, rs, prefs, rt_, act_count);
       if (wid == WidgetId::HOME_QUICK_BTN && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.gui_page = PageId::WEATHER;
-        rs.nav.sky_weather_subpage = (weather_state().sun_state == "below_horizon") ? 3 : 2;
+        const bool tapped_moon = (hit != nullptr) ? (hit->param != 0)
+                                                  : (weather_state().sun_state == "below_horizon");
+        rs.nav.sky_weather_subpage = tapped_moon ? 3 : 2;
         mark_dirty_full();
         rt_.schedule_disp();
       } else if (wid == WidgetId::HOME_DATE_HERO && prefs.home_show_date && prefs.home_date_tap_action != 2U &&
@@ -2273,7 +2272,6 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
   const auto &rt = touch_engine().runtime();
   auto &m = rs.music;
 
-  m.overlay_mode = 0;
   m.drilldown = MusicDrilldown::NONE;
   m.takeover = MusicTakeover::NONE;
   m.clear_lyrics_auto_state();
@@ -3343,7 +3341,6 @@ bool TouchGestureEngine::handle_tap_time_cal_(
     const int ev_idx = static_cast<int>(hit->param);
     if (ev_idx >= 0 && ev_idx < store.count) {
       rs.cal.selected_event_idx = ev_idx;
-      rs.cal.return_subpage = rs.cal.subpage;
       rs.cal.drilldown = CalDrilldown::DETAIL;
       rs.cal.delete_confirm_open = false;
       mark_dirty_full();
@@ -4071,22 +4068,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
     }
     if (mode == 9) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
-        if (rs.nav.audio_menu_parent_page == PageId::MUSIC) {
-          rs.nav.gui_page = PageId::MUSIC;
-          reset_music_to_now_playing(rs, now_ms, true);
-          rs.nav.audio_menu_parent_page = PageId::SYSTEM;
-          rs.nav.system_menu_mode = 0;
-          const auto &ms = media_state();
-          if (rt.select_opt(UiSelectId::MUSIC_FULLSCREEN_ART_MODE) != "None" &&
-              (!ms.is_local || rt.album_art_w == 0) &&
-              !ms.art_url.empty() && ms.art_url != rs.music.loaded_art_url) {
-            rt.cmd(UiHostCmd::FETCH_REMOTE_ART_DEBOUNCED);
-          }
-          mark_dirty_full();
-          rt.schedule_disp();
-        } else {
-          back_to_sys_root();
-        }
+        back_to_sys_root();
         return true;
       }
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
@@ -4403,7 +4385,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
         else if (item_idx == 1) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
         else if (item_idx == 2) { rs.nav.system_menu_mode = 7; }
         else if (item_idx == 3) { rs.nav.system_menu_mode = 11; }
-        else if (item_idx == 4) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; rs.nav.audio_menu_parent_page = PageId::SYSTEM; }
+        else if (item_idx == 4) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; }
         else if (item_idx == 5 && prefs.home_screen_enabled) {
           rs.nav.gui_page = PageId::HOME;
           rs.nav.home_subpage = 1;

@@ -158,6 +158,7 @@ static constexpr uint32_t kPrefEffectPowerPolicy       = 1U << 6;
 static constexpr uint32_t kPrefEffectRedraw            = 1U << 7;
 static constexpr uint32_t kPrefEffectNavPolicy         = 1U << 8;
 static constexpr uint32_t kPrefEffectBedtime           = 1U << 9;
+static constexpr uint32_t kPrefEffectWeatherSky        = 1U << 10;
 
 enum class MusicAutoOpenMode : uint8_t {
   NowPlaying = 0,

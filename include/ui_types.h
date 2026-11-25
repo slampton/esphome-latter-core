@@ -37,7 +37,6 @@ inline constexpr float scale_min_f(float v466) {
 inline constexpr int scale_w(int v466) { return scale_w_for(v466, SCREEN_W); }
 inline constexpr int kRadiusCardPx() { return radius_card_for(SCREEN_MIN_DIM); }
 inline constexpr int kRadiusKeyPx() { return radius_key_for(SCREEN_MIN_DIM); }
-static constexpr int kMaxContentWidth = kMaxContentColW;
 
 static constexpr int STD_ART_SIZE = scale_min(264);
 static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? scale_min(426) : (SCREEN_H - scale_y(28));
@@ -60,7 +59,6 @@ namespace SystemMenuMode {
   static constexpr int SOUND           = 7;
   static constexpr int SYSTEM_INFO     = 8;
   static constexpr int MUSIC           = 9;
-  static constexpr int HOME_SETTINGS   = 10;
   static constexpr int VOICE           = 11;
   static constexpr int WW_SENSITIVITY  = 12;
   static constexpr int COLOR_WHEEL     = 13;
@@ -296,11 +294,6 @@ inline uint32_t &last_ambient_anim_ms() {
   return ts;
 }
 
-inline uint32_t &last_frame_duration_ms() {
-  static uint32_t dur_ms = 0;
-  return dur_ms;
-}
-
 inline void record_ambient_frame_ms(uint32_t now_ms) { last_ambient_anim_ms() = now_ms; }
 
 inline uint32_t &last_disp_update_ms() {
@@ -327,9 +320,9 @@ inline constexpr uint32_t min_ambient_frame_gap_ms(bool speaker_audio_busy,
   if (va_busy || alert_busy) return 120U;
 #if LATTER_CHIP_P4
   (void)mww_passive_busy;
-  return speaker_audio_busy ? 80U : 60U;
+  return speaker_audio_busy ? 74U : 54U;
 #else
-  return (speaker_audio_busy || mww_passive_busy) ? 80U : 60U;
+  return (speaker_audio_busy || mww_passive_busy) ? 74U : 54U;
 #endif
 }
 

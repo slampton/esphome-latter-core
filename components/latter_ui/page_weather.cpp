@@ -108,14 +108,17 @@ inline void draw_tapered_streak_q8(Rgb565Surface &it, uint16_t *fb,
 
 void lunar_disc_cache_drop() noexcept;
 void render_lunar_disc(Rgb565Surface &it, int moon_cx, int moon_cy, int moon_r, double cycle);
+bool compute_night_star_pos(int idx, int cx, int cy, int cel_cx, int cel_cy, bool show_celestial,
+                            int &out_sx, int &out_sy) noexcept;
 void render_night_starfield_dome(Rgb565Surface &it, int cx, int cy, int cel_cx, int cel_cy, bool show_celestial);
 void render_solar_orb_disc(Rgb565Surface &it, int cel_cx, int cel_cy, bool is_fog_mist);
 void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy);
 bool is_night_meteor_active(uint32_t now_ms);
+void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz);
 const char *wind_bearing_to_cardinal(float deg);
 std::string format_forecast_short_name(const std::string &c);
 void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, UiColor col_warm_gold);
-bool render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx);
+void render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx);
 
 RainTier classify_rain_tier(std::string_view cond, bool is_storm) noexcept;
 void init_rain_streaks(WeatherParticleEngine &eng, RainTier tier);
@@ -552,7 +555,7 @@ void render_lunar_disc(Rgb565Surface &it, int moon_cx, int moon_cy, int moon_r, 
 
     if (s_in >= 0) {
       for (int mx = -w_line; mx < -s_in; mx++) blend_limb_px(mx);
-      blit_rgb565_scanline(it, moon_cx - s_in, py, 2 * s_in + 1, row + (w_line - s_in), false);
+      blit_rgb565_scanline(it, moon_cx - s_in, py, 2 * s_in + 1, row + (w_line - s_in));
       for (int mx = s_in + 1; mx <= w_line; mx++) blend_limb_px(mx);
     } else {
       for (int mx = -w_line; mx <= w_line; mx++) blend_limb_px(mx);
@@ -560,23 +563,32 @@ void render_lunar_disc(Rgb565Surface &it, int moon_cx, int moon_cy, int moon_r, 
   }
 }
 
+bool compute_night_star_pos(int idx, int cx, int cy, int cel_cx, int cel_cy, bool show_celestial,
+                            int &out_sx, int &out_sy) noexcept {
+  const float r_norm = std::sqrt((static_cast<float>(idx) + 0.5f) * (1.0f / 72.0f));
+  const float max_star_r = static_cast<float>(std::max(SCREEN_W, SCREEN_H)) * 0.65f;
+  const float r_px = 18.0f + r_norm * max_star_r;
+  const float ang = static_cast<float>(idx) * 2.39996323f + (hash2d_01(idx, 19) - 0.5f) * 0.18f;
+  float sa = 0.0f, ca = 1.0f;
+  fast_sincos(ang, sa, ca);
+  const int sx = cx + static_cast<int>(ca * r_px);
+  const int sy = cy + static_cast<int>(sa * r_px);
+  if (!is_inside_bezel(sx, sy, cy, 6)) return false;
+  const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
+  if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
+      (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
+    return false;
+  }
+  out_sx = sx;
+  out_sy = sy;
+  return true;
+}
+
 void render_night_starfield_dome(Rgb565Surface &it, int cx, int cy,
                                  int cel_cx, int cel_cy, bool show_celestial) {
   for (int k = 0; k < 72; k++) {
-    const float r_norm = std::sqrt((static_cast<float>(k) + 0.5f) * (1.0f / 72.0f));
-    const float max_star_r = static_cast<float>(std::max(SCREEN_W, SCREEN_H)) * 0.65f;
-    const float r_px = 18.0f + r_norm * max_star_r;
-    const float ang = static_cast<float>(k) * 2.39996323f + (hash2d_01(k, 19) - 0.5f) * 0.18f;
-    float sa = 0.0f, ca = 1.0f;
-    fast_sincos(ang, sa, ca);
-    const int sx = cx + static_cast<int>(ca * r_px);
-    const int sy = cy + static_cast<int>(sa * r_px);
-    if (!is_inside_bezel(sx, sy, cy, 6)) continue;
-    const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
-    if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
-        (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
-      continue;
-    }
+    int sx = 0, sy = 0;
+    if (!compute_night_star_pos(k, cx, cy, cel_cx, cel_cy, show_celestial, sx, sy)) continue;
     const float depth_u = hash2d_01(k * 23 + 5, 41);
     const uint8_t br = static_cast<uint8_t>(168 + static_cast<int>(depth_u * 74.0f));
     const UiColor star_c =
@@ -648,27 +660,38 @@ bool &night_meteor_epoch_initialized() {
 
 namespace {
 
-void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy) {
-  static constexpr uint32_t METEOR_WINDOW_MS = 11500U;
-  static constexpr uint32_t METEOR_DUR_MS    = 780U;
+static constexpr uint32_t kMeteorWindowMs = 11500U;
+static constexpr uint32_t kMeteorDurMs    = 780U;
 
+struct NightMeteorSlot {
+  uint32_t slot_ms;
+  uint32_t launch_ms;
+  int seed;
+};
+
+NightMeteorSlot compute_night_meteor_slot(uint32_t now_ms) noexcept {
+  const uint32_t rel_ms = now_ms - night_meteor_epoch_ms();
+  const uint32_t slot_idx = rel_ms / kMeteorWindowMs;
+  const uint32_t slot_ms = rel_ms % kMeteorWindowMs;
+  const int seed = static_cast<int>(slot_idx * 59U + 17U);
+  const uint32_t launch_ms = (slot_idx == 0U)
+      ? 1200U
+      : (800U + static_cast<uint32_t>(hash2d_01(seed, 7) * 6600.0f));
+  return {slot_ms, launch_ms, seed};
+}
+
+void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy) {
   if (!night_meteor_epoch_initialized() || (now_ms - night_meteor_last_seen_ms() > 2500U)) {
     night_meteor_epoch_ms() = now_ms;
     night_meteor_epoch_initialized() = true;
   }
   night_meteor_last_seen_ms() = now_ms;
 
-  const uint32_t rel_ms = now_ms - night_meteor_epoch_ms();
-  const uint32_t slot_idx = rel_ms / METEOR_WINDOW_MS;
-  const uint32_t slot_ms  = rel_ms % METEOR_WINDOW_MS;
+  const NightMeteorSlot ms = compute_night_meteor_slot(now_ms);
+  if (ms.slot_ms < ms.launch_ms || ms.slot_ms >= ms.launch_ms + kMeteorDurMs) return;
 
-  const int seed = static_cast<int>(slot_idx * 59U + 17U);
-  const uint32_t launch_ms = (slot_idx == 0U)
-      ? 1200U
-      : (800U + static_cast<uint32_t>(hash2d_01(seed, 7) * 6600.0f));
-  if (slot_ms < launch_ms || slot_ms >= launch_ms + METEOR_DUR_MS) return;
-
-  const float u = static_cast<float>(slot_ms - launch_ms) * (1.0f / static_cast<float>(METEOR_DUR_MS));
+  const int seed = ms.seed;
+  const float u = static_cast<float>(ms.slot_ms - ms.launch_ms) * (1.0f / static_cast<float>(kMeteorDurMs));
   const float u_head = 1.0f - (1.0f - u) * (1.0f - u);
   const float u_tail = (u > 0.28f) ? (1.0f - (1.0f - (u - 0.28f)) * (1.0f - (u - 0.28f))) : 0.0f;
 
@@ -731,17 +754,9 @@ void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy) {
 }
 
 bool is_night_meteor_active(uint32_t now_ms) {
-  static constexpr uint32_t METEOR_WINDOW_MS = 11500U;
-  static constexpr uint32_t METEOR_DUR_MS    = 780U;
   if (!night_meteor_epoch_initialized()) return true;
-  const uint32_t rel_ms = now_ms - night_meteor_epoch_ms();
-  const uint32_t slot_idx = rel_ms / METEOR_WINDOW_MS;
-  const uint32_t slot_ms  = rel_ms % METEOR_WINDOW_MS;
-  const int seed = static_cast<int>(slot_idx * 59U + 17U);
-  const uint32_t launch_ms = (slot_idx == 0U)
-      ? 1200U
-      : (800U + static_cast<uint32_t>(hash2d_01(seed, 7) * 6600.0f));
-  return (slot_ms + 260U >= launch_ms && slot_ms <= launch_ms + METEOR_DUR_MS + 260U);
+  const NightMeteorSlot ms = compute_night_meteor_slot(now_ms);
+  return (ms.slot_ms + 260U >= ms.launch_ms && ms.slot_ms <= ms.launch_ms + kMeteorDurMs + 260U);
 }
 
 void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, UiColor col_warm_gold) {
@@ -819,7 +834,7 @@ void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, Ui
   fast_print(it, cx + col_dx, val_y, ctx.font_date,  col_warm_gold, UiTextAlign::CENTER, s_set);
 }
 
-bool render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
+void render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ws = weather_state();
   const int cx = ctx.cx;
   double cycle = 0.5;
@@ -830,7 +845,7 @@ bool render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
       ws.moon_phase, cycle, &illum_pct, &mp_label);
   if (!moon_known) {
     render_empty_state(it, cx, SCREEN_CY, "Waiting for the time or moon phase...", ctx.font_small, ctx.col_slate);
-    return false;
+    return;
   }
 
   const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
@@ -851,14 +866,11 @@ bool render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
   const UiFontView illum_font = large_moon_txt ? ctx.font_date : ctx.font_small;
   ui::shadow_print(it, cx, phase_y, ctx.font_date, ctx.col_slate, UiTextAlign::CENTER, mp_label.c_str());
   ui::shadow_print(it, cx, illum_y, illum_font, ctx.col_white, UiTextAlign::CENTER, illum_buf);
-  return true;
 }
 
 // ==============================================================================
 // Weather Suite Formatters & Simulation Override
 // ==============================================================================
-
-}  // namespace
 
 void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size_t out_sz) {
   if (out == nullptr || out_sz == 0U) return;
@@ -881,18 +893,6 @@ void format_iso_time_to(const std::string &iso_str, bool is_24h, char *out, size
   portable_localtime(&t, &tm_loc);
   format_hhmm_clock_to(tm_loc.tm_hour, tm_loc.tm_min, is_24h, out, out_sz);
 }
-
-std::string format_iso_time(const std::string &iso_str, bool is_24h) {
-  char buf[24];
-  format_iso_time_to(iso_str, is_24h, buf, sizeof(buf));
-  return std::string(buf);
-}
-
-std::string format_iso_time(const std::string &iso_str) {
-  return format_iso_time(iso_str, persisted_prefs().is_24h_format);
-}
-
-namespace {
 
 const char *wind_bearing_to_cardinal(float deg) {
   if (std::isnan(deg)) return "";
@@ -941,12 +941,14 @@ void resolve_weather_sim_view(std::string_view sim_opt, std::string_view &cond, 
   else if (sim_opt == "Fog / Mist (Night)") { cond = "fog"; is_night = true; }
   else if (sim_opt == "Rainy (Day)") { cond = "rainy"; is_night = false; }
   else if (sim_opt == "Rainy (Night)") { cond = "rainy"; is_night = true; }
-  else if (sim_opt == "Pouring / Heavy Rain") { cond = "pouring"; is_night = false; }
+  else if (sim_opt == "Pouring / Heavy Rain (Day)") { cond = "pouring"; is_night = false; }
+  else if (sim_opt == "Pouring / Heavy Rain (Night)") { cond = "pouring"; is_night = true; }
   else if (sim_opt == "Snow (Day)") { cond = "snowy"; is_night = false; }
   else if (sim_opt == "Snow (Night)") { cond = "snowy"; is_night = true; }
   else if (sim_opt == "Thunderstorm (Day)") { cond = "lightning-rainy"; is_night = false; }
   else if (sim_opt == "Thunderstorm (Night)") { cond = "lightning-rainy"; is_night = true; }
-  else if (sim_opt == "Windy") { cond = "windy"; is_night = false; }
+  else if (sim_opt == "Windy (Day)") { cond = "windy"; is_night = false; }
+  else if (sim_opt == "Windy (Night)") { cond = "windy"; is_night = true; }
 }
 
 void apply_weather_sim_override(std::string_view sim_opt, std::string &cond, bool &is_night) {
@@ -1197,36 +1199,35 @@ void render_cumulus_cloud(Rgb565Surface &it, int bx, int by, float scale,
   const float inv_hw = 1.0f / static_cast<float>(half_w), phase_seed = static_cast<float>(eff_seed) * 0.85f;
 
   if (const CloudShape *shape = cloud_shape_get(half_w, scale, eff_seed)) {
-    if (by + shape->y_max >= 5 && by + shape->y_min <= SCREEN_H - 6) {
-      const UiColor pal[6] = {kChromeShadow, col_rim, col_crest, col_high, col_body, col_shadow};
-      uint16_t pal_hw[6];
-      for (int k = 0; k < 6; k++) pal_hw[k] = encode_hw_rgb565(pal[k]);
-      uint16_t *fb_c = active_frame_buf16();
-      const int x_first = bx - half_w;
+    if (by + shape->y_max < 5 || by + shape->y_min > SCREEN_H - 6) return;
+    const UiColor pal[6] = {kChromeShadow, col_rim, col_crest, col_high, col_body, col_shadow};
+    uint16_t pal_hw[6];
+    for (int k = 0; k < 6; k++) pal_hw[k] = encode_hw_rgb565(pal[k]);
+    uint16_t *fb_c = active_frame_buf16();
+    const int x_first = bx - half_w;
 #if LATTER_ROUND_DISPLAY
-      for (int i = 0; i < shape->count; i++) {
-        const CloudRun &r = shape->runs[i];
-        const int py = by + r.y;
-        if (py < 5 || py > SCREEN_H - 6) continue;
-        const int max_dx = circle_half_span(py, 5);
-        if (max_dx <= 8) continue;
-        const int rx0 = std::max(x_first + static_cast<int>(r.k0) * kCloudColStep, SCREEN_CX - max_dx);
-        const int rx1 = std::min(x_first + static_cast<int>(r.k0 + r.ncols) * kCloudColStep, SCREEN_CX + max_dx + 1);
-        if (rx1 > rx0) cloud_span(it, fb_c, rx0, py, rx1 - rx0, pal_hw[r.band], pal[r.band]);
-      }
-#else
-      const int k_lo = std::max(0, ceil_div_int(5 - x_first, kCloudColStep));
-      const int k_hi = floor_div_int(SCREEN_W - 6 - kCloudColStep - x_first, kCloudColStep);
-      for (int i = 0; i < shape->count; i++) {
-        const CloudRun &r = shape->runs[i];
-        const int py = by + r.y;
-        if (py < 5 || py > SCREEN_H - 6) continue;
-        const int a = std::max<int>(r.k0, k_lo), b2 = std::min<int>(r.k0 + r.ncols - 1, k_hi);
-        if (a <= b2) cloud_span(it, fb_c, x_first + a * kCloudColStep, py, (b2 - a + 1) * kCloudColStep, pal_hw[r.band], pal[r.band]);
-      }
-#endif
-      return;
+    for (int i = 0; i < shape->count; i++) {
+      const CloudRun &r = shape->runs[i];
+      const int py = by + r.y;
+      if (py < 5 || py > SCREEN_H - 6) continue;
+      const int max_dx = circle_half_span(py, 5);
+      if (max_dx <= 8) continue;
+      const int rx0 = std::max(x_first + static_cast<int>(r.k0) * kCloudColStep, SCREEN_CX - max_dx);
+      const int rx1 = std::min(x_first + static_cast<int>(r.k0 + r.ncols) * kCloudColStep, SCREEN_CX + max_dx + 1);
+      if (rx1 > rx0) cloud_span(it, fb_c, rx0, py, rx1 - rx0, pal_hw[r.band], pal[r.band]);
     }
+#else
+    const int k_lo = std::max(0, ceil_div_int(5 - x_first, kCloudColStep));
+    const int k_hi = floor_div_int(SCREEN_W - 6 - kCloudColStep - x_first, kCloudColStep);
+    for (int i = 0; i < shape->count; i++) {
+      const CloudRun &r = shape->runs[i];
+      const int py = by + r.y;
+      if (py < 5 || py > SCREEN_H - 6) continue;
+      const int a = std::max<int>(r.k0, k_lo), b2 = std::min<int>(r.k0 + r.ncols - 1, k_hi);
+      if (a <= b2) cloud_span(it, fb_c, x_first + a * kCloudColStep, py, (b2 - a + 1) * kCloudColStep, pal_hw[r.band], pal[r.band]);
+    }
+#endif
+    return;
   }
 
   auto &cc = weather_cloud_cache();
@@ -1436,29 +1437,97 @@ SkyBaseCache &sky_base_cache() {
   return cache;
 }
 
+struct WeatherCondFlags {
+  bool is_fog_mist = false;
+  bool is_windy = false;
+  bool is_clear_day = false;
+  bool is_partly = false;
+  bool is_storm = false;
+  bool is_pouring_precip = false;
+  bool is_rain_precip = false;
+  bool is_snow_precip = false;
+  bool is_overcast_canopy = false;
+  bool is_clear_sky_night = false;
+  bool is_starry_night = false;
+};
+
+WeatherCondFlags classify_weather_condition(std::string_view cond, bool is_night) noexcept {
+  WeatherCondFlags f{};
+  if (cond.empty() || cond == "neutral") return f;
+  f.is_fog_mist = (cond.find("fog") != std::string_view::npos ||
+                   cond.find("mist") != std::string_view::npos ||
+                   cond.find("haze") != std::string_view::npos);
+  f.is_windy = (cond.find("wind") != std::string_view::npos ||
+                cond.find("breez") != std::string_view::npos);
+  const bool is_clear_token = (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday");
+  f.is_clear_day = (!is_night && is_clear_token);
+  f.is_partly = (cond.find("partly") != std::string_view::npos ||
+                 cond.find("mostlysunny") != std::string_view::npos ||
+                 cond.find("partlysunny") != std::string_view::npos);
+  f.is_storm = (cond.find("lightning") != std::string_view::npos ||
+                cond.find("thunder") != std::string_view::npos);
+  f.is_pouring_precip = (cond == "pouring" || cond.find("heavy") != std::string_view::npos);
+  f.is_rain_precip = (cond.find("rain") != std::string_view::npos ||
+                      cond.find("pouring") != std::string_view::npos ||
+                      cond.find("drizzle") != std::string_view::npos);
+  f.is_snow_precip = (cond.find("snow") != std::string_view::npos ||
+                      cond.find("sleet") != std::string_view::npos ||
+                      cond.find("hail") != std::string_view::npos);
+  f.is_overcast_canopy =
+      ((cond.find("cloud") != std::string_view::npos || cond.find("overcast") != std::string_view::npos) &&
+       !f.is_partly) ||
+      f.is_rain_precip || f.is_snow_precip;
+  f.is_clear_sky_night = (is_night && (cond == "clear-night" || cond == "clearnight" || is_clear_token));
+  f.is_starry_night =
+      (is_night && (f.is_clear_sky_night || f.is_partly ||
+                    (f.is_windy && !f.is_overcast_canopy && !f.is_fog_mist && !f.is_storm)));
+  return f;
+}
+
+bool resolve_effective_sky_cond(std::string_view sim_opt, std::string_view raw_cond,
+                                std::string_view sun_state, std::string_view &out_cond,
+                                bool &out_is_night) noexcept {
+  const bool sim_active = (!sim_opt.empty() && sim_opt != "Live (Home Assistant)");
+  const bool sun_ok = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
+  if (!sun_ok && !sim_active) return false;
+  out_cond = raw_cond;
+  out_is_night = (sun_state == "below_horizon" || out_cond == "clear-night" ||
+                  out_cond == "clearnight" || (out_cond.find("night") != std::string_view::npos));
+  resolve_weather_sim_view(sim_opt, out_cond, out_is_night);
+  return true;
+}
+
+bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms = 0) {
+  const WeatherCondFlags f = classify_weather_condition(cond, is_night);
+  if (f.is_rain_precip || f.is_snow_precip || f.is_storm || f.is_windy ||
+      f.is_fog_mist || f.is_overcast_canopy || f.is_partly) {
+    return true;
+  }
+  if (f.is_clear_sky_night) return is_night_meteor_active(now_ms);
+  return f.is_clear_day;
+}
+
+bool has_fast_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms) {
+  const WeatherCondFlags f = classify_weather_condition(cond, is_night);
+  if (f.is_rain_precip || f.is_snow_precip || f.is_storm || f.is_windy) return true;
+  if (f.is_starry_night) {
+    return f.is_partly || is_night_meteor_active(now_ms);
+  }
+  return false;
+}
+
 void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view cond, bool is_night,
                           double moon_cycle, int cel_cx, int cel_cy, bool show_celestial) {
-  const bool is_fog_mist = (cond.find("fog") != std::string_view::npos ||
-                            cond.find("mist") != std::string_view::npos ||
-                            cond.find("haze") != std::string_view::npos);
-  const bool is_clear_day = (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday"));
-  const bool is_partly = (cond.find("partly") != std::string_view::npos ||
-                          cond.find("mostlysunny") != std::string_view::npos ||
-                          cond.find("partlysunny") != std::string_view::npos);
-  const bool is_storm = (cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos);
-  const bool is_pouring_precip = (cond == "pouring" || cond.find("heavy") != std::string_view::npos);
-  const bool is_rain_precip = (cond.find("rain") != std::string_view::npos ||
-                               cond.find("pouring") != std::string_view::npos ||
-                               cond.find("drizzle") != std::string_view::npos);
-  const bool is_snow_precip = (cond.find("snow") != std::string_view::npos ||
-                               cond.find("sleet") != std::string_view::npos ||
-                               cond.find("hail") != std::string_view::npos);
-  const bool is_overcast_canopy =
-      ((cond.find("cloud") != std::string_view::npos || cond.find("overcast") != std::string_view::npos) && !is_partly) ||
-      is_rain_precip || is_snow_precip;
-  const bool is_clear_or_partly_night =
-      (is_night && (cond == "clear-night" || cond == "clearnight" ||
-                    cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
+  const WeatherCondFlags f = classify_weather_condition(cond, is_night);
+  const bool is_fog_mist = f.is_fog_mist;
+  const bool is_clear_day = f.is_clear_day;
+  const bool is_partly = f.is_partly;
+  const bool is_storm = f.is_storm;
+  const bool is_pouring_precip = f.is_pouring_precip;
+  const bool is_rain_precip = f.is_rain_precip;
+  const bool is_snow_precip = f.is_snow_precip;
+  const bool is_overcast_canopy = f.is_overcast_canopy;
+  const bool is_clear_or_partly_night = f.is_starry_night;
 
   UiColor c_zen(20, 44, 76), c_mid(28, 56, 90), c_hor(40, 74, 112);
   if (is_night) {
@@ -1469,8 +1538,10 @@ void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view co
     c_zen = UiColor(26, 38, 52); c_mid = UiColor(34, 48, 63); c_hor = UiColor(42, 58, 74);
   } else if (is_storm || is_rain_precip) {
     c_zen = UiColor(14, 24, 38); c_mid = UiColor(20, 33, 50); c_hor = UiColor(28, 44, 65);
-    if (is_pouring_precip || is_storm) {
+    if (is_storm) {
       c_zen = scale_color(c_zen, 0.76f); c_mid = scale_color(c_mid, 0.76f); c_hor = scale_color(c_hor, 0.78f);
+    } else if (is_pouring_precip) {
+      c_zen = scale_color(c_zen, 0.88f); c_mid = scale_color(c_mid, 0.88f); c_hor = scale_color(c_hor, 0.90f);
     }
   } else if (is_overcast_canopy) {
     c_zen = UiColor(18, 32, 50); c_mid = UiColor(25, 42, 63); c_hor = UiColor(34, 54, 78);
@@ -1642,9 +1713,25 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
   }
 }
 
-WeatherParticleEngine &particle_engine() {
-  static WeatherParticleEngine eng{};
-  return eng;
+WeatherParticleEngine *&particle_engine_slot() noexcept {
+  static WeatherParticleEngine *s_eng = nullptr;
+  return s_eng;
+}
+
+WeatherParticleEngine *acquire_particle_engine() noexcept {
+  auto *&ptr = particle_engine_slot();
+  if (ptr == nullptr) {
+    ptr = static_cast<WeatherParticleEngine *>(ui_psram_calloc(1, sizeof(WeatherParticleEngine)));
+  }
+  return ptr;
+}
+
+void weather_particle_engine_drop() noexcept {
+  auto *&ptr = particle_engine_slot();
+  if (ptr != nullptr) {
+    ui_psram_free(ptr);
+    ptr = nullptr;
+  }
 }
 
 void init_particle_engine(WeatherParticleEngine &eng, uint32_t cond_hash, RainTier tier) {
@@ -1707,6 +1794,7 @@ struct WeatherPsramEvictorRegistrar {
     // keep the small (~60 KB) shaded lunar disc cache warm across Music visits to avoid cold Moon re-shade spikes.
     register_psram_cache_evictor(&sky_base_cache_evict);
     register_psram_cache_evictor(&weather_cloud_cache_drop);
+    register_psram_cache_evictor(&weather_particle_engine_drop);
   }
 };
 const WeatherPsramEvictorRegistrar kWeatherPsramEvictorRegistrar{};
@@ -1717,66 +1805,19 @@ bool &weather_sim_dirty() {
   return dirty;
 }
 
-bool has_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms) {
-  if (cond.find("rain") != std::string_view::npos || cond.find("pouring") != std::string_view::npos ||
-      cond.find("drizzle") != std::string_view::npos || cond.find("snow") != std::string_view::npos ||
-      cond.find("sleet") != std::string_view::npos || cond.find("hail") != std::string_view::npos ||
-      cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos ||
-      cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos ||
-      cond.find("fog") != std::string_view::npos || cond.find("mist") != std::string_view::npos ||
-      cond.find("haze") != std::string_view::npos || cond.find("cloud") != std::string_view::npos ||
-      cond.find("overcast") != std::string_view::npos || cond.find("partly") != std::string_view::npos ||
-      cond.find("mostlysunny") != std::string_view::npos || cond.find("partlysunny") != std::string_view::npos) {
-    return true;
-  }
-  if (is_night && (cond == "clear-night" || cond == "clearnight" ||
-                   cond == "sunny" || cond == "clear" || cond == "clear-day")) {
-    return is_night_meteor_active(now_ms);
-  }
-  return !is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday");
-}
-
 bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond,
                              std::string_view sun_state, uint32_t now_ms) {
-  const bool sim_active = (!sim_opt.empty() && sim_opt != "Live (Home Assistant)");
-  const bool sun_ok = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
-  if (!sun_ok && !sim_active) return false;
-  std::string_view cond = raw_cond;
-  bool is_night = (sun_state == "below_horizon" || cond == "clear-night" || cond == "clearnight" ||
-                   (cond.find("night") != std::string_view::npos));
-  resolve_weather_sim_view(sim_opt, cond, is_night);
+  std::string_view cond{};
+  bool is_night = false;
+  if (!resolve_effective_sky_cond(sim_opt, raw_cond, sun_state, cond, is_night)) return false;
   return has_weather_motion_sv(cond, is_night, now_ms);
-}
-
-bool has_fast_weather_motion_sv(std::string_view cond, bool is_night, uint32_t now_ms) {
-  if (cond.find("rain") != std::string_view::npos || cond.find("pouring") != std::string_view::npos ||
-      cond.find("drizzle") != std::string_view::npos || cond.find("snow") != std::string_view::npos ||
-      cond.find("sleet") != std::string_view::npos || cond.find("hail") != std::string_view::npos ||
-      cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos ||
-      cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos) {
-    return true;
-  }
-  const bool is_partly = (cond.find("partly") != std::string_view::npos ||
-                          cond.find("mostlysunny") != std::string_view::npos ||
-                          cond.find("partlysunny") != std::string_view::npos);
-  const bool is_clear_or_partly_night =
-      (is_night && (cond == "clear-night" || cond == "clearnight" ||
-                    cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
-  if (is_clear_or_partly_night) {
-    return has_weather_motion_sv(cond, is_night, now_ms);
-  }
-  return false;
 }
 
 bool evaluate_sky_has_fast_motion(std::string_view sim_opt, std::string_view raw_cond,
                                   std::string_view sun_state, uint32_t now_ms) {
-  const bool sim_active = (!sim_opt.empty() && sim_opt != "Live (Home Assistant)");
-  const bool sun_ok = (!sun_state.empty() && sun_state != "unknown" && sun_state != "unavailable");
-  if (!sun_ok && !sim_active) return false;
-  std::string_view cond = raw_cond;
-  bool is_night = (sun_state == "below_horizon" || cond == "clear-night" || cond == "clearnight" ||
-                   (cond.find("night") != std::string_view::npos));
-  resolve_weather_sim_view(sim_opt, cond, is_night);
+  std::string_view cond{};
+  bool is_night = false;
+  if (!resolve_effective_sky_cond(sim_opt, raw_cond, sun_state, cond, is_night)) return false;
   return has_fast_weather_motion_sv(cond, is_night, now_ms);
 }
 
@@ -1790,32 +1831,10 @@ bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t l
 
 bool weather_condition_shows_celestial(std::string_view cond, bool is_night) noexcept {
   if (cond.empty() || cond == "neutral") return false;
-  const bool is_fog_mist = (cond.find("fog") != std::string_view::npos ||
-                            cond.find("mist") != std::string_view::npos ||
-                            cond.find("haze") != std::string_view::npos);
-  const bool is_windy = (cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos);
-  const bool is_clear_day = (!is_night && (cond == "sunny" || cond == "clear-day" || cond == "clear" || cond == "clearday"));
-  const bool is_partly = (cond.find("partly") != std::string_view::npos ||
-                          cond.find("mostlysunny") != std::string_view::npos ||
-                          cond.find("partlysunny") != std::string_view::npos);
-  const bool is_storm = (cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos);
-  const bool is_rain_precip = (cond.find("rain") != std::string_view::npos ||
-                               cond.find("pouring") != std::string_view::npos ||
-                               cond.find("drizzle") != std::string_view::npos);
-  const bool is_snow_precip = (cond.find("snow") != std::string_view::npos ||
-                               cond.find("sleet") != std::string_view::npos ||
-                               cond.find("hail") != std::string_view::npos);
-  const bool is_overcast_canopy =
-      ((cond.find("cloud") != std::string_view::npos || cond.find("overcast") != std::string_view::npos) && !is_partly) ||
-      is_rain_precip || is_snow_precip;
-  if (is_overcast_canopy || is_storm) return false;
-  if (is_night) {
-    const bool is_clear_or_partly_night =
-        (cond == "clear-night" || cond == "clearnight" || cond == "sunny" ||
-         cond == "clear" || cond == "clear-day" || cond == "clearday" || is_partly);
-    return is_clear_or_partly_night || is_windy || is_fog_mist;
-  }
-  return is_clear_day || is_partly || is_windy || is_fog_mist;
+  const WeatherCondFlags f = classify_weather_condition(cond, is_night);
+  if (f.is_overcast_canopy || f.is_storm) return false;
+  if (is_night) return f.is_starry_night || f.is_fog_mist;
+  return f.is_clear_day || f.is_partly || f.is_windy || f.is_fog_mist;
 }
 
 void render_static_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool is_night) {
@@ -1832,9 +1851,8 @@ void render_neutral_day_night_sky_base(Rgb565Surface &it, int cx, int cy, bool i
 void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                                      const std::string &cond_in, bool is_night,
                                      double moon_cycle, int cel_cx, int cel_cy,
-                                     bool mask_hero_temp, float accel_x, float accel_y,
+                                     float accel_x, float accel_y,
                                      bool show_celestial) {
-  (void)mask_hero_temp;
   const std::string_view cond(cond_in);
   if (cond.empty()) return;
 
@@ -1855,13 +1873,13 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
     par_y += (std::clamp(accel_y * 20.0f, -18.0f, 18.0f) - par_y) * 0.22f;
   }
 
-  const bool is_storm = (cond.find("lightning") != std::string_view::npos || cond.find("thunder") != std::string_view::npos);
-  auto &eng = particle_engine();
+  const WeatherCondFlags f = classify_weather_condition(cond, is_night);
+  WeatherParticleEngine *eng_ptr = (precip_alpha > 0.0f) ? acquire_particle_engine() : nullptr;
   float storm_env = 0.0f;
   int storm_sheet_q8 = 0;
   const bool storm_flash_active =
-      is_storm && precip_alpha > 0.0f &&
-      step_storm_lightning_envelope(now_ms, precip_alpha, eng.lightning, storm_env, storm_sheet_q8);
+      f.is_storm && precip_alpha > 0.0f && eng_ptr != nullptr &&
+      step_storm_lightning_envelope(now_ms, precip_alpha, eng_ptr->lightning, storm_env, storm_sheet_q8);
 
   blit_or_bake_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial,
                         storm_sheet_q8);
@@ -1869,28 +1887,18 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
   const uint32_t cond_hash = fnv1a_sky_str(cond);
   lap.mark(ProfSect::BG_SKY);
 
-  if (precip_alpha <= 0.0f) {
+  if (precip_alpha <= 0.0f || eng_ptr == nullptr) {
     lap.mark(ProfSect::BG_PRECIP);
     return;
   }
 
-  const bool is_fog_mist = (cond.find("fog") != std::string_view::npos ||
-                            cond.find("mist") != std::string_view::npos ||
-                            cond.find("haze") != std::string_view::npos);
-  const bool is_windy = (cond.find("wind") != std::string_view::npos || cond.find("breez") != std::string_view::npos);
-  const bool is_partly = (cond.find("partly") != std::string_view::npos ||
-                          cond.find("mostlysunny") != std::string_view::npos ||
-                          cond.find("partlysunny") != std::string_view::npos);
-  const bool is_rain = (cond.find("rain") != std::string_view::npos ||
-                        cond.find("pouring") != std::string_view::npos ||
-                        cond.find("drizzle") != std::string_view::npos || is_storm);
-  const RainTier rain_tier = classify_rain_tier(cond, is_storm);
-  const bool is_snow = (cond.find("snow") != std::string_view::npos ||
-                        cond.find("sleet") != std::string_view::npos ||
-                        cond.find("hail") != std::string_view::npos);
-  const bool is_clear_or_partly_night =
-      (is_night && (cond == "clear-night" || cond == "clearnight" ||
-                    cond == "sunny" || cond == "clear" || cond == "clear-day" || is_partly));
+  auto &eng = *eng_ptr;
+  const bool is_fog_mist = f.is_fog_mist;
+  const bool is_windy = f.is_windy;
+  const bool is_rain = f.is_rain_precip || f.is_storm;
+  const RainTier rain_tier = classify_rain_tier(cond, f.is_storm);
+  const bool is_snow = f.is_snow_precip;
+  const bool is_clear_or_partly_night = f.is_starry_night;
 
   float dt_s = 0.0f;
   float phase_dt_s = 0.0f;
@@ -1912,18 +1920,8 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
       const int idx = k * 3;
       const float tw = 0.5f + 0.5f * fast_sin(eng.phase_s * 2.4f + static_cast<float>(idx) * 0.9f);
       if (tw < 0.55f) continue;
-      const float r_norm = std::sqrt((static_cast<float>(idx) + 0.5f) * (1.0f / 72.0f));
-      const float r_px = 18.0f + r_norm * (static_cast<float>(std::max(SCREEN_W, SCREEN_H)) * 0.65f);
-      const float ang = static_cast<float>(idx) * 2.39996323f + (hash2d_01(idx, 19) - 0.5f) * 0.18f;
-      float sa = 0.0f, ca = 1.0f;
-      fast_sincos(ang, sa, ca);
-      const int sx = cx + static_cast<int>(ca * r_px), sy = cy + static_cast<int>(sa * r_px);
-      if (!is_inside_bezel(sx, sy, cy, 6)) continue;
-      const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
-      if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
-          (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
-        continue;
-      }
+      int sx = 0, sy = 0;
+      if (!compute_night_star_pos(idx, cx, cy, cel_cx, cel_cy, show_celestial, sx, sy)) continue;
       blend_sky_pixel_q8(it, fb, sx, sy, UiColor(255, 255, 255), static_cast<int>((tw - 0.5f) * 220.0f * precip_alpha));
     }
     if (precip_alpha > 0.35f) render_night_shooting_star(it, now_ms, cy);
@@ -2541,13 +2539,13 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 #endif
 
   // Authoritative backdrop precedence (resolve_backdrop_mode, D-067)
+  std::string sky_cond = ws.condition;
+  bool sky_night = (ws.sun_state == "below_horizon" || sky_cond == "clear-night" ||
+                    sky_cond == "clearnight" || (sky_cond.find("night") != std::string::npos));
+  apply_weather_sim_override(weather_sim_opt, sky_cond, sky_night);
+  const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
+  const bool sun_ready = (!ws.sun_state.empty() && ws.sun_state != "unknown" && ws.sun_state != "unavailable");
   {
-    std::string sky_cond = ws.condition;
-    bool sky_night = (ws.sun_state == "below_horizon" || sky_cond == "clear-night" ||
-                      sky_cond == "clearnight" || (sky_cond.find("night") != std::string::npos));
-    apply_weather_sim_override(weather_sim_opt, sky_cond, sky_night);
-    const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
-    const bool sun_ready = (!ws.sun_state.empty() && ws.sun_state != "unknown" && ws.sun_state != "unavailable");
     const auto &ac = area_ctx_state();
     const bool has_day_night_sky = is_day_night_sky_wallpaper_url(ac.wallpaper_url);
     const bool has_custom_wallpaper =
@@ -2568,7 +2566,7 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                    ws.moon_phase, sky_moon_cycle);
         backdrop_active() = true;
         render_weather_motion_wallpaper(it, cx, cy, ctx.now_ms, sky_cond, sky_night,
-                                        sky_moon_cycle, 0, 0, true,
+                                        sky_moon_cycle, 0, 0,
                                         rs.hw_accel_x, rs.hw_accel_y, false);
       } else if (!backdrop_active()) {
         if (dns_known) {
@@ -2593,13 +2591,7 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   if (sky_weather_subpage == 0) {
     // SUBPAGE 0: CURRENT CONDITIONS
-    std::string cond = ws.condition;
-    bool is_night = (ws.sun_state == "below_horizon" || cond == "clear-night" ||
-                     cond == "clearnight" || (cond.find("night") != std::string::npos));
-    apply_weather_sim_override(weather_sim_opt, cond, is_night);
-    const bool sim_override_on = (!weather_sim_opt.empty() && weather_sim_opt != "Live (Home Assistant)");
-    const bool sun_ready = (!ws.sun_state.empty() && ws.sun_state != "unknown" && ws.sun_state != "unavailable");
-    if (!sim_override_on && !sun_ready) cond = "";
+    const std::string cond = (!sim_override_on && !sun_ready) ? std::string{} : sky_cond;
 
     render_page_header(it, cx, "CURRENT", font_small, col_white);
 
@@ -2748,10 +2740,7 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   } else if (sky_weather_subpage == 3) {
     // SUBPAGE 3: MOON
     render_page_header(it, cx, "MOON", font_small, col_white);
-    if (!render_weather_moon_subpage(it, ctx)) {
-      render_weather_subpage_icons(it, sky_weather_subpage, theme_primary, col_white);
-      return;
-    }
+    render_weather_moon_subpage(it, ctx);
   }
 
   render_weather_subpage_icons(it, sky_weather_subpage, theme_primary, col_white);

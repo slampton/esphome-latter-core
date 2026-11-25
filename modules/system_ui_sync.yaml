@@ -648,8 +648,10 @@ script:
             if (latter_core::is_camera_view_active(rs) || (rs.alert.active && rs.cameras.doorbell_live_popup_active)) {
               id(sync_camera_stream).execute();
             }
-            latter_ui::weather_sim_dirty() = true;
-            latter_ui::record_ambient_frame_ms(0);
+            if (eff & latter_core::kPrefEffectWeatherSky) {
+              latter_ui::weather_sim_dirty() = true;
+              latter_ui::record_ambient_frame_ms(0);
+            }
             if (rs.nav.display_power_state == 0) {
               latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
             }
@@ -703,8 +705,7 @@ script:
               const auto &rs = latter_core::runtime_state();
               return rs.nav.display_power_state == 0 &&
                      (rs.nav.gui_page == 1 || rs.nav.gui_page == 2) &&
-                     !rs.voice.active &&
-                     (millis() - latter_ui::last_disp_update_ms() >= 90U);
+                     !rs.voice.active;
           then:
             - lambda: |-
                 const auto &rs = latter_core::runtime_state();

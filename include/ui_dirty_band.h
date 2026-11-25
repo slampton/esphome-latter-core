@@ -41,8 +41,6 @@ struct DirtyBandTracker {
                    int hhmm_key, uint32_t idle_state_sig, int home_clock_band_y1,
                    bool live_sec_active = false);
 
-  constexpr int y0() const { return active_y0; }
-  constexpr int y1() const { return active_y1; }
   constexpr int band_y0() const { return active_y0; }
   constexpr int band_y1() const { return active_y1; }
   constexpr bool is_full() const { return active_full; }
@@ -53,7 +51,6 @@ DirtyBandTracker &dirty_band();
 void mark_dirty_band(int y0, int y1);
 void mark_dirty_full();
 
-inline constexpr int music_metadata_band_y0_for(int /*screen_h*/) noexcept { return 0; }
 inline constexpr int music_metadata_band_y1_for(int screen_h) noexcept {
   return scale_y_for(136, screen_h);
 }
@@ -65,7 +62,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
                                  int music_mode, int active_game,
                                  int sys_mode, int sys_dash_pg, int sleep_pg, int disp_pg,
                                  int weather_sub, int area_sub, int rem_sub,
-                                 int tools_sub, int tools_menu_pg, int cal_detail, int timer_slot,
+                                 int tools_sub, int tools_menu_pg, int timer_slot,
                                  int hub_tab,
                                  int time_sub = 0, int wc_pg = 0,
                                  int alarm_edit = 0, int home_set_pg = 1,
@@ -90,7 +87,7 @@ constexpr int compute_subpage_id(int gui_page, int home_subpage, int home_dock_p
       return rem_sub;
     case 8:
       return (tools_sub & 0xFF) | ((tools_menu_pg & 0xFF) << 8) |
-             ((cal_detail & 0x0F) << 16) | ((timer_slot & 0x0F) << 20);
+             ((timer_slot & 0x0F) << 16);
     case 9:
       return (hub_tab & 0x0F) | ((hub_mode_pg & 0x0F) << 4) | ((hub_drill & 0x0F) << 8);
     case 10:

@@ -357,8 +357,8 @@ void verify_scissor_band_isolation(HostSurfaceFixture &fix, int page_id, int y0,
   mark_dirty_band(y0, y1);
   (void)dirty_band().begin_frame(page_id, sub, 0U, false);
   LATTER_CHECK(!dirty_band().is_full());
-  const int by0 = dirty_band().y0();
-  const int by1 = dirty_band().y1();
+  const int by0 = dirty_band().band_y0();
+  const int by1 = dirty_band().band_y1();
   set_clip_y_band(by0, by1);
   frame_hits().clear();
 
@@ -556,7 +556,7 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
     st.timer_ringing = true;
     st.va_timer_name = "Pasta";
   });
-  for (const char *va_style : {"Nebula", "Waveform", "Solaris", "Pulse Ring", "Minimal"}) {
+  for (const char *va_style : {"Nebula", "Solaris", "Rings", "Light Bar", "Dot Wave"}) {
     run_takeover(va_style, [&](SystemTakeoverState &st) {
       st.va_active = true;
       st.va_vad_active = true;
@@ -604,7 +604,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  static_assert(LATTER_CORE_REV == 2026112403L, "LATTER_CORE_REV must match 2026112403L");
+  static_assert(LATTER_CORE_REV == 2026112404L, "LATTER_CORE_REV must match 2026112404L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);
@@ -1285,6 +1285,82 @@ void test_additive_cold_boot_sky_and_celestial_d085() {
     frame_hits().clear();
     render_weather_page(fix.surf, fix.ctx);
     LATTER_CHECK(backdrop_active());
+
+    // 4. Windy (Night) starfield + Pouring Day vs Night separation + Aurora fast-path clip-band safety
+    {
+      std::string_view sim_cond = "sunny";
+      bool sim_night = false;
+      resolve_weather_sim_view("Windy (Night)", sim_cond, sim_night);
+      LATTER_CHECK(sim_cond == "windy" && sim_night);
+      resolve_weather_sim_view("Windy (Day)", sim_cond, sim_night);
+      LATTER_CHECK(sim_cond == "windy" && !sim_night);
+      resolve_weather_sim_view("Pouring / Heavy Rain (Night)", sim_cond, sim_night);
+      LATTER_CHECK(sim_cond == "pouring" && sim_night);
+      resolve_weather_sim_view("Pouring / Heavy Rain (Day)", sim_cond, sim_night);
+      LATTER_CHECK(sim_cond == "pouring" && !sim_night);
+
+      // Windy Night sky renders bright star pixels (not empty dark sky)
+      sky_base_cache_drop();
+      fix.fill(0U);
+      frame_base_begin();
+      render_weather_motion_wallpaper(fix.surf, fix.ctx.cx, fix.ctx.cy, 5000U, "windy", true,
+                                      0.5, layout().celestial_x, layout().celestial_y, false, 0.0f, 0.0f);
+      int windy_night_stars = 0;
+      for (uint16_t raw : fix.pixels) {
+        uint8_t r = 0, g = 0, b = 0;
+        decode_px_rgb(raw, r, g, b);
+        if (r > 120 && g > 120 && b > 120) ++windy_night_stars;
+      }
+      LATTER_CHECK(windy_night_stars > 15);
+
+      // Pouring Day base sky is visibly brighter than Pouring Night base sky
+      auto mean_luma = [&](const char *c, bool night) -> uint64_t {
+        sky_base_cache_drop();
+        fix.fill(0U);
+        frame_base_begin();
+        render_weather_motion_wallpaper(fix.surf, fix.ctx.cx, fix.ctx.cy, 5000U, c, night,
+                                        0.5, 0, 0, false, 0.0f, 0.0f);
+        uint64_t sum = 0;
+        for (uint16_t raw : fix.pixels) {
+          uint8_t r = 0, g = 0, b = 0;
+          decode_px_rgb(raw, r, g, b);
+          sum += static_cast<uint64_t>(r) + static_cast<uint64_t>(g) + static_cast<uint64_t>(b);
+        }
+        return sum;
+      };
+      const uint64_t pour_day_luma = mean_luma("pouring", false);
+      const uint64_t pour_night_luma = mean_luma("pouring", true);
+      LATTER_CHECK(pour_day_luma > pour_night_luma + (static_cast<uint64_t>(SCREEN_W) * SCREEN_H * 12ULL));
+
+      // Aurora fast path: renders luminous ribbons inside partial odd/even clip band while leaving outside sentinel intact
+      constexpr uint16_t kSentinel = 0x5A3CU;
+      const int band_y0 = (SCREEN_H / 3) | 1;        // intentionally odd
+      const int band_y1 = ((SCREEN_H * 2) / 3) & ~1; // intentionally even
+      fix.fill(kSentinel);
+      frame_base_begin();
+      set_clip_y_band(band_y0, band_y1);
+      SystemTakeoverState ss_st = SystemTakeoverState::from_context(fix.ctx);
+      ss_st.panel_is_on = true;
+      ss_st.display_power_state = 1;
+      ss_st.screensaver_style_opt = "Aurora";
+      // Paint black base inside band then render Aurora
+      (void)render_system_takeovers(fix.surf, fix.ctx, ss_st);
+      reset_clip_y_band();
+
+      int aurora_lit = 0;
+      for (int y = 0; y < SCREEN_H; ++y) {
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+        for (int x = 0; x < SCREEN_W; ++x) {
+          const uint16_t px = fix.pixels[row + static_cast<size_t>(x)];
+          if (y < band_y0 || y > band_y1) {
+            LATTER_CHECK(px == kSentinel);
+          } else if (px != 0U && px != kSentinel) {
+            ++aurora_lit;
+          }
+        }
+      }
+      LATTER_CHECK(aurora_lit > 200);
+    }
 
     dismiss_wake_greeting();
     evict_registered_psram_caches();

@@ -150,11 +150,6 @@ HOST_IDF_STUBS: Final[dict[str, str]] = {
         "inline size_t heap_caps_get_minimum_free_size(uint32_t) { return 0; }\n"
         "inline size_t heap_caps_get_largest_free_block(uint32_t) { return 0; }\n"
     ),
-    "esp_memory_utils.h": (
-        "#pragma once\n"
-        "inline bool esp_ptr_external_ram(const void *) { return false; }\n"
-        "inline bool esp_ptr_internal(const void *) { return true; }\n"
-    ),
     "esp_timer.h": (
         "#pragma once\n"
         "#include <cstdint>\n"
@@ -561,7 +556,6 @@ HOST_IDF_STUBS: Final[dict[str, str]] = {
         "#include \"esp_err.h\"\n"
         "#define ESP_CACHE_MSYNC_FLAG_DIR_C2M (1 << 0)\n"
         "#define ESP_CACHE_MSYNC_FLAG_DIR_M2C (1 << 1)\n"
-        "#define ESP_CACHE_MSYNC_FLAG_INVALIDATE (1 << 2)\n"
         "inline esp_err_t esp_cache_msync(void *, size_t, int) { return ESP_OK; }\n"
     ),
 }

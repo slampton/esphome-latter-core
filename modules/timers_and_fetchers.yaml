@@ -231,31 +231,20 @@ interval:
             }
           }
 
-          // Auto-timeout & critical pulse refresh for active Latter push notifications / camera popups
+          // Auto-timeout for active Latter push notifications / camera popups (critical pulse & ringing
+          // refreshes are driven by FrameCadenceController::evaluate_20ms on ui_anim_tick).
           if (rs.alert.active) {
             const bool doorbell_talk_busy = latter_core::cam_call_active() ||
                                             latter_core::cam_listen_active() ||
                                             rs.voice.intercom_turn;
             if (!doorbell_talk_busy && (millis() - rs.alert.start_ms >= rs.alert.duration_ms)) {
               id(dismiss_notification).execute();
-            } else if (rs.alert.priority == "critical" && rs.nav.display_power_state == 0 &&
-                       !rs.voice.active && rs.voice.status_text.empty()) {
-              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 
           // Showcase keep-awake expiry & standalone highlight reel progression (D-077)
           if (rs.showcase.active) {
             id(tick_showcase_engine).execute();
-          }
-
-          // Periodic display refresh during active alarm, timer, Find My Device, or silent showcase alert preview
-          if ((rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
-               rs.showcase.has_silent_alert(millis())) &&
-              rs.nav.display_power_state == 0) {
-            if (!rs.voice.active && rs.voice.status_text.empty()) {
-              latter_ui::schedule_disp_update(&id(disp1));
-            }
           }
 
           // Active Update Check state transition refresh (Page 4, Mode 5)

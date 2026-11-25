@@ -14,25 +14,18 @@
 #ifdef USE_ESP32
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
+#endif
 // Hardware framebuffer acceleration is restricted to ESP32-P4, whose 2D PPA Fill/SRM/Blend engines
 // stream AXI PSRAM via DMA2D without Flash XIP stalls or GDMA IRAM-safe conflicts. On Octal-PSRAM XIP
 // chips without PPA (ESP32-S3), PSRAM-to-PSRAM GDMA + cache msync contends directly with instruction
 // fetches and PSRAM wake-word inference.
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-#define LATTER_FB_DMA_CLEAR 1
+#if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4)
 #define LATTER_FB_PPA 1
 #include <driver/ppa.h>
 #include <esp_attr.h>
 #include <esp_cache.h>
 #include <esp_rom_sys.h>
 #else
-#define LATTER_FB_DMA_CLEAR 0
-#endif
-#else
-#define LATTER_FB_DMA_CLEAR 0
-#endif
-
-#ifndef LATTER_FB_PPA
 #define LATTER_FB_PPA 0
 #endif
 
@@ -40,7 +33,7 @@ namespace latter_ui {
 using namespace latter_core;
 
 namespace {
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
 #if defined(CONFIG_CACHE_L2_CACHE_LINE_128B)
 constexpr size_t kPsramCacheLineAlign = 128U;
 #else
@@ -73,7 +66,7 @@ void *ui_psram_calloc(size_t count, size_t elem_size) noexcept {
 
 void *ui_psram_aligned_alloc(size_t bytes) noexcept {
   if (bytes == 0U) return nullptr;
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   const size_t aligned = align_up_psram(bytes);
   return heap_caps_aligned_alloc(kPsramCacheLineAlign, aligned, MALLOC_CAP_SPIRAM);
 #else
@@ -83,7 +76,7 @@ void *ui_psram_aligned_alloc(size_t bytes) noexcept {
 
 void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept {
   if (count == 0U || elem_size == 0U) return nullptr;
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   if (count > (SIZE_MAX / elem_size)) return nullptr;
   const size_t aligned = align_up_psram(count * elem_size);
   void *p = heap_caps_aligned_alloc(kPsramCacheLineAlign, aligned, MALLOC_CAP_SPIRAM);
@@ -97,7 +90,7 @@ void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept {
 PsramPhaseBuf ui_psram_phase_alloc(size_t bytes, const void *match_addr, bool zero_init) noexcept {
   PsramPhaseBuf out{};
   if (bytes == 0U) return out;
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   const size_t phase =
       (reinterpret_cast<uintptr_t>(match_addr) & (kPsramCacheLineAlign - 1U)) & ~static_cast<size_t>(1U);
   const size_t total = align_up_psram(phase + bytes);
@@ -124,7 +117,7 @@ void ui_psram_phase_free(PsramPhaseBuf &buf) noexcept {
 }
 
 void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept {
-#if LATTER_FB_DMA_CLEAR
+#if LATTER_FB_PPA
   if (ptr == nullptr || bytes == 0U) return;
   constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
   const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
@@ -155,17 +148,17 @@ namespace {
 struct FbClearState {
   void *owner = nullptr;
   PostFrameRequestFn post_frame_hook = nullptr;
+  bool post_stamp_pending = false;
+#if LATTER_FB_PPA
   uint16_t *fb = nullptr;
-  bool init_tried = false, ok = false, post_stamp_pending = false;
+  bool init_tried = false, ok = false;
   bool pending_start = false, active = false, ready = false, error = false;
   uint16_t color_hw = 0;
   uint8_t *interior = nullptr;
   size_t interior_len = 0;
-  uint32_t hits = 0, misses = 0, starts = 0;
+  uint32_t hits = 0, misses = 0;
   const char *why = nullptr;
   int why_err = 0;
-#if LATTER_FB_PPA
-  size_t align = 256;
   ppa_client_handle_t ppa = nullptr;
   bool ppa_checked = false;
   int64_t ppa_t0_us = 0;
@@ -177,9 +170,10 @@ FbClearState &fb_clear_state() {
   return st;
 }
 
-[[maybe_unused]] void fb_clear_fail(const char *why, int err = 0) {
+#if LATTER_FB_PPA
+void fb_clear_fail(const char *why, int err = 0) {
   auto &st = fb_clear_state();
-  if (st.why != why || st.why_err != err) ESP_LOGW("disp_fb", "DMA clear skipped: %s (err=%d)", why, err);
+  if (st.why != why || st.why_err != err) ESP_LOGW("disp_fb", "PPA clear skipped: %s (err=%d)", why, err);
   st.why = why;
   st.why_err = err;
 }
@@ -193,8 +187,6 @@ const char *fb_clear_why_err_str() {
 }
 
 std::atomic<int64_t> g_fb_clear_done_us{0};
-
-#if LATTER_FB_PPA
 std::atomic<int> g_fb_clear_pending{0};
 
 constexpr uint32_t kFbPpaRowPx = 128;
@@ -226,7 +218,6 @@ bool fb_clear_init() {
     perr = ppa_client_register_event_callbacks(st.ppa, &cbs);
   }
   if (perr == ESP_OK) {
-    st.align = kFbPpaRowBytes;
     st.ok = true;
     ESP_LOGD("disp_fb", "Between-frames clear enabled: PPA fill (%u px rows)", static_cast<unsigned>(kFbPpaRowPx));
     return true;
@@ -234,11 +225,8 @@ bool fb_clear_init() {
   fb_clear_fail("ppa_register", static_cast<int>(perr));
   return false;
 }
-#endif
 
 void fb_clear_start() {
-  (void)g_fb_clear_done_us;
-#if LATTER_FB_PPA
   auto &st = fb_clear_state();
   st.pending_start = false;
   if (st.active) return;
@@ -246,8 +234,8 @@ void fb_clear_start() {
   if (!fb_clear_init()) return;
   const uintptr_t base = reinterpret_cast<uintptr_t>(st.fb);
   const size_t bytes = static_cast<size_t>(SCREEN_W) * SCREEN_H * sizeof(uint16_t);
-  const uintptr_t lo = (base + st.align - 1) & ~(static_cast<uintptr_t>(st.align) - 1);
-  const uintptr_t hi = (base + bytes) & ~(static_cast<uintptr_t>(st.align) - 1);
+  const uintptr_t lo = (base + kFbPpaRowBytes - 1) & ~(static_cast<uintptr_t>(kFbPpaRowBytes) - 1);
+  const uintptr_t hi = (base + bytes) & ~(static_cast<uintptr_t>(kFbPpaRowBytes) - 1);
   if (hi <= lo) { fb_clear_fail("range"); return; }
   st.interior = reinterpret_cast<uint8_t *>(lo);
   st.interior_len = hi - lo;
@@ -277,9 +265,8 @@ void fb_clear_start() {
     st.error = true;
     fb_clear_fail("ppa_fill", static_cast<int>(ppa_err));
   }
-  st.starts++;
-#endif
 }
+#endif
 
 }  // namespace
 
@@ -288,7 +275,11 @@ void set_fb_post_frame_hook(PostFrameRequestFn hook) noexcept { fb_clear_state()
 void fb_clear_bind_raw(void *owner, uint16_t *fb) noexcept {
   auto &st = fb_clear_state();
   st.owner = owner;
+#if LATTER_FB_PPA
   st.fb = fb;
+#else
+  (void)fb;
+#endif
 }
 
 void fb_clear_after_update() {
@@ -297,7 +288,9 @@ void fb_clear_after_update() {
     st.post_stamp_pending = false;
     last_disp_update_end_ms() = hal_millis_now();
   }
+#if LATTER_FB_PPA
   if (st.pending_start) fb_clear_start();
+#endif
 }
 
 void fb_clear_wait() {
@@ -339,6 +332,7 @@ void fb_clear_wait() {
 }
 
 bool fb_clear_consume(uint16_t hw) {
+#if LATTER_FB_PPA
   auto &st = fb_clear_state();
   if (!st.ready) return false;
   st.ready = false;
@@ -354,6 +348,10 @@ bool fb_clear_consume(uint16_t hw) {
   st.hits++;
   st.why = nullptr;
   return true;
+#else
+  (void)hw;
+  return false;
+#endif
 }
 
 void fb_clear_frame_end() {
@@ -469,13 +467,6 @@ uint8_t *ppa_blend_wash_ensure_mask(int falloff_drop) noexcept {
 }
 #endif
 
-static constexpr uint8_t kFlashBayer4[4][4] = {
-    {  0, 128,  32, 160},
-    {192,  64, 224,  96},
-    { 48, 176,  16, 144},
-    {240, 112, 208,  80},
-};
-
 // Bit-exact 8-bit Q8 RGB565 blend using 2-lane SWAR (R5+B5 packed with 3 guard bits each,
 // G6 pre-shifted by 5) — mathematically identical to 3-channel scalar Q8 blending with zero
 // clamping branches, zero per-pixel array lookups, and 32-bit aligned PSRAM pair bursts.
@@ -558,7 +549,7 @@ void blend_linear_wash_edges_cpu(uint16_t *dst_fb, const uint16_t *src_bg, size_
       continue;
     }
     const uint32_t inv = static_cast<uint32_t>(256 - a);
-    const uint32_t d = kFlashBayer4[py & 3][px & 3];
+    const uint32_t d = static_cast<uint32_t>(kBayer4[py & 3][px & 3]) << 4;
     const uint32_t base_rb = ((static_cast<uint32_t>(sr5 * a) + d) << 16) |
                              (static_cast<uint32_t>(sb5 * a) + d);
     const uint32_t base_g_s5 = (static_cast<uint32_t>(sg6 * a) + d) << 5;
@@ -629,10 +620,10 @@ void blend_vertical_wash_cpu_mode(uint16_t *dst_fb, const uint16_t *src_bg, int 
     const uint32_t sr_a = static_cast<uint32_t>(sr5 * a);
     const uint32_t sg_a = static_cast<uint32_t>(sg6 * a);
     const uint32_t sb_a = static_cast<uint32_t>(sb5 * a);
-    const uint8_t *const bayer = kFlashBayer4[py & 3];
+    const uint8_t *const bayer = kBayer4[py & 3];
     uint32_t base_rb[4], base_g_s5[4];
     for (int k = 0; k < 4; ++k) {
-      const uint32_t dk = bayer[k];
+      const uint32_t dk = static_cast<uint32_t>(bayer[k]) << 4;
       base_rb[k] = ((sr_a + dk) << 16) | (sb_a + dk);
       base_g_s5[k] = (sg_a + dk) << 5;
     }
@@ -916,7 +907,6 @@ FrameProfileScope::~FrameProfileScope() {
   }
   const uint32_t render_us = static_cast<uint32_t>(prof_now_us() - t0_us);
   const uint32_t now_m = hal_millis_now();
-  last_frame_duration_ms() = render_us / 1000U;
   auto &fbc_post = fb_clear_state();
   if (fbc_post.owner != nullptr && fbc_post.post_frame_hook != nullptr) {
     fbc_post.post_stamp_pending = true;
@@ -949,39 +939,39 @@ FrameProfileScope::~FrameProfileScope() {
   if (win_el >= 5000U && fr.window_frames > 0) {
     const float fps = (static_cast<float>(fr.window_frames) * 1000.0f) / static_cast<float>(win_el);
     const uint32_t avg_us = fr.window_render_us / fr.window_frames;
-    auto &fbc = fb_clear_state();
 #if LATTER_FB_PPA
+    auto &fbc = fb_clear_state();
     auto &ppa_srm = ppa_srm_blit_state();
     auto &ppa_bld = ppa_blend_wash_state();
-    LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu ppa=%lu/%lu%s%s%s",
+    LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu ppa_clear=%lu/%lu ppa=%lu/%lu%s%s%s",
                      static_cast<unsigned long>(fr.window_frames), fps, static_cast<unsigned long>(avg_us),
                      static_cast<unsigned long>(fr.max_render_us), fr.max_render_page, fr.max_render_sub,
                      static_cast<unsigned long>(fr.slow_frames), static_cast<unsigned long>(fbc.hits),
                      static_cast<unsigned long>(fbc.hits + fbc.misses),
                      static_cast<unsigned long>(ppa_srm.blits), static_cast<unsigned long>(ppa_bld.washes),
-                     fbc.why != nullptr ? " dma_off=" : "", fbc.why != nullptr ? fbc.why : "",
+                     fbc.why != nullptr ? " ppa_off=" : "", fbc.why != nullptr ? fbc.why : "",
                      fbc.why != nullptr ? fb_clear_why_err_str() : "");
+    fbc.hits = fbc.misses = 0;
     ppa_srm.blits = 0U;
     ppa_bld.washes = 0U;
 #else
-    LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu dma_clear=%lu/%lu%s%s%s",
+    LATTER_PROF_LOGI("[PROF:FRAME_SUM] frames=%lu fps=%.1f avg=%luus max=%luus(p%d/%d) slow=%lu",
                      static_cast<unsigned long>(fr.window_frames), fps, static_cast<unsigned long>(avg_us),
                      static_cast<unsigned long>(fr.max_render_us), fr.max_render_page, fr.max_render_sub,
-                     static_cast<unsigned long>(fr.slow_frames), static_cast<unsigned long>(fbc.hits),
-                     static_cast<unsigned long>(fbc.hits + fbc.misses),
-                     fbc.why != nullptr ? " dma_off=" : "", fbc.why != nullptr ? fbc.why : "",
-                     fbc.why != nullptr ? fb_clear_why_err_str() : "");
+                     static_cast<unsigned long>(fr.slow_frames));
 #endif
-    fbc.hits = fbc.misses = 0;
     uint32_t *sect = prof_sect_us(), any_sect = 0;
     for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) any_sect |= sect[i];
     if (any_sect != 0U) {
       const uint32_t n = fr.window_frames;
-      LATTER_PROF_LOGI("[PROF:SECT] avg/frame base=%luus art=%luus sky=%luus celestial=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
-                       static_cast<unsigned long>(sect[6] / n), static_cast<unsigned long>(sect[7] / n),
-                       static_cast<unsigned long>(sect[0] / n), static_cast<unsigned long>(sect[1] / n),
-                       static_cast<unsigned long>(sect[2] / n), static_cast<unsigned long>(sect[3] / n),
-                       static_cast<unsigned long>(sect[4] / n), static_cast<unsigned long>(sect[5] / n));
+      LATTER_PROF_LOGI("[PROF:SECT] avg/frame base=%luus art=%luus sky=%luus clouds=%luus precip=%luus text=%luus dock=%luus",
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::BASE)] / n),
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::ART)] / n),
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::BG_SKY)] / n),
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::BG_CLOUDS)] / n),
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::BG_PRECIP)] / n),
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::HOME_TEXT)] / n),
+                       static_cast<unsigned long>(sect[static_cast<size_t>(ProfSect::HOME_DOCK)] / n));
       for (size_t i = 0; i < static_cast<size_t>(ProfSect::COUNT); i++) sect[i] = 0;
     }
     fr.window_frames = fr.window_render_us = fr.max_render_us = fr.slow_frames = 0;
@@ -989,10 +979,8 @@ FrameProfileScope::~FrameProfileScope() {
   }
 }
 
-
-
 // ------------------------------------------------------------------------------
-// 1. WCAG 4.5:1 Frosted Glass Backdrop Sampling, Luminance LUT & 2-Tier Fill Solver
+// 3. WCAG 4.5:1 Frosted Glass Backdrop Sampling, Luminance LUT & Adaptive Fill Solver
 // ------------------------------------------------------------------------------
 const float *srgb_linear_lut() {
   static float lut[256];
@@ -1503,7 +1491,7 @@ void fill_round_rect_glass_impl(Rgb565Surface &it, int x0, int y0, int w, int h,
 }
 
 // ------------------------------------------------------------------------------
-// 2. Dirty-Band Aware Frame Base State
+// 4. Dirty-Band Aware Frame Base State
 // ------------------------------------------------------------------------------
 FrameBaseState &frame_base_state() {
   static FrameBaseState st;
@@ -1531,8 +1519,8 @@ bool frame_base_impl(Rgb565Surface &it, UiColor c) {
   if (fb_clear_consume(hw)) return true;
 
   const uint64_t t0 = profiler_enabled() ? prof_now_us() : 0;
-  const int y0 = full ? 0 : std::max(0, dirty_band().y0());
-  const int y1 = full ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().y1());
+  const int y0 = full ? 0 : std::max(0, dirty_band().band_y0());
+  const int y1 = full ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().band_y1());
   const int cy0 = std::max(y0, clip_y0());
   const int cy1 = std::min(y1, clip_y1());
   if (cy1 >= cy0) {
@@ -1573,36 +1561,10 @@ bool frame_base_impl(Rgb565Surface &it, UiColor c) {
 
 
 
-// UTF-8 Sanitizer, Memoized Text Fitting & Pure-C++20 1-bpp Span Glyph Cache
+// ------------------------------------------------------------------------------
+// 5. UTF-8 Sanitizer, Memoized Text Fitting & Pure-C++20 1-bpp Span Glyph Cache
+// ------------------------------------------------------------------------------
 namespace {
-
-uint32_t latter_utf8_next(const char *&p) {
-  const uint8_t c0 = static_cast<uint8_t>(p[0]);
-  if (c0 == 0) return 0;
-  if (c0 < 0x80) { p += 1; return c0; }
-  if ((c0 & 0xE0) == 0xC0 && p[1] != 0) {
-    const uint32_t cp = (static_cast<uint32_t>(c0 & 0x1F) << 6) | (static_cast<uint8_t>(p[1]) & 0x3F);
-    p += 2;
-    return cp;
-  }
-  if ((c0 & 0xF0) == 0xE0 && p[1] != 0 && p[2] != 0) {
-    const uint32_t cp = (static_cast<uint32_t>(c0 & 0x0F) << 12) |
-                        (static_cast<uint32_t>(static_cast<uint8_t>(p[1]) & 0x3F) << 6) |
-                        (static_cast<uint8_t>(p[2]) & 0x3F);
-    p += 3;
-    return cp;
-  }
-  if ((c0 & 0xF8) == 0xF0 && p[1] != 0 && p[2] != 0 && p[3] != 0) {
-    const uint32_t cp = (static_cast<uint32_t>(c0 & 0x07) << 18) |
-                        (static_cast<uint32_t>(static_cast<uint8_t>(p[1]) & 0x3F) << 12) |
-                        (static_cast<uint32_t>(static_cast<uint8_t>(p[2]) & 0x3F) << 6) |
-                        (static_cast<uint8_t>(p[3]) & 0x3F);
-    p += 4;
-    return cp;
-  }
-  p += 1;
-  return 0xFFFD;
-}
 
 void append_utf8_cp(std::string &out, uint32_t cp) {
   if (cp <= 0x7F) {
@@ -1660,7 +1622,7 @@ int text_decode_spans_1bpp(const UiFontView &font, const char *text, TextSpan *o
   int x_at = 0;
   for (const char *p = text; *p != 0;) {
     UiGlyphData glyph{};
-    if (!font.find_glyph(latter_utf8_next(p), glyph)) {
+    if (!font.find_glyph(utf8_next_cp(p), glyph)) {
       x_at += std::max(4, font.get_height() / 3);
       continue;
     }
@@ -1756,7 +1718,7 @@ void rasterize_glyph_pixels(uint16_t *fb, const UiFontView &font, const char *te
   int x_at = x_start;
   for (const char *p = text; *p != 0;) {
     UiGlyphData glyph{};
-    if (!font.find_glyph(latter_utf8_next(p), glyph)) {
+    if (!font.find_glyph(utf8_next_cp(p), glyph)) {
       x_at += std::max(4, font.get_height() / 3);
       continue;
     }
@@ -1879,10 +1841,6 @@ std::string sanitize_utf8_for_font(const std::string &str, UiFontView font) {
   return out;
 }
 
-std::string sanitize_utf8_for_font(const std::string &str) {
-  return sanitize_utf8_for_font(str, UiFontView{});
-}
-
 std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFontView font) {
   if (raw_str.empty() || font == nullptr) return "";
 
@@ -1972,7 +1930,7 @@ int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *tex
     bool any = false;
     for (const char *p = text; *p != 0;) {
       UiGlyphData glyph{};
-      if (!font.find_glyph(latter_utf8_next(p), glyph)) {
+      if (!font.find_glyph(utf8_next_cp(p), glyph)) {
         x_at += std::max(4, font.get_height() / 3);
         continue;
       }
@@ -2018,7 +1976,6 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
   const float diff_r = static_cast<float>(color.r) - static_cast<float>(background.r);
   const float diff_g = static_cast<float>(color.g) - static_cast<float>(background.g);
   const float diff_b = static_cast<float>(color.b) - static_cast<float>(background.b);
-  const float diff_w = static_cast<float>(color.w) - static_cast<float>(background.w);
   for (int lv = 1; lv <= bpp_max; lv++) {
     if (lv == bpp_max) {
       lut[lv] = encode_hw_rgb565(color);
@@ -2028,7 +1985,6 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
           static_cast<uint8_t>(diff_r * on + static_cast<float>(background.r)),
           static_cast<uint8_t>(diff_g * on + static_cast<float>(background.g)),
           static_cast<uint8_t>(diff_b * on + static_cast<float>(background.b)),
-          static_cast<uint8_t>(diff_w * on + static_cast<float>(background.w)),
       });
     }
   }
@@ -2128,7 +2084,7 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
 
 
 // ------------------------------------------------------------------------------
-// Album-Art / Wallpaper Composition & Retryable PSRAM ArtCanvasCache
+// 6. Album-Art / Wallpaper Composition & Retryable PSRAM ArtCanvasCache
 // ------------------------------------------------------------------------------
 int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int dim_level) {
   auto ramp = [](int yy, int y_a, int v_a, int y_b, int v_b) -> int {
@@ -2259,7 +2215,7 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
   uint16_t *fb = active_frame_buf16();
   const size_t row_off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(start_x);
   if (mul_q8 >= 256) {
-    blit_rgb565_scanline(it, start_x, y, span_w, src_row, false);
+    blit_rgb565_scanline(it, start_x, y, span_w, src_row);
     if (mirror_fb != nullptr && fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
       std::memcpy(mirror_fb + row_off, fb + row_off, static_cast<size_t>(span_w) * sizeof(uint16_t));
     }
@@ -2322,7 +2278,7 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
   }
   std::memcpy(fallback_row_buf, src_row, static_cast<size_t>(span_w) * sizeof(uint16_t));
   dim_rgb565_row_dither(fallback_row_buf, span_w, mul_q8, start_x, y);
-  blit_rgb565_scanline(it, start_x, y, span_w, fallback_row_buf, false);
+  blit_rgb565_scanline(it, start_x, y, span_w, fallback_row_buf);
 }
 
 void art_row_span(int y, int cx, int &start_x, int &end_x) {
@@ -2655,8 +2611,8 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     if (e.last_use < victim->last_use) victim = &e;
   }
 
-  const int raw_lo = dirty_band().is_full() ? 0 : std::max(0, dirty_band().y0());
-  const int raw_hi = dirty_band().is_full() ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().y1());
+  const int raw_lo = dirty_band().is_full() ? 0 : std::max(0, dirty_band().band_y0());
+  const int raw_hi = dirty_band().is_full() ? (SCREEN_H - 1) : std::min(SCREEN_H - 1, dirty_band().band_y1());
   const int y_lo = std::max(clip_y0(), raw_lo);
   const int y_hi = std::min(clip_y1(), raw_hi);
   bool mirrored_to_fb = false;

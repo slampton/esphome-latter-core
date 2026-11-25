@@ -156,15 +156,13 @@ inline FlightRecorderStats &flight_recorder() {
 inline uint64_t prof_now_us() {
 #ifdef USE_ESP32
   return static_cast<uint64_t>(esp_timer_get_time());
-#elif __has_include("esphome/core/hal.h") && defined(USE_ESP32)
-  return static_cast<uint64_t>(esphome::micros());
 #else
   return 0ULL;
 #endif
 }
 
 // Per-section render timing averaged per frame and logged as [PROF:SECT] with [PROF:FRAME_SUM].
-enum class ProfSect : uint8_t { BG_SKY, BG_CELESTIAL, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, BASE, ART, COUNT };
+enum class ProfSect : uint8_t { BG_SKY, BG_CLOUDS, BG_PRECIP, HOME_TEXT, HOME_DOCK, BASE, ART, COUNT };
 
 inline uint32_t *prof_sect_us() {
   static uint32_t acc[static_cast<size_t>(ProfSect::COUNT)] = {};

@@ -64,8 +64,6 @@ inline CalendarState &calendar_state() {
 struct CalendarUiState {
   int subpage = CalendarSubpage::OVERVIEW;
   int drilldown = CalDrilldown::NONE;
-  int return_subpage = CalendarSubpage::OVERVIEW;
-  int picker_return_drilldown = CalDrilldown::ADD_STEP1;
   int32_t selected_ymd = 0;  // YYYYMMDD (0 = seed from current local date)
   int overview_page = 0;
   int day_page = 0;
@@ -74,8 +72,6 @@ struct CalendarUiState {
   int selected_event_idx = -1;
   bool delete_confirm_open = false;
   uint8_t dictation_field = 0;  // 0 = none, 1 = Title, 2 = Location
-  uint32_t dictation_started_ms = 0;
-  uint32_t next_req_id = 1;
   std::string feedback_text = "";
   uint32_t feedback_ms = 0;
 

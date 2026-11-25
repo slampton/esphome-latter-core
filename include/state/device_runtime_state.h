@@ -408,7 +408,6 @@ inline void start_calendar_dictation(uint8_t field,
                                      uint32_t now_ms,
                                      DeviceRuntimeState &rs = runtime_state()) {
   rs.cal.dictation_field = field;
-  rs.cal.dictation_started_ms = now_ms;
   rs.cal.feedback_text = "Listening — speak now...";
   rs.cal.feedback_ms = now_ms;
 }
@@ -418,7 +417,6 @@ inline bool finish_calendar_dictation(std::string_view stt_text,
                                       DeviceRuntimeState &rs = runtime_state()) {
   const uint8_t field = rs.cal.dictation_field;
   rs.cal.dictation_field = 0U;
-  rs.cal.dictation_started_ms = 0U;
   std::string_view sv = trim_ascii_ws(stt_text);
   while (sv.size() > 1U && (sv.back() == '.' || sv.back() == '!' || sv.back() == '?')) {
     sv.remove_suffix(1);
@@ -447,7 +445,6 @@ inline void cancel_calendar_dictation(const char *msg,
                                       uint32_t now_ms,
                                       DeviceRuntimeState &rs = runtime_state()) {
   rs.cal.dictation_field = 0U;
-  rs.cal.dictation_started_ms = 0U;
   rs.cal.feedback_text = (msg != nullptr) ? msg : "";
   rs.cal.feedback_ms = now_ms;
 }
@@ -459,7 +456,6 @@ inline bool broadcast_dictation_active(const DeviceRuntimeState &rs = runtime_st
 inline void start_broadcast_dictation(uint32_t now_ms,
                                       DeviceRuntimeState &rs = runtime_state()) {
   rs.intercom.broadcast_dictation_active = true;
-  rs.intercom.broadcast_dictation_started_ms = now_ms;
   rs.intercom.broadcast_feedback = "Listening...";
   rs.intercom.broadcast_feedback_ms = now_ms;
 }
@@ -468,7 +464,6 @@ inline bool finish_broadcast_dictation(std::string_view stt_text,
                                        uint32_t now_ms,
                                        DeviceRuntimeState &rs = runtime_state()) {
   rs.intercom.broadcast_dictation_active = false;
-  rs.intercom.broadcast_dictation_started_ms = 0U;
   std::string_view sv = trim_ascii_ws(stt_text);
   if (sv.empty()) {
     rs.intercom.broadcast_feedback = "Didn't catch that";
@@ -489,7 +484,6 @@ inline void cancel_broadcast_dictation(const char *msg,
                                        uint32_t now_ms,
                                        DeviceRuntimeState &rs = runtime_state()) {
   rs.intercom.broadcast_dictation_active = false;
-  rs.intercom.broadcast_dictation_started_ms = 0U;
   if (msg != nullptr && msg[0] != '\0') {
     rs.intercom.broadcast_feedback = msg;
     rs.intercom.broadcast_feedback_ms = now_ms;
@@ -704,10 +698,6 @@ inline ScreensaverExitAction evaluate_persisted_screensaver_exit_action(
     return bt_clock ? ScreensaverExitAction::KEEP_SCREENSAVER
                     : ScreensaverExitAction::TURN_SCREEN_OFF;
   }
-  const std::string_view s_style(pref_screensaver_style_cstr(prefs));
-  if (s_style == "Screen Off") {
-    return ScreensaverExitAction::TURN_SCREEN_OFF;
-  }
   const bool mode_allowed =
       (prefs.screensaver_mode == 1U) ||
       (prefs.screensaver_mode == 0U && (is_stationary || usb_connected));
@@ -774,7 +764,7 @@ inline bool should_return_to_home_on_idle(const DeviceRuntimeState &rt,
       is_music_ambient_tab(rt.music.view) &&
       rt.music.drilldown == MusicDrilldown::NONE &&
       rt.music.takeover == MusicTakeover::NONE &&
-      rt.music.overlay_mode == 0 && media_playing) {
+      media_playing) {
     return false;
   }
   if (rt.nav.gui_page == PageId::CAMERAS) {
@@ -1136,7 +1126,6 @@ inline bool &cam_listen_active() { return runtime_state().intercom.cam_listen_ac
 inline bool &cam_intercom_ptt_active() { return runtime_state().intercom.cam_intercom_ptt_active; }
 inline std::string &cam_intercom_status() { return runtime_state().intercom.cam_intercom_status; }
 inline bool &cam_landscape_mode() { return runtime_state().cameras.landscape_mode; }
-inline bool &cam_expanded_fullscreen() { return runtime_state().intercom.cam_expanded_fullscreen; }
 inline uint32_t &last_cam_live_fetch_ms() { return runtime_state().intercom.last_cam_live_fetch_ms; }
 inline uint32_t &cam_error_backoff_until_ms() { return runtime_state().intercom.cam_error_backoff_until_ms; }
 inline bool &cam_download_in_progress() { return runtime_state().intercom.cam_download_in_progress; }
@@ -1157,7 +1146,6 @@ inline bool is_p4_live_doorbell_popup_enabled(
 }
 
 
-std::string resolve_active_carousel_camera_area_id(const std::string &cameras_summary);
 std::string resolve_active_carousel_camera_id(const std::string &cameras_summary,
                                               const std::string &fallback_cam_url);
 std::string build_carousel_camera_url(const std::string &base_cam_url,

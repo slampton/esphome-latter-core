@@ -29,8 +29,9 @@ image:
           if (!ms.art_url.empty() && ms.art_url != rs.music.loaded_art_url) {
             id(fetch_remote_art_debounced).execute();
           }
-          if (rs.nav.gui_page == 2) {
-            id(throttled_disp_update).execute();
+          if (rs.nav.gui_page == 2 && rs.nav.display_power_state == 0 && !rs.voice.active) {
+            latter_ui::mark_dirty_full();
+            latter_ui::schedule_anim_disp_update(&id(disp1));
           }
           rs.audio.sync_wake_word();
     on_error:

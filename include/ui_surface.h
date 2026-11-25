@@ -342,7 +342,9 @@ inline void compute_text_bounds(int x, int y, const char *text, const UiFontView
 }
 
 inline uint32_t utf8_next_cp(const char *&p) noexcept {
-  const unsigned char b0 = static_cast<unsigned char>(*p++);
+  const unsigned char b0 = static_cast<unsigned char>(*p);
+  if (b0 == 0U) return 0U;
+  ++p;
   if (b0 < 0x80U) return b0;
   if ((b0 & 0xE0U) == 0xC0U && p[0] != 0) {
     const unsigned char b1 = static_cast<unsigned char>(*p++);
@@ -364,7 +366,7 @@ inline uint32_t utf8_next_cp(const char *&p) noexcept {
             (static_cast<uint32_t>(b2 & 0x3FU) << 6) |
             static_cast<uint32_t>(b3 & 0x3FU));
   }
-  return b0;
+  return 0xFFFDU;
 }
 
 template <typename NativeDispT>

@@ -91,8 +91,12 @@ inline int match_va_profile_idx(std::string_view sv) noexcept {
   for (size_t i = 0; i < kPrefOptsVaVisualProfile.size(); ++i) {
     if (ascii_ieq(sv, kPrefOptsVaVisualProfile[i])) return static_cast<int>(i);
   }
-  if (ascii_ieq(sv, "light_bar") || ascii_ieq(sv, "lightbar")) return 3;
-  if (ascii_ieq(sv, "dot_wave") || ascii_ieq(sv, "dotwave")) return 4;
+  if (ascii_ieq(sv, "light_bar") || ascii_ieq(sv, "lightbar")) {
+    return find_pref_option_index(kPrefOptsVaVisualProfile, "Light Bar");
+  }
+  if (ascii_ieq(sv, "dot_wave") || ascii_ieq(sv, "dotwave")) {
+    return find_pref_option_index(kPrefOptsVaVisualProfile, "Dot Wave");
+  }
   return -1;
 }
 
@@ -102,9 +106,15 @@ inline int match_screensaver_style_idx(std::string_view sv) noexcept {
   for (size_t i = 0; i < kPrefOptsScreensaverStyle.size(); ++i) {
     if (ascii_ieq(sv, kPrefOptsScreensaverStyle[i])) return static_cast<int>(i);
   }
-  if (ascii_ieq(sv, "ambient_clock") || ascii_ieq(sv, "ambient")) return 0;
-  if (ascii_ieq(sv, "photo_frame") || ascii_ieq(sv, "photo")) return 1;
-  if (ascii_ieq(sv, "digital_rain") || ascii_ieq(sv, "rain")) return 4;
+  if (ascii_ieq(sv, "ambient_clock") || ascii_ieq(sv, "ambient")) {
+    return find_pref_option_index(kPrefOptsScreensaverStyle, "Ambient Clock");
+  }
+  if (ascii_ieq(sv, "photo_frame") || ascii_ieq(sv, "photo")) {
+    return find_pref_option_index(kPrefOptsScreensaverStyle, "Photo Frame");
+  }
+  if (ascii_ieq(sv, "digital_rain") || ascii_ieq(sv, "rain")) {
+    return find_pref_option_index(kPrefOptsScreensaverStyle, "Digital Rain");
+  }
   return -1;
 }
 
@@ -114,9 +124,15 @@ inline int match_clock_face_idx(std::string_view sv) noexcept {
   for (size_t i = 0; i < kPrefOptsClockFace.size(); ++i) {
     if (ascii_ieq(sv, kPrefOptsClockFace[i])) return static_cast<int>(i);
   }
-  if (ascii_ieq(sv, "minimal_digital") || ascii_ieq(sv, "minimal") || ascii_ieq(sv, "digital")) return 0;
-  if (ascii_ieq(sv, "modern_analog") || ascii_ieq(sv, "analog")) return 1;
-  if (ascii_ieq(sv, "hybrid_digital") || ascii_ieq(sv, "hybrid")) return 2;
+  if (ascii_ieq(sv, "minimal_digital") || ascii_ieq(sv, "minimal") || ascii_ieq(sv, "digital")) {
+    return find_pref_option_index(kPrefOptsClockFace, "Minimal Digital");
+  }
+  if (ascii_ieq(sv, "modern_analog") || ascii_ieq(sv, "analog")) {
+    return find_pref_option_index(kPrefOptsClockFace, "Modern Analog");
+  }
+  if (ascii_ieq(sv, "hybrid_digital") || ascii_ieq(sv, "hybrid")) {
+    return find_pref_option_index(kPrefOptsClockFace, "Hybrid Digital");
+  }
   return -1;
 }
 
@@ -127,15 +143,21 @@ inline int match_weather_sim_idx(std::string_view sv) noexcept {
   for (size_t i = 0; i < kPrefOptsWeatherSimCondition.size(); ++i) {
     if (ascii_ieq(sv, kPrefOptsWeatherSimCondition[i])) return static_cast<int>(i);
   }
-  if (ascii_ieq(sv, "clear-night") || ascii_ieq(sv, "clear_night")) return 1;
-  if (ascii_ieq(sv, "sunny") || ascii_ieq(sv, "clear")) return 2;
-  if (ascii_ieq(sv, "partlycloudy") || ascii_ieq(sv, "partly_cloudy")) return 3;
-  if (ascii_ieq(sv, "cloudy") || ascii_ieq(sv, "overcast")) return 5;
-  if (ascii_ieq(sv, "fog") || ascii_ieq(sv, "mist")) return 7;
-  if (ascii_ieq(sv, "rain") || ascii_ieq(sv, "rainy")) return 9;
-  if (ascii_ieq(sv, "pouring") || ascii_ieq(sv, "heavy_rain")) return 11;
-  if (ascii_ieq(sv, "snow") || ascii_ieq(sv, "snowy")) return 12;
-  if (ascii_ieq(sv, "thunderstorm") || ascii_ieq(sv, "lightning")) return 14;
+  auto idx_of = [](std::string_view opt) constexpr -> int {
+    return find_pref_option_index(kPrefOptsWeatherSimCondition, opt);
+  };
+  if (ascii_ieq(sv, "clear-night") || ascii_ieq(sv, "clear_night")) return idx_of("Clear Night");
+  if (ascii_ieq(sv, "sunny") || ascii_ieq(sv, "clear")) return idx_of("Sunny / Clear Day");
+  if (ascii_ieq(sv, "partlycloudy") || ascii_ieq(sv, "partly_cloudy")) return idx_of("Partly Cloudy (Day)");
+  if (ascii_ieq(sv, "cloudy") || ascii_ieq(sv, "overcast")) return idx_of("Cloudy / Overcast (Day)");
+  if (ascii_ieq(sv, "fog") || ascii_ieq(sv, "mist")) return idx_of("Fog / Mist (Day)");
+  if (ascii_ieq(sv, "rain") || ascii_ieq(sv, "rainy")) return idx_of("Rainy (Day)");
+  if (ascii_ieq(sv, "pouring") || ascii_ieq(sv, "heavy_rain")) return idx_of("Pouring / Heavy Rain (Day)");
+  if (ascii_ieq(sv, "pouring_night") || ascii_ieq(sv, "heavy_rain_night")) return idx_of("Pouring / Heavy Rain (Night)");
+  if (ascii_ieq(sv, "snow") || ascii_ieq(sv, "snowy")) return idx_of("Snow (Day)");
+  if (ascii_ieq(sv, "thunderstorm") || ascii_ieq(sv, "lightning")) return idx_of("Thunderstorm (Day)");
+  if (ascii_ieq(sv, "windy")) return idx_of("Windy (Day)");
+  if (ascii_ieq(sv, "windy_night")) return idx_of("Windy (Night)");
   return -1;
 }
 
@@ -203,11 +225,22 @@ inline void merge_effects(DeviceUiCommandEffects &dst, const DeviceUiCommandEffe
   dst.apply_power |= src.apply_power;
   dst.enter_screensaver |= src.enter_screensaver;
   dst.refresh_screensaver_in_place |= src.refresh_screensaver_in_place;
+  dst.turn_screen_off |= src.turn_screen_off;
   dst.fetch_screensaver_photo |= src.fetch_screensaver_photo;
   dst.dismiss_notification |= src.dismiss_notification;
   dst.ensure_anim_poller |= src.ensure_anim_poller;
   dst.schedule_disp |= src.schedule_disp;
   dst.mark_dirty_full |= src.mark_dirty_full;
+}
+
+inline void reset_showcase_timer_slot0() {
+  auto &s0 = timer_slots()[0];
+  s0.running = false;
+  s0.paused = false;
+  s0.remaining_sec = s0.duration_sec;
+  s0.target_ms = 0U;
+  s0.name.clear();
+  sync_multi_timer_state();
 }
 
 inline DeviceUiCommandEffects apply_reel_step(TouchGestureEngine &eng,
@@ -428,13 +461,7 @@ DeviceUiCommandEffects TouchGestureEngine::clear_showcase(uint32_t now_ms) {
     record_ambient_frame_ms(0);
   }
   if (had_timer) {
-    auto &s0 = timer_slots()[0];
-    s0.running = false;
-    s0.paused = false;
-    s0.remaining_sec = s0.duration_sec;
-    s0.target_ms = 0U;
-    s0.name.clear();
-    sync_multi_timer_state();
+    reset_showcase_timer_slot0();
   }
   if (had_stopwatch) {
     rs.stopwatch.reset();
@@ -635,32 +662,25 @@ DeviceUiCommandEffects TouchGestureEngine::execute_device_ui_command_impl_(std::
     rs.nav.quick_actions_open = false;
     rs.showcase.screensaver_style_override = static_cast<int8_t>(style_idx);
 
+    const bool is_photo = (style_idx == find_pref_option_index(kPrefOptsScreensaverStyle, "Photo Frame"));
     if (rs.nav.display_power_state == 1) {
       eff.refresh_screensaver_in_place = true;
-      eff.apply_power = true;
-      eff.sync_brightness = true;
-      if (style_idx == 1) {
+      if (is_photo) {
         rs.nav.standby_entered_ms = (now_ms != 0U) ? now_ms : 1U;
-        if (!area_ctx_state().screensaver_photo_url.empty()) {
-          rs.music.screensaver_photo_failed = false;
-          eff.fetch_screensaver_photo = true;
-        }
       }
-      eff.mark_dirty_full = true;
-      eff.schedule_disp = true;
     } else {
       display_lifecycle().on_enter_screensaver(
           now_ms, rs.nav.display_power_state, rs.nav.sleep_start_time, rs.nav.standby_entered_ms);
       eff.enter_screensaver = true;
-      eff.apply_power = true;
-      eff.sync_brightness = true;
-      if (style_idx == 1 && !area_ctx_state().screensaver_photo_url.empty()) {
-        rs.music.screensaver_photo_failed = false;
-        eff.fetch_screensaver_photo = true;
-      }
-      eff.mark_dirty_full = true;
-      eff.schedule_disp = true;
     }
+    if (is_photo && !area_ctx_state().screensaver_photo_url.empty()) {
+      rs.music.screensaver_photo_failed = false;
+      eff.fetch_screensaver_photo = true;
+    }
+    eff.apply_power = true;
+    eff.sync_brightness = true;
+    eff.mark_dirty_full = true;
+    eff.schedule_disp = true;
     return eff;
   }
 
@@ -764,14 +784,8 @@ DeviceUiCommandEffects TouchGestureEngine::execute_device_ui_command_impl_(std::
       if (!from_reel) rs.showcase.reel_active = false;
       rs.showcase.touch_keep_awake(now_ms);
       if (rs.showcase.timer_owned) {
-        auto &s0 = timer_slots()[0];
-        s0.running = false;
-        s0.paused = false;
-        s0.remaining_sec = s0.duration_sec;
-        s0.target_ms = 0U;
-        s0.name.clear();
         rs.showcase.timer_owned = false;
-        sync_multi_timer_state();
+        reset_showcase_timer_slot0();
       }
       eff.apply_power = true;
       eff.mark_dirty_full = true;

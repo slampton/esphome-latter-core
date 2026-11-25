@@ -100,7 +100,7 @@ struct BricksState {
   uint32_t last_phys_ms;
   int wave_num;
   int lives_left;
-  int bo_score;
+  int bricks_score;
   int rally_combo;
   int wall_bounces;
   bool hit_brick_since_paddle;
@@ -175,7 +175,7 @@ struct SnakeState {
   uint32_t rng_state;
   uint32_t burst_ms;
   int burst_count;
-  GameParticlePod burst[10];
+  GameParticlePod burst[8];
 };
 
 struct DropFourState {
@@ -279,6 +279,7 @@ void render_glass_marble(Rgb565Surface &it, int bx, int by, int br,
   }
 }
 
+#if LATTER_HAS_IMU
 void render_archery_target(Rgb565Surface &it, int tx, int ty, int r_outer,
                            UiColor col_white, UiColor col_black,
                            UiColor col_cyan, UiColor col_red,
@@ -495,7 +496,7 @@ void render_chomp_character(Rgb565Surface &it, int mx, int my, int mr,
     fast_filled_circle(it, mx, mouth_y + sw / 2, sw / 3, tongue_pink);
   }
 }
-
+#else
 inline void render_bevel_block_cell(Rgb565Surface &it, int x0, int y0, int sz,
                                     UiColor base_c, UiColor hi_c, UiColor lo_c) {
   if (sz <= 3) return;
@@ -508,6 +509,7 @@ inline void render_bevel_block_cell(Rgb565Surface &it, int x0, int y0, int sz,
     fill_rect_row_major(it, x0 + 3, y0 + 3, std::max(2, sz / 5), std::max(2, sz / 5), hi_c);
   }
 }
+#endif
 
 // ==============================================================================
 // 3. Game 1: Marbles (Universal — All Hardware Traits)
@@ -1359,11 +1361,11 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     }
   };
 
-  if (game_just_entered) {
+  auto reset_bricks_game = [&]() {
     st.last_phys_ms = now_ms;
     st.wave_num = 1;
     st.lives_left = 3;
-    st.bo_score = 0;
+    st.bricks_score = 0;
     st.rally_combo = 0;
     st.wall_bounces = 0;
     st.hit_brick_since_paddle = false;
@@ -1379,6 +1381,10 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     st.banner_text[0] = '\0';
     init_brick_wave(1);
     reset_ball_on_paddle();
+  };
+
+  if (game_just_entered) {
+    reset_bricks_game();
   }
 
   float dt = (now_ms >= st.last_phys_ms) ? (static_cast<float>(now_ms - st.last_phys_ms) * 0.001f) : 0.05f;
@@ -1397,19 +1403,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     marble_touch_x = -1.0f;
     game_btn_pressed = false;
     if (st.round_over) {
-      st.wave_num = 1;
-      st.lives_left = 3;
-      st.bo_score = 0;
-      st.rally_combo = 0;
-      st.wall_bounces = 0;
-      st.hit_brick_since_paddle = false;
-      st.round_over = false;
-      st.is_new_high = false;
-      st.debris_ms = 0U;
-      st.popup_ms = 0U;
-      st.banner_ms = 0U;
-      init_brick_wave(1);
-      reset_ball_on_paddle();
+      reset_bricks_game();
       game_imu_retare_flag() = true;
     } else if (!st.ball_launched && (st.banner_ms == 0U || now_ms - st.banner_ms >= 3000U)) {
       float launch_ang = std::clamp(roll_delta * 0.025f, -0.52f, 0.52f);
@@ -1521,9 +1515,9 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
           static constexpr int BASE_ROW_PTS[4] = {150, 120, 90, 60};
           const int base_pts = (bricks[b].hp == 0) ? BASE_ROW_PTS[bricks[b].row] : 50;
           const int pts = base_pts * mult;
-          st.bo_score += pts;
-          if (st.bo_score > high_score_bricks) {
-            high_score_bricks = st.bo_score;
+          st.bricks_score += pts;
+          if (st.bricks_score > high_score_bricks) {
+            high_score_bricks = st.bricks_score;
             st.is_new_high = true;
           }
           st.popup_x = bricks[b].x;
@@ -1566,9 +1560,9 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
       }
       if (rem_check == 0 && st.banner_ms == 0U) {
         const int wave_bonus = st.wave_num * 300;
-        st.bo_score += wave_bonus;
-        if (st.bo_score > high_score_bricks) {
-          high_score_bricks = st.bo_score;
+        st.bricks_score += wave_bonus;
+        if (st.bricks_score > high_score_bricks) {
+          high_score_bricks = st.bricks_score;
           st.is_new_high = true;
         }
         if (st.is_new_high) schedule_persisted_prefs_save(now_ms);
@@ -1586,8 +1580,8 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
         reset_ball_on_paddle();
         if (st.lives_left <= 0) {
           st.round_over = true;
-          if (st.bo_score > high_score_bricks) {
-            high_score_bricks = st.bo_score;
+          if (st.bricks_score > high_score_bricks) {
+            high_score_bricks = st.bricks_score;
             st.is_new_high = true;
           }
           if (st.is_new_high) schedule_persisted_prefs_save(now_ms);
@@ -1616,10 +1610,10 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   char bo_hud[56];
   if (st.rally_combo >= 2) {
     std::snprintf(bo_hud, sizeof(bo_hud), "W%d  •  %d/3  •  %dx  •  %d",
-                  st.wave_num, st.lives_left, std::min(4, st.rally_combo), st.bo_score);
+                  st.wave_num, st.lives_left, std::min(4, st.rally_combo), st.bricks_score);
   } else {
     std::snprintf(bo_hud, sizeof(bo_hud), "W%d  •  Balls:%d  •  Brk:%d  •  %d",
-                  st.wave_num, st.lives_left, bricks_remaining, st.bo_score);
+                  st.wave_num, st.lives_left, bricks_remaining, st.bricks_score);
   }
   render_game_hud_footer(it, cx, bo_hud, ctx.font_small, ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
@@ -1697,7 +1691,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
       title_col = ctx.col_cyan;
     }
     char score_str[32], best_str[32];
-    std::snprintf(score_str, sizeof(score_str), "Score: %d", st.bo_score);
+    std::snprintf(score_str, sizeof(score_str), "Score: %d", st.bricks_score);
     std::snprintf(best_str, sizeof(best_str), "Best: %d", static_cast<int>(high_score_bricks));
     ui::game_over_sheet(it, cx, cy, title_buf, title_col, score_str, best_str, st.is_new_high,
                         "PLAY AGAIN", ctx.font_date, ctx.font_small,
@@ -3145,8 +3139,8 @@ void render_game_drop_four(Rgb565Surface &it, const UiFrameContext &ctx, GameAre
     fast_filled_circle_aa(it, dx - disc_r / 3, dy - disc_r / 3, std::max(2, disc_r / 5), hi);
   };
 
-  // Draw falling disc BEHIND the perforated board frame for realistic slot-drop feel
-  if (st.falling) {
+  // Draw falling disc BEHIND the perforated board frame only while still protruding above board_y
+  if (st.falling && st.fall_y < static_cast<float>(board_y + disc_r)) {
     const int fx = board_x + st.fall_col * col_w + col_w / 2;
     draw_disc(fx, static_cast<int>(std::round(st.fall_y)), st.fall_player);
   }
@@ -3308,6 +3302,7 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
       render_glass_marble(it, icon_x + gs(24), icon_y + gs(18), gs(13), ctx.col_gold, UiColor(255, 245, 157));
       render_glass_marble(it, icon_x + gs(2), icon_y - gs(31), gs(10), ctx.col_magenta, UiColor(248, 187, 208));
 
+#if LATTER_HAS_IMU
     } else if (g_idx == 1) {
       // Archery
       render_archery_target(it, icon_x, icon_y, gs(46), ctx.col_white, ctx.col_black,
@@ -3383,6 +3378,7 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
       render_chomp_character(it, icon_x - gs(8), icon_y + gs(6), gs(32), 0.85f, -0.25f,
                              true, false, 0U, ctx.col_white, ctx.col_black, ctx.col_dark_gray);
 
+#else
     } else if (g_idx == 4) {
       // Blocks preview (scaled with scale_min, interlocking beveled polyominoes in dark well)
       const int bsz = gs(98);
@@ -3498,6 +3494,7 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
           }
         }
       }
+#endif
     }
   };
 
@@ -3898,10 +3895,20 @@ void game_arena_drop() noexcept {
   }
 }
 
+namespace {
+
+struct GameArenaPsramEvictorRegistrar {
+  GameArenaPsramEvictorRegistrar() noexcept {
+    register_psram_cache_evictor(&game_arena_drop);
+  }
+};
+const GameArenaPsramEvictorRegistrar kGameArenaPsramEvictorRegistrar{};
+
 void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
                           float euler_roll_deg, float euler_pitch_deg,
                           bool game_just_entered,
                           float &out_roll_delta, float &out_pitch_delta) {
+#if LATTER_HAS_IMU
   constexpr float DEG_TO_RAD = 3.14159265f / 180.0f;
   constexpr float RAD_TO_DEG = 180.0f / 3.14159265f;
 
@@ -3954,8 +3961,15 @@ void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
   } else {
     out_pitch_delta = clean_pitch - zero_pitch;
   }
-
-#if !LATTER_HAS_IMU
+#else
+  (void)raw_ax;
+  (void)raw_ay;
+  (void)raw_az;
+  (void)euler_roll_deg;
+  (void)euler_pitch_deg;
+  (void)game_just_entered;
+  out_roll_delta = 0.0f;
+  out_pitch_delta = 0.0f;
   // Universal Marbles touch-tilt fallback on stationary / no-IMU displays
   if (touch_gesture().active && touch_gesture().last_y < (layout().back_y - scale_y(50))) {
     const float span = static_cast<float>(std::max(110, scale_s(160)));
@@ -3964,6 +3978,8 @@ void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
   }
 #endif
 }
+
+}  // namespace
 
 int &pending_game_sfx() {
   static int sfx = 0;
@@ -3988,6 +4004,7 @@ void render_games_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     if (s_prev_active_game != 0) {
       s_prev_active_game = 0;
       game_input().clear();
+      game_arena_drop();
       flush_persisted_prefs_if_dirty();
     }
     render_games_launcher(it, ctx, rs.nav.game_carousel_idx,

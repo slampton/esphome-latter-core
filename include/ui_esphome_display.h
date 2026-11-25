@@ -39,8 +39,6 @@
 
 namespace latter_ui {
 
-inline bool disp_render_in_flight() { return disp_render_in_flight(esphome::millis()); }
-
 template <typename DispT, bool IsFinal = std::is_final_v<DispT>>
 struct DispBufferAccessor {
   static uint8_t *get(DispT *) { return nullptr; }
@@ -91,11 +89,6 @@ inline void probe_frame_buffer_endian(esphome::display::Display &it, uint16_t *b
 }
 
 struct DisplayUpdateScheduler {
-  static constexpr uint32_t kTimeoutAsyncDraw = kTimeoutAsyncDrawId;
-  static constexpr uint32_t kTimeoutFbClear = kTimeoutFbClearId;
-  static constexpr uint32_t kTimeoutWeatherStep = kTimeoutWeatherStepId;
-  static constexpr uint32_t kTimeoutActivityRotate = kTimeoutActivityRotateId;
-
   static inline uint32_t &weather_due_ms_ref() {
     return weather_step_due_ms_ref();
   }
@@ -106,7 +99,7 @@ struct DisplayUpdateScheduler {
 
   static void request_post_frame(const esphome::Component *comp, void (*fn)()) {
     if (comp == nullptr || fn == nullptr) return;
-    latter_core::schedule_core_timeout(kTimeoutFbClear, 0U, [fn]() { fn(); });
+    latter_core::schedule_core_timeout(kTimeoutFbClearId, 0U, [fn]() { fn(); });
   }
 
   static void request_post_frame_raw(void *comp, void (*fn)()) {
@@ -118,7 +111,7 @@ struct DisplayUpdateScheduler {
     if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
       const uint32_t delay_ms = disp_render_in_flight(esphome::millis()) ? 4U : 0U;
       latter_core::schedule_core_timeout(
-          kTimeoutAsyncDraw, delay_ms, [disp]() {
+          kTimeoutAsyncDrawId, delay_ms, [disp]() {
             if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
             disp->update();
             fb_clear_after_update();
@@ -147,8 +140,42 @@ struct DisplayUpdateScheduler {
         delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
       }
       latter_core::schedule_core_timeout(
-          kTimeoutAsyncDraw, delay_ms, [disp]() {
+          kTimeoutAsyncDrawId, delay_ms, [disp]() {
             if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
+            disp->update();
+            fb_clear_after_update();
+          });
+    }
+  }
+
+  template <typename DispT>
+  static void request_weather_impl_(DispT *disp, uint32_t target_period_ms, bool is_band, int y0, int y1) {
+    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
+#if defined(CONFIG_IDF_TARGET_ESP32P4)
+      constexpr uint32_t kMinPostIdleMs = 8U;
+#else
+      constexpr uint32_t kMinPostIdleMs = 12U;
+#endif
+      const uint32_t now_m = esphome::millis();
+      const bool inside_render = disp_render_in_flight(now_m);
+      const uint32_t elapsed_start = now_m - last_disp_update_ms();
+      uint32_t delay_ms = (elapsed_start < target_period_ms) ? (target_period_ms - elapsed_start) : 0U;
+      if (inside_render) {
+        delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs);
+      } else {
+        const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
+        if (elapsed_end < kMinPostIdleMs) {
+          delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
+        }
+      }
+      weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
+      latter_core::schedule_core_timeout(
+          kTimeoutWeatherStepId, delay_ms, [disp, is_band, y0, y1]() {
+            weather_due_ms_ref() = 0U;
+            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
+            if (disp_render_in_flight(esphome::millis())) return;
+            if (is_band) mark_dirty_band(y0, y1);
+            else mark_dirty_full();
             disp->update();
             fb_clear_after_update();
           });
@@ -157,75 +184,19 @@ struct DisplayUpdateScheduler {
 
   template <typename DispT>
   static void request_weather_ptr(DispT *disp, uint32_t target_period_ms) {
-    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-      constexpr uint32_t kMinPostIdleMs = 8U;
-#else
-      constexpr uint32_t kMinPostIdleMs = 12U;
-#endif
-      const uint32_t now_m = esphome::millis();
-      const bool inside_render = disp_render_in_flight(now_m);
-      const uint32_t elapsed_start = now_m - last_disp_update_ms();
-      uint32_t delay_ms = (elapsed_start < target_period_ms) ? (target_period_ms - elapsed_start) : 0U;
-      if (inside_render) {
-        delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs);
-      } else {
-        const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
-        if (elapsed_end < kMinPostIdleMs) {
-          delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
-        }
-      }
-      weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
-      latter_core::schedule_core_timeout(
-          kTimeoutWeatherStep, delay_ms, [disp]() {
-            weather_due_ms_ref() = 0U;
-            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
-            if (disp_render_in_flight(esphome::millis())) return;
-            mark_dirty_full();
-            disp->update();
-            fb_clear_after_update();
-          });
-    }
+    request_weather_impl_(disp, target_period_ms, false, 0, 0);
   }
 
   template <typename DispT>
   static void request_weather_band_ptr(DispT *disp, uint32_t target_period_ms, int y0, int y1) {
-    if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
-#if defined(CONFIG_IDF_TARGET_ESP32P4)
-      constexpr uint32_t kMinPostIdleMs = 8U;
-#else
-      constexpr uint32_t kMinPostIdleMs = 12U;
-#endif
-      const uint32_t now_m = esphome::millis();
-      const bool inside_render = disp_render_in_flight(now_m);
-      const uint32_t elapsed_start = now_m - last_disp_update_ms();
-      uint32_t delay_ms = (elapsed_start < target_period_ms) ? (target_period_ms - elapsed_start) : 0U;
-      if (inside_render) {
-        delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs);
-      } else {
-        const uint32_t elapsed_end = now_m - last_disp_update_end_ms();
-        if (elapsed_end < kMinPostIdleMs) {
-          delay_ms = std::max<uint32_t>(delay_ms, kMinPostIdleMs - elapsed_end);
-        }
-      }
-      weather_due_ms_ref() = (now_m + delay_ms == 0U) ? 1U : (now_m + delay_ms);
-      latter_core::schedule_core_timeout(
-          kTimeoutWeatherStep, delay_ms, [disp, y0, y1]() {
-            weather_due_ms_ref() = 0U;
-            if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
-            if (disp_render_in_flight(esphome::millis())) return;
-            mark_dirty_band(y0, y1);
-            disp->update();
-            fb_clear_after_update();
-          });
-    }
+    request_weather_impl_(disp, target_period_ms, true, y0, y1);
   }
 
   template <typename DispT>
   static void request_activity_rotate_ptr(DispT *disp, uint32_t delay_ms, int y0, int y1) {
     if (disp != nullptr && !latter_core::screen_is_off_standby() && !latter_core::disp_poller_held()) {
       latter_core::schedule_core_timeout(
-          kTimeoutActivityRotate, delay_ms, [disp, y0, y1]() {
+          kTimeoutActivityRotateId, delay_ms, [disp, y0, y1]() {
             if (latter_core::screen_is_off_standby() || latter_core::disp_poller_held()) return;
             if (disp_render_in_flight(esphome::millis())) return;
             mark_dirty_band(y0, y1);
@@ -350,23 +321,9 @@ inline void render_offline_pill(esphome::display::Display &it, const UiFrameCont
   render_offline_pill(surf, ctx);
 }
 
-inline void render_offline_pill(esphome::display::Display &it, int cx, uint32_t now_ms,
-                                UiFontView font, UiColor text_c) {
-  UiFrameContext tmp{};
-  tmp.now_ms = now_ms;
-  sync_ctx_link_health(tmp);
-  Rgb565Surface surf = make_esphome_surface(it);
-  render_offline_pill(surf, cx, now_ms, font, text_c, tmp.ha_connected, tmp.ha_disconnect_ms);
-}
-
 inline void render_static_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night) {
   Rgb565Surface surf = make_esphome_surface(it);
   render_static_day_night_sky_base(surf, cx, cy, is_night);
-}
-
-inline void render_neutral_day_night_sky_base(esphome::display::Display &it, int cx, int cy, bool is_night) {
-  Rgb565Surface surf = make_esphome_surface(it);
-  render_neutral_day_night_sky_base(surf, cx, cy, is_night);
 }
 
 template <typename DispT>

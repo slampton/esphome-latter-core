@@ -1,7 +1,7 @@
 #pragma once
 
 // ==============================================================================
-// Latter UI Graphics Primitives, 2-Tier Frosted Glass (D-041), 1-bpp Span Cache,
+// Latter UI Graphics Primitives, Adaptive Frosted Glass (D-041), 1-bpp Span Cache,
 // ArtCanvasCache, Dirty-Band Frame Base & FrameProfileScope (include/ui_gfx.h)
 // Pure C++20 UI graphics header — zero ESPHome or HAL includes.
 // ==============================================================================
@@ -633,26 +633,6 @@ inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, fl
 }
 
 template <typename DisplayT>
-inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
-                              UiColor tint, int alpha_q8, const GlassBackdrop &bd,
-                              GlassVariant variant = GlassVariant::Clear,
-                              UiColor ref_text = kChromeGlassSheen) {
-  if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return;
-  r = std::max(2, std::min(r, std::min(w, h) / 2));
-  GlassVariant eff_var =
-      (variant == GlassVariant::ReadableDark || active_glass_style_raw() == 2U)
-          ? GlassVariant::ReadableDark
-          : GlassVariant::Clear;
-  UiColor norm_tint, rim_col;
-  normalize_glass_chrome(tint, kChromeCardBorder, eff_var, norm_tint, rim_col);
-  UiColor eff_tint;
-  int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, alpha_q8, eff_var);
-  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
-  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
-}
-
-template <typename DisplayT>
 inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r, UiColor tint, int alpha_q8,
                               GlassVariant variant = GlassVariant::Clear,
                               UiColor ref_text = kChromeGlassSheen) {
@@ -691,7 +671,6 @@ struct TextCacheEntry {
 };
 
 std::string sanitize_utf8_for_font(const std::string &str, UiFontView font);
-std::string sanitize_utf8_for_font(const std::string &str);
 std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFontView font);
 int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *text);
 void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
@@ -726,7 +705,7 @@ inline void fast_print_alpha(DisplayT &it, int x, int y, FontT font, UiColor col
 // ------------------------------------------------------------------------------
 template <typename DisplayT>
 inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
-                                 const uint16_t *row_buf, bool skip_black = false) {
+                                 const uint16_t *row_buf) {
   if (span_w <= 0 || !row_in_clip_band(y) || row_buf == nullptr) return;
   if (start_x < 0) {
     row_buf -= start_x;
@@ -742,22 +721,18 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
   if (fb != nullptr) {
     uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(start_x);
     const int mode = active_frame_endian_mode();
-    if (!skip_black) {
-      if (mode == 1 || mode < 0) {
-        std::memcpy(dst, row_buf, static_cast<size_t>(span_w) * sizeof(uint16_t));
-        return;
+    if (mode == 1 || mode < 0) {
+      std::memcpy(dst, row_buf, static_cast<size_t>(span_w) * sizeof(uint16_t));
+      return;
+    }
+    if (mode == 2) {
+      for (int i = 0; i < span_w; i++) {
+        dst[i] = bswap16_u16(row_buf[i]);
       }
-      if (mode == 2) {
-        for (int i = 0; i < span_w; i++) {
-          dst[i] = bswap16_u16(row_buf[i]);
-        }
-        return;
-      }
+      return;
     }
     for (int i = 0; i < span_w; i++) {
-      const uint16_t p = row_buf[i];
-      if (skip_black && (p & 0xFFDFU) == 0U) continue;
-      dst[i] = encode_hw_rgb565_raw(p);
+      dst[i] = encode_hw_rgb565_raw(row_buf[i]);
     }
     return;
   }
@@ -768,10 +743,6 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
     int run = 1;
     while (i + run < span_w && row_buf[i + run] == p) {
       run++;
-    }
-    if (skip_black && (p & 0xFFDFU) == 0U) {
-      i += run;
-      continue;
     }
     const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1FU);
     const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3FU);
@@ -876,15 +847,6 @@ inline bool render_album_art_canvas(DisplayT &it, ArtImageView target_art, int c
   return render_album_art_canvas_view(surf, target_art, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
 }
 
-template <typename DisplayT, typename ImageT>
-  requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
-inline bool render_album_art_canvas(DisplayT &it, ImageT *target_art, int cx,
-                                    bool is_standard, bool is_letterbox, bool apply_scrim,
-                                    bool show_metadata, int dim_level = 0) {
-  Rgb565Surface surf(it);
-  return render_album_art_canvas_view(surf, make_art_view(target_art), cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
-}
-
 template <typename DisplayT>
 inline bool render_lyrics_art_backdrop(DisplayT &it, ArtImageView target_art, int cx,
                                        UiColor theme_primary, UiColor col_bg = kChromeShadow) {
@@ -892,27 +854,11 @@ inline bool render_lyrics_art_backdrop(DisplayT &it, ArtImageView target_art, in
   return render_lyrics_art_backdrop_view(surf, target_art, cx, theme_primary, col_bg);
 }
 
-template <typename DisplayT, typename ImageT>
-  requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
-inline bool render_lyrics_art_backdrop(DisplayT &it, ImageT *target_art, int cx,
-                                       UiColor theme_primary, UiColor col_bg = kChromeShadow) {
-  Rgb565Surface surf(it);
-  return render_lyrics_art_backdrop_view(surf, make_art_view(target_art), cx, theme_primary, col_bg);
-}
-
 template <typename DisplayT>
 inline bool render_page_wallpaper_base(DisplayT &it, ArtImageView wallpaper_img,
                                        bool has_wallpaper, int cx, UiColor col_bg, int dim_level = 0) {
   Rgb565Surface surf(it);
   return render_page_wallpaper_base_view(surf, wallpaper_img, has_wallpaper, cx, col_bg, dim_level);
-}
-
-template <typename DisplayT, typename ImageT>
-  requires(!std::is_same_v<std::remove_cvref_t<ImageT>, ArtImageView>)
-inline bool render_page_wallpaper_base(DisplayT &it, ImageT *wallpaper_img, bool has_wallpaper,
-                                       int cx, UiColor col_bg, int dim_level = 0) {
-  Rgb565Surface surf(it);
-  return render_page_wallpaper_base_view(surf, make_art_view(wallpaper_img), has_wallpaper, cx, col_bg, dim_level);
 }
 
 // ------------------------------------------------------------------------------

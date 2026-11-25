@@ -16,7 +16,7 @@
 #include "state/state_tile_grid.h"
 
 #ifndef LATTER_CORE_REV
-#define LATTER_CORE_REV 2026112403L
+#define LATTER_CORE_REV 2026112404L
 #endif
 
 namespace latter_core {

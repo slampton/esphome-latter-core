@@ -40,7 +40,7 @@ Palette colors are ESPHome `color:` IDs in [`gui.yaml`](../guis/universal/gui.ya
 | `col_warm_gold` | `A88424` | Sun and celestial art. IPS panels use `Color(255, 178, 28)` on Sky & Weather. | 6.0:1 |
 | `col_orange` | `B85C24` | Urgent small text (a countdown under 10 s) | 4.6:1 |
 | `col_red`, `col_green` | `E06A5E`, `529668` | Status and semantic colors calibrated for `>= 4.5:1` contrast on dark/glass | 5.6–6.1:1 |
-| `col_cyan`, `col_purple`, `col_magenta` | `456E8A`, `6D4B7D`, `8E4A7D` | Category colors for large text, fills and icons | 3.0–3.9:1 |
+| `col_cyan`, `col_magenta` | `456E8A`, `8E4A7D` | Category colors for large text, fills and icons | 3.0–3.9:1 |
 | `col_solaris_gold`, `col_accent_cyan` | `FFDC1E`, `1EC8E6` | Motion-only accents for the voice overlay and kinetic visuals (D-021) | 15.5:1, 10.5:1 |
 
 - **Small text contrast.** Text in `font_small` or `font_micro` is at least 4.5:1 on its background; the colors below that are for large text (`font_date` and up), fills and icons. Disabled controls may use `col_gray`. **Enforced: `[TEXT CONTRAST]`** (D-019).
@@ -80,14 +80,13 @@ There is no spacing scale. Spacing lives in `UiLayout` ([`ui_layout.h`](../inclu
 | `dock_pips_y`, `app_dock_pips_y` | 404, 408 | `H − scale_y(27)` | Scrollbar / pips row |
 | `dock_r` | 27 | 24 below 360 px wide, 27 standard, 40 above 520 px | Dock icon radius |
 | `list_card_w` | 276 | `W − 88` below 380 px, 276 standard, scaled above 520 px | 5-slot list card width |
-| `slot5_y(i)`, `hit_slot5()` | 236 + (i − 2) × 63 | scaled above 520 px | 5-slot list rows (height 44) and their hit-test |
-| `area_card3_*`, `tool_card3_*` | stride 76 / 100, height 64 / 74 | scaled above 520 px | 3-card pages |
-| `tools_row_y`, `tools_col_off` | stride 105, offset 68 | 61 below 380 px | Tools launcher grid |
+| `slot5_y(i)` | 236 + (i − 2) × 63 | scaled above 520 px | 5-slot list rows (height 44; hit-tested via `FrameHitTable`) |
+| `area_card3_*`, `tool_card3_stride` | stride 76 / 100, height 64 | scaled above 520 px | 3-card pages |
 | `home_*_y` | date 52, clock 128, weather 200 | scaled above 520 px | Home screen zones |
 | `home_activity_cy_for_rows()`, `home_activity_h_for_rows()` | centered between the weather line and the dock (one line, 68) | bottom-anchored at `dock_y − dock_r − home_activity_dock_gap()` (3 mm): `scale_y(60)` for 1 row, `scale_y(60) + scale_y(56)` (`116`) for 2 rows | Adaptive Home activity card (D-028, D-045) |
 | `battery_cx/y`, `celestial_x/y` | — | per width bucket | Corner-safe indicators |
 
-UiLayout also holds the page-specific geometry for music, light sliders, steppers, calculator and system swatches, each with its hit-tester, and the touch constants in [1.6](#16-touch-constants). **Rule:** a spacing value used by more than one page, or by both drawing and touch, goes into `UiLayout`. *Documented only.*
+UiLayout also holds shared page anchors (steppers, mode-bar slot geometry) and the touch constants in [1.6](#16-touch-constants), while interactive widgets register their exact rendered hit bounds directly into `FrameHitTable`. **Rule:** a spacing value used by more than one page, or by both drawing and touch, goes into `UiLayout`. *Documented only.*
 
 ### 1.4 Radii
 
@@ -130,7 +129,7 @@ Every gesture threshold in `TouchGestureEngine` ([`ui_touch_engine.h`](../includ
 | `flick_min()` | 1.55 | Fast-flick minimum distance (`>= 38 mm/s` on release), Blocks release flick & Snake continuous-drag turn step | 16 | 19 | 19 | 10 | 16 |
 | `tap_max()` | 1.65 | Strict tap slop ceiling (`> 1.65 mm` permanently latches `tap_cancelled`) | 17 | 20 | 20 | 11 | 17 |
 | `axis_lock_px()` | 1.80 | `1.25:1` dominant-axis lock (`Horizontal` vs. `Vertical`) | 19 | 22 | 22 | 12 | 18 |
-| `swipe_min()`, `list_swipe()`, `page_swipe()`, `wide_swipe()`, `canvas_swipe()` | 2.35 | Unified live swipe commit (`on_touch_move`, 1 step per stroke) | 25 | 29 | 29 | 15 | 24 |
+| `swipe_min()` | 2.35 | Unified live swipe commit (`on_touch_move`, 1 step per stroke) | 25 | 29 | 29 | 15 | 24 |
 | `edge_guard_y()` | 1.5 | Band below in-app content (from the bottom) | 16 | 18 | 19 | 10 | 15 |
 | `top_edge_zone_y()` | 5.2 | Pull-down Quick Actions starts here (from the top; round: y 54; mirror of `home_zone_y()`) | 54 | 64 | 64 | 34 | 52 |
 | `home_zone_y()` | 5.2 | Swipe-up home starts here (from the bottom; round: y 412) | 412 | 64 | 64 | 34 | 52 |
@@ -202,7 +201,7 @@ Pick the widget from the role — never hand-draw a one-off glass box or custom 
 | Time readout | `render_time_readout(it, cx, text, font_time, color, y_pos)` (`ui_widgets.h`) | `scale_y(142)` default (`scale_y(164)` on Timer Detail) | Big readout on timer and stopwatch pages |
 | Analog horology | `ui::draw_aa_line`, `ui::draw_aa_tapered_hand`, `ui::render_analog_chapter_ring`, `ui::render_center_arbor_aa` | Caller | Sub-pixel SDF anti-aliased chapter rings, tapered watch hands, and center arbor |
 | Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` (`<= kMaxContentColW`) | Adaptive Home front-deck card (`kRadiusCardPx()`, D-028, D-045, D-070) |
-| Offline pill | `render_offline_pill(it, cx, now, font_micro, col_gold)` | Top edge | Home Assistant disconnected for 8 s or more (D-026) |
+| Offline pill | `render_offline_pill(it, ctx)` | Top edge | Home Assistant disconnected for 8 s or more (D-026) |
 | Settings & list rows | `ui::setting_cycle_row`, `ui::toggle_card_row`, `ui::slider_card_row`, `ui::list_row`, `ui::split_action_card_row`, `ui::grid_tile` | `UiLayout` + `FrameHitTable` (`kRadiusCardPx()`) | Standardized settings, toggles, horizontal sliders, selectable list/sheet rows, dual-target 3-card rows, and 2×3 launcher tiles (D-031, D-042, D-070) |
 | Segmented, stepper & keypad | `ui::segmented_toggle`, `ui::stepper_row`, `ui::keypad_button` | `UiLayout` + `FrameHitTable` | 2-option segmented switchers, 4-column time/date steppers, and Calculator/PIN keys (`kRadiusKeyPx()`, D-070) |
 | HSV color wheel | `ui::hsv_color_wheel` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Single LUT-backed custom color picker ring and Save action (D-031) |
@@ -277,7 +276,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 
 ## 4. Gestures and hit-testing
 
-- **Co-located hit registration and `UiLayout` geometry.** Interactive widgets register their exact rendered pixel bounds into `frame_hits()` (`FrameHitTable` in [`ui_hit_table.h`](../include/ui_hit_table.h), up to `kMaxRegions = 128` compact POD `HitRegion` entries tagged with `WidgetId` and `kHitTap` / `kHitHorizSlider` / `kHitFocusSlot` / `kHitFocusCircle`) as they draw, paired with `UiLayout` slot and zone helpers (`hit_slot5`, `hit_area_card3`, `area_slider_pct`, `hit_tool_card3`, `hit_tools_row/col`, `hit_home_*`, the music `hit_*` and `music_scrub_frac`, `hit_sys_color_swatch`, `dock_hit_r`) (D-002, D-031, D-032, D-082).
+- **Co-located hit registration and `UiLayout` geometry.** Interactive widgets register their exact rendered pixel bounds into `frame_hits()` (`FrameHitTable` in [`ui_hit_table.h`](../include/ui_hit_table.h), up to `kMaxRegions = 128` compact POD `HitRegion` entries tagged with `WidgetId` and `kHitTap` / `kHitHorizSlider` / `kHitFocusSlot` / `kHitFocusCircle`) as they draw, paired with `UiLayout` zone and gesture helpers (`dock_hit_r`, `is_back_button`, `is_right_chevron_zone`, `swipe_min`, `flick_min`) (D-002, D-031, D-032, D-082).
 - **Thresholds in millimetres** ([1.6](#16-touch-constants)). **Enforced: `[TOUCH MM]`**, and **`[TOUCH PPI INVARIANT]`** requires `display.ppi` (`LATTER_PANEL_PPI`) in every board file.
 - **Home affordances.** Swipe up starting at or below `home_zone_y()`, at least `swipe_min()` and mostly vertical (D-043). The home pill at `home_bar_y` is a purely visual swipe-up cue and never triggers Home on tap; while it shows, the chin below `chin_guard_y()` suppresses in-app list taps.
 - **Entity cards vs. swipe zones (Page 6, D-050).** Overview entity cards on `Area Control` (`AreaSubpage::OVERVIEW`) register zero horizontal sliders (`kHitHorizSlider` lives strictly inside dedicated inspectors): the left icon zone (`AREA_CARD_TOGGLE`) toggles On/Off (Open/Close), while the right body (`AREA_CARD_TAP`) on `light`, `cover`, and `fan` opens the generalized Entity Level & Color Inspector (`AreaSubpage::LIGHT_DETAIL`). Horizontal swipes anywhere on the canvas or bottom mode bar step categories (`sync_mode_bar_window`), and vertical swipes above `mode_bar_zone_top()` always page entity cards.
@@ -296,7 +295,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 4. `latter_ui::render_system_takeovers(...)` in priority order ([3.4](#34-takeover-priority)), each starting with `frame_base(it, col_bg)` (or `frame_base_skip()` when the panel is off).
 5. The page. Pages other than Home and Music get `frame_base(it, col_bg)` (or `render_page_wallpaper_base` on System Settings, Sky & Weather, Area Control, Remote, Tools, Home Hub, Time, and Pinned) from `gui.yaml`; Home paints its own base (the daytime sky or wallpaper), and Music claims the base with `frame_base_claim()` on full-screen art or falls back to `render_page_wallpaper_base` (configured wallpaper or solid `col_bg`) when **Music: Album Art Style** is `None`.
 6. Chrome: focus overlay (`render_active_focus_overlay`), home pill, Offline pill.
-7. `FrameProfileScope` ends: logs a frame that never painted a base, records timing, and starts the next DMA clear.
+7. `FrameProfileScope` ends: logs a frame that never painted a base, records timing, and starts the next P4 PPA clear.
 
 ### 5.2 Rules
 

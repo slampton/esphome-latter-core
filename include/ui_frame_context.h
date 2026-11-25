@@ -358,7 +358,6 @@ struct UiFrameContext {
   UiColor col_green{0x529668U};
   UiColor col_orange{0xB85C24U};
   UiColor col_red{0xE06A5EU};
-  UiColor col_purple{0x6D4B7DU};
   UiColor col_magenta{0x8E4A7DU};
 
   // Live link, battery & media snapshots (zero-copy UiStrView — zero heap allocs per frame)
@@ -367,8 +366,8 @@ struct UiFrameContext {
   uint32_t ha_disconnect_ms{0};
   bool local_media_playing{false};
   int spk_vol_pct{60};
-  int alert_vol_pct{80};
-  int vol_step_pct{5};
+  int alert_vol_pct{latter_core::kPrefDefaultAlertVolume};
+  int vol_step_pct{latter_core::kPrefDefaultVolumeStepSize};
   int free_heap_kb{0};
   float wifi_rssi{NAN};
   UiStrView ip_addr{};
@@ -380,41 +379,41 @@ struct UiFrameContext {
   UiStrView fw_release_summary{};
   UiStrView primary_wake_word{"Okay Nabu"};
 
-  // Select options
-  UiStrView clock_face_style_opt{"Analog"};
-  UiStrView weather_sim_opt{"Live (Home Assistant)"};
-  UiStrView music_overlay_style_opt{"Art + Metadata"};
-  UiStrView music_auto_open_opt{"Now Playing"};
-  UiStrView music_fullscreen_art_opt{"Full Screen"};
-  UiStrView music_album_sort_opt{"A-Z"};
-  UiStrView music_artist_album_sort_opt{"Release Year"};
-  UiStrView music_podcast_sort_opt{"Latest Episode"};
-  UiStrView theme_palette_opt{"Steel & Silver"};
-  UiStrView glass_style_opt{};
-  UiStrView tap_wake_opt{"Always On"};
-  UiStrView pickup_wake_opt{"Medium"};
-  UiStrView display_off_timeout_opt{"30 Seconds"};
-  UiStrView screensaver_mode_opt{"Docked Only"};
-  UiStrView screensaver_style_opt{"Ambient Clock"};
-  UiStrView screensaver_docked_timeout_opt{"5 Minutes"};
-  UiStrView hibernate_timeout_opt{"30 Minutes"};
-  UiStrView bedtime_display_opt{"Screen Off"};
-  UiStrView default_start_app_opt{"Home"};
-  UiStrView auto_brightness_opt{"Time Schedule"};
-  UiStrView va_wake_word_mode_opt{"Always On"};
-  UiStrView va_visual_profile_opt{"Nebula"};
-  UiStrView ww_sens_okay_nabu_opt{"Medium"};
-  UiStrView ww_sens_hey_luna_opt{"Off"};
-  UiStrView ww_sens_hey_jarvis_opt{"Off"};
-  UiStrView ww_sens_hey_mycroft_opt{"Off"};
-  UiStrView ww_sens_alexa_opt{"Off"};
+  // Select options (wired directly to generated protocol/latter_v3.json defaults)
+  UiStrView clock_face_style_opt{latter_core::kPrefDefaultClockFace.data(), latter_core::kPrefDefaultClockFace.size()};
+  UiStrView weather_sim_opt{latter_core::kPrefDefaultWeatherSimCondition.data(), latter_core::kPrefDefaultWeatherSimCondition.size()};
+  UiStrView music_overlay_style_opt{latter_core::kPrefDefaultMusicOverlayStyle.data(), latter_core::kPrefDefaultMusicOverlayStyle.size()};
+  UiStrView music_auto_open_opt{latter_core::kPrefDefaultMusicAutoOpen.data(), latter_core::kPrefDefaultMusicAutoOpen.size()};
+  UiStrView music_fullscreen_art_opt{latter_core::kPrefDefaultAlbumArtStyle.data(), latter_core::kPrefDefaultAlbumArtStyle.size()};
+  UiStrView music_album_sort_opt{latter_core::kPrefDefaultAlbumSortOrder.data(), latter_core::kPrefDefaultAlbumSortOrder.size()};
+  UiStrView music_artist_album_sort_opt{latter_core::kPrefDefaultArtistAlbumSortOrder.data(), latter_core::kPrefDefaultArtistAlbumSortOrder.size()};
+  UiStrView music_podcast_sort_opt{latter_core::kPrefDefaultPodcastSortOrder.data(), latter_core::kPrefDefaultPodcastSortOrder.size()};
+  UiStrView theme_palette_opt{latter_core::kPrefDefaultColorProfile.data(), latter_core::kPrefDefaultColorProfile.size()};
+  UiStrView glass_style_opt{latter_core::kPrefDefaultGlassStyle.data(), latter_core::kPrefDefaultGlassStyle.size()};
+  UiStrView tap_wake_opt{latter_core::kPrefDefaultTapToWake.data(), latter_core::kPrefDefaultTapToWake.size()};
+  UiStrView pickup_wake_opt{latter_core::kPrefDefaultPickupToWake.data(), latter_core::kPrefDefaultPickupToWake.size()};
+  UiStrView display_off_timeout_opt{latter_core::kPrefDefaultBatteryScreenTimeout.data(), latter_core::kPrefDefaultBatteryScreenTimeout.size()};
+  UiStrView screensaver_mode_opt{latter_core::kPrefDefaultScreensaverMode.data(), latter_core::kPrefDefaultScreensaverMode.size()};
+  UiStrView screensaver_style_opt{latter_core::kPrefDefaultScreensaverStyle.data(), latter_core::kPrefDefaultScreensaverStyle.size()};
+  UiStrView screensaver_docked_timeout_opt{latter_core::kPrefDefaultDockedIdleTimeout.data(), latter_core::kPrefDefaultDockedIdleTimeout.size()};
+  UiStrView hibernate_timeout_opt{latter_core::kPrefDefaultBatteryHibernateTimeout.data(), latter_core::kPrefDefaultBatteryHibernateTimeout.size()};
+  UiStrView bedtime_display_opt{latter_core::kPrefDefaultBedtimeDisplay.data(), latter_core::kPrefDefaultBedtimeDisplay.size()};
+  UiStrView default_start_app_opt{latter_core::kPrefDefaultStartScreen.data(), latter_core::kPrefDefaultStartScreen.size()};
+  UiStrView auto_brightness_opt{latter_core::kPrefDefaultAutoBrightnessMode.data(), latter_core::kPrefDefaultAutoBrightnessMode.size()};
+  UiStrView va_wake_word_mode_opt{latter_core::kPrefDefaultWakeWordMode.data(), latter_core::kPrefDefaultWakeWordMode.size()};
+  UiStrView va_visual_profile_opt{latter_core::kPrefDefaultVaVisualProfile.data(), latter_core::kPrefDefaultVaVisualProfile.size()};
+  UiStrView ww_sens_okay_nabu_opt{latter_core::kPrefDefaultWwSensOkayNabu.data(), latter_core::kPrefDefaultWwSensOkayNabu.size()};
+  UiStrView ww_sens_hey_luna_opt{latter_core::kPrefDefaultWwSensHeyLuna.data(), latter_core::kPrefDefaultWwSensHeyLuna.size()};
+  UiStrView ww_sens_hey_jarvis_opt{latter_core::kPrefDefaultWwSensHeyJarvis.data(), latter_core::kPrefDefaultWwSensHeyJarvis.size()};
+  UiStrView ww_sens_hey_mycroft_opt{latter_core::kPrefDefaultWwSensHeyMycroft.data(), latter_core::kPrefDefaultWwSensHeyMycroft.size()};
+  UiStrView ww_sens_alexa_opt{latter_core::kPrefDefaultWwSensAlexa.data(), latter_core::kPrefDefaultWwSensAlexa.size()};
 
   // Numbers
-  int manual_brightness_pct{80};
-  int day_brightness_pct{90};
-  int night_brightness_pct{35};
-  int day_start_hr{7};
-  int night_start_hr{21};
+  int manual_brightness_pct{latter_core::kPrefDefaultManualBrightness};
+  int day_brightness_pct{latter_core::kPrefDefaultDayBrightness};
+  int night_brightness_pct{latter_core::kPrefDefaultNightBrightness};
+  int day_start_hr{latter_core::kPrefDefaultDayStartHour};
+  int night_start_hr{latter_core::kPrefDefaultNightStartHour};
 
   // Switches
   bool home_weather_bg{true};
@@ -470,7 +469,6 @@ struct SystemTakeoverState {
   UiColor col_black{};
   UiColor col_white{};
   UiColor col_slate{};
-  UiColor col_gray{};
   UiColor col_dark_gray{};
   UiColor col_gold{};
   UiColor col_red{};
@@ -550,7 +548,6 @@ struct SystemTakeoverState {
     st.col_black = ctx.col_black;
     st.col_white = ctx.col_white;
     st.col_slate = ctx.col_slate;
-    st.col_gray = ctx.col_gray;
     st.col_dark_gray = ctx.col_dark_gray;
     st.col_gold = ctx.col_gold;
     st.col_red = ctx.col_red;

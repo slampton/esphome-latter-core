@@ -3,15 +3,6 @@
 # (modules/power_policy.yaml)
 # Single owner for apply_power_policy, 1s supervisor tick, and screensaver cadence.
 # ==============================================================================
-binary_sensor:
-  # Bluetooth controller state as decided by apply_power_policy (Area presence beacon; internal: reported via device_telemetry RPC).
-  - platform: template
-    name: "BLE Radio Active"
-    id: ble_radio_active
-    device_class: running
-    internal: true
-    icon: "mdi:bluetooth"
-    lambda: 'return id(ble_ctrl).is_active();'
 
 interval:
   - interval: 1s
@@ -102,9 +93,6 @@ interval:
             }
           }
           const auto &prefs = latter_core::persisted_prefs();
-          if (rs.showcase.active) {
-            id(tick_showcase_engine).execute();
-          }
           const bool showcase_active_1s = rs.showcase.is_active(now_1s_ms);
           uint32_t last_user_act_ms = std::max({latter_core::last_screen_wake_ms(),
                                                 latter_ui::touch_gesture().last_touch_ms,
@@ -127,7 +115,6 @@ interval:
                   latter_core::intercom_session().stop_call_with_hw(now_1s_ms);
                 }
                 latter_core::cam_quick_reply_open() = false;
-                latter_core::cam_expanded_fullscreen() = false;
                 latter_core::video_client().stop();
                 rs.alert.loaded_camera_url.clear();
                 latter_ui::release_art(id(camera_snapshot_art));
@@ -326,8 +313,7 @@ script:
           const bool want_ss_anim = (rs.nav.display_power_state == 1) &&
                                     !eff_ss_style.empty() &&
                                     (eff_ss_style != "Ambient Clock") &&
-                                    (eff_ss_style != "Photo Frame") &&
-                                    (eff_ss_style != "Screen Off");
+                                    (eff_ss_style != "Photo Frame");
           gate(id(screensaver_anim_tick), want_ss_anim, ss_anim_on);
           if (!want_ss_anim && rs.nav.display_power_state == 1) {
             latter_ui::sync_disp_poller_for_anim(&id(disp1), false);

@@ -63,8 +63,7 @@ void set_home_activity_deck_rotates(bool rotates) noexcept;
 
 HomeActivityStepResult step_home_activity_card(
     uint32_t now_ms, int home_subpage, bool greeting_active, int weather_h,
-    const HomeActivityView &view, const HomeActivityItem *act_items, int act_count,
-    int &out_nav_idx);
+    const HomeActivityView &view, const HomeActivityItem *act_items, int act_count);
 
 const HomeActivityItem *collect_home_activities_cached(
     const UiFrameContext &ctx, bool music_playing,
@@ -133,8 +132,7 @@ void set_home_activity_deck_rotates(bool rotates) noexcept { s_act_deck_rotates 
 
 HomeActivityStepResult step_home_activity_card(
     uint32_t now_ms, int home_subpage, bool greeting_active, int weather_h,
-    const HomeActivityView &view, const HomeActivityItem *act_items, int act_count,
-    int &out_nav_idx) {
+    const HomeActivityView &view, const HomeActivityItem *act_items, int act_count) {
   HomeActivityStepResult res{};
   const auto &ly = layout();
   const bool two = ly.home_activity_two_line();
@@ -154,7 +152,6 @@ HomeActivityStepResult step_home_activity_card(
     const int target_y1 = ly.is_round ? (ly.home_activity_cy_for_h(weather_h, target_h) + target_h / 2) : ly.home_activity_bottom();
     const int target_y0 = target_y1 - target_h;
     const bool has_drop = ly.home_activity_has_drop(view.front_count);
-    out_nav_idx = view.top;
     s_act_deck_rotates = two ? (view.front_count > 2) : (!view.pinned && view.front_count > 1);
 
     const HomeActivityItem top_item = (view.top >= 0 && view.top < act_count) ? act_items[view.top] : HomeActivityItem{};
@@ -593,15 +590,10 @@ const HomeActivityItem *collect_home_activities_cached(
   return s_memo_items;
 }
 
-}  // namespace
-
 int get_activity_overlay_card_y(int vis_count, int row_idx) {
   const int stride = layout().slot5_stride;
   return layout().slot5_cy - (((vis_count - 1) * stride) / 2) + row_idx * stride;
 }
-
-
-namespace {
 
 #if LATTER_HAS_BATTERY
 void render_battery_indicator(
@@ -715,33 +707,19 @@ void draw_home_activity_row_contents(
   render_mdi_icon(it, act_slug, act_bx, row_y, std::max(14, (btn_r * 13) / 10), fg_w, icon_sh);
 }
 
-void render_home_activity_card_row(
+void render_home_activity_list_row(
     Rgb565Surface &it, int cx, int pill_y, const HomeActivityItem &cur_act,
-    bool has_dropdown_ext, UiFontView font_small,
-    UiColor theme_secondary, UiColor col_white, bool is_list_row,
+    UiFontView font_small, UiColor theme_secondary, UiColor col_white,
     UiColor card_bg, UiColor card_brd, UiColor btn_bg) {
-  const int card_w = is_list_row ? layout().list_card_w : layout().home_activity_w();
-  const int card_h = is_list_row ? layout().slot5_h : scale_y(68);
-  const int card_right = cx + (card_w / 2);
-  const int act_col_w = scale_s(56);
-  const int drop_col_w = scale_s(52);
-  const int div1_x = is_list_row ? (card_right - scale_s(44))
-                                 : (has_dropdown_ext ? (card_right - drop_col_w - act_col_w) : (card_right - act_col_w));
-  const int div_h = is_list_row ? scale_y(14) : scale_y(23);
+  const int card_w = layout().list_card_w;
+  const int card_h = layout().slot5_h;
+  const int div1_x = cx + (card_w / 2) - scale_s(44);
+  const int div_h = scale_y(14);
   const UiColor surf_bg = render_card_box(it, cx - card_w / 2, pill_y - card_h / 2, card_w, card_h,
                                           card_bg, card_brd, kRadiusCardPx(), GlassVariant::Clear, col_white, true);
-  draw_home_activity_row_contents(it, pill_y, cur_act, has_dropdown_ext, is_list_row, font_small,
+  draw_home_activity_row_contents(it, pill_y, cur_act, false, true, font_small,
                                   surf_bg, btn_bg, theme_secondary, col_white, 1.0f);
   fast_line(it, div1_x, pill_y - div_h, div1_x, pill_y + div_h, card_brd);
-  if (has_dropdown_ext) {
-    const int div2_x = card_right - drop_col_w, drop_bx = card_right - drop_col_w / 2;
-    fast_line(it, div2_x, pill_y - div_h, div2_x, pill_y + div_h, card_brd);
-    const int ch_w = scale_s(8), ch_h = scale_s(4);
-    for (int w = -1; w <= 1; w++) {
-      fast_line(it, drop_bx - ch_w, pill_y - ch_h + w, drop_bx, pill_y + ch_h + w, col_white);
-      fast_line(it, drop_bx + ch_w, pill_y - ch_h + w, drop_bx, pill_y + ch_h + w, col_white);
-    }
-  }
 }
 
 void draw_activity_card_chrome(
@@ -789,43 +767,39 @@ bool draw_glass_activity_surface(
   if ((card_y0 + box_h) <= clip_y0() || card_y0 > clip_y1()) return false;
   const UiColor tint = kChromeGlassTint;
   const int card_r = std::min(box_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
-  if (surf_alpha >= 0.995f) {
-    GlassBackdrop bd{};
-    UiColor eff_tint{}, rim_col{};
-    int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-    resolve_styled_glass(card_x0, card_y0, card_w, box_h, tint, kChromeCardBorder,
-                         GlassVariant::Clear, col_white, -1, sample_bd,
-                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
-    fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r), rim_col, rim_top, rim_bot, 1);
-    fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, box_h - 2,
-                          std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
-    out_card_bg = (sample_bd && bd.valid) ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
-    return true;
-  }
+  const bool full_opaque = (surf_alpha >= 0.995f);
 
   const int prev_clip_y0 = clip_y0(), prev_clip_y1 = clip_y1();
-  const int sc_y0 = std::max(prev_clip_y0, card_y0), sc_y1 = std::min(prev_clip_y1, card_y0 + box_h - 1);
-  if (sc_y0 > sc_y1) return false;
-  set_clip_y_band(sc_y0, sc_y1);
-  GlassBackdrop backdrop{};
+  if (!full_opaque) {
+    const int sc_y0 = std::max(prev_clip_y0, card_y0), sc_y1 = std::min(prev_clip_y1, card_y0 + box_h - 1);
+    if (sc_y0 > sc_y1) return false;
+    set_clip_y_band(sc_y0, sc_y1);
+  }
+
+  GlassBackdrop bd{};
   UiColor eff_tint{}, rim_col{};
   int raw_a_top = 0, raw_a_bot = 0, raw_rim_top = 0, raw_rim_bot = 0;
+  const bool want_sample = full_opaque ? sample_bd : true;
   resolve_styled_glass(card_x0, card_y0, card_w, box_h, tint, kChromeCardBorder,
-                       GlassVariant::Clear, col_white, -1, true,
-                       backdrop, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
-  const int a_top = static_cast<int>(std::lround(static_cast<float>(raw_a_top) * surf_alpha));
-  const int a_bot = static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * surf_alpha));
-  const int rim_top = static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * surf_alpha));
-  const int rim_bot = static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * surf_alpha));
-  if (rim_top > 0 || rim_bot > 0) {
+                       GlassVariant::Clear, col_white, -1, want_sample,
+                       bd, eff_tint, rim_col, raw_a_top, raw_a_bot, raw_rim_top, raw_rim_bot);
+  const int a_top = full_opaque ? raw_a_top : static_cast<int>(std::lround(static_cast<float>(raw_a_top) * surf_alpha));
+  const int a_bot = full_opaque ? raw_a_bot : static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * surf_alpha));
+  const int rim_top = full_opaque ? raw_rim_top : static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * surf_alpha));
+  const int rim_bot = full_opaque ? raw_rim_bot : static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * surf_alpha));
+  if (full_opaque || rim_top > 0 || rim_bot > 0) {
     fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r), rim_col, rim_top, rim_bot, 1);
   }
-  if ((a_top > 0 || a_bot > 0) && card_w > 2 && box_h > 2) {
+  if ((full_opaque || a_top > 0 || a_bot > 0) && card_w > 2 && box_h > 2) {
     fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, box_h - 2,
                           std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
   }
-  out_card_bg = mix_color_q8(backdrop.valid ? backdrop.mean : col_bg, eff_tint, (a_top + a_bot) / 2);
-  set_clip_y_band(prev_clip_y0, prev_clip_y1);
+  if (full_opaque) {
+    out_card_bg = (sample_bd && bd.valid) ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
+  } else {
+    out_card_bg = mix_color_q8(bd.valid ? bd.mean : col_bg, eff_tint, (a_top + a_bot) / 2);
+    set_clip_y_band(prev_clip_y0, prev_clip_y1);
+  }
   return true;
 }
 
@@ -1029,15 +1003,15 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
     } else if ((show_weather_bg || sim_override_on) && (weather_ready || dns_known)) {
       backdrop_active() = true;
-      frame_base(it, ctx.col_bg);
       const bool eff_night = weather_ready ? is_night : dns_night;
-      if (!eff_night) {
 #if LATTER_ROUND_DISPLAY
-        fast_filled_circle(it, cx, cy, 228, UiColor(7, 13, 22));
-#else
-        fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, UiColor(7, 13, 22));
-#endif
+      frame_base(it, ctx.col_bg);
+      if (!eff_night) {
+        fast_filled_circle(it, cx, cy, SCREEN_MIN_R - 5, UiColor(7, 13, 22));
       }
+#else
+      frame_base(it, eff_night ? ctx.col_bg : UiColor(7, 13, 22));
+#endif
       if (celestial_visible) {
         fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 23 : scale_min(27),
                            is_night ? UiColor(22, 26, 34) : UiColor(42, 36, 12));
@@ -1047,7 +1021,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
   } else if (live_sky_drawn) {
     backdrop_active() = true;
-    render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night, moon_cycle, cel_x, cel_y, true,
+    render_weather_motion_wallpaper(it, cx, cy, now_ms, cond, is_night, moon_cycle, cel_x, cel_y,
                                     rs.hw_accel_x, rs.hw_accel_y, celestial_visible);
   } else if (bd_mode == BackdropMode::LiveWeatherSky) {
     if (dns_known) {
@@ -1055,13 +1029,13 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       frame_base(it, ctx.col_bg);
     }
-  } else if (has_day_night_sky) {
+  } else if (bd_mode == BackdropMode::DayNightSky) {
     if (dns_known) {
       render_static_day_night_sky_base(it, cx, cy, dns_night);
     } else {
       frame_base(it, ctx.col_bg);
     }
-  } else if (has_custom_wallpaper) {
+  } else if (bd_mode == BackdropMode::CustomWallpaper) {
     render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 0);
   } else {
     frame_base(it, ctx.col_bg);
@@ -1086,8 +1060,8 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       const int vis_cnt = std::min(5, act_count - start_i);
       for (int row = 0; row < vis_cnt; row++) {
         const int y_mid = get_activity_overlay_card_y(vis_cnt, row);
-        render_home_activity_card_row(it, cx, y_mid, act_items[start_i + row], false, ctx.font_small,
-                                      ctx.theme_secondary, ctx.col_white, true,
+        render_home_activity_list_row(it, cx, y_mid, act_items[start_i + row], ctx.font_small,
+                                      ctx.theme_secondary, ctx.col_white,
                                       kChromeGlassTint, kChromeCardBorder, kChromeGlassTint);
         frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
                                        WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row),
@@ -1104,7 +1078,8 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   if (live_sky_drawn && celestial_visible) {
     frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? scale_min(30) : scale_min(34),
-                            WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, scale_s(10));
+                            WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
+                            static_cast<int16_t>(is_night ? 1 : 0), scale_s(10));
   }
 
   const UiColor fg_home_cond = (!live_sky_drawn || is_night) ? ctx.theme_secondary : kChromeDayGold;
@@ -1190,7 +1165,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int h1 = ly.home_activity_h_for_rows(1), card_w = ly.home_activity_w(), pitch = ly.home_activity_pitch();
 
   const HomeActivityStepResult step = step_home_activity_card(
-      now_ms, home_subpage, greeting_active, weather_h, view, act_items, act_count, rs.nav.home_activity_idx);
+      now_ms, home_subpage, greeting_active, weather_h, view, act_items, act_count);
   const auto &st = home_act_state();
 
   if (step.draw_active) {
@@ -1351,8 +1326,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const int total_dock_pages = (dock_count + 3) / 4;
     if (home_dock_page() < 0 || home_dock_page() >= total_dock_pages) home_dock_page() = 0;
     int win_xs[4] = {0, 0, 0, 0};
-    bool has_left_arr = false, has_right_arr = false;
-    get_home_dock_window_xs(dock_count, home_dock_page(), cx, win_xs, has_left_arr, has_right_arr);
+    get_home_dock_window_xs(dock_count, home_dock_page(), win_xs);
     const int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
     const int vis_count = std::min(4, dock_count - start_idx);
     const int dock_y = ly.dock_y, dock_r = ly.dock_r, dock_pad = std::max(0, ly.dock_hit_r() - dock_r);
