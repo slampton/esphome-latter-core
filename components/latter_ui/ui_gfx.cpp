@@ -93,12 +93,46 @@ void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept {
 #endif
 }
 
+PsramPhaseBuf ui_psram_phase_alloc(size_t bytes, const void *match_addr, bool zero_init) noexcept {
+  PsramPhaseBuf out{};
+  if (bytes == 0U) return out;
+#if LATTER_FB_DMA_CLEAR
+  const size_t phase =
+      (reinterpret_cast<uintptr_t>(match_addr) & (kPsramCacheLineAlign - 1U)) & ~static_cast<size_t>(1U);
+  const size_t total = align_up_psram(phase + bytes);
+  void *raw = heap_caps_aligned_alloc(kPsramCacheLineAlign, total, MALLOC_CAP_SPIRAM);
+  if (raw == nullptr) return out;
+  if (zero_init) std::memset(raw, 0, total);
+  out.raw = raw;
+  out.px = reinterpret_cast<uint16_t *>(static_cast<uint8_t *>(raw) + phase);
+  return out;
+#else
+  (void)match_addr;
+  void *raw = zero_init ? ui_psram_calloc(1U, bytes) : ui_psram_malloc(bytes);
+  out.raw = raw;
+  out.px = static_cast<uint16_t *>(raw);
+  return out;
+#endif
+}
+
+void ui_psram_phase_free(PsramPhaseBuf &buf) noexcept {
+  void *const p = (buf.raw != nullptr) ? buf.raw : static_cast<void *>(buf.px);
+  if (p != nullptr) ui_psram_free(p);
+  buf.raw = nullptr;
+  buf.px = nullptr;
+}
+
 void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept {
 #if LATTER_FB_DMA_CLEAR
   if (ptr == nullptr || bytes == 0U) return;
-  if ((reinterpret_cast<uintptr_t>(ptr) & (kPsramCacheLineAlign - 1U)) != 0U) return;
-  const size_t aligned = align_up_psram(bytes);
-  (void)esp_cache_msync(const_cast<void *>(ptr), aligned, ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  const uintptr_t lo = addr & ~kMask;
+  const uintptr_t hi = (addr + bytes + kMask) & ~kMask;
+  if (hi > lo) {
+    (void)esp_cache_msync(reinterpret_cast<void *>(lo), static_cast<size_t>(hi - lo),
+                          ESP_CACHE_MSYNC_FLAG_DIR_C2M);
+  }
 #else
   (void)ptr;
   (void)bytes;
@@ -414,6 +448,7 @@ struct PsramBandBlitState {
   bool init_tried = false;
   bool ok = false;
   bool verified = false;
+  bool logged_skip = false;
   async_memcpy_handle_t mcp = nullptr;
 };
 
@@ -462,90 +497,115 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
 #if LATTER_FB_DMA_CLEAR
   constexpr size_t kMinDmaBytes = 32768U;
   constexpr size_t kAlignMask = kPsramCacheLineAlign - 1U;
-  if (total_bytes >= kMinDmaBytes &&
-      ((reinterpret_cast<uintptr_t>(dst_ptr) & kAlignMask) ==
-       (reinterpret_cast<uintptr_t>(src_ptr) & kAlignMask)) &&
-      psram_band_blit_init()) {
-    const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
-    const uintptr_t lo = (dst_addr + kAlignMask) & ~static_cast<uintptr_t>(kAlignMask);
-    const uintptr_t hi = (dst_addr + total_bytes) & ~static_cast<uintptr_t>(kAlignMask);
-    if (hi > lo) {
-      auto &st = psram_band_blit_state();
-      const size_t head = static_cast<size_t>(lo - dst_addr);
-      const size_t interior_len = static_cast<size_t>(hi - lo);
-      const size_t tail = total_bytes - head - interior_len;
-      uint8_t *const dst_lo = dst_ptr + head;
-      const uint8_t *const src_lo = src_ptr + head;
+  if (total_bytes >= kMinDmaBytes) {
+    auto &st = psram_band_blit_state();
+    const bool phase_match =
+        ((reinterpret_cast<uintptr_t>(dst_ptr) & kAlignMask) ==
+         (reinterpret_cast<uintptr_t>(src_ptr) & kAlignMask));
+    if (!phase_match) {
+      if (!st.logged_skip) {
+        st.logged_skip = true;
+        ESP_LOGW("disp_fb",
+                 "PSRAM AXI-GDMA blit skipped: phase mismatch dst=0x%08lX src=0x%08lX align=%u",
+                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(dst_ptr)),
+                 static_cast<unsigned long>(reinterpret_cast<uintptr_t>(src_ptr)),
+                 static_cast<unsigned>(kPsramCacheLineAlign));
+      }
+    } else if (psram_band_blit_init()) {
+      const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
+      const uintptr_t lo = (dst_addr + kAlignMask) & ~static_cast<uintptr_t>(kAlignMask);
+      const uintptr_t hi = (dst_addr + total_bytes) & ~static_cast<uintptr_t>(kAlignMask);
+      if (hi > lo) {
+        const size_t head = static_cast<size_t>(lo - dst_addr);
+        const size_t interior_len = static_cast<size_t>(hi - lo);
+        const size_t tail = total_bytes - head - interior_len;
+        uint8_t *const dst_lo = dst_ptr + head;
+        const uint8_t *const src_lo = src_ptr + head;
 
-      // Flush and invalidate only the strictly aligned interior so partial head/tail lines
-      // (which may share a cache line with untouched rows outside [y0, y1]) stay coherent.
-      const esp_err_t pre_err = esp_cache_msync(
-          dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
-      if (pre_err == ESP_OK) {
+        // Flush and invalidate only the strictly aligned interior so partial head/tail lines
+        // (which may share a cache line with untouched rows outside [y0, y1]) stay coherent.
         const int64_t t0_us = esp_timer_get_time();
-        g_psram_blit_pending.store(0, std::memory_order_release);
-        bool dma_err = false;
-        size_t pos = 0U;
-        while (pos < interior_len) {
-          const size_t chunk = std::min(kFbClearPatternBytes, interior_len - pos);
-          g_psram_blit_pending.fetch_add(1, std::memory_order_acq_rel);
-          const esp_err_t cp_err = esp_async_memcpy(
-              st.mcp, dst_lo + pos, const_cast<uint8_t *>(src_lo + pos), chunk,
-              psram_blit_chunk_done, nullptr);
-          if (cp_err != ESP_OK) {
-            g_psram_blit_pending.fetch_sub(1, std::memory_order_acq_rel);
-            dma_err = true;
-            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit enqueue failed (err=%d); fallback to memcpy",
-                     static_cast<int>(cp_err));
-            break;
+        const esp_err_t pre_err = esp_cache_msync(
+            dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_INVALIDATE);
+        if (pre_err != ESP_OK) {
+          if (!st.logged_skip) {
+            st.logged_skip = true;
+            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA pre-msync failed (err=%d); fallback to memcpy",
+                     static_cast<int>(pre_err));
           }
-          pos += chunk;
-        }
-        while (g_psram_blit_pending.load(std::memory_order_acquire) > 0) {
-          if (esp_timer_get_time() - t0_us > 200000) {
-            dma_err = true;
-            st.ok = false;
-            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit timeout; disabling hardware blit");
-            break;
-          }
-          esp_rom_delay_us(20);
-        }
-        if (!dma_err) {
-          const esp_err_t post_err = esp_cache_msync(dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
-          if (post_err == ESP_OK) {
-            if (head > 0U) std::memcpy(dst_ptr, src_ptr, head);
-            if (tail > 0U) std::memcpy(dst_lo + interior_len, src_lo + interior_len, tail);
-            if (!st.verified) {
-              st.verified = true;
-              const uint16_t *const dpx = reinterpret_cast<const uint16_t *>(dst_lo);
-              const uint16_t *const spx = reinterpret_cast<const uint16_t *>(src_lo);
-              const size_t n = interior_len / sizeof(uint16_t);
-              bool match = true;
-              for (size_t i = 0U; i < 8U && n > 0U; ++i) {
-                const size_t idx = (n > 1U) ? ((i * (n - 1U)) / 7U) : 0U;
-                if (dpx[idx] != spx[idx]) {
-                  ESP_LOGW("disp_fb",
-                           "PSRAM AXI-GDMA blit mismatch at %u: expected 0x%04X, got 0x%04X; disabling",
-                           static_cast<unsigned>(idx), static_cast<unsigned>(spx[idx]),
-                           static_cast<unsigned>(dpx[idx]));
-                  st.ok = false;
-                  match = false;
-                  break;
-                }
-              }
-              if (!match) {
-                std::memcpy(dst_ptr, src_ptr, total_bytes);
-                return;
-              }
-              ESP_LOGD("disp_fb", "PSRAM AXI-GDMA band blit verified: %u KB in %ld us",
-                       static_cast<unsigned>(interior_len / 1024U),
-                       static_cast<long>(esp_timer_get_time() - t0_us));
+        } else {
+          const int64_t t_pre_us = esp_timer_get_time();
+          g_psram_blit_pending.store(0, std::memory_order_release);
+          bool dma_err = false;
+          size_t pos = 0U;
+          while (pos < interior_len) {
+            const size_t chunk = std::min(kFbClearPatternBytes, interior_len - pos);
+            g_psram_blit_pending.fetch_add(1, std::memory_order_acq_rel);
+            const esp_err_t cp_err = esp_async_memcpy(
+                st.mcp, dst_lo + pos, const_cast<uint8_t *>(src_lo + pos), chunk,
+                psram_blit_chunk_done, nullptr);
+            if (cp_err != ESP_OK) {
+              g_psram_blit_pending.fetch_sub(1, std::memory_order_acq_rel);
+              dma_err = true;
+              ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit enqueue failed (err=%d); fallback to memcpy",
+                       static_cast<int>(cp_err));
+              break;
             }
-            return;
+            pos += chunk;
           }
-          st.ok = false;
-          ESP_LOGW("disp_fb", "PSRAM AXI-GDMA post-msync failed (err=%d); disabling",
-                   static_cast<int>(post_err));
+          while (g_psram_blit_pending.load(std::memory_order_acquire) > 0) {
+            if (esp_timer_get_time() - t_pre_us > 200000) {
+              dma_err = true;
+              st.ok = false;
+              ESP_LOGW("disp_fb", "PSRAM AXI-GDMA blit timeout; disabling hardware blit");
+              break;
+            }
+            esp_rom_delay_us(20);
+          }
+          const int64_t t_dma_us = esp_timer_get_time();
+          if (!dma_err) {
+            const esp_err_t post_err = esp_cache_msync(dst_lo, interior_len, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+            const int64_t t_post_us = esp_timer_get_time();
+            if (post_err == ESP_OK) {
+              if (head > 0U) std::memcpy(dst_ptr, src_ptr, head);
+              if (tail > 0U) std::memcpy(dst_lo + interior_len, src_lo + interior_len, tail);
+              if (!st.verified) {
+                st.verified = true;
+                const uint16_t *const dpx = reinterpret_cast<const uint16_t *>(dst_lo);
+                const uint16_t *const spx = reinterpret_cast<const uint16_t *>(src_lo);
+                const size_t n = interior_len / sizeof(uint16_t);
+                bool match = true;
+                for (size_t i = 0U; i < 8U && n > 0U; ++i) {
+                  const size_t idx = (n > 1U) ? ((i * (n - 1U)) / 7U) : 0U;
+                  if (dpx[idx] != spx[idx]) {
+                    ESP_LOGW("disp_fb",
+                             "PSRAM AXI-GDMA blit mismatch at %u: expected 0x%04X, got 0x%04X; disabling",
+                             static_cast<unsigned>(idx), static_cast<unsigned>(spx[idx]),
+                             static_cast<unsigned>(dpx[idx]));
+                    st.ok = false;
+                    match = false;
+                    break;
+                  }
+                }
+                if (!match) {
+                  std::memcpy(dst_ptr, src_ptr, total_bytes);
+                  return;
+                }
+                ESP_LOGI("disp_fb",
+                         "PSRAM AXI-GDMA band blit verified: %u KB in %ld us (pre=%ldus dma=%ldus post=%ldus align=%u)",
+                         static_cast<unsigned>(interior_len / 1024U),
+                         static_cast<long>(t_post_us - t0_us),
+                         static_cast<long>(t_pre_us - t0_us),
+                         static_cast<long>(t_dma_us - t_pre_us),
+                         static_cast<long>(t_post_us - t_dma_us),
+                         static_cast<unsigned>(kPsramCacheLineAlign));
+              }
+              return;
+            }
+            st.ok = false;
+            ESP_LOGW("disp_fb", "PSRAM AXI-GDMA post-msync failed (err=%d); disabling",
+                     static_cast<int>(post_err));
+          }
         }
       }
     }
@@ -2221,7 +2281,9 @@ void art_canvas_drop(const void *data) {
   for (int i = 0; i < kArtCacheActiveSlots; i++) {
     ArtCanvasCache &e = g_art_canvas_entries[i];
     if (e.data != data) continue;
-    ui_psram_free(e.px);
+    PsramPhaseBuf pb{e.px_raw, e.px};
+    ui_psram_phase_free(pb);
+    e.px_raw = nullptr;
     e.px = nullptr;
     e.data = nullptr;
     e.last_use = 0;
@@ -2232,8 +2294,10 @@ void art_canvas_drop_all() noexcept {
   if (g_art_canvas_entries == nullptr) return;
   for (int i = 0; i < kArtCacheActiveSlots; i++) {
     ArtCanvasCache &e = g_art_canvas_entries[i];
-    if (e.px != nullptr) {
-      ui_psram_free(e.px);
+    if (e.px != nullptr || e.px_raw != nullptr) {
+      PsramPhaseBuf pb{e.px_raw, e.px};
+      ui_psram_phase_free(pb);
+      e.px_raw = nullptr;
       e.px = nullptr;
     }
     e.data = nullptr;
@@ -2327,10 +2391,9 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
       if (LATTER_CHIP_P4 == 0 || frame_bytes > 1536U * 1024U) {
         evict_registered_psram_caches();
       }
-      victim->px = static_cast<uint16_t *>(
-          full_rect_overwrite
-              ? ui_psram_aligned_alloc(frame_bytes)
-              : ui_psram_aligned_calloc(px_count, sizeof(uint16_t)));
+      const PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);
+      victim->px_raw = pb.raw;
+      victim->px = pb.px;
     }
     if (victim->px == nullptr) {
       if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);

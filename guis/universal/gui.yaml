@@ -425,13 +425,14 @@ display:
           const bool spk_busy = rs.audio.speaker_busy();
           const bool mww_busy = !spk_busy && !LATTER_CHIP_P4 && rs.audio.mww_running();
           const uint32_t target_gap_ms = latter_ui::min_ambient_frame_gap_ms(spk_busy, false, false, mww_busy);
+          const uint32_t weather_gap_ms = latter_ui::weather_sky_frame_gap_ms(target_gap_ms, w_has_fast_motion);
           latter_ui::record_ambient_frame_ms(ctx.now_ms);
           if (on_home_main_gui && !w_has_fast_motion) {
             latter_ui::schedule_weather_band_disp_update(
-                &id(disp1), std::max<uint32_t>(target_gap_ms, latter_ui::kCalmSkyFrameGapMs),
+                &id(disp1), weather_gap_ms,
                 0, latter_ui::calm_home_sky_band_y1(latter_ui::dock_dirty_band_y0()));
           } else {
-            latter_ui::schedule_weather_disp_update(&id(disp1), target_gap_ms);
+            latter_ui::schedule_weather_disp_update(&id(disp1), weather_gap_ms);
           }
         }
       } else if (act_sliding_now && has_act_band) {

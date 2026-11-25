@@ -1422,7 +1422,7 @@ uint32_t fnv1a_sky_str(std::string_view sv) noexcept {
 
 // Retryable PSRAM static sky base cache: retries on transient OOM instead of latching failure.
 struct SkyBaseCache {
-  uint16_t *px = nullptr;
+  PsramPhaseBuf buf{};
   bool valid = false, is_night = false, show_celestial = false;
   uint32_t cond_hash = 0U;
   int16_t cel_cx = -1, cel_cy = -1;
@@ -1565,12 +1565,12 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
   uint16_t *fb = active_frame_buf16();
   auto &cache = sky_base_cache();
   const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
-  if (fb != nullptr && cache.px == nullptr &&
+  if (fb != nullptr && cache.buf.px == nullptr &&
       sky_base_cache_allowed(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB)) {
     if (LATTER_CHIP_P4 == 0 || bytes > 1536U * 1024U) {
       art_canvas_drop_all();
     }
-    cache.px = static_cast<uint16_t *>(ui_psram_aligned_alloc(bytes));
+    cache.buf = ui_psram_phase_alloc(bytes, fb, false);
     cache.valid = false;
   }
 
@@ -1581,19 +1581,19 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
   const int16_t key_cel_x = show_celestial ? static_cast<int16_t>(cel_cx) : static_cast<int16_t>(0);
   const int16_t key_cel_y = show_celestial ? static_cast<int16_t>(cel_cy) : static_cast<int16_t>(0);
 
-  if (fb != nullptr && cache.px != nullptr) {
+  if (fb != nullptr && cache.buf.px != nullptr) {
     if (!cache.valid || cache.cond_hash != cond_hash || cache.is_night != is_night ||
         cache.show_celestial != show_celestial || cache.cel_cx != key_cel_x ||
         cache.cel_cy != key_cel_y || cache.quantized_moon_phase != quant_moon ||
         cache.dim_mode != cur_dim_mode) {
       const int saved_y0 = clip_y0(), saved_y1 = clip_y1();
       reset_clip_y_band();
-      active_frame_buf16() = cache.px;
+      active_frame_buf16() = cache.buf.px;
       bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
       active_frame_buf16() = fb;
       set_clip_y_band(saved_y0, saved_y1);
 #if !LATTER_ROUND_DISPLAY
-      ui_psram_cache_writeback(cache.px, bytes);
+      ui_psram_cache_writeback(cache.buf.px, bytes);
 #endif
 
       cache.valid = true;
@@ -1615,11 +1615,11 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
         const int x0 = std::max(0, SCREEN_CX - hw), x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
         if (x0 <= x1) {
           const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
-          std::memcpy(fb + off, cache.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
+          std::memcpy(fb + off, cache.buf.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
         }
       }
 #else
-      blit_psram_band_fast(fb, cache.px, y0, y1);
+      blit_psram_band_fast(fb, cache.buf.px, y0, y1);
 #endif
     }
   } else {
@@ -1673,20 +1673,25 @@ void weather_cloud_cache_drop() noexcept {
   cc.use_seq = 0U;
 }
 
-void sky_base_cache_drop() noexcept {
+namespace {
+void sky_base_cache_evict() noexcept {
   auto &cache = sky_base_cache();
-  if (cache.px != nullptr) {
-    ui_psram_free(cache.px);
-    cache.px = nullptr;
-  }
+  ui_psram_phase_free(cache.buf);
   cache.valid = false;
+}
+}  // namespace
+
+void sky_base_cache_drop() noexcept {
+  sky_base_cache_evict();
   lunar_disc_cache_drop();
 }
 
 namespace {
 struct WeatherPsramEvictorRegistrar {
   WeatherPsramEvictorRegistrar() noexcept {
-    register_psram_cache_evictor(&sky_base_cache_drop);
+    // Evict only the heavy full-screen sky base (434 KB - 1 MB) and cloud sprites under PSRAM pressure;
+    // keep the small (~60 KB) shaded lunar disc cache warm across Music visits to avoid cold Moon re-shade spikes.
+    register_psram_cache_evictor(&sky_base_cache_evict);
     register_psram_cache_evictor(&weather_cloud_cache_drop);
   }
 };

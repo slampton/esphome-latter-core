@@ -826,10 +826,14 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
   LATTER_CHECK(calm_due.schedule_anim_band && !calm_due.schedule_anim_full);
   LATTER_CHECK(calm_due.band_y0 == 0 && calm_due.band_y1 == calm_y1);
 
-  // Weather app page (gui_page == 5) with calm sky still renders full frame (no Home Dock).
+  // Weather app page (gui_page == 5) with calm sky still renders full frame (no Home Dock),
+  // and its scheduled post-render cadence gap uses kCalmSkyFrameGapMs (240 ms) instead of 60-74 ms.
   in.gui_page = 5;
   const auto wx_app_due = ctrl.evaluate_20ms(in);
   LATTER_CHECK(wx_app_due.schedule_anim_full && !wx_app_due.schedule_anim_band);
+  LATTER_CHECK(weather_sky_frame_gap_ms(74U, false) == kCalmSkyFrameGapMs);
+  LATTER_CHECK(weather_sky_frame_gap_ms(300U, false) == 300U);
+  LATTER_CHECK(weather_sky_frame_gap_ms(74U, true) == 74U);
 
   // Fast weather on Home (rain/snow/storm/wind/night-stars) renders full frame at standard ~60 ms cadence.
   in.gui_page = 1;
@@ -877,30 +881,31 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
     LATTER_CHECK(found_dock_slot);
   }
 
-  // 4. blit_psram_band_fast pixel-exact band copy with untouched surrounding rows
+  // 4. blit_psram_band_fast pixel-exact band copy with phase-matched PSRAM buffer
   {
     const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
     const size_t bytes = px_count * sizeof(uint16_t);
-    auto *src = static_cast<uint16_t *>(ui_psram_aligned_alloc(bytes));
     auto *dst = static_cast<uint16_t *>(ui_psram_aligned_calloc(px_count, sizeof(uint16_t)));
-    LATTER_CHECK(src != nullptr && dst != nullptr);
+    PsramPhaseBuf src_buf = ui_psram_phase_alloc(bytes, dst, false);
+    LATTER_CHECK(src_buf.px != nullptr && dst != nullptr);
     for (size_t i = 0; i < px_count; ++i) {
-      src[i] = static_cast<uint16_t>((i * 257U + 13U) & 0xFFFFU);
+      src_buf.px[i] = static_cast<uint16_t>((i * 257U + 13U) & 0xFFFFU);
       dst[i] = 0x5AA5U;
     }
-    ui_psram_cache_writeback(src, bytes);
+    ui_psram_cache_writeback(src_buf.px, bytes);
     const int y_lo = 11;
     const int y_hi = SCREEN_H - 19;
-    blit_psram_band_fast(dst, src, y_lo, y_hi);
+    blit_psram_band_fast(dst, src_buf.px, y_lo, y_hi);
     for (int y = 0; y < SCREEN_H; ++y) {
       const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
       const bool in_band = (y >= y_lo && y <= y_hi);
       for (int x = 0; x < SCREEN_W; ++x) {
         const size_t idx = row + static_cast<size_t>(x);
-        LATTER_CHECK(dst[idx] == (in_band ? src[idx] : 0x5AA5U));
+        LATTER_CHECK(dst[idx] == (in_band ? src_buf.px[idx] : 0x5AA5U));
       }
     }
-    ui_psram_free(src);
+    ui_psram_phase_free(src_buf);
+    LATTER_CHECK(src_buf.px == nullptr && src_buf.raw == nullptr);
     ui_psram_free(dst);
   }
 
@@ -977,6 +982,17 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
       }
     }
     LATTER_CHECK(lit_px > 4000);
+    // Re-rendering after Music-style PSRAM eviction keeps the cached lunar disc intact and pixel-identical.
+    const std::vector<uint16_t> first_moon_fb = fx.pixels;
+    evict_registered_psram_caches();
+    fx.fill(0U);
+    dirty_band().mark_full();
+    dirty_band().begin_frame(5, 3, 1U, true);
+    frame_base_begin();
+    frame_base(fx.surf, UiColor{0, 0, 0});
+    render_weather_page(fx.surf, fx.ctx);
+    LATTER_CHECK(fx.pixels == first_moon_fb);
+    sky_base_cache_drop();
   }
 }
 

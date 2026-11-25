@@ -24,10 +24,17 @@ namespace latter_ui {
 // 1. Retryable PSRAM / Host Heap Helpers & Framebuffer Clear Hooks
 //    (ESP-IDF guarded inside ui_gfx.cpp only)
 // ------------------------------------------------------------------------------
+struct PsramPhaseBuf {
+  void *raw = nullptr;
+  uint16_t *px = nullptr;
+};
+
 void *ui_psram_malloc(size_t bytes) noexcept;
 void *ui_psram_calloc(size_t count, size_t elem_size) noexcept;
 void *ui_psram_aligned_alloc(size_t bytes) noexcept;
 void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept;
+PsramPhaseBuf ui_psram_phase_alloc(size_t bytes, const void *match_addr, bool zero_init = false) noexcept;
+void ui_psram_phase_free(PsramPhaseBuf &buf) noexcept;
 void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept;
 void ui_psram_free(void *ptr) noexcept;
 void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept;
@@ -782,6 +789,7 @@ inline void blit_rgb565_scanline(DisplayT &it, int start_x, int y, int span_w,
 }
 
 struct ArtCanvasCache {
+  void *px_raw;
   uint16_t *px;
   const void *data;
   int16_t w, h;

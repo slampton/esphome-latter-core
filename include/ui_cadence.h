@@ -161,6 +161,12 @@ inline constexpr int calm_home_sky_band_y1(int dock_y0) noexcept {
   return (dock_y0 > 1) ? ((dock_y0 & ~1) - 1) : 0;
 }
 
+inline constexpr uint32_t weather_sky_frame_gap_ms(uint32_t target_gap_ms,
+                                                   bool has_fast_motion) noexcept {
+  return has_fast_motion ? target_gap_ms
+                         : ((target_gap_ms > kCalmSkyFrameGapMs) ? target_gap_ms : kCalmSkyFrameGapMs);
+}
+
 struct HomeActivityItem {
   int kind = 0;        // 1 = Timer, 2 = Stopwatch, 3 = Music, 4 = Alarm, 5 = Calendar, 6 = Intercom/Doorbell
   int slot_idx = 0;    // Timer slot (0..2), Alarm slot (0 = Snoozed, 1..3 = Alarm 1..3), or Calendar slot
