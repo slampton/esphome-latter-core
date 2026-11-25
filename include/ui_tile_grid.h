@@ -39,83 +39,49 @@ struct TileRect {
   constexpr int cy() const noexcept { return y + h / 2; }
 };
 
-// Pure horizontal inset from either side bezel at scanline y so a rectangle edge at
-// [x_inset, w - 1 - x_inset] clears circular and rounded-rectangle display bezels
-// with at least `margin` px radial/edge clearance.
-inline constexpr int bezel_x_inset_for(int y, int w, int h, int corner_r,
-                                       bool is_round, int margin = 10) noexcept {
-  if (w <= 0 || h <= 0) return margin;
-  const int cy = h / 2;
-  if (is_round) {
-    const int min_d = (w < h) ? w : h;
-    const int r_eff = (min_d / 2) - margin;
-    if (r_eff <= 0) return w / 2;
-    const int dy = (y >= cy) ? (y - cy) : (cy - y);
-    const int hw = chord_half_span_constexpr(r_eff, dy, false);
-    const int inset = (w / 2) - hw;
-    return (inset > margin) ? inset : margin;
-  }
-  const int cr = (corner_r > 0) ? corner_r : 0;
-  if (cr > margin) {
-    int dy = 0;
-    if (y < cr) {
-      dy = cr - y;
-    } else if (y >= h - cr) {
-      dy = y - (h - 1 - cr);
-    }
-    if (dy > 0) {
-      const int r_eff = cr - margin;
-      const int dx_corner = (dy < r_eff) ? chord_half_span_constexpr(r_eff, dy, false) : 0;
-      const int corner_inset = cr - dx_corner;
-      return (corner_inset > margin) ? corner_inset : margin;
-    }
-  }
-  return margin;
-}
-
 // Pure bezel-safe adaptive tile-grid geometry across all rectangular, rounded-rect,
-// round, square, and landscape panels (D-086).
+// round, square, and landscape panels (D-086 / D-087).
 inline constexpr TileGridGeom compute_tile_grid_geom(int w, int h, int corner_r,
                                                      bool is_round, int cols,
-                                                     int rows) noexcept {
+                                                     int rows,
+                                                     int ppi = LATTER_PANEL_PPI,
+                                                     int view_scale_pct = 0,
+                                                     bool is_stationary = (LATTER_IS_STATIONARY != 0)) noexcept {
   TileGridGeom g{};
   const int eff_cols = (cols < 1) ? 1 : ((cols > latter_core::kTileGridMaxCols) ? latter_core::kTileGridMaxCols : cols);
   const int eff_rows = (rows < 1) ? 1 : ((rows > latter_core::kTileGridMaxRows) ? latter_core::kTileGridMaxRows : rows);
   g.cols = eff_cols;
   g.rows = eff_rows;
 
-  const bool wearable_corners = (!is_round && corner_r >= 84 && w <= 440 && h <= 520);
-  const int sub_hdr_y = is_round
-                            ? scale_min_for(76, h)
-                            : (wearable_corners ? 64 : ((h > 520) ? 88 : 56));
-  const int home_bar_y = is_round ? scale_min_for(434, h) : (h - scale_y_for(11, h));
+  const auto ly = compute_panel_layout(w, h, is_round, corner_r >= 84, ppi, corner_r, view_scale_pct, is_stationary);
+  const int s = ly.scale_milli;
 
   int y_top = 0;
   int y_bot = 0;
   if (is_round) {
-    y_top = sub_hdr_y + scale_min_for(18, h);
+    y_top = ly.sub_hdr_y + std::max(10, dp_px_for(16, s));
     const int sym_bot = h - y_top;
-    const int bar_bot = home_bar_y - scale_min_for(28, h);
+    const int bar_bot = ly.home_bar_y - std::max(14, dp_px_for(22, s));
     y_bot = (sym_bot < bar_bot) ? sym_bot : bar_bot;
   } else {
-    const int top_pad = (h > 520) ? ((h >= 700) ? 24 : 20) : 18;
-    const int bot_pad = (h > 520)
-                            ? ((h >= 700) ? 27 : 18)
-                            : ((corner_r >= 84) ? 66 : ((corner_r >= 60) ? 40 : 24));
-    y_top = sub_hdr_y + top_pad;
-    y_bot = home_bar_y - bot_pad;
+    const int top_pad = std::max(12, dp_px_for(16, s));
+    const int corner_bot_pad = (corner_r >= 84) ? dp_px_for(48, s)
+                                                : ((corner_r >= 60) ? dp_px_for(32, s) : dp_px_for(20, s));
+    const int bot_pad = std::max(dp_px_for(18, s), corner_bot_pad);
+    y_top = ly.sub_hdr_y + top_pad;
+    y_bot = ly.home_bar_y - bot_pad;
   }
   if (y_bot < y_top + eff_rows * 32) {
     y_bot = y_top + eff_rows * 32;
   }
 
-  g.gap_x = (w >= 700) ? 16 : ((w < 380) ? 10 : 12);
-  g.gap_y = (h >= 580) ? 16 : ((is_round || w < 380) ? 10 : 12);
+  g.gap_x = std::clamp(dp_px_for(12, s), 8, 20);
+  g.gap_y = std::clamp(dp_px_for(12, s), 8, 20);
 
-  constexpr int kBezelMargin = 10;
-  const int base_side_pad = (w >= 960) ? 36 : ((w >= 700) ? 32 : ((w < 380) ? 16 : 20));
-  const int top_inset = bezel_x_inset_for(y_top, w, h, corner_r, is_round, kBezelMargin);
-  const int bot_inset = bezel_x_inset_for(y_bot - 1, w, h, corner_r, is_round, kBezelMargin);
+  const int bezel_margin = std::max(8, dp_px_for(10, s));
+  const int base_side_pad = std::clamp(dp_px_for(22, s), 14, 36);
+  const int top_inset = bezel_x_inset_for(y_top, w, h, corner_r, is_round, bezel_margin);
+  const int bot_inset = bezel_x_inset_for(y_bot - 1, w, h, corner_r, is_round, bezel_margin);
   int x_inset = (top_inset > bot_inset) ? top_inset : bot_inset;
   if (!is_round && base_side_pad > x_inset) {
     x_inset = base_side_pad;

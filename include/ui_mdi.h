@@ -45,6 +45,7 @@ std::size_t mdi_catalog_count() noexcept;
 bool has_mdi_icon(std::string_view name) noexcept;
 bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
                         MdiSpanEmitFn emit_fn, void *user) noexcept;
+void mdi_raster_cache_drop() noexcept;
 
 // ==============================================================================
 // Provider-Agnostic Icon Dispatch Boundary (D-078)

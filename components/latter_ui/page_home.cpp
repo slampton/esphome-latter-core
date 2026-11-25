@@ -170,7 +170,7 @@ HomeActivityStepResult step_home_activity_card(
       st.from_h = target_h; st.from_alpha = 1.0f; st.anim_start_ms = 0U;
     } else if (!st.was_visible || st.fade_out_start_ms != 0U) {
       st.from_rows = 0; st.from_top_item = st.from_bot_item = HomeActivityItem{}; st.from_has_drop = has_drop;
-      st.from_h = (st.last_drawn_h > 0) ? st.last_drawn_h : std::max(scale_y(26), (h1 * 3) / 5);
+      st.from_h = (st.last_drawn_h > 0) ? st.last_drawn_h : std::max(dp_px(26), (h1 * 3) / 5);
       st.from_alpha = (st.last_drawn_alpha > 0.02f) ? st.last_drawn_alpha : 0.0f;
       st.cur_rows = target_rows; st.cur_top_item = top_item; st.cur_bot_item = bot_item; st.cur_has_drop = has_drop;
       st.anim_start_ms = (now_ms == 0U) ? 1U : now_ms;
@@ -224,7 +224,7 @@ HomeActivityStepResult step_home_activity_card(
       st.fade_out_start_ms = 0U; st.last_drawn_h = 0; st.last_drawn_alpha = 0.0f;
     } else {
       const float e = ease_out_cubic(static_cast<float>(el) / static_cast<float>(kMotionMs));
-      const int min_collapse_h = std::max(scale_y(26), (h1 * 3) / 5);
+      const int min_collapse_h = std::max(dp_px(26), (h1 * 3) / 5);
       res.draw_fade_out = true; res.e = e;
       res.surf_alpha = std::clamp(st.fade_out_from_alpha * (1.0f - e), 0.0f, 1.0f);
       res.card_h = static_cast<int>(std::lround(static_cast<float>(st.fade_out_from_h) + static_cast<float>(min_collapse_h - st.fade_out_from_h) * e));
@@ -603,25 +603,32 @@ void render_battery_indicator(
   if (std::isnan(batt) || font_batt == nullptr) return;
   char batt_str[16];
   std::snprintf(batt_str, sizeof(batt_str), "%.0f%%", batt);
-  const bool compact = (SCREEN_W < 380);
-  const int text_x = cx + (compact ? 6 : 8);
-  ui::shadow_print(it, text_x, by, font_batt, theme_primary, UiTextAlign::CENTER, batt_str);
-  if (!compact) fast_print(it, text_x + 1, by, font_batt, theme_primary, UiTextAlign::CENTER, batt_str);
-  const int bx = text_x - (compact ? (batt >= 100.0f ? 24 : 20) : (batt >= 100.0f ? 36 : 28));
+  int tw = 0, xo = 0, base = 0, th = 0;
+  font_batt->measure(batt_str, &tw, &xo, &base, &th);
+  const int ref_h = std::max(10, th > 0 ? th : dp_px(18));
+  const int body_h = std::clamp((ref_h * 78) / 100, 10, 22);
+  const int body_w = std::max(7, (body_h * 62) / 100);
+  const int cap_w = std::max(3, body_w / 2);
+  const int cap_h = (body_h >= 14) ? 2 : 1;
+  const int gap = std::max(4, body_w / 2);
+  const int total_w = body_w + gap + tw;
+  const int left_x = cx - total_w / 2;
+  const int bx = left_x + body_w / 2;
+  const int text_cx = left_x + body_w + gap + tw / 2;
+  ui::shadow_print(it, text_cx, by, font_batt, theme_primary, UiTextAlign::CENTER, batt_str);
   if (is_charging) {
-    const int dx = compact ? 2 : 3, dy = compact ? 6 : 9;
+    const int dx = std::max(2, body_w / 3);
+    const int dy = std::max(5, body_h / 2 + 1);
     fast_filled_triangle(it, bx + dx, by - dy, bx - dx, by, bx + 1, by, col_gold);
     fast_filled_triangle(it, bx - 1, by, bx + 2, by, bx - dx, by + dy, col_gold);
-  } else if (compact) {
-    fill_rect_row_major(it, bx - 1, by - 6, 3, 1, col_green);
-    fast_rect_outline(it, bx - 4, by - 5, 8, 11, col_green);
-    const int fill_h = static_cast<int>(std::clamp((batt / 100.0f) * 7.0f, 1.0f, 7.0f));
-    fill_rect_row_major(it, bx - 2, (by + 4) - fill_h, 4, fill_h, col_green);
   } else {
-    fill_rect_row_major(it, bx - 2, by - 9, 4, 2, col_green);
-    fast_rect_outline(it, bx - 5, by - 7, 10, 16, col_green);
-    const int fill_h = static_cast<int>(std::clamp((batt / 100.0f) * 12.0f, 1.0f, 12.0f));
-    fill_rect_row_major(it, bx - 3, (by + 7) - fill_h, 6, fill_h, col_green);
+    const int y0 = by - body_h / 2;
+    fill_rect_row_major(it, bx - cap_w / 2, y0 - cap_h, cap_w, cap_h, col_green);
+    fast_rect_outline(it, bx - body_w / 2, y0, body_w, body_h, col_green);
+    const int inner_h = std::max(2, body_h - 4);
+    const int inner_w = std::max(2, body_w - 4);
+    const int fill_h = static_cast<int>(std::clamp((batt / 100.0f) * static_cast<float>(inner_h), 1.0f, static_cast<float>(inner_h)));
+    fill_rect_row_major(it, bx - inner_w / 2, (y0 + body_h - 2) - fill_h, inner_w, fill_h, col_green);
   }
 }
 #endif
@@ -637,20 +644,19 @@ void draw_home_activity_row_contents(
   const UiColor fg_btn = (alpha >= 0.99f) ? btn_bg          : lerp_color(card_bg, btn_bg, alpha);
 
   const int card_w     = is_list_row ? layout().list_card_w : layout().home_activity_w();
-  const int card_left  = SCREEN_CX - (card_w / 2), card_right = SCREEN_CX + (card_w / 2);
-  const int act_col_w  = scale_s(56);
-  const int drop_col_w = scale_s(52);
-  const int gx         = is_list_row ? (card_left + scale_s(18)) : (card_left + scale_s(28));
-  const int txt_x      = is_list_row ? (card_left + scale_s(33)) : (card_left + scale_s(48));
-  const int div1_x     = is_list_row ? (card_right - scale_s(44))
+  const int card_left  = SCREEN_CX - (card_w / 2), card_right = card_left + card_w;
+  const int act_col_w  = dp_px(56);
+  const int drop_col_w = dp_px(52);
+  const int gx         = is_list_row ? (card_left + dp_px(18)) : (card_left + dp_px(28));
+  const int txt_x      = is_list_row ? (card_left + dp_px(33)) : (card_left + dp_px(48));
+  const int div1_x     = is_list_row ? (card_right - dp_px(44))
                                      : (has_dropdown_ext ? (card_right - drop_col_w - act_col_w) : (card_right - act_col_w));
-  const int act_bx     = is_list_row ? (card_right - scale_s(22))
+  const int act_bx     = is_list_row ? (card_right - dp_px(22))
                                      : (has_dropdown_ext ? (card_right - drop_col_w - act_col_w / 2) : (card_right - act_col_w / 2));
-  const int max_txt    = std::max(64, div1_x - txt_x - scale_s(8));
-  const int btn_r      = is_list_row ? scale_s(13)
-                                     : (is_two_row_card ? ((SCREEN_W < 380) ? 15 : scale_s(17))
-                                                        : ((SCREEN_W < 380) ? 16 : scale_s(18)));
-  const int icon_r = is_list_row ? scale_s(8) : scale_s(10);
+  const int max_txt    = std::max(64, div1_x - txt_x - dp_px(8));
+  const int btn_r      = is_list_row ? dp_px(13)
+                                     : (is_two_row_card ? dp_px(17) : dp_px(18));
+  const int icon_r = is_list_row ? dp_px(8) : dp_px(10);
   const bool icon_sh = (alpha >= 0.85f);
   if (cur_act.kind == 1) ui::draw_icon_hourglass(it, gx, row_y, icon_r, fg_w, icon_sh);
   else if (cur_act.kind == 2) ui::draw_icon_stopwatch(it, gx, row_y, icon_r, fg_w, icon_sh);
@@ -713,8 +719,8 @@ void render_home_activity_list_row(
     UiColor card_bg, UiColor card_brd, UiColor btn_bg) {
   const int card_w = layout().list_card_w;
   const int card_h = layout().slot5_h;
-  const int div1_x = cx + (card_w / 2) - scale_s(44);
-  const int div_h = scale_y(14);
+  const int div1_x = cx + (card_w / 2) - dp_px(44);
+  const int div_h = dp_px(14);
   const UiColor surf_bg = render_card_box(it, cx - card_w / 2, pill_y - card_h / 2, card_w, card_h,
                                           card_bg, card_brd, kRadiusCardPx(), GlassVariant::Clear, col_white, true);
   draw_home_activity_row_contents(it, pill_y, cur_act, false, true, font_small,
@@ -726,33 +732,34 @@ void draw_activity_card_chrome(
     Rgb565Surface &it, int cx, int card_x0, int card_w, int card_h, int cur_cy,
     int y_top_slot, int y_bot_slot, int rows, bool has_drop, bool show_bot_div,
     float surf_alpha, float row_sep_a, UiColor card_bg, UiColor col_white) {
+  (void)cx;
   const UiColor div_col = (surf_alpha >= 0.99f) ? kChromeCardBrdOn : lerp_color(card_bg, kChromeCardBrdOn, surf_alpha);
-  const int card_right = cx + card_w / 2;
-  const int act_col_w = scale_s(56);
-  const int drop_col_w = scale_s(52);
+  const int card_right = card_x0 + card_w;
+  const int act_col_w = dp_px(56);
+  const int drop_col_w = dp_px(52);
   const int div2_x = card_right - drop_col_w;
   const int div1_x = has_drop ? (card_right - drop_col_w - act_col_w) : (card_right - act_col_w);
 
   if (row_sep_a > 0.05f) {
-    const int sep_x0 = card_x0 + scale_s(18), sep_x1 = (has_drop ? div2_x : card_right) - scale_s(12);
+    const int sep_x0 = card_x0 + dp_px(18), sep_x1 = (has_drop ? div2_x : card_right) - dp_px(12);
     if (sep_x1 > sep_x0) {
       const UiColor sep_col = (row_sep_a >= 0.99f) ? kChromeCardBrdOn : lerp_color(card_bg, kChromeCardBrdOn, row_sep_a);
       fast_hline(it, sep_x0, cur_cy, sep_x1 - sep_x0 + 1, sep_col);
     }
   }
   if (rows == 2) {
-    const int div_h = scale_y(16);
+    const int div_h = dp_px(16);
     fast_line(it, div1_x, y_top_slot - div_h, div1_x, y_top_slot + div_h, div_col);
     if (show_bot_div) fast_line(it, div1_x, y_bot_slot - div_h, div1_x, y_bot_slot + div_h, div_col);
   } else {
-    const int div_h = scale_y(18);
+    const int div_h = dp_px(18);
     fast_line(it, div1_x, cur_cy - div_h, div1_x, cur_cy + div_h, div_col);
   }
   if (has_drop) {
-    const int col_h = std::max(scale_y(12), card_h / 2 - scale_y(10));
+    const int col_h = std::max(dp_px(12), card_h / 2 - dp_px(10));
     fast_line(it, div2_x, cur_cy - col_h, div2_x, cur_cy + col_h, div_col);
     const UiColor chev_col = (surf_alpha >= 0.99f) ? col_white : lerp_color(card_bg, col_white, surf_alpha);
-    const int d_bx = card_right - drop_col_w / 2, ch_w = scale_s(8), ch_h = scale_s(4);
+    const int d_bx = card_right - drop_col_w / 2, ch_w = dp_px(8), ch_h = dp_px(4);
     for (int w = -1; w <= 1; w++) {
       fast_line(it, d_bx - ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
       fast_line(it, d_bx + ch_w, cur_cy - ch_h + w, d_bx, cur_cy + ch_h + w, chev_col);
@@ -766,7 +773,7 @@ bool draw_glass_activity_surface(
   if (box_h <= 4 || surf_alpha <= 0.01f) return false;
   if ((card_y0 + box_h) <= clip_y0() || card_y0 > clip_y1()) return false;
   const UiColor tint = kChromeGlassTint;
-  const int card_r = std::min(box_h / 2, (SCREEN_W > 520) ? scale_s(16) : 16);
+  const int card_r = std::min(box_h / 2, std::max(14, dp_px(16)));
   const bool full_opaque = (surf_alpha >= 0.995f);
 
   const int prev_clip_y0 = clip_y0(), prev_clip_y1 = clip_y1();
@@ -884,11 +891,12 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, total_pages);
     rs.nav.home_settings_page = hs_pg;
     const int hs_w = layout().list_card_w, hs_h = layout().slot5_h;
+    const int hs_bounce_y = edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     const int start_idx = (hs_pg - 1) * 5;
     const int vis_cnt = std::min(5, std::max(0, item_count - start_idx));
     for (int row = 0; row < vis_cnt; ++row) {
       const HomeSettingsItemId item = items[start_idx + row];
-      const int row_y = layout().slot5_y(row);
+      const int row_y = layout().slot5_y(row) + hs_bounce_y;
       const uint16_t wid = static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + row);
       const int16_t param = static_cast<int16_t>(item);
       char buf[48];
@@ -1013,7 +1021,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       frame_base(it, eff_night ? ctx.col_bg : UiColor(7, 13, 22));
 #endif
       if (celestial_visible) {
-        fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? 23 : scale_min(27),
+        fast_filled_circle(it, cel_x, cel_y, LATTER_ROUND_DISPLAY ? dp_px(23) : dp_px(27),
                            is_night ? UiColor(22, 26, 34) : UiColor(42, 36, 12));
       }
     } else {
@@ -1058,14 +1066,24 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       if (home_activity_overlay_page() >= total_pages || home_activity_overlay_page() < 0) home_activity_overlay_page() = 0;
       const int start_i = home_activity_overlay_page() * 5;
       const int vis_cnt = std::min(5, act_count - start_i);
+      const int act_bounce_y = edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
+      const int card_w = layout().list_card_w;
+      const int card_h = layout().slot5_h;
+      const int card_left = cx - card_w / 2;
+      const int act_col_w = std::min(card_w / 2, std::max(dp_px(44), layout().min_hit_px()));
+      const int open_w = std::max(24, card_w - act_col_w);
       for (int row = 0; row < vis_cnt; row++) {
-        const int y_mid = get_activity_overlay_card_y(vis_cnt, row);
+        const int y_mid = get_activity_overlay_card_y(vis_cnt, row) + act_bounce_y;
         render_home_activity_list_row(it, cx, y_mid, act_items[start_i + row], ctx.font_small,
                                       ctx.theme_secondary, ctx.col_white,
                                       kChromeGlassTint, kChromeCardBorder, kChromeGlassTint);
-        frame_hits().add_centered_rect(cx, y_mid, layout().list_card_w, layout().slot5_h,
-                                       WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row),
-                                       kHitTap | kHitFocusSlot, static_cast<int16_t>(start_i + row));
+        const int16_t item_idx = static_cast<int16_t>(start_i + row);
+        frame_hits().add_rect(card_left, y_mid - card_h / 2, open_w, card_h,
+                              WidgetId::LIST_SLOT_BASE + static_cast<uint16_t>(row),
+                              kHitTap | kHitFocusSlot, item_idx);
+        frame_hits().add_rect(card_left + open_w, y_mid - card_h / 2, act_col_w, card_h,
+                              WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + static_cast<uint16_t>(row),
+                              kHitTap | kHitFocusSlot, item_idx);
       }
       if (total_pages > 1) {
         render_vertical_page_pips(it, home_activity_overlay_page() > 0, home_activity_overlay_page() + 1 < total_pages,
@@ -1077,9 +1095,9 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   if (live_sky_drawn && celestial_visible) {
-    frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? scale_min(30) : scale_min(34),
+    frame_hits().add_circle(cel_x, cel_y, LATTER_ROUND_DISPLAY ? dp_px(30) : dp_px(34),
                             WidgetId::HOME_QUICK_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                            static_cast<int16_t>(is_night ? 1 : 0), scale_s(10));
+                            static_cast<int16_t>(is_night ? 1 : 0), dp_px(10));
   }
 
   const UiColor fg_home_cond = (!live_sky_drawn || is_night) ? ctx.theme_secondary : kChromeDayGold;
@@ -1091,8 +1109,8 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     ctx.now.strftime(date_bar, sizeof(date_bar), "%a, %b %d");
     ui::shadow_print(it, cx, z_date_y, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, date_bar);
     if (prefs.home_date_tap_action != 2U) {
-      const int date_hit_w = std::min(scale_x(230), safe_span(z_date_y, 16));
-      const int date_hit_h = std::min(scale_y(34), std::max(24, (z_clock_y - scale_y(38) - z_date_y) * 2));
+      const int date_hit_w = std::min(dp_px(230), safe_span(z_date_y, 16));
+      const int date_hit_h = std::min(dp_px(34), std::max(24, (z_clock_y - (kAutoFonts.time / 2) - z_date_y) * 2));
       frame_hits().add_centered_rect(cx, z_date_y, date_hit_w, date_hit_h, WidgetId::HOME_DATE_HERO, kHitTap | kHitFocusSlot);
     }
   }
@@ -1103,7 +1121,9 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     if (ctx.now.is_valid()) format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, time_str, sizeof(time_str));
     ui::shadow_print(it, cx, z_clock_y, ctx.font_time, ctx.col_white, UiTextAlign::CENTER, time_str);
     if (prefs.home_clock_tap_action != 2U) {
-      frame_hits().add_centered_rect(cx, z_clock_y, scale_x(260), scale_y(72), WidgetId::HOME_TIME_READOUT, kHitTap | kHitFocusSlot);
+      const int clk_hit_w = std::min(dp_px(260), safe_span(z_clock_y, 16));
+      frame_hits().add_centered_rect(cx, z_clock_y, clk_hit_w, std::max(dp_px(64), kAutoFonts.time),
+                                     WidgetId::HOME_TIME_READOUT, kHitTap | kHitFocusSlot);
     }
   }
 
@@ -1111,12 +1131,13 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     char w_line[64];
     if (!std::isnan(ws.temperature)) std::snprintf(w_line, sizeof(w_line), "%.0f° • %s", ws.temperature, cond_title.c_str());
     else std::snprintf(w_line, sizeof(w_line), "%s", cond_title.c_str());
-    const int max_w_span = std::min(scale_x(340), safe_span(z_weath_y));
+    const int max_w_span = std::min(dp_px(340), safe_span(z_weath_y));
     const std::string fit_w = fit_text_to_width_font(std::string(w_line), max_w_span, ctx.font_date);
     fast_print(it, cx + 1, z_weath_y + 1, ctx.font_date, ctx.col_black, UiTextAlign::CENTER, fit_w.c_str());
     fast_print(it, cx, z_weath_y, ctx.font_date, fg_home_cond, UiTextAlign::CENTER, fit_w.c_str());
     if (prefs.home_weather_tap_action != 2U) {
-      frame_hits().add_centered_rect(cx, z_weath_y, std::min(scale_x(300), max_w_span), scale_y(36),
+      frame_hits().add_centered_rect(cx, z_weath_y, std::min(dp_px(300), max_w_span),
+                                     std::max(dp_px(36), kAutoFonts.date + dp_px(8)),
                                      WidgetId::HOME_WEATHER_HERO, kHitTap | kHitFocusSlot);
     }
   }
@@ -1184,7 +1205,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
       if (inner_y0 <= inner_y1) {
         set_clip_y_band(inner_y0, inner_y1);
-        const int rise = scale_y(16);
+        const int rise = dp_px(16);
         auto draw_item = [&](const HomeActivityItem &it_act, int y, float alpha, bool two_row_style) {
           if (it_act.kind == 0 || alpha <= 0.04f) return;
           draw_home_activity_row_contents(it, y, it_act, step.has_drop, false, ctx.font_small,
@@ -1201,7 +1222,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         };
 
         if (step.animating && st.from_rows == 0) {
-          const int rise_in = static_cast<int>(static_cast<float>(scale_y(10)) * (1.0f - e));
+          const int rise_in = static_cast<int>(static_cast<float>(dp_px(10)) * (1.0f - e));
           if (step.target_rows == 1) {
             draw_item(st.cur_top_item, cur_cy + rise_in, surf_alpha, false);
           } else {
@@ -1213,7 +1234,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
             draw_item(st.cur_top_item, y_top_slot, 1.0f, true);
             draw_item(st.cur_bot_item, y_bot_slot + static_cast<int>(static_cast<float>(rise) * (1.0f - e)), e, true);
           } else if (same_activity_id(st.cur_bot_item, st.from_top_item)) {
-            draw_item(st.cur_top_item, y_top_slot - static_cast<int>(static_cast<float>(scale_y(10)) * (1.0f - e)), e, true);
+            draw_item(st.cur_top_item, y_top_slot - static_cast<int>(static_cast<float>(dp_px(10)) * (1.0f - e)), e, true);
             draw_item(st.cur_bot_item, y_bot_slot, 1.0f, true);
           } else {
             draw_item(st.from_top_item, y_bot_slot - static_cast<int>(static_cast<float>(rise) * e), 1.0f - e, true);
@@ -1258,7 +1279,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     register_home_activity_hit_regions(frame_hits(), cx, step.target_cy, card_w, step.target_h,
                                        (step.target_rows >= 2) && (view.bottom >= 0), step.has_drop,
-                                       view.top, view.bottom, scale_s(56), scale_s(52));
+                                       view.top, view.bottom, dp_px(56), dp_px(52));
   } else if (step.draw_fade_out) {
     const int fade_h = step.card_h;
     const float fade_alpha = step.surf_alpha;
@@ -1302,7 +1323,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       wake_greeting_latched_text() = raw_greet;
     }
     const std::string fit_greet = fit_text_to_width_font(
-        std::string(raw_greet), std::min(scale_x(340), safe_span(act_card_cy)), ctx.font_date);
+        std::string(raw_greet), std::min(dp_px(340), safe_span(act_card_cy)), ctx.font_date);
     const int greet_y = act_card_cy - 2;
     float alpha = 1.0f;
     if (greet_el > kWakeGreetingHoldMs) {
@@ -1330,7 +1351,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
     const int vis_count = std::min(4, dock_count - start_idx);
     const int dock_y = ly.dock_y, dock_r = ly.dock_r, dock_pad = std::max(0, ly.dock_hit_r() - dock_r);
-    const int dock_gutter_w = std::max(12, scale_s(26));
+    const int dock_gutter_w = std::max(12, dp_px(26));
     if (total_dock_pages > 1 && home_dock_page() > 0 && vis_count > 0) {
       const int lx1 = win_xs[0] - dock_r - 6;
       const int lx0 = std::max(0, lx1 - dock_gutter_w);
@@ -1449,7 +1470,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 #if LATTER_HAS_BATTERY
   if (prefs.home_show_battery) {
     render_battery_indicator(it, ly.battery_cx, ly.battery_y, rs.hw_batt_level, rs.hw_batt_charging,
-                             (SCREEN_W < 380 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small,
+                             (LATTER_PANEL_PPI <= 190 && ctx.font_micro != nullptr) ? ctx.font_micro : ctx.font_small,
                              ctx.theme_secondary, ctx.col_gold, ctx.col_green);
   }
 #endif

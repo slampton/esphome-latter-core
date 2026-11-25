@@ -103,12 +103,13 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   // SUBPAGE 2: ENTITY LEVEL, COLOR (HSV WHEEL) & WHITE KELVIN INSPECTOR (D-050)
   // ===========================================================================
   if (area_subpage == 2) {
+    const auto ly = layout();
     const std::string &insp_dom = light_insp_domain();
     if (insp_dom == "climate") {
       std::string hdr_name = light_insp_name();
       if (hdr_name.empty()) hdr_name = "THERMOSTAT";
       for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-      std::string fit_ln = fit_text_to_width_font(hdr_name, scale_x(260), font_small);
+      std::string fit_ln = fit_text_to_width_font(hdr_name, std::min(dp_px(260), ly.safe_span(ly.hdr_y, dp_px(18))), font_small);
       render_page_header(it, cx, fit_ln.c_str(), font_small, col_white);
 
       ThermostatZoneItem fallback_clim{};
@@ -122,17 +123,17 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         clim_ptr = &fallback_clim;
       }
 
-      const int deck_top = layout().hdr_y + ((SCREEN_H < 400) ? 20 : scale_y(28));
-      const int deck_bot = layout().back_y - ((SCREEN_H < 400) ? 18 : scale_y(24));
+      const int deck_top = ly.hdr_y + dp_px(24);
+      const int deck_bot = ly.back_y - dp_px(22);
       render_climate_controls_deck(it, ctx, rs, *clim_ptr, deck_top, deck_bot);
-      render_back_button(it, cx, font_small, layout().back_y, "< Back");
+      render_back_button(it, cx, font_small, ly.back_y, "< Back");
       return;
     }
     if (insp_dom == "cover" || insp_dom == "fan") {
       const bool is_cov = (insp_dom == "cover");
       std::string hdr_name = light_insp_name();
       for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-      std::string fit_ln = fit_text_to_width_font(hdr_name, scale_x(260), font_small);
+      std::string fit_ln = fit_text_to_width_font(hdr_name, std::min(dp_px(260), ly.safe_span(ly.hdr_y, dp_px(18))), font_small);
       render_page_header(it, cx, fit_ln.c_str(), font_small, col_white);
 
       const int cur_pct = std::clamp(light_insp_bri_pct(), 0, 100);
@@ -148,11 +149,12 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       }
       render_sub_header(it, cx, sub_st, font_small, is_on_st ? theme_secondary : col_slate);
 
-      const int sl_card_w = layout().light_slider_card_w();
-      const int b_cy = scale_y(172);
+      const int sl_card_w = ly.light_slider_card_w();
+      const int b_h = std::max(44, dp_px(64));
+      const int b_cy = ly.sub_hdr_y + dp_px(24) + b_h / 2;
       char b_buf[48];
       std::snprintf(b_buf, sizeof(b_buf), "%s: %d%%", is_cov ? "Position" : "Speed", cur_pct);
-      ui::slider_card_row(it, cx, b_cy, sl_card_w, scale_y(64),
+      ui::slider_card_row(it, cx, b_cy, sl_card_w, b_h,
                           b_buf, cur_pct, 0, 100, true,
                           is_cov ? kChromeCoverFill : kChromeFanFill,
                           is_on_st ? theme_primary : card_brd_off,
@@ -163,14 +165,16 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       const char *const cov_lbls[4] = {"Close", "25%", "50%", "Open"};
       const char *const fan_lbls[4] = {"Off", "33%", "66%", "100%"};
       HomeHubPillGeom p_geoms[4]{};
-      const int deck_top = scale_y(236);
-      const int deck_bot = layout().back_y - scale_y(26);
+      const int deck_top = b_cy + b_h / 2 + dp_px(18);
+      const int deck_bot = ly.back_y - dp_px(24);
       const bool two_r = home_hub_uses_two_rows(
           4, deck_top, deck_bot, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
-          LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+          LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, LATTER_CORNER_R,
+          LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
       const int n_p = compute_home_hub_pill_deck(
           4, deck_top, deck_bot, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
-          LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, two_r, p_geoms);
+          LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, two_r, p_geoms, LATTER_CORNER_R,
+          LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
       for (int p = 0; p < n_p; ++p) {
         const bool sel = (std::abs(cur_pct - preset_vals[p]) <= 4) &&
                          ((preset_vals[p] == 0) ? !is_on_st : is_on_st);
@@ -184,7 +188,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
             std::max(p_geoms[p].h, p_geoms[p].hit_h));
       }
 
-      render_back_button(it, cx, font_small, layout().back_y, "< Back");
+      render_back_button(it, cx, font_small, ly.back_y, "< Back");
       return;
     }
 
@@ -192,14 +196,12 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     std::string light_hdr = light_insp_name();
     if (light_hdr.empty()) light_hdr = "LIGHT";
     for (char &c : light_hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-    std::string fit_lh = fit_text_to_width_font(light_hdr, safe_span(layout().hdr_y, 20), font_small);
+    std::string fit_lh = fit_text_to_width_font(light_hdr, safe_span(ly.hdr_y, 20), font_small);
     render_page_header(it, cx, fit_lh.c_str(), font_small, col_white);
 
-    const int seg_h = (SCREEN_H < 400) ? 28 : scale_y(30);
-    const int seg_cy = layout().sub_hdr_y + scale_y(8);
-    const int seg_w = std::min({kMaxContentColW, scale_x(296),
-                                band_safe_span_for(seg_cy, seg_h, SCREEN_W, SCREEN_H,
-                                                   LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 14)});
+    const int seg_h = std::max(28, dp_px(30));
+    const int seg_cy = ly.sub_hdr_y + dp_px(8);
+    const int seg_w = std::min({ly.max_content_w(300), ly.band_safe_span(seg_cy, seg_h, dp_px(14))});
     ui::segmented_toggle(it, cx, seg_cy, seg_w, seg_h,
                          "Color Wheel", "White Temp", is_kelvin_mode,
                          font_small, theme_primary, col_white, col_slate,
@@ -207,46 +209,53 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                          !is_kelvin_mode ? WidgetId::LIGHT_COLOR_BTN : WidgetId::NONE);
 
     if (!is_kelvin_mode) {
-      const int wheel_cy = scale_y(244);
-      ui::hsv_color_wheel(it, cx, wheel_cy, 132, 58, light_insp_hue_deg(), light_insp_sat(),
+      ui::hsv_color_wheel(it, ui::area_color_wheel_geom(), light_insp_hue_deg(), light_insp_sat(),
                           col_bg, col_white, WidgetId::COLOR_WHEEL_RING);
     } else {
-      const int sl_card_w = layout().light_slider_card_w();
-      const int k_bar_w   = layout().light_kelvin_bar_w();
-      const int k_bar_x0  = layout().light_kelvin_bar_x0();
-      const int k_cy      = scale_y(176);
-      const int k_h       = scale_y(68);
+      const int sl_card_w = ly.light_slider_card_w();
+      const int k_bar_w   = ly.light_kelvin_bar_w();
+      const int k_bar_x0  = ly.light_kelvin_bar_x0();
+      const int top_y = seg_cy + seg_h / 2 + dp_px(16);
+      const int bot_y = ly.back_y - dp_px(24);
+      const int avail_h = std::max(100, bot_y - top_y);
+      const int gap = dp_px(16);
+      const int k_h = std::clamp((avail_h - gap) / 2, 46, dp_px(68));
+      const int b_h = std::clamp((avail_h - gap) / 2, 44, dp_px(64));
+      const int k_cy = top_y + (avail_h - (k_h + gap + b_h)) / 2 + k_h / 2;
+      const int b_cy = k_cy + k_h / 2 + gap + b_h / 2;
       render_card_box(it, cx - sl_card_w / 2, k_cy - k_h / 2, sl_card_w, k_h,
                       card_bg_on, theme_primary, kRadiusCardPx());
       frame_hits().add_centered_rect(cx, k_cy, sl_card_w, k_h,
                                      WidgetId::LIGHT_TEMP_SLIDER, kHitTap | kHitHorizSlider | kHitFocusSlot);
+      const int bar_h = std::max(12, dp_px(16));
+      const int bar_y = k_cy + dp_px(6);
       for (int b = 0; b < 24; b++) {
         const float t = static_cast<float>(b) / 23.0f;
         const Color band_c = lerp_color(kChromeWarmKelvin, kChromeCoolKelvin, t);
         const int bx0 = k_bar_x0 + (b * k_bar_w) / 24;
         const int bx1 = k_bar_x0 + ((b + 1) * k_bar_w) / 24;
-        fill_rect_row_major(it, bx0, k_cy + scale_y(6), std::max(2, bx1 - bx0), scale_y(16), band_c);
+        fill_rect_row_major(it, bx0, bar_y, std::max(2, bx1 - bx0), bar_h, band_c);
       }
       const int k_clamped = std::max(kLightKelvinMin, std::min(kLightKelvinMax, light_insp_kelvin()));
       const int k_knob_x =
           k_bar_x0 + ((k_clamped - kLightKelvinMin) * k_bar_w) / (kLightKelvinMax - kLightKelvinMin);
-      fast_filled_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(10), col_white);
-      fast_circle(it, k_knob_x, k_cy + scale_y(14), scale_s(11), col_black);
+      const int knob_r = std::max(8, dp_px(10));
+      fast_filled_circle(it, k_knob_x, bar_y + bar_h / 2, knob_r, col_white);
+      fast_circle(it, k_knob_x, bar_y + bar_h / 2, knob_r + 1, col_black);
       char k_buf[48];
       std::snprintf(k_buf, sizeof(k_buf), "White Temp: %dK", k_clamped);
-      ui::shadow_print(it, cx, k_cy - scale_y(12), font_small, col_white, TextAlign::CENTER, k_buf);
+      ui::shadow_print(it, cx, k_cy - dp_px(12), font_small, col_white, TextAlign::CENTER, k_buf);
 
-      const int b_cy = scale_y(268);
       const int b_clamped = std::max(5, std::min(100, light_insp_bri_pct()));
       char b_buf[48];
       std::snprintf(b_buf, sizeof(b_buf), "Brightness: %d%%", b_clamped);
-      ui::slider_card_row(it, cx, b_cy, sl_card_w, scale_y(64),
+      ui::slider_card_row(it, cx, b_cy, sl_card_w, b_h,
                           b_buf, b_clamped, 0, 100, true,
                           kChromeLightFill, card_brd_off,
                           font_small, col_white, WidgetId::LIGHT_BRI_SLIDER);
     }
 
-    render_back_button(it, cx, font_small, layout().back_y, "< Back");
+    render_back_button(it, cx, font_small, ly.back_y, "< Back");
     return;
   }
 
@@ -277,14 +286,14 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       frame_hits().add_centered_rect(cx, y_mid, area_w, area_h,
                                      static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
                                      kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-      const int dot_x = area_l + scale_x(19);
+      const int dot_x = area_l + dp_px(19);
       if (is_act) {
-        fast_filled_circle_aa(it, dot_x, y_mid, scale_s(6), theme_primary);
+        fast_filled_circle_aa(it, dot_x, y_mid, std::max(4, dp_px(6)), theme_primary);
       } else {
-        fast_circle_aa(it, dot_x, y_mid, static_cast<float>(scale_s(5)), col_slate, 1.5f);
+        fast_circle_aa(it, dot_x, y_mid, static_cast<float>(std::max(4, dp_px(5))), col_slate, 1.5f);
       }
-      std::string fit_n = fit_text_to_width_font(s.name, area_w - scale_x(54), font_small);
-      ui::shadow_print(it, area_l + scale_x(37), y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
+      std::string fit_n = fit_text_to_width_font(s.name, std::max(48, area_w - dp_px(54)), font_small);
+      ui::shadow_print(it, area_l + dp_px(37), y_mid, font_small, txt_c, TextAlign::CENTER_LEFT, fit_n.c_str());
     }
 
     if (list_total_pages > 1) {
@@ -303,27 +312,29 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   // ===========================================================================
   // SUBPAGE 0: MAIN AREA CONTROL (HEADER + CLIMATE + 3 TALL SLIDER CARDS + DOCK)
   // ===========================================================================
+  const auto ly = layout();
   std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
   for (char &c : hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-  std::string fit_hdr = fit_text_to_width_font(hdr, scale_x(250), font_small);
+  std::string fit_hdr = fit_text_to_width_font(hdr, std::min(dp_px(250), ly.safe_span(ly.hdr_y, dp_px(18))), font_small);
   render_page_header(it, cx, fit_hdr.c_str(), font_small, col_white);
-  const int hdr_hit_w = std::max(scale_x(250), layout().min_hit_px());
-  const int hdr_hit_h = scale_y(36);
-  const int hdr_hit_pad = std::max(0, (layout().min_hit_px() - hdr_hit_h + 1) / 2);
-  frame_hits().add_centered_rect(cx, layout().hdr_y, hdr_hit_w, hdr_hit_h,
+  const int hdr_hit_w = std::min(ly.safe_span(ly.hdr_y, dp_px(12)),
+                                 std::max(dp_px(240), ly.min_hit_px() * 2));
+  const int hdr_hit_h = dp_px(36);
+  const int hdr_hit_pad = std::max(0, (ly.min_hit_px() - hdr_hit_h + 1) / 2);
+  frame_hits().add_centered_rect(cx, ly.hdr_y, hdr_hit_w, hdr_hit_h,
                                  WidgetId::AREA_PICKER_PILL, kHitTap | kHitFocusSlot, 0, hdr_hit_pad);
 
   if (is_fb) {
-    std::string fit_fb = fit_text_to_width_font(area_action_feedback, scale_x(280), font_small);
+    std::string fit_fb = fit_text_to_width_font(area_action_feedback, std::min(dp_px(280), ly.safe_span(ly.sub_hdr_y, dp_px(18))), font_small);
     render_sub_header(it, cx, fit_fb.c_str(), font_small, theme_secondary);
   } else if (!std::isnan(area_temp) || !std::isnan(area_humidity)) {
-    const int tele_y = layout().sub_hdr_y;
+    const int tele_y = ly.sub_hdr_y;
     const Color icon_c = kChromeTeleIce;
     const bool tele_sh = backdrop_active();
-    const int tr = scale_s(8);
+    const int tr = std::max(6, dp_px(8));
     const int icon_slot = 2 * tr;
-    const int txt_pad = scale_x(5);
-    const int pair_gap = scale_x(22);
+    const int txt_pad = dp_px(5);
+    const int pair_gap = dp_px(22);
 
     char t_str[16] = "", h_str[16] = "";
     int w_t = 0, w_h = 0, x_off = 0, base = 0, th = 0;
@@ -420,7 +431,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
     if (dtype == "text" || id_str.empty()) {
       // D-048 / D-070: Non-interactive placeholder renders bare shadowed text (zero glass).
-      std::string fit_msg = fit_text_to_width_font(raw_name, std::min(kMaxContentColW, safe_span(y_mid, 24)), font_small);
+      std::string fit_msg = fit_text_to_width_font(raw_name, std::min(ly.max_content_w(), safe_span(y_mid, 24)), font_small);
       ui::shadow_print(it, cx, y_mid, font_small, col_slate, TextAlign::CENTER, fit_msg.c_str());
       continue;
     }
@@ -434,11 +445,11 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     else if (dtype == "cover") fill_c = kChromeCoverFill;
     else if (dtype == "fan") fill_c = kChromeFanFill;
 
-    const int r_card_w   = layout().area_card3_w;
-    const int r_card_h   = layout().area_card3_h;
-    const int r_left     = layout().area_card_left();
-    const int r_right    = layout().area_card_right();
-    const int r_div_x    = layout().area_card_div_x();
+    const int r_card_w   = ly.area_card3_w;
+    const int r_card_h   = ly.area_card3_h;
+    const int r_left     = ly.area_card_left();
+    const int r_right    = ly.area_card_right();
+    const int r_div_x    = ly.area_card_div_x();
     const int r_slider_w = (r_right - 5) - (r_div_x + 1);
     render_card_box(it, r_left, y_mid - r_card_h / 2, r_card_w, r_card_h, bg_c, brd_c, kRadiusCardPx());
 
@@ -453,14 +464,15 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
 
     draw_tall_card_icon((r_left + r_div_x) / 2, y_mid, dtype, raw_name, id_str, is_act, is_act ? col_white : col_slate);
-    fast_line(it, r_div_x, y_mid - scale_y(22), r_div_x, y_mid + scale_y(22), brd_c);
+    const int div_h = std::min(r_card_h / 2 - 4, dp_px(22));
+    fast_line(it, r_div_x, y_mid - div_h, r_div_x, y_mid + div_h, brd_c);
 
     std::string clean_name = strip_trailing_paren_state(raw_name);
     const int max_t_w = (dtype == "light")
-        ? (r_slider_w - scale_x(58))
-        : ((has_slider || dtype == "climate") ? (r_slider_w - scale_x(28)) : (r_slider_w - scale_x(20)));
+        ? (r_slider_w - dp_px(58))
+        : ((has_slider || dtype == "climate") ? (r_slider_w - dp_px(28)) : (r_slider_w - dp_px(20)));
     std::string fit_title = fit_text_to_width_font(clean_name, std::max(80, max_t_w), font_small);
-    ui::shadow_print(it, r_div_x + scale_x(13), y_mid - scale_y(11), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
+    ui::shadow_print(it, r_div_x + dp_px(13), y_mid - std::min(r_card_h / 4, dp_px(11)), font_small, is_act ? col_white : col_slate, TextAlign::CENTER_LEFT, fit_title.c_str());
 
     char sub_buf[40];
     if (dtype == "light") {
@@ -505,32 +517,32 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       std::snprintf(sub_buf, sizeof(sub_buf), is_act ? "On" : "Off");
     }
     const Color sub_c = is_act ? theme_secondary : kChromeMuted;
-    ui::shadow_print(it, r_div_x + scale_x(13), y_mid + scale_y(14), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
+    ui::shadow_print(it, r_div_x + dp_px(13), y_mid + std::min(r_card_h / 4 + dp_px(2), dp_px(14)), font_small, sub_c, TextAlign::CENTER_LEFT, sub_buf);
 
-    const int card_max_pad = std::max(0, (layout().area_card3_stride - r_card_h - 1) / 2);
-    const int card_hit_pad = std::min(card_max_pad, std::max(0, (layout().min_hit_px() - r_card_h + 1) / 2));
+    const int card_max_pad = std::max(0, (ly.area_card3_stride - r_card_h - 1) / 2);
+    const int card_hit_pad = std::min(card_max_pad, std::max(0, (ly.min_hit_px() - r_card_h + 1) / 2));
     frame_hits().add_rect(r_left, y_mid - r_card_h / 2, r_div_x - r_left, r_card_h,
                           static_cast<uint16_t>(WidgetId::AREA_CARD_TOGGLE + idx),
                           kHitTap | kHitFocusSlot, static_cast<int16_t>(idx), card_hit_pad);
 
     int right_limit = r_right;
     if (dtype == "light") {
-      const int ox = layout().area_card_orb_x();
-      const int orb_r = scale_s(16);
-      const int dot_r = scale_s(4);
+      const int ox = ly.area_card_orb_x();
+      const int orb_r = std::min(r_card_h / 2 - 4, dp_px(16));
+      const int dot_r = std::max(3, dp_px(4));
       right_limit = ox - orb_r - 4;
       render_glass_circle(it, ox, y_mid, orb_r, kChromeGlassTint, is_act ? theme_primary : card_brd_off);
-      fast_filled_circle_aa(it, ox - scale_s(5), y_mid - scale_s(4), dot_r, kChromeRgbRed);
-      fast_filled_circle_aa(it, ox + scale_s(5), y_mid - scale_s(4), dot_r, kChromeRgbGreen);
-      fast_filled_circle_aa(it, ox,             y_mid + scale_s(5), dot_r, kChromeRgbBlue);
-      const int orb_min_r = (layout().min_hit_px() + 1) / 2;
-      const int orb_pad = std::max(scale_s(14), orb_min_r - orb_r);
+      fast_filled_circle_aa(it, ox - dp_px(5), y_mid - dp_px(4), dot_r, kChromeRgbRed);
+      fast_filled_circle_aa(it, ox + dp_px(5), y_mid - dp_px(4), dot_r, kChromeRgbGreen);
+      fast_filled_circle_aa(it, ox,             y_mid + dp_px(5), dot_r, kChromeRgbBlue);
+      const int orb_min_r = (ly.min_hit_px() + 1) / 2;
+      const int orb_pad = std::max(dp_px(14), orb_min_r - orb_r);
       frame_hits().add_circle(ox, y_mid, orb_r,
                               WidgetId::LIGHT_ORB_BTN, kHitTap | kHitFocusCircle,
                               static_cast<int16_t>(idx), orb_pad);
     } else if (has_slider || dtype == "climate") {
       // Subtle right-chevron cue indicating tap-to-inspect Position / Speed (D-050).
-      ui::draw_icon_chevron(it, r_right - scale_x(18), y_mid, std::max(5, scale_s(7)),
+      ui::draw_icon_chevron(it, r_right - dp_px(18), y_mid, std::max(5, dp_px(7)),
                             true, is_act ? col_white : col_slate, true);
     }
 

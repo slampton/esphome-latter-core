@@ -70,14 +70,18 @@ struct HomeHubPillGeom {
 inline constexpr int compute_action_pill_row(
     int count, int cy, int pill_h, int max_row_w, int max_btn_w, int gap,
     int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi,
-    HomeHubPillGeom *out_geoms, int inset = 14) noexcept {
+    HomeHubPillGeom *out_geoms, int inset = 14, int corner_r = -1,
+    int view_scale_pct = 0, bool is_stationary = false) noexcept {
   if (count <= 0 || out_geoms == nullptr) return 0;
   const int cx = screen_w / 2;
+  const int eff_vs = resolve_view_scale_pct_for(screen_w, screen_h, ppi, is_round, view_scale_pct, is_stationary);
+  const int s = compute_ui_scale_milli(ppi, eff_vs, is_stationary);
+  const int col_cap = dp_px_for(460, s);
   const int min_hit = mm_to_px_for(7.0f, ppi);
   const int eff_h = (pill_h > 24) ? pill_h : 24;
   const int hit_h = (eff_h > min_hit) ? eff_h : min_hit;
-  const int safe_w = band_safe_span_for(cy, eff_h, screen_w, screen_h, is_round, is_wearable, inset);
-  const int desk_cap = (screen_w > 520 && max_row_w > kMaxContentColW) ? kMaxContentColW : max_row_w;
+  const int safe_w = band_safe_span_for(cy, eff_h, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
+  const int desk_cap = (max_row_w > col_cap && screen_w > col_cap) ? col_cap : max_row_w;
   const int avail_w = (desk_cap < safe_w) ? desk_cap : safe_w;
   int eff_gap = (gap > 2) ? gap : 4;
   int bw = (avail_w - (count - 1) * eff_gap) / count;
@@ -99,15 +103,18 @@ inline constexpr int compute_action_pill_row(
 
 inline constexpr bool home_hub_uses_two_rows(
     int count, int content_top, int content_bot,
-    int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi) noexcept {
+    int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi,
+    int corner_r = -1, int view_scale_pct = 0, bool is_stationary = false) noexcept {
   if (count > 4) return true;
   if (count < 4) return false;
+  const int eff_vs = resolve_view_scale_pct_for(screen_w, screen_h, ppi, is_round, view_scale_pct, is_stationary);
+  const int s = compute_ui_scale_milli(ppi, eff_vs, is_stationary);
   const int avail_h = (content_bot - content_top > 140) ? (content_bot - content_top) : 140;
   const int min_hit = mm_to_px_for(7.0f, ppi);
-  const int gap = (scale_x_for(8, screen_w) > 6) ? scale_x_for(8, screen_w) : 6;
+  const int gap = std::max(6, dp_px_for(8, s));
   const int est_row_y = content_bot - avail_h / 4;
-  const int est_h = (scale_y_for(46, screen_h) > 38) ? scale_y_for(46, screen_h) : 38;
-  const int single_safe = band_safe_span_for(est_row_y, est_h, screen_w, screen_h, is_round, is_wearable, 14);
+  const int est_h = std::max(38, dp_px_for(46, s));
+  const int single_safe = band_safe_span_for(est_row_y, est_h, screen_w, screen_h, is_round, is_wearable, 14, corner_r);
   const int thr = (min_hit < 72) ? min_hit : 72;
   return ((single_safe - 3 * gap) / 4) < thr;
 }
@@ -115,18 +122,22 @@ inline constexpr bool home_hub_uses_two_rows(
 inline constexpr int compute_home_hub_pill_deck(
     int count, int deck_top, int content_bot,
     int screen_w, int screen_h, bool is_round, bool is_wearable, int ppi,
-    bool two_rows, HomeHubPillGeom *out_geoms) noexcept {
+    bool two_rows, HomeHubPillGeom *out_geoms, int corner_r = -1,
+    int view_scale_pct = 0, bool is_stationary = false) noexcept {
   if (count <= 0 || out_geoms == nullptr) return 0;
   const int cx = screen_w / 2;
+  const int eff_vs = resolve_view_scale_pct_for(screen_w, screen_h, ppi, is_round, view_scale_pct, is_stationary);
+  const int s = compute_ui_scale_milli(ppi, eff_vs, is_stationary);
+  const int col_cap = dp_px_for(460, s);
   const int deck_h = (content_bot - deck_top > 40) ? (content_bot - deck_top) : 40;
   const int min_hit = mm_to_px_for(7.0f, ppi);
-  const int gap = (scale_x_for(8, screen_w) > 6) ? scale_x_for(8, screen_w) : 6;
+  const int gap = std::max(6, dp_px_for(8, s));
 
   if (two_rows && count >= 4) {
     const int row_stride = deck_h / 2;
     int pill_h = row_stride - 5;
     if (pill_h < 30) pill_h = 30;
-    const int max_ph = scale_y_for(46, screen_h);
+    const int max_ph = dp_px_for(46, s);
     if (pill_h > max_ph) pill_h = max_ph;
     const int cap_hit_h = (min_hit < row_stride) ? min_hit : row_stride;
     const int hit_h = (pill_h > cap_hit_h) ? pill_h : cap_hit_h;
@@ -138,9 +149,8 @@ inline constexpr int compute_home_hub_pill_deck(
       const int rc = row_cnts[r];
       if (rc <= 0) continue;
       const int row_cy = deck_top + r * row_stride + row_stride / 2;
-      const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 14);
-      const int max_rw = (screen_w > 520) ? std::min(kMaxContentColW, scale_x_for(332, screen_w))
-                                          : scale_x_for(332, screen_w);
+      const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 14, corner_r);
+      const int max_rw = std::min(col_cap, dp_px_for(340, s));
       const int row_w = (max_rw < safe_w) ? max_rw : safe_w;
       const int raw_pw = (row_w - (rc - 1) * gap) / rc;
       const int pill_w = (raw_pw > 44) ? raw_pw : 44;
@@ -158,14 +168,14 @@ inline constexpr int compute_home_hub_pill_deck(
   const int row_cy = deck_top + deck_h / 2;
   int pill_h = deck_h - 8;
   const int min_ph = (count == 1) ? 40 : 36;
-  const int max_ph = scale_y_for((count == 1) ? 54 : 50, screen_h);
+  const int max_ph = dp_px_for((count == 1) ? 54 : 50, s);
   if (pill_h < min_ph) pill_h = min_ph;
   if (pill_h > max_ph) pill_h = max_ph;
   const int cap_hit_h = (min_hit < deck_h) ? min_hit : deck_h;
   const int hit_h = (pill_h > cap_hit_h) ? pill_h : cap_hit_h;
-  const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 12);
+  const int safe_w = band_safe_span_for(row_cy, pill_h, screen_w, screen_h, is_round, is_wearable, 12, corner_r);
   if (count == 1) {
-    const int max_single_w = scale_x_for(204, screen_w);
+    const int max_single_w = dp_px_for(204, s);
     int pill_w = (max_single_w < safe_w) ? max_single_w : safe_w;
     if (pill_w < 64) pill_w = 64;
     const int hit_w = (pill_w > min_hit) ? pill_w : ((min_hit < safe_w) ? min_hit : pill_w);
@@ -173,8 +183,7 @@ inline constexpr int compute_home_hub_pill_deck(
     return 1;
   }
 
-  const int max_rw = (screen_w > 520) ? std::min(kMaxContentColW, scale_x_for(336, screen_w))
-                                      : scale_x_for(336, screen_w);
+  const int max_rw = std::min(col_cap, dp_px_for(344, s));
   const int row_w = (max_rw < safe_w) ? max_rw : safe_w;
   const int raw_pw = (row_w - (count - 1) * gap) / count;
   const int pill_w = (raw_pw > 44) ? raw_pw : 44;
@@ -262,24 +271,24 @@ inline constexpr MusicVolumeGeom compute_music_volume_geom(
     int w, int h, bool round, bool wearable, int ppi) noexcept {
   MusicVolumeGeom g{};
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
-  const int min_s = (w < h) ? w : h;
+  const int s = ly.scale_milli;
   g.w = w;
   g.h = h;
   g.cx = ly.cx;
   g.min_hit = mm_to_px_for(7.0f, ppi);
-  g.mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s);
+  g.mode_bar_top = ly.app_dock_y - ly.dock_r - dp_px_for(14, s);
 
-  g.hdr_title_y = std::max(18, ly.hdr_y - scale_y_for(4, h));
-  g.hdr_pct_y = g.hdr_title_y + scale_y_for(23, h);
-  g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18));
+  g.hdr_title_y = std::max(18, ly.hdr_y - dp_px_for(4, s));
+  g.hdr_pct_y = g.hdr_title_y + dp_px_for(23, s);
+  g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18, ly.corner_r));
 
-  const int top_limit = ly.hdr_y + scale_y_for(36, h);
-  const int bot_limit = g.mode_bar_top - scale_y_for(10, h);
+  const int top_limit = ly.hdr_y + dp_px_for(36, s);
+  const int bot_limit = g.mode_bar_top - dp_px_for(10, s);
   const int avail_h = std::max(3 * g.min_hit + 12, bot_limit - top_limit);
-  const int gap_y = std::clamp((avail_h - 3 * g.min_hit) / 4, 6, scale_y_for(14, h));
-  const int max_btn_h = std::max(g.min_hit, scale_y_for(68, h));
+  const int gap_y = std::clamp((avail_h - 3 * g.min_hit) / 4, 6, dp_px_for(14, s));
+  const int max_btn_h = std::max(g.min_hit, dp_px_for(68, s));
   g.btn_h = std::clamp((avail_h - 2 * gap_y) / 3, g.min_hit, max_btn_h);
-  g.btn_vis_h = std::clamp(scale_y_for(48, h), 38, g.btn_h);
+  g.btn_vis_h = std::clamp(dp_px_for(48, s), 34, g.btn_h);
 
   const int stack_h = 3 * g.btn_h + 2 * gap_y;
   const int body_y0 = top_limit + std::max(0, (bot_limit - top_limit - stack_h) / 2);
@@ -290,12 +299,12 @@ inline constexpr MusicVolumeGeom compute_music_volume_geom(
   g.mute_y0 = g.down_y0 + g.btn_h + gap_y;
 
   const int body_cy = g.slider_y0 + g.slider_h / 2;
-  const int safe_w = band_safe_span_for(body_cy, g.slider_h, w, h, round, wearable, 14);
-  const int max_vol_w = (w > 520) ? 460 : 356;
-  const int span_w = std::clamp(std::min(max_vol_w, safe_w), 220, w - 20);
+  const int safe_w = band_safe_span_for(body_cy, g.slider_h, w, h, round, wearable, 14, ly.corner_r);
+  const int max_vol_w = dp_px_for(360, s);
+  const int span_w = std::clamp(std::min(max_vol_w, safe_w), 200, w - 20);
   const int span_x0 = g.cx - span_w / 2;
-  const int col_gap = std::max(10, scale_x_for(14, w));
-  g.slider_w = (w >= 640) ? std::max(96, g.min_hit) : std::max(64, g.min_hit);
+  const int col_gap = std::max(10, dp_px_for(14, s));
+  g.slider_w = std::max(dp_px_for(68, s), g.min_hit);
   g.slider_x0 = span_x0 + span_w - g.slider_w;
   g.btn_x0 = span_x0;
   g.btn_w = std::max(g.min_hit, g.slider_x0 - col_gap - g.btn_x0);
@@ -348,27 +357,28 @@ inline constexpr MusicScrubGeom compute_music_scrub_geom(
     int w, int h, bool round, bool wearable, int ppi) noexcept {
   MusicScrubGeom g{};
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
+  const int s = ly.scale_milli;
   g.w = w;
   g.h = h;
   g.cx = ly.cx;
   g.min_hit = mm_to_px_for(7.0f, ppi);
 
   g.hdr_title_y = ly.hdr_y;
-  g.hdr_time_y = g.hdr_title_y + scale_y_for(24, h);
-  g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18));
+  g.hdr_time_y = g.hdr_title_y + dp_px_for(24, s);
+  g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18, ly.corner_r));
 
-  const int gap_y = std::max(6, scale_y_for(8, h));
-  const int gap_x = std::max(6, scale_x_for(8, w));
-  const int row_h = std::max(g.min_hit, scale_y_for(64, h));
+  const int gap_y = std::max(6, dp_px_for(8, s));
+  const int gap_x = std::max(6, dp_px_for(8, s));
+  const int row_h = std::max(g.min_hit, dp_px_for(64, s));
   const int body_h = 3 * row_h + 2 * gap_y;
-  const int min_top = g.hdr_time_y + scale_y_for(22, h);
-  const int max_top = std::max(min_top, h - body_h - scale_y_for(24, h));
-  const int centered_top = (h - body_h) / 2 + scale_y_for(12, h);
+  const int min_top = g.hdr_time_y + dp_px_for(22, s);
+  const int max_top = std::max(min_top, h - body_h - dp_px_for(24, s));
+  const int centered_top = (h - body_h) / 2 + dp_px_for(12, s);
   const int body_y0 = std::clamp(centered_top, min_top, max_top);
 
   const int min_span_w = 3 * g.min_hit + 2 * gap_x;
-  const int safe_w = band_safe_span_for(body_y0 + body_h / 2, body_h, w, h, round, wearable, 14);
-  const int max_scrub_w = (w > 520) ? 480 : 368;
+  const int safe_w = band_safe_span_for(body_y0 + body_h / 2, body_h, w, h, round, wearable, 14, ly.corner_r);
+  const int max_scrub_w = dp_px_for(376, s);
   const int span_w = std::clamp(
       std::max(min_span_w, std::min(max_scrub_w, safe_w)),
       min_span_w, std::max(min_span_w, w - 16));
@@ -381,14 +391,14 @@ inline constexpr MusicScrubGeom compute_music_scrub_geom(
 
   g.step_y0 = g.slider_y0 + row_h + gap_y;
   g.step_h = row_h;
-  g.step_vis_h = std::clamp(scale_y_for(44, h), 36, row_h);
+  g.step_vis_h = std::clamp(dp_px_for(44, s), 34, row_h);
   g.step_btn_w = std::max(g.min_hit, (span_w - gap_x) / 2);
   g.step_back_x0 = span_x0;
   g.step_fwd_x0 = span_x0 + span_w - g.step_btn_w;
 
   g.mode_y0 = g.step_y0 + row_h + gap_y;
   g.mode_h = row_h;
-  g.mode_vis_h = std::clamp(scale_y_for(44, h), 36, row_h);
+  g.mode_vis_h = std::clamp(dp_px_for(44, s), 34, row_h);
   g.mode_btn_w = std::max(g.min_hit, (span_w - 2 * gap_x) / 3);
   g.shuf_x0 = span_x0;
   g.rep_x0 = span_x0 + (span_w - g.mode_btn_w) / 2;
@@ -452,9 +462,9 @@ inline constexpr MusicActionSheetGeom compute_music_action_sheet_geom(
   g.item_count = std::clamp(count, 1, 5);
 
   g.hdr_title_y = ly.hdr_y;
-  g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18));
+  g.hdr_max_w = std::max(120, safe_span_for(g.hdr_title_y, w, h, round, wearable, 18, ly.corner_r));
   g.back_y = ly.back_y;
-  g.back_hit_y0 = round ? scale_min_for(404, h) : (h - scale_y_for(64, h));
+  g.back_hit_y0 = std::max(0, ly.back_y - dp_px_for(24, ly.scale_milli));
 
   const int row_h = ly.slot5_h;
   const int uniform_w = ly.list_card_w;
@@ -497,35 +507,28 @@ struct RemoteDpadGeom {
   int outer_pad{10};
 };
 
-inline constexpr RemoteDpadGeom compute_remote_dpad_geom(int w, int h, bool round) noexcept {
+inline constexpr RemoteDpadGeom compute_remote_dpad_geom(
+    int w, int h, bool round, int ppi = LATTER_PANEL_PPI,
+    int corner_r = -1, int view_scale_pct = 0, bool is_stationary = false) noexcept {
   RemoteDpadGeom g{};
+  const auto ly = compute_panel_layout(w, h, round, false, ppi, corner_r, view_scale_pct, is_stationary);
+  const int s = ly.scale_milli;
   const int min_s = (w < h) ? w : h;
   g.cx = w / 2;
-  g.cy = round ? (h / 2) : (h / 2 + scale_y_for(8, h));
-  if (min_s < 380) {
-    g.r_out = 128;
-    g.r_in = 46;
-  } else if (min_s > 520) {
-    g.r_out = std::min(260, (min_s * 236 + 360) / 720);
-    g.r_in = (g.r_out * 86 + 118) / 236;
-  } else if (!round && min_s >= 480) {
-    g.r_out = 180;
-    g.r_in = 60;
+  g.outer_pad = std::max(8, dp_px_for(10, s));
+  if (round) {
+    g.cy = h / 2;
+    g.r_out = std::clamp((min_s * 31) / 100, 80, 260);
   } else {
-    g.r_out = 144;
-    g.r_in = 50;
+    const int top_bound = ly.sub_hdr_y + dp_px_for(12, s);
+    const int bot_bound = h - dp_px_for(22, s);
+    g.cy = (top_bound + bot_bound) / 2;
+    const int max_r_v = ((bot_bound - top_bound) / 2) - g.outer_pad;
+    const int raw_r = std::min((min_s * 38) / 100, max_r_v);
+    g.r_out = std::clamp(raw_r, 80, 260);
   }
-  g.outer_pad = scale_s_for(10, min_s);
-  if (!round) {
-    const int top_clear = g.cy - scale_y_for(48, h) - g.outer_pad;
-    const int bot_clear = (h - scale_y_for(24, h)) - g.cy - g.outer_pad;
-    const int max_r_v = (top_clear < bot_clear) ? top_clear : bot_clear;
-    if (max_r_v > 64 && g.r_out > max_r_v) {
-      g.r_out = max_r_v;
-      g.r_in = std::max(36, (g.r_out * 36) / 100);
-    }
-  }
-  g.ok_r = g.r_in - scale_s_for(8, min_s);
+  g.r_in = std::clamp((g.r_out * 35 + 50) / 100, 34, 96);
+  g.ok_r = std::max(26, g.r_in - dp_px_for(8, s));
   g.arr_mid = (g.r_in + g.r_out) / 2;
   const int ring_t = g.r_out - g.r_in;
   g.hit_radial = (ring_t > 20) ? (ring_t - 10) : ring_t;
@@ -621,13 +624,14 @@ inline constexpr CameraGridGeom compute_camera_grid_geom(
   g.mode_bar_r = ly.dock_r;
   compute_mode_bar_slot_xs(4, w, round, g.mode_slot_xs);
 
-  const int top_y = ly.hdr_y + scale_y_for(24, h);
-  const int bot_y = ly.app_dock_y - ly.dock_r - scale_y_for(12, h);
+  const int s = ly.scale_milli;
+  const int top_y = ly.hdr_y + dp_px_for(24, s);
+  const int bot_y = ly.app_dock_y - ly.dock_r - dp_px_for(12, s);
   int avail_h = std::max(80, bot_y - top_y);
-  int avail_w = w - scale_x_for(20, w);
+  int avail_w = w - dp_px_for(20, s);
   if (round) {
-    const int s_top = safe_span_for(top_y, w, h, true, wearable, 14);
-    const int s_bot = safe_span_for(bot_y, w, h, true, wearable, 14);
+    const int s_top = safe_span_for(top_y, w, h, true, wearable, 14, ly.corner_r);
+    const int s_bot = safe_span_for(bot_y, w, h, true, wearable, 14, ly.corner_r);
     const int chord = std::min(s_top, s_bot);
     avail_w = std::clamp(chord, 160, w - 36);
     if (avail_h > avail_w) avail_h = avail_w;
@@ -643,6 +647,59 @@ inline constexpr CameraGridGeom compute_camera_grid_geom(
   g.tiles[2] = CameraRect{fx, fy + half_h, half_w, avail_h - half_h};
   g.tiles[3] = CameraRect{fx + half_w, fy + half_h, avail_w - half_w, avail_h - half_h};
   g.pager_y = g.title_y;
+  return g;
+}
+
+struct WeatherForecastGeom {
+  int fc_top_y{88};
+  int fc_step_y{47};
+  int row_hw{154};
+  int x_day{113};
+  int x_glyph{171};
+  int x_cond{193};
+  int x_slash{353};
+  int slash_gap{8};
+  int cond_max_w{110};
+  int temp_half_w{42};
+  bool large_font{false};
+};
+
+inline constexpr WeatherForecastGeom compute_weather_forecast_geom(
+    int w, int h, bool round, int ppi, int corner_r = -1,
+    int view_scale_pct = 0, bool is_stationary = false) noexcept {
+  WeatherForecastGeom g{};
+  const auto ly = compute_panel_layout(w, h, round, false, ppi, corner_r, view_scale_pct, is_stationary);
+  const int s = ly.scale_milli;
+  const int cx = w / 2;
+  const int content_top = ly.hdr_y + dp_px_for(24, s);
+  const int content_bot = (ly.app_dock_y - ly.dock_r - dp_px_for(14, s)) - dp_px_for(10, s);
+  const int avail_h = std::max(120, content_bot - content_top);
+  g.fc_step_y = std::clamp(avail_h / 5, dp_px_for(34, s), dp_px_for(62, s));
+  g.fc_top_y = content_top + (avail_h - 4 * g.fc_step_y) / 2;
+  const int bot_row_y = g.fc_top_y + 4 * g.fc_step_y;
+
+  const int eff_cr = (corner_r >= 0) ? corner_r : ly.corner_r;
+  const int margin = dp_px_for(14, s);
+  const int span_top = safe_span_for(g.fc_top_y, w, h, round, false, margin, eff_cr);
+  const int span_bot = safe_span_for(bot_row_y, w, h, round, false, margin, eff_cr);
+  const int max_col = dp_px_for(400, s);
+  const int row_w = std::max(180, std::min({max_col, span_top, span_bot}));
+  g.row_hw = row_w / 2;
+
+  const int left = cx - g.row_hw;
+  const int right = cx + g.row_hw;
+  const int day_w = std::min(dp_px_for(52, s), (row_w * 20) / 100);
+  const int glyph_w = std::min(dp_px_for(28, s), (row_w * 12) / 100);
+  g.temp_half_w = std::min(dp_px_for(42, s), (row_w * 15) / 100);
+  g.slash_gap = std::max(5, dp_px_for(8, s));
+
+  g.x_day = left + day_w / 2;
+  g.x_glyph = left + day_w + glyph_w / 2;
+  g.x_cond = left + day_w + glyph_w + dp_px_for(6, s);
+  g.x_slash = right - g.temp_half_w - g.slash_gap;
+  const int cond_right = g.x_slash - g.slash_gap - g.temp_half_w - dp_px_for(4, s);
+  g.cond_max_w = std::max(28, cond_right - g.x_cond);
+  g.large_font = (!round && ly.size_class != SizeClass::Compact && g.fc_step_y >= dp_px_for(48, s));
   return g;
 }
 

@@ -52,7 +52,7 @@ void mark_dirty_band(int y0, int y1);
 void mark_dirty_full();
 
 inline constexpr int music_metadata_band_y1_for(int screen_h) noexcept {
-  return scale_y_for(136, screen_h);
+  return (screen_h * 292 + 500) / 1000;
 }
 inline constexpr int music_metadata_band_y0() noexcept { return 0; }
 inline constexpr int music_metadata_band_y1() noexcept { return music_metadata_band_y1_for(SCREEN_H); }

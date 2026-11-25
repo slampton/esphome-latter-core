@@ -191,6 +191,7 @@ void pm_init();
 void pm_apply(bool stay_awake, uint32_t wake_mask);
 void pm_poll_loop(uint32_t now_ms);
 void pm_wake_grace_arm(uint32_t now_ms);
+void pm_wake_loop_from_isr() noexcept;
 void pm_note_imu(bool armed, uint32_t events);
 const char *pm_crash_where();
 bool pm_sleep_stats(PmSleepStats &out, uint32_t now_ms);
@@ -207,6 +208,7 @@ inline void pm_init() {}
 inline void pm_apply(bool /*stay_awake*/, uint32_t /*wake_mask*/) {}
 inline void pm_poll_loop(uint32_t /*now_ms*/) {}
 inline void pm_wake_grace_arm(uint32_t /*now_ms*/) {}
+inline void pm_wake_loop_from_isr() noexcept {}
 inline void pm_note_imu(bool /*armed*/, uint32_t /*events*/) {}
 inline const char *pm_crash_where() { return ""; }
 inline bool pm_sleep_stats(PmSleepStats & /*out*/, uint32_t /*now_ms*/) { return false; }

@@ -1004,8 +1004,6 @@ void reset_runtime_state(bool preserve_hooks) {
   const auto saved_upd_batt = rt.hw_update_batt_level;
   const auto saved_imu_pm = rt.hw_set_imu_power_mode;
   const auto saved_bl_lvl = rt.hw_set_backlight_level;
-  const auto saved_touch_rec = rt.hw_recover_touchscreen;
-  const auto saved_touch_slp = rt.hw_set_touch_sleep_mode;
   const auto saved_pwr_press = rt.on_pwr_key_press;
   const auto saved_pwr_rel = rt.on_pwr_key_release;
   const auto saved_usb_chg = rt.on_usb_power_changed;
@@ -1024,8 +1022,6 @@ void reset_runtime_state(bool preserve_hooks) {
     rt.hw_update_batt_level = saved_upd_batt;
     rt.hw_set_imu_power_mode = saved_imu_pm;
     rt.hw_set_backlight_level = saved_bl_lvl;
-    rt.hw_recover_touchscreen = saved_touch_rec;
-    rt.hw_set_touch_sleep_mode = saved_touch_slp;
     rt.on_pwr_key_press = saved_pwr_press;
     rt.on_pwr_key_release = saved_pwr_rel;
     rt.on_usb_power_changed = saved_usb_chg;

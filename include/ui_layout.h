@@ -30,23 +30,31 @@ inline int menu_scroll_shift(int span_px, uint32_t now_ms) {
 // 1. Unified Adaptive Panel Geometry (delegates to pure-C++20 compute_panel_layout)
 // ==============================================================================
 struct UiLayout {
+  UiDisplaySpec spec = current_display_spec();
+  SafeFrame frame = SafeFrame::for_spec(spec);
   PanelLayoutMetrics base = compute_panel_layout(
-      SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+      SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0,
+      LATTER_PANEL_PPI, LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
+  HomeActivityMetrics home_act = compute_home_activity_metrics(
+      spec, base.home_weather_y, base.dock_y - base.dock_r, kAutoFonts.small, kAutoFonts.date);
 
   static constexpr int mm_to_px(float mm, int ppi = LATTER_PANEL_PPI) {
     return mm_to_px_for(mm, ppi);
   }
   constexpr int min_hit_px() const {
-    return std::max(scale_s(36), mm_to_px(7.0f));
+    return std::max(dp_px(36), mm_to_px(kHitFloorPrimaryMm));
+  }
+  constexpr int min_row_hit_px() const {
+    return min_row_hit_px_for(LATTER_PANEL_PPI);
   }
   constexpr int safe_span(int y, int inset = 12) const {
-    return safe_span_for(y, w, h, is_round, LATTER_IS_WEARABLE != 0, inset);
+    return frame.safe_span(y, inset);
   }
   constexpr int band_safe_span(int cy_band, int band_h, int inset = 12) const {
-    const int half_h = std::max(0, band_h / 2);
-    const int y_top = std::clamp(cy_band - half_h, 0, h - 1);
-    const int y_bot = std::clamp(cy_band + half_h, 0, h - 1);
-    return std::min(safe_span(y_top, inset), safe_span(y_bot, inset));
+    return frame.band_safe_span(cy_band, band_h, inset);
+  }
+  constexpr int max_content_w(int max_dp = 460) const {
+    return frame.max_content_w(max_dp);
   }
 
   int w = base.w;
@@ -54,6 +62,7 @@ struct UiLayout {
   int cx = base.cx;
   int cy = base.cy;
   bool is_round = base.is_round;
+  SizeClass size_class = base.size_class;
 
   int hdr_y = base.hdr_y;
   int sub_hdr_y = base.sub_hdr_y;
@@ -64,6 +73,7 @@ struct UiLayout {
   int dock_pips_y = base.dock_pips_y;
   int app_dock_pips_y = base.app_dock_pips_y;
   int dock_r = base.dock_r;
+  int dock_stride = base.dock_stride;
 
   int celestial_x = base.celestial_x;
   int celestial_y = base.celestial_y;
@@ -72,6 +82,7 @@ struct UiLayout {
 
   int list_card_w = base.list_card_w;
   int list_card_left = base.list_card_left;
+  int list_rows = base.list_rows;
 
   int slot5_stride = base.slot5_stride;
   int slot5_h = base.slot5_h;
@@ -85,26 +96,23 @@ struct UiLayout {
   constexpr int area_card3_y(int idx_0_to_2) const { return base.area_card3_y(idx_0_to_2); }
   constexpr int area_card_left() const { return cx - (area_card3_w / 2); }
   constexpr int area_card_right() const { return cx + (area_card3_w / 2); }
-  constexpr int area_card_div_x() const { return area_card_left() + std::max(scale_x(64), min_hit_px()); }
-  constexpr int area_card_orb_x() const { return area_card_right() - scale_x(28); }
+  constexpr int area_card_div_x() const { return area_card_left() + std::max(dp_px(64), min_hit_px()); }
+  constexpr int area_card_orb_x() const { return area_card_right() - dp_px(28); }
 
   int tool_card3_stride = base.tool_card3_stride;
 
   int home_date_y = base.home_date_y;
   int home_clock_y = base.home_clock_y;
   int home_weather_y = base.home_weather_y;
-  constexpr bool home_activity_two_line() const { return !is_round; }
-  constexpr int home_activity_max_rows() const { return is_round ? 1 : 2; }
-  constexpr int home_activity_w() const {
-    return (w > 520) ? std::min(kMaxContentColW, scale_x(380)) : std::min(380, w - 32);
-  }
-  constexpr int home_activity_pitch() const { return scale_y(56); }
+  constexpr bool home_activity_two_line() const { return home_act.max_rows >= 2; }
+  constexpr int home_activity_max_rows() const { return home_act.max_rows; }
+  constexpr int home_activity_w() const { return home_act.card_w; }
+  constexpr int home_activity_pitch() const { return home_act.pitch; }
   constexpr int home_activity_h_for_rows(int rows) const {
-    if (is_round) return scale_y(68);
-    return (rows >= 2) ? (scale_y(60) + home_activity_pitch()) : scale_y(60);
+    return (rows >= 2 && home_act.max_rows >= 2) ? home_act.row2_h : home_act.row1_h;
   }
   constexpr int home_activity_h() const { return home_activity_h_for_rows(home_activity_max_rows()); }
-  constexpr int home_activity_dock_gap() const { return mm_to_px(3.0f); }
+  constexpr int home_activity_dock_gap() const { return home_act.dock_gap; }
   constexpr int home_activity_bottom() const { return dock_y - dock_r - home_activity_dock_gap(); }
   constexpr int home_activity_cy_for_h(int weather_h, int card_h) const {
     return is_round ? ((home_weather_y + weather_h / 2) + (dock_y - dock_r)) / 2
@@ -121,31 +129,55 @@ struct UiLayout {
   }
 
   constexpr int calc_col_x(int col_0_to_3) const {
-    const int stride = (w < 380) ? 72 : ((w > 520) ? ((w * 82) / 466) : 82);
+    const int safe_w = frame.band_safe_span(cy, dp_px(260), dp_px(12));
+    const int max_span = std::min(safe_w, max_content_w(360));
+    const int stride = std::max(dp_px(64), std::min(dp_px(84), max_span / 4));
     return cx - ((stride * 3) / 2) + (col_0_to_3 * stride);
   }
 
-  constexpr int light_slider_card_w() const { return (w < 380) ? (w - 24) : std::min(kMaxContentColW, scale_x(316)); }
-  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - scale_s(32); }
+  constexpr int light_slider_card_w() const {
+    return std::min(max_content_w(380), frame.safe_span(cy, dp_px(12)));
+  }
+  constexpr int light_kelvin_bar_w() const { return light_slider_card_w() - dp_px(32); }
   constexpr int light_kelvin_bar_x0() const { return cx - (light_kelvin_bar_w() / 2); }
 
-  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - scale_s(34); }
-  constexpr int sys_info_x() const { return is_round ? 88 : ((w < 380) ? 18 : scale_x(42)); }
+  constexpr int sys_color_swatch_x() const { return cx + (list_card_w / 2) - dp_px(34); }
+  constexpr int sys_info_x() const {
+    return is_round ? (cx - list_card_w / 2) : std::max(dp_px(20), frame.x_inset(cy, dp_px(18)));
+  }
 
   constexpr int drag_start() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).slider_start_px; }
   constexpr int flick_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_flick_px; }
   constexpr int tap_max() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).tap_slop_px; }
   constexpr int axis_lock() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).axis_lock_px; }
   constexpr int swipe_min() const { return KinematicMetrics::for_ppi(LATTER_PANEL_PPI).swipe_live_px; }
-  constexpr int fast_pan() const { return mm_to_px(10.5f); }
   constexpr int edge_guard_y() const { return h - mm_to_px(1.5f); }
   constexpr int top_edge_zone_y() const {
-    return compute_top_edge_zone_y(w, h, is_round, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+    return compute_top_edge_zone_y(w, h, is_round, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, LATTER_CORNER_R);
   }
-  constexpr int home_zone_y() const { return is_round ? scale_min(412) : (h - mm_to_px(5.2f)); }
-  constexpr int chin_guard_y() const { return is_round ? scale_min(412) : (h - mm_to_px(2.7f)); }
-  constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - scale_s(14); }
-  constexpr int dock_hit_r() const { return std::max(dock_r + 16, mm_to_px(3.6f)); }
+  constexpr int home_zone_y() const { return is_round ? ((h * 884) / 1000) : (h - mm_to_px(5.2f)); }
+  constexpr int chin_guard_y() const { return is_round ? ((h * 884) / 1000) : (h - mm_to_px(2.7f)); }
+  constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - dp_px(14); }
+  constexpr int dock_hit_r() const { return base.dock_hit_r; }
+
+  constexpr bool cal_wide_layout() const {
+    return (frame.w_dp >= 500) && !is_round && (spec.corner_r <= dp_px(32));
+  }
+  constexpr int cal_sub_y() const { return sub_hdr_y + dp_px(is_round ? 8 : 10); }
+  constexpr int cal_nav_btn_r() const { return dp_px(size_class == SizeClass::Compact ? 15 : 17); }
+  constexpr int cal_events_per_page_for_avail(int avail_h) const {
+    const int gap = dp_px(6);
+    const int pref_h = std::max(dp_px(62), min_row_hit_px() + dp_px(4));
+    return safe_clamp((avail_h + gap) / (pref_h + gap), 1, 5);
+  }
+  constexpr int cal_events_per_page(bool with_week_strip = false) const {
+    const int strip_extra = with_week_strip
+        ? (std::max(dp_px(48), min_row_hit_px()) + dp_px(8))
+        : 0;
+    const int content_top = cal_sub_y() + cal_nav_btn_r() + dp_px(10) + strip_extra;
+    const int content_bot = mode_bar_zone_top() - dp_px(8);
+    return cal_events_per_page_for_avail(std::max(dp_px(80), content_bot - content_top));
+  }
 };
 
 inline constexpr UiLayout layout() {
@@ -163,7 +195,7 @@ inline int &home_activity_rendered_rows() {
 }
 
 inline int &home_weather_text_h() {
-  static int h = (SCREEN_H > 520) ? 45 : 32;
+  static int h = kAutoFonts.date;
   return h;
 }
 
@@ -467,7 +499,7 @@ inline DockSlideAnimator &mode_bar_anim() {
 
 inline int dock_dirty_band_y0() {
   const auto ly = layout();
-  return std::max(0, std::min(ly.dock_y, ly.app_dock_y) - ly.dock_r - scale_y(16));
+  return std::max(0, std::min(ly.dock_y, ly.app_dock_y) - ly.dock_r - dp_px(16));
 }
 
 inline bool any_dock_anim_active(int gui_page = -1, int home_subpage = 0, uint32_t now_ms = 0U) {
@@ -498,11 +530,7 @@ inline bool any_vert_bounce_active(int gui_page, uint32_t now_ms) {
 
 inline int get_dock_slot_stride(const int *win_xs, int vis_count) {
   if (vis_count >= 2) return win_xs[1] - win_xs[0];
-#if LATTER_ROUND_DISPLAY
-  return scale_w(81);
-#else
-  return (SCREEN_W < 380) ? 74 : scale_x(98);
-#endif
+  return layout().dock_stride;
 }
 
 // ==============================================================================
@@ -541,8 +569,10 @@ inline void clear_ui_focus() {
 template <typename DisplayT>
 inline void render_focus_ring_circle(DisplayT &it, int cx, int cy, int r,
                                      UiColor accent, UiColor inner_hi) {
-  fast_circle_aa(it, cx, cy, static_cast<float>(r) + 2.5f, accent, 2.0f);
-  fast_circle_aa(it, cx, cy, static_cast<float>(r) + 1.0f, inner_hi, 1.0f);
+  const float outer_w = std::max(2.0f, dp_f(2.0f));
+  const float inner_w = std::max(1.0f, dp_f(1.0f));
+  fast_circle_aa(it, cx, cy, static_cast<float>(r) + outer_w + 0.5f, accent, outer_w);
+  fast_circle_aa(it, cx, cy, static_cast<float>(r) + inner_w, inner_hi, inner_w);
 }
 
 template <typename DisplayT>
@@ -550,8 +580,11 @@ inline void render_focus_ring_rect(DisplayT &it, int cx, int cy, int w, int h,
                                    UiColor accent, UiColor inner_hi) {
   const int x0 = cx - w / 2;
   const int y0 = cy - h / 2;
-  fast_rect_outline(it, x0 - 2, y0 - 2, w + 4, h + 4, accent);
-  fast_rect_outline(it, x0 - 3, y0 - 3, w + 6, h + 6, accent);
+  const int stroke = std::max(2, dp_px(2));
+  for (int t = 0; t < stroke; ++t) {
+    const int d = 2 + t;
+    fast_rect_outline(it, x0 - d, y0 - d, w + 2 * d, h + 2 * d, accent);
+  }
   fast_rect_outline(it, x0 - 1, y0 - 1, w + 2, h + 2, inner_hi);
 }
 

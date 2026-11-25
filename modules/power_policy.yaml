@@ -26,9 +26,9 @@ interval:
           const uint32_t now_1s_ms = millis();
           rs.audio.tick_1s(now_1s_ms, id(wifi_ctrl).is_connected());
 
-          // 4. Touch recovery (bound by gui_touch.yaml; no-op when touch-less), Flight Recorder & Telemetry
-          if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && rs.hw_recover_touchscreen != nullptr) {
-            rs.hw_recover_touchscreen(now_1s_ms);
+          // 4. Touch recovery (owned by LatterTouchscreen; no-op when touch-less), Flight Recorder & Telemetry
+          if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
+            latter_core::hal_touch_recover_if_failed(now_1s_ms);
           }
           if (latter_core::profiler_enabled() && latter_core::profiler_is_expired(now_1s_ms)) {
             LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler auto-disabled after 24h");
@@ -400,9 +400,7 @@ script:
           if (latter_core::imu_wom().armed) wake_mask |= latter_core::pm_wake_bit(latter_core::PM_WAKE_IMU);
           latter_core::pm_note_imu(latter_core::imu_wom().armed, latter_core::imu_wom().events);
           #endif
-          #if LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
-          if (rs.hw_set_touch_sleep_mode != nullptr) {
-            rs.hw_set_touch_sleep_mode(rs.nav.display_power_state == 2 && !rs.hw_usb_connected);
-          }
+          #if LATTER_HAS_TOUCH && LATTER_HAS_BATTERY && !LATTER_IS_STATIONARY
+          latter_core::hal_touch_set_sleep_mode(rs.nav.display_power_state == 2 && !rs.hw_usb_connected);
           #endif
           latter_core::pm_apply(stay_awake, wake_mask);

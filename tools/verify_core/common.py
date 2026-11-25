@@ -247,6 +247,7 @@ _CORE_SECTION_FLAG_MAP: Final[dict[str, dict[str, tuple[str, bool]]]] = {
         "dcs_sleep": ("LATTER_PANEL_DCS_SLEEP", True),
         "dc_pin": ("LATTER_DISPLAY_DC_PIN", False),
         "corner_r": ("LATTER_CORNER_R", False),
+        "view_scale": ("LATTER_VIEW_SCALE_PCT", False),
         "dsi_iram_safe": ("LATTER_DSI_IRAM_SAFE", True),
         "slot_count": ("LATTER_SLOT_COUNT", False),
         "card_slot_count": ("LATTER_CARD_SLOT_COUNT", False),
@@ -296,7 +297,6 @@ _CORE_SECTION_FLAG_MAP: Final[dict[str, dict[str, tuple[str, bool]]]] = {
         "rtc_pcf85063": ("LATTER_DRV_RTC_PCF85063", True),
         "imu_qmi8658": ("LATTER_DRV_IMU_QMI8658", True),
         "codec_es8311": ("LATTER_DRV_CODEC_ES8311", True),
-        "touch_ft5x06": ("LATTER_DRV_TOUCH_FT5X06", True),
     },
     "diagnostics": {
         "nvs_guard": ("LATTER_DIAG_NVS_GUARD", True),
@@ -358,9 +358,13 @@ def parse_latter_core_flags(yaml_text: str) -> dict[str, str]:
                 flags["LATTER_PSRAM_MB"] = val_clean
         elif indent >= 4 and section in _CORE_SECTION_FLAG_MAP and ":" in stripped:
             key, val = stripped.split(":", 1)
-            spec = _CORE_SECTION_FLAG_MAP[section].get(key.strip())
+            k_clean = key.strip()
+            spec = _CORE_SECTION_FLAG_MAP[section].get(k_clean)
             if spec is not None:
-                flags[spec[0]] = _norm(val, spec[1])
+                norm_v = _norm(val, spec[1])
+                if section == "display" and k_clean == "view_scale":
+                    norm_v = str(round(float(norm_v) * 100.0))
+                flags[spec[0]] = norm_v
 
     if saw_core:
         gui_univ = flags.get("LATTER_GUI_UNIVERSAL", "1") == "1"

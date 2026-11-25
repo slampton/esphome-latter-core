@@ -18,13 +18,13 @@ substitutions:
   p4_silicon: "rev3"
   p4_engineering_sample: "false"
   p4_cpu_frequency: "400MHz"
-  font_time_size: "77"
-  font_chrono_size: "38"
-  font_date_size: "27"
-  font_btn_bold_size: "26"
-  font_small_size: "21"
-  font_micro_size: "14"
-  font_games_size: "38"
+  font_time_size: "68"
+  font_chrono_size: "34"
+  font_date_size: "24"
+  font_btn_bold_size: "22"
+  font_small_size: "19"
+  font_micro_size: "13"
+  font_games_size: "34"
   art_resize: "320x480"
   # 4x fewer pixels decoded on track changes (exact 2x height upscale in draw_album_art)
   sendspin_art_resize: "240x240"
@@ -61,6 +61,8 @@ latter_core:
     ips: true
     dcs_sleep: true
     dc_pin: 26
+    corner_r: 0
+    view_scale: 1.45
     touch_int_pin: 50
     touch_rst_pin: 29
   backlight:
@@ -98,7 +100,6 @@ latter_core:
     rtc_pcf85063: false
     imu_qmi8658: false
     codec_es8311: true
-    touch_ft5x06: true
 
 esp32:
   flash_size: 16MB
@@ -126,15 +127,6 @@ packages:
   latter_audio_hal: !include ../modules/hal/audio_es8311_duplex.yaml
   latter_pmu: !include ../modules/hal/pmu_axp2101.yaml
   latter_battery_service: !include ../modules/battery_service.yaml
-
-esphome:
-  on_boot:
-    - priority: 850
-      then:
-        - lambda: |-
-            latter_core::runtime_state().hw_set_touch_sleep_mode = +[](bool sleep) {
-              latter_core::hal_set_touch_sleep_mode(id(bus_internal), sleep);
-            };
 
 switch:
   - platform: gpio
@@ -213,6 +205,7 @@ touchscreen:
     interrupt_pin:
       number: GPIO50
       mode: INPUT_PULLUP
+    reset_pin: GPIO29
     active_poll_interval: 10ms
     update_interval: never
 
@@ -226,12 +219,6 @@ script:
           gpio_hold_dis(GPIO_NUM_28);
           gpio_hold_dis(GPIO_NUM_29);
           gpio_hold_dis(GPIO_NUM_53);
-          // Pulse FT6336 Touch Reset (GPIO29) immediately on boot
-          gpio_set_direction(GPIO_NUM_29, GPIO_MODE_OUTPUT);
-          gpio_set_level(GPIO_NUM_29, 0);
-          esp_rom_delay_us(10000);
-          gpio_set_level(GPIO_NUM_29, 1);
-          esp_rom_delay_us(30000);
   - id: hal_enter_hardware_hibernate
     mode: restart
     then:

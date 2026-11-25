@@ -180,6 +180,8 @@ bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
          (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + 5) ||
          (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5) ||
          wid == WidgetId::REMOTE_PRIMARY_PWR ||
+         (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3) ||
+         (wid >= WidgetId::AREA_CARD_TOGGLE && wid < WidgetId::AREA_CARD_TOGGLE + 3) ||
          (wid >= WidgetId::REMOTE_SLOT_CARD && wid < WidgetId::REMOTE_SLOT_CARD + 4) ||
          (wid >= WidgetId::REMOTE_SEC_PWR && wid < WidgetId::REMOTE_SEC_PWR + 4) ||
          (wid >= WidgetId::CAL_EVENT_BASE && wid < WidgetId::CAL_EVENT_BASE + 5) ||
@@ -187,6 +189,7 @@ bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
          (wid >= WidgetId::CAL_ADD_TITLE_BTN && wid <= WidgetId::CAL_ADD_REPEAT_BTN) ||
          (wid >= WidgetId::CAL_ADD_ALLDAY_BTN && wid <= WidgetId::CAL_ADD_END_BTN) ||
          (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5) ||
+         (wid >= WidgetId::HOME_ACT_OVERLAY_ACTION_BASE && wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + 5) ||
          (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) ||
          wid == WidgetId::MUSIC_QUEUE_CLEAR ||
          wid == WidgetId::MUSIC_SHUFFLE_BTN ||
@@ -247,6 +250,34 @@ int sibling_family_key(uint16_t wid) noexcept {
   return 0;
 }
 
+bool is_full_bleed_or_gutter_bezel_exempt(uint16_t wid) noexcept {
+  using namespace latter_ui;
+  using namespace latter_core;
+  return wid == WidgetId::MUSIC_TAKEOVER_BACKDROP ||
+         wid == WidgetId::MUSIC_ART_TAP ||
+         wid == WidgetId::CAM_VIDEO_TAP ||
+         wid == WidgetId::VA_CANCEL_BTN ||
+         wid == WidgetId::NOTIF_EXPAND_BTN ||
+         wid == WidgetId::DICE_ROLL_BTN ||
+         wid == WidgetId::COIN_FLIP_BTN ||
+         wid == WidgetId::SW_PRIMARY_BTN ||
+         wid == WidgetId::CHEVRON_UP ||
+         wid == WidgetId::CHEVRON_DOWN ||
+         wid == WidgetId::MODE_BAR_LEFT ||
+         wid == WidgetId::MODE_BAR_RIGHT ||
+         wid == WidgetId::GAMES_PREV_BTN ||
+         wid == WidgetId::GAMES_NEXT_BTN ||
+         wid == WidgetId::GAMES_HERO_CARD ||
+         wid == WidgetId::GAME_BOARD_TAP ||
+         wid == WidgetId::BACK_BUTTON ||
+         wid == WidgetId::PIN_PAD_CANCEL ||
+         wid == WidgetId::COLOR_WHEEL_RING ||
+         (wid >= WidgetId::REMOTE_DPAD_UP && wid <= WidgetId::REMOTE_DPAD_OK) ||
+         wid == WidgetId::HOME_WEATHER_HERO ||
+         wid == WidgetId::HOME_TIME_READOUT ||
+         wid == WidgetId::HOME_DATE_HERO;
+}
+
 void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char *label) {
   using namespace latter_ui;
   using namespace latter_core;
@@ -256,14 +287,15 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
                  label, static_cast<unsigned>(ht.dropped_count), static_cast<unsigned>(ht.count));
     std::exit(1);
   }
-  const int min_7mm = mm_to_px(7.0f);
+  const int min_7mm = mm_to_px(kHitFloorPrimaryMm);
+  const int min_5_5mm = mm_to_px(kHitFloorDenseRowMm);
   const auto &ly = layout();
   for (uint8_t i = 0; i < ht.count; ++i) {
     const auto &r = ht.regions[i];
     LATTER_CHECK(r.x0 >= 0 && r.y0 >= 0 && r.x1 < SCREEN_W && r.y1 < SCREEN_H);
     LATTER_CHECK(r.x0 <= r.x1 && r.y0 <= r.y1);
 
-    // Bezel check across all 5 canonical geometries (round R=233 & rounded-rect R=20/76/98).
+    // Bezel check across all 9 canonical geometries (round R=180/233 & rounded-rect R=0/76/98).
     if (r.widget_id == WidgetId::MODE_BAR_LEFT) {
       LATTER_CHECK(is_inside_bezel_for(r.x1, r.y0, SCREEN_W, SCREEN_H,
                                        LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 1, LATTER_CORNER_R));
@@ -277,23 +309,69 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
                      label, static_cast<unsigned>(r.widget_id), r.cx(), r.cy(), LATTER_CORNER_R);
         std::exit(1);
       }
+      if (!is_full_bleed_or_gutter_bezel_exempt(r.widget_id)) {
+        if ((r.flags & kHitFocusCircle) != 0U) {
+          // Circular button: check cardinal + 45-degree perimeter points (not circumscribed square corners).
+          const int rad = std::max(1, r.radius() - 2);
+          const int diag = (rad * 707) / 1000;
+          const int pts[8][2] = {
+              {r.cx() - rad, r.cy()}, {r.cx() + rad, r.cy()},
+              {r.cx(), r.cy() - rad}, {r.cx(), r.cy() + rad},
+              {r.cx() - diag, r.cy() - diag}, {r.cx() + diag, r.cy() - diag},
+              {r.cx() - diag, r.cy() + diag}, {r.cx() + diag, r.cy() + diag},
+          };
+          for (const auto &pt : pts) {
+            if (!is_inside_bezel_for(pt[0], pt[1], SCREEN_W, SCREEN_H,
+                                     LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 0, LATTER_CORNER_R)) {
+              std::fprintf(stderr, "[HOST TEST FAIL] %s circle widget %u rim (%d,%d) clipped by bezel R=%d\n",
+                           label, static_cast<unsigned>(r.widget_id), pt[0], pt[1], LATTER_CORNER_R);
+              std::exit(1);
+            }
+          }
+        } else {
+          // Rectangular card/pill/button: check all 4 inset corners (accounting for rounded card radius).
+          const int c_in = std::min(6, std::min(r.width(), r.height()) / 4);
+          const int corners[4][2] = {
+              {r.x0 + c_in, r.y0 + c_in},
+              {r.x1 - c_in, r.y0 + c_in},
+              {r.x0 + c_in, r.y1 - c_in},
+              {r.x1 - c_in, r.y1 - c_in},
+          };
+          for (const auto &pt : corners) {
+            if (!is_inside_bezel_for(pt[0], pt[1], SCREEN_W, SCREEN_H,
+                                     LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 0, LATTER_CORNER_R)) {
+              std::fprintf(stderr, "[HOST TEST FAIL] %s rect widget %u corner (%d,%d) box=[%d,%d..%d,%d] clipped by bezel R=%d\n",
+                           label, static_cast<unsigned>(r.widget_id), pt[0], pt[1],
+                           static_cast<int>(r.x0), static_cast<int>(r.y0),
+                           static_cast<int>(r.x1), static_cast<int>(r.y1), LATTER_CORNER_R);
+              std::exit(1);
+            }
+          }
+        }
+      }
     }
 
     const int pw = r.width() + 2 * static_cast<int>(r.hit_pad);
     const int ph = r.height() + 2 * static_cast<int>(r.hit_pad);
     if (is_d019_slot5_row_widget(r.widget_id)) {
-      // 5-row list/form items keep the compact slot5 vertical stride on smaller high-PPI panels,
-      // while still guaranteeing >= 7.0 mm on lower-PPI panels where min_7mm <= slot5_h.
-      const int slot5_floor = (r.widget_id == WidgetId::LIGHT_COLOR_BTN) ? (ly.slot5_h - 2) : ly.slot5_h;
-      const int min_slot5_h = std::min(min_7mm, slot5_floor);
+      // Tier-2 dense single-line rows (D-019 / D-087): >= 5.5 mm where panel height permits,
+      // capped by slot5_h on ultra-compact panels (e.g. 360x360R / 410x502 @ 315 PPI).
+      const int min_slot5_h = std::min(min_5_5mm, ly.slot5_h);
       if (pw < min_7mm || ph < min_slot5_h) {
         std::fprintf(stderr, "[HOST TEST FAIL] %s slot5 widget %u padded=%dx%d < %dx%d\n",
                      label, static_cast<unsigned>(r.widget_id), pw, ph, min_7mm, min_slot5_h);
         std::exit(1);
       }
+    } else if (r.widget_id >= WidgetId::CALC_KEY_BASE && r.widget_id < WidgetId::CALC_KEY_BASE + 20) {
+      // Tier-2 dense 5x4 keypad (D-087): strictly >= 5.5 mm padded hit target in both axes.
+      if (pw < min_5_5mm || ph < min_5_5mm) {
+        std::fprintf(stderr, "[HOST TEST FAIL] %s calc key %u padded=%dx%d < 5.5mm (%dpx)\n",
+                     label, static_cast<unsigned>(r.widget_id), pw, ph, min_5_5mm);
+        std::exit(1);
+      }
     } else if ((r.widget_id >= WidgetId::TOOLS_CARD_BASE && r.widget_id < WidgetId::TOOLS_CARD_BASE + 16) ||
                (r.widget_id >= WidgetId::PINNED_CARD_BASE && r.widget_id < WidgetId::PINNED_CARD_BASE + 16)) {
-      // Adaptive 2x3 / 3x3 / 4x3 variable-span tile-grid cards strictly >= 7.0 mm across all 6 geometries (D-086).
+      // Adaptive 2x2 / 2x3 / 3x3 / 4x2 / 4x3 variable-span tile-grid cards strictly >= 7.0 mm (D-086 / D-087).
       LATTER_CHECK(pw >= min_7mm && ph >= min_7mm);
     } else if (!is_dense_grid_or_gutter_widget(r.widget_id)) {
       if (pw < min_7mm || ph < min_7mm) {
@@ -604,7 +682,7 @@ void test_home_hub_d048_button_only_glass_and_conditional_controls() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  static_assert(LATTER_CORE_REV == 2026112404L, "LATTER_CORE_REV must match 2026112404L");
+  static_assert(LATTER_CORE_REV == 2026112501L, "LATTER_CORE_REV must match 2026112501L");
   static_assert(static_cast<size_t>(AreaCtxField::THERMOSTATS_SUMMARY) == 15U);
   static_assert(static_cast<size_t>(AreaCtxField::ALARM_CAPS) == 38U);
   static_assert(static_cast<size_t>(AreaCtxField::AREA_AMBIENT_LIGHT) == 42U);
@@ -988,7 +1066,7 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
     LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
 
     // Wide card sample budget check (independent step_x / step_y keeps S3 PSRAM reads <= 192)
-    const int wide_w = std::min(kMaxContentColW, SCREEN_W - 8);
+    const int wide_w = std::min(layout().max_content_w(), SCREEN_W - 8);
     const GlassBackdrop wide_bd = sample_glass_backdrop((SCREEN_W - wide_w) / 2, by, wide_w, 44);
     LATTER_CHECK(wide_bd.valid && wide_bd.sample_count > 0U && wide_bd.sample_count <= 192U);
 
@@ -1076,11 +1154,11 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
     const int row0_w = row0->x1 - row0->x0 + 1;
     const int act0_w = act0->x1 - act0->x0 + 1;
     const int exp_w = exp->x1 - exp->x0 + 1;
-    LATTER_CHECK(act0_w == scale_s(56) && exp_w == scale_s(52));
+    LATTER_CHECK(act0_w == dp_px(56) && exp_w == dp_px(52));
     LATTER_CHECK(row0->x1 + 1 == act0->x0 && act0->x1 + 1 == exp->x0);
     LATTER_CHECK(row0_w + act0_w + exp_w == layout().home_activity_w());
-    const int text_avail = row0_w - scale_s(48) - scale_s(8);
-    LATTER_CHECK(text_avail >= ((SCREEN_W >= 466) ? 180 : 120));
+    const int text_avail = row0_w - dp_px(48) - dp_px(8);
+    LATTER_CHECK(text_avail >= ((SCREEN_W >= 466) ? dp_px(148) : 100));
 
     // Camera Single HUD with 4 configured actions (Listen / Talk / Reply / Unlock)
     rs.nav.gui_page = PageId::CAMERAS;
@@ -1103,7 +1181,7 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
       const int pw = reg->x1 - reg->x0 + 1;
       const int ph_padded = (reg->y1 - reg->y0 + 1) + 2 * static_cast<int>(reg->hit_pad);
       LATTER_CHECK(reg->x0 >= 0 && reg->x1 < SCREEN_W);
-      LATTER_CHECK(pw >= ((SCREEN_W >= 720) ? 100 : 64));
+      LATTER_CHECK(pw >= std::max(64, dp_px(64)));
       LATTER_CHECK(ph_padded >= layout().min_hit_px());
       if (prev_pill != nullptr) {
         LATTER_CHECK(prev_pill->x1 < reg->x0);
@@ -1367,6 +1445,64 @@ void test_additive_cold_boot_sky_and_celestial_d085() {
   }
 }
 
+void test_weather_forecast_and_music_lyrics_invariants_9geom() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Weather 5-Day Forecast column monotonicity & bezel safety across all 9 geometries.
+  for (const auto &p : kAllNinePanels) {
+    const auto ly = compute_panel_layout(
+        p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
+    const int top_y = ly.hdr_y + dp_px_for(20, ly.scale_milli);
+    const int bot_y = (ly.app_dock_y - ly.dock_r - dp_px_for(14, ly.scale_milli));
+    const auto fg = compute_weather_forecast_geom(
+        p.w, p.h, p.round, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
+    const int x_left = p.w / 2 - fg.row_hw;
+    const int x_right = p.w / 2 + fg.row_hw;
+    LATTER_CHECK(fg.fc_step_y > 0 && fg.row_hw > 60 && fg.cond_max_w >= 28);
+    LATTER_CHECK(x_left < fg.x_day && fg.x_day < fg.x_glyph);
+    LATTER_CHECK(fg.x_glyph < fg.x_cond);
+    LATTER_CHECK(fg.x_cond + fg.cond_max_w < fg.x_slash - fg.slash_gap - fg.temp_half_w);
+    LATTER_CHECK(fg.x_slash + fg.slash_gap + fg.temp_half_w <= x_right);
+    for (int i = 0; i < 5; ++i) {
+      const int ry = fg.fc_top_y + i * fg.fc_step_y;
+      LATTER_CHECK(ry >= top_y && ry <= bot_y);
+      LATTER_CHECK(is_inside_bezel_for(x_left, ry, p.w, p.h, p.round, p.wearable, 1, p.corner_r));
+      LATTER_CHECK(is_inside_bezel_for(x_right, ry, p.w, p.h, p.round, p.wearable, 1, p.corner_r));
+    }
+  }
+
+  // 2. Music Lyrics rendered line spacing strictly clears active & body font heights (zero vertical overlap).
+  {
+    HostSurfaceFixture fix{};
+    populate_rich_host_state(fix.ctx);
+    auto &rs = runtime_state();
+    rs.nav.gui_page = PageId::MUSIC;
+    rs.music.view = MusicView::LYRICS;
+    rs.music.drilldown = MusicDrilldown::NONE;
+    rs.music.takeover = MusicTakeover::NONE;
+    rs.music.hud_active = true;
+    fix.fill(0U);
+    frame_base_begin();
+    frame_hits().clear();
+    render_music_page(fix.surf, fix.ctx);
+    int prev_y1 = -1;
+    int lyric_cnt = 0;
+    for (uint8_t i = 0; i < frame_hits().count; ++i) {
+      const auto &r = frame_hits().regions[i];
+      if (r.widget_id >= WidgetId::MUSIC_LYRIC_LINE_BASE && r.widget_id < WidgetId::MUSIC_LYRIC_LINE_BASE + 8) {
+        LATTER_CHECK(r.height() >= fix.ctx.font_small->height);
+        if (prev_y1 >= 0) {
+          LATTER_CHECK(r.y0 > prev_y1);
+        }
+        prev_y1 = r.y1;
+        ++lyric_cnt;
+      }
+    }
+    LATTER_CHECK(lyric_cnt >= 2);
+  }
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
@@ -1376,6 +1512,7 @@ void run_ui_rgb565_5geom_tests() {
   test_art_canvas_lut_and_dual_sink_parity_5geom();
   test_rotated_fallback_print_and_adaptive_glass_style();
   test_additive_cold_boot_sky_and_celestial_d085();
+  test_weather_forecast_and_music_lyrics_invariants_9geom();
 }
 
 }  // namespace latter_test

@@ -38,21 +38,6 @@ struct MockBleCtrl {
 
 struct MockWifiCtrl {};
 
-struct MockTouchscreen {
-  bool failed{true};
-  int clear_err_calls{0};
-  int reset_calls{0};
-  int setup_calls{0};
-  int disable_loop_calls{0};
-  int enable_loop_calls{0};
-  bool is_failed() const { return failed; }
-  void status_clear_error() { ++clear_err_calls; }
-  void reset_to_construction_state() { ++reset_calls; }
-  void call() { ++setup_calls; }
-  void disable_loop() { ++disable_loop_calls; }
-  void enable_loop() { ++enable_loop_calls; }
-};
-
 struct MockAnimPoller {
   int starts{0};
   int stops{0};
@@ -335,23 +320,41 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   latter_core::evaluate_radio_policy(&ble, &wifi, true, true, 0, false, false, false, 0, true, 6600U, true, 4500U);
   LATTER_CHECK(ble.is_active() && ble.enables == 1);
 
-  MockTouchscreen ts{};
-  MockTouchscreen *const ts_const_ptr = &ts;
-  latter_core::hal_recover_touchscreen_if_failed(&ts, 0U, true);
-  latter_core::hal_recover_touchscreen_if_failed(&ts, 1000U);
-  LATTER_CHECK(ts.setup_calls == 0);
-  latter_core::hal_recover_touchscreen_if_failed(&ts, 2000U);
-  LATTER_CHECK(ts.setup_calls == 1 && ts.clear_err_calls == 1 && ts.reset_calls == 1 && ts.enable_loop_calls == 1);
-  latter_core::hal_recover_touchscreen_if_failed(&ts_const_ptr, 3200U);
-  LATTER_CHECK(ts.setup_calls == 1);
-  latter_core::hal_recover_touchscreen_if_failed(&ts_const_ptr, 4100U);
-  LATTER_CHECK(ts.setup_calls == 2 && ts.enable_loop_calls == 2);
-  latter_core::hal_recover_touchscreen_if_failed(&ts, 7000U);
-  LATTER_CHECK(ts.setup_calls == 2);
+  // First-party LatterTouchscreen recovery policy & TouchControlBridge dispatch (replaces retired hal_panel_power touch helpers).
+  {
+    latter_core::TouchRecoveryPolicy pol{};
+    LATTER_CHECK(!pol.should_attempt(true, 1000U));
+    LATTER_CHECK(pol.should_attempt(true, 2000U));
+    LATTER_CHECK(pol.attempts == 1U);
+    LATTER_CHECK(!pol.should_attempt(true, 3200U));
+    LATTER_CHECK(pol.should_attempt(true, 4100U));
+    LATTER_CHECK(pol.attempts == 2U);
+    LATTER_CHECK(!pol.should_attempt(true, 7000U));
+    pol.reset();
+    LATTER_CHECK(pol.attempts == 0U && !pol.should_attempt(false, 2500U));
+
+    static int s_slp = -1;
+    static uint32_t s_rec_ms = 0U;
+    static int s_rst = 0;
+    s_slp = -1;
+    s_rec_ms = 0U;
+    s_rst = 0;
+    latter_core::touch_control_bridge().bind(
+        nullptr,
+        +[](void *, bool s) { s_slp = s ? 1 : 0; },
+        +[](void *, uint32_t ms) { s_rec_ms = ms; },
+        +[](void *) { ++s_rst; });
+    latter_core::hal_touch_set_sleep_mode(true);
+    latter_core::hal_touch_recover_if_failed(2500U);
+    latter_core::hal_touch_prepare_for_restart();
+    LATTER_CHECK(s_slp == 1 && s_rec_ms == 2500U && s_rst == 1);
+    latter_core::touch_control_bridge().reset();
+  }
 
   const std::string touch_eng_cpp = read_repo_file("../../components/latter_ui/touch_engine.cpp");
   const std::string touch_all_cpp = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
-  const std::string panel_h = read_repo_file("../../include/hal_panel_power.h");
+  const std::string touch_h = read_repo_file("../../include/hal_touch.h");
+  const std::string touch_hal_cpp = read_repo_file("../../components/latter_core/touch_hal.cpp");
   const std::string sys_yaml = read_repo_files({
       "../../modules/system_core.yaml",
       "../../modules/system_ui_sync.yaml",
@@ -368,12 +371,16 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   LATTER_CHECK(touch_all_cpp.find("UiHostCmd::RESTART_DEVICE") != std::string::npos);
 
   const std::string gui_touch_yaml = read_repo_file("../../guis/universal/gui_touch.yaml");
-  LATTER_CHECK(panel_h.find("hal_prepare_touch_for_restart()") != std::string::npos);
-  LATTER_CHECK(panel_h.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
-  LATTER_CHECK(sys_yaml.find("hal_prepare_touch_for_restart()") != std::string::npos);
+  LATTER_CHECK(touch_h.find("hal_touch_prepare_for_restart()") != std::string::npos);
+  LATTER_CHECK(touch_h.find("hal_touch_recover_if_failed(") != std::string::npos);
+  LATTER_CHECK(touch_h.find("hal_touch_set_sleep_mode(") != std::string::npos);
+  LATTER_CHECK(touch_hal_cpp.find("is_known_focaltech_chip_id(") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("hal_touch_prepare_for_restart()") != std::string::npos);
+  LATTER_CHECK(sys_yaml.find("pm_wake_loop_from_isr") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("flush_persisted_prefs_if_dirty()") != std::string::npos);
-  LATTER_CHECK(pwr_yaml.find("rs.hw_recover_touchscreen(") != std::string::npos);
-  LATTER_CHECK(gui_touch_yaml.find("hal_recover_touchscreen_if_failed(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("hal_touch_recover_if_failed(") != std::string::npos);
+  LATTER_CHECK(pwr_yaml.find("hal_touch_set_sleep_mode(") != std::string::npos);
+  LATTER_CHECK(gui_touch_yaml.find("on_touch_down(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("emit_device_telemetry(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("/*hibernating=*/true") != std::string::npos);
   LATTER_CHECK(sys_yaml.find("area_changed") != std::string::npos);
@@ -429,7 +436,6 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   const std::string audio_cpp = read_repo_file("../../components/latter_core/audio_es8311.cpp");
   const std::string imu_cpp = read_repo_file("../../components/latter_core/imu_qmi8658.cpp");
   const std::string pmu_cpp = read_repo_file("../../components/latter_core/power_battery.cpp");
-  const std::string panel_cpp = read_repo_file("../../components/latter_core/panel_power.cpp");
   const std::string radio_h = read_repo_file("../../include/hal_radio_policy.h");
   const std::string weak_cpp = read_repo_file("../../components/latter_core/weak_link_policy.cpp");
   const std::string b216_yaml = read_repo_file("../../boards/waveshare_s3_216.yaml");
@@ -444,9 +450,7 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   LATTER_CHECK(imu_cpp.find("#if LATTER_DRV_IMU_QMI8658") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("LATTER_DRV_PMU_AXP2101") != std::string::npos);
   LATTER_CHECK(pmu_cpp.find("LATTER_DRV_RTC_PCF85063") != std::string::npos);
-  LATTER_CHECK(panel_cpp.find("LATTER_DRV_TOUCH_FT5X06") != std::string::npos);
-  LATTER_CHECK(panel_cpp.find("is_known_focaltech_chip_id(") != std::string::npos);
-  LATTER_CHECK(b216_yaml.find("touch_ft5x06: false") != std::string::npos);
+  LATTER_CHECK(b216_yaml.find("touch_ft5x06") == std::string::npos);
   LATTER_CHECK(radio_h.find("#ifdef USE_WIFI") != std::string::npos);
   LATTER_CHECK(weak_cpp.find("#if defined(USE_ESP32) && defined(USE_WIFI)") != std::string::npos);
   LATTER_CHECK(chip_p4_yaml.find("esp32_hosted:") == std::string::npos);
@@ -468,7 +472,7 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
 
 void test_phase1_boot_wake_hibernate_and_ble_roaming() {
   static_assert(std::is_trivially_copyable_v<latter_core::HibernateSnapshot>);
-  LATTER_CHECK(LATTER_CORE_REV == 2026112404L);
+  LATTER_CHECK(LATTER_CORE_REV == 2026112501L);
   LATTER_CHECK(latter_core::kHibernateSnapshotVersion == 3U);
 
   latter_core::reset_hibernate_snapshot_for_test();

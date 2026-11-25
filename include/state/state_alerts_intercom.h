@@ -232,17 +232,22 @@ inline void resolve_camera_stream_dims(int panel_w, int panel_h, bool is_round,
                                        bool is_grid, bool is_p4, bool low_bw,
                                        uint16_t &out_w, uint16_t &out_h,
                                        bool rot90 = false) noexcept {
+  const int max_dim = is_p4 ? (low_bw ? 512 : 768) : (low_bw ? 320 : 480);
   if (is_round) {
+    const int min_dim = std::max(128, std::min(panel_w, panel_h));
     if (is_grid) {
-      out_w = low_bw ? 256U : 320U;
-      out_h = low_bw ? 192U : 256U;
+      const int w = cam_align16_floor(std::min(max_dim, (min_dim * (low_bw ? 56 : 70)) / 100));
+      const int h = cam_align16_floor((w * 4) / 5);
+      out_w = static_cast<uint16_t>(w);
+      out_h = static_cast<uint16_t>(h);
     } else {
-      out_w = low_bw ? 320U : 384U;
-      out_h = low_bw ? 176U : 224U;
+      const int w = cam_align16_floor(std::min(max_dim, (min_dim * (low_bw ? 70 : 84)) / 100));
+      const int h = cam_align16_floor((w * 7) / 12);
+      out_w = static_cast<uint16_t>(w);
+      out_h = static_cast<uint16_t>(h);
     }
     return;
   }
-  const int max_dim = is_p4 ? (low_bw ? 512 : 768) : (low_bw ? 320 : 480);
   if (rot90 && !is_grid && panel_h > panel_w) {
     const int h = std::min(panel_h, max_dim);
     int w = std::min(panel_w, (h * 9) / 16);

@@ -13,6 +13,13 @@ using namespace latter_core;
 
 namespace {
 
+inline constexpr float game_f(float v466) noexcept {
+  return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
+}
+inline constexpr int game_px(int v466) noexcept {
+  return (v466 * SCREEN_MIN_DIM + 233) / 466;
+}
+
 // ==============================================================================
 // 1. PSRAM-Backed Per-Game State Pods (Zero Idle Internal SRAM)
 // ==============================================================================
@@ -245,9 +252,10 @@ inline uint32_t xorshift32_step(uint32_t &state, uint32_t salt = 0U) noexcept {
 
 inline void render_game_hud_footer(Rgb565Surface &it, int cx, const char *text,
                                    UiFontView font, UiColor col) {
-  const int hud_y = layout().back_y - scale_y(34);
+  const auto &ly = layout();
+  const int hud_y = ly.back_y - dp_px(34);
   const std::string fit = fit_text_to_width_font(
-      text != nullptr ? text : "", safe_span(hud_y, 16), font);
+      text != nullptr ? text : "", ly.safe_span(hud_y, dp_px(16)), font);
   ui::shadow_print(it, cx, hud_y, font, col, UiTextAlign::CENTER, fit.c_str());
 }
 
@@ -291,7 +299,7 @@ void render_archery_target(Rgb565Surface &it, int tx, int ty, int r_outer,
   const int r_red = (r_outer * 34) / 100;
   const int r_gold = std::max(3, (r_outer * 16) / 100);
 
-  fast_filled_circle(it, tx, ty + std::max(2, scale_min(3)), r_outer, col_dark_gray);
+  fast_filled_circle(it, tx, ty + std::max(2, game_px(3)), r_outer, col_dark_gray);
   fast_filled_circle(it, tx, ty, r_outer, col_white);
   fast_circle(it, tx, ty, r_outer, col_dark_gray);
   fast_filled_circle(it, tx, ty, r_black, col_black);
@@ -321,16 +329,16 @@ void render_brick_tile(Rgb565Surface &it, int cx_b, int cy_b, int w, int h,
       fast_pixel(it, rx + 3, ry + h - 4, col_white);
       fast_pixel(it, rx + w - 4, ry + h - 4, col_white);
       if (hp >= 3) {
-        const int bw = std::max(6, scale_min(10));
-        const int bh = std::max(3, scale_min(4));
+        const int bw = std::max(6, game_px(10));
+        const int bh = std::max(3, game_px(4));
         fill_rect_row_major(it, cx_b - bw / 2, cy_b - bh / 2, bw, bh, col_white);
       } else if (max_hp == 3) {
-        fast_line(it, cx_b - scale_min(4), ry + 2, cx_b + scale_min(3), ry + h - 3, UiColor(20, 24, 32));
+        fast_line(it, cx_b - game_px(4), ry + 2, cx_b + game_px(3), ry + h - 3, UiColor(20, 24, 32));
       }
     } else if (hp == 1) {
-      fast_line(it, cx_b - scale_min(6), ry + 1, cx_b, cy_b, UiColor(16, 20, 28));
-      fast_line(it, cx_b, cy_b, cx_b + scale_min(6), ry + h - 2, UiColor(16, 20, 28));
-      fast_line(it, cx_b - scale_min(5), ry + 1, cx_b + 1, cy_b, hi_col);
+      fast_line(it, cx_b - game_px(6), ry + 1, cx_b, cy_b, UiColor(16, 20, 28));
+      fast_line(it, cx_b, cy_b, cx_b + game_px(6), ry + h - 2, UiColor(16, 20, 28));
+      fast_line(it, cx_b - game_px(5), ry + 1, cx_b + 1, cy_b, hi_col);
     }
   }
 }
@@ -355,7 +363,7 @@ void render_chomp_snack(Rgb565Surface &it, int tx, int ty, int kind,
                         UiColor col_white, UiColor col_red, UiColor col_gold,
                         UiColor col_cyan, UiColor col_green, UiColor col_magenta, UiColor col_bg) {
   const int k = kind % 5;
-  auto sc = [](int v) -> int { return scale_min(v); };
+  auto sc = [](int v) -> int { return game_px(v); };
   const int r13 = std::max(6, sc(13));
   const int r12 = std::max(5, sc(12));
   const int r10 = std::max(5, sc(10));
@@ -424,9 +432,9 @@ void render_chomp_character(Rgb565Surface &it, int mx, int my, int mr,
                             uint32_t now_ms, UiColor col_white, UiColor col_black, UiColor col_dark_gray) {
   const UiColor fur_main(28, 148, 248), fur_dark(16, 96, 182), fur_hi(110, 198, 255);
   const UiColor ear_inner(255, 158, 188), tongue_pink(255, 128, 166);
-  const int cy_m = my + (is_chomping ? (((now_ms / 70U) & 1U) ? -scale_min(3) : scale_min(2)) : 0);
+  const int cy_m = my + (is_chomping ? (((now_ms / 70U) & 1U) ? -game_px(3) : game_px(2)) : 0);
 
-  fast_filled_circle(it, mx, cy_m + std::max(2, scale_min(4)), mr, UiColor(12, 16, 24));
+  fast_filled_circle(it, mx, cy_m + std::max(2, game_px(4)), mr, UiColor(12, 16, 24));
   const int ear_r = (mr * 34) / 100, ear_inner_r = (mr * 19) / 100;
   const int ear_dx = (mr * 74) / 100, ear_dy = (mr * 68) / 100;
   fast_filled_circle(it, mx - ear_dx, cy_m - ear_dy, ear_r, fur_dark);
@@ -439,11 +447,11 @@ void render_chomp_character(Rgb565Surface &it, int mx, int my, int mr,
   fast_filled_circle(it, mx + ear_dx - 1, cy_m - ear_dy + 1, ear_inner_r, ear_inner);
 
   const int tuft_r = (mr * 28) / 100;
-  fast_filled_circle(it, mx - mr + scale_min(5), cy_m - scale_min(4), tuft_r, fur_main);
-  fast_filled_circle(it, mx + mr - scale_min(5), cy_m - scale_min(4), tuft_r, fur_main);
-  fast_filled_circle(it, mx - mr + scale_min(7), cy_m + scale_min(10), tuft_r, fur_main);
-  fast_filled_circle(it, mx + mr - scale_min(7), cy_m + scale_min(10), tuft_r, fur_main);
-  fast_filled_circle(it, mx, cy_m - mr + scale_min(3), tuft_r, fur_main);
+  fast_filled_circle(it, mx - mr + game_px(5), cy_m - game_px(4), tuft_r, fur_main);
+  fast_filled_circle(it, mx + mr - game_px(5), cy_m - game_px(4), tuft_r, fur_main);
+  fast_filled_circle(it, mx - mr + game_px(7), cy_m + game_px(10), tuft_r, fur_main);
+  fast_filled_circle(it, mx + mr - game_px(7), cy_m + game_px(10), tuft_r, fur_main);
+  fast_filled_circle(it, mx, cy_m - mr + game_px(3), tuft_r, fur_main);
 
   fast_filled_circle(it, mx, cy_m, mr, fur_main);
   fast_circle(it, mx, cy_m, mr, fur_hi);
@@ -479,9 +487,9 @@ void render_chomp_character(Rgb565Surface &it, int mx, int my, int mr,
     fast_filled_circle(it, mx, mouth_y + mr_open / 2, mr_open / 2, ear_inner);
     const UiColor crumb(218, 162, 84);
     const int c_off = static_cast<int>((now_ms / 60U) % 8U);
-    fast_filled_circle(it, mx - mr / 2 - c_off, mouth_y - 2 + c_off / 2, std::max(1, scale_min(2)), crumb);
-    fast_filled_circle(it, mx + mr / 2 + c_off, mouth_y - 4 + c_off / 2, std::max(1, scale_min(2)), crumb);
-    fast_filled_circle(it, mx + 3, mouth_y + mr / 2 + c_off / 2, std::max(1, scale_min(2)), crumb);
+    fast_filled_circle(it, mx - mr / 2 - c_off, mouth_y - 2 + c_off / 2, std::max(1, game_px(2)), crumb);
+    fast_filled_circle(it, mx + mr / 2 + c_off, mouth_y - 4 + c_off / 2, std::max(1, game_px(2)), crumb);
+    fast_filled_circle(it, mx + 3, mouth_y + mr / 2 + c_off / 2, std::max(1, game_px(2)), crumb);
   } else if (mouth_open) {
     const int m_rad = (mr * 44) / 100;
     fast_filled_circle(it, mx, mouth_y + 2, m_rad, col_black);
@@ -531,10 +539,10 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
       const float ang = base_ang + static_cast<float>(i) * 1.256637f;
       float s_a = 0.0f, c_a = 1.0f;
       fast_sincos(ang, s_a, c_a);
-      const float dist = scale_min_f(112.0f + static_cast<float>((i & 1) * 16));
+      const float dist = game_f(112.0f + static_cast<float>((i & 1) * 16));
       balls[i] = {static_cast<float>(cx) + c_a * dist,
                   static_cast<float>(cy) + s_a * dist,
-                  0.0f, 0.0f, scale_min_f(RADII[i]), i, false, 0U, 0.0f, 0.0f};
+                  0.0f, 0.0f, game_f(RADII[i]), i, false, 0U, 0.0f, 0.0f};
     }
   };
 
@@ -587,9 +595,9 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
   int time_remaining = static_cast<int>(std::ceil(st.time_left_f));
 
   const int num_pegs = std::min(4, std::max(0, st.wave_num - 1));
-  const float peg_ring_r = scale_min_f(54.0f);
-  const float peg_r = scale_min_f(6.0f);
-  const int wall_y = layout().back_y - scale_y(60);
+  const float peg_ring_r = game_f(54.0f);
+  const float peg_r = game_f(6.0f);
+  const int wall_y = layout().back_y - dp_px(60);
   static constexpr float PEG_BASE_ANG[4] = {-1.5707963f, 1.5707963f, 3.1415926f, 0.0f};
   float peg_x[4] = {0.0f, 0.0f, 0.0f, 0.0f};
   float peg_y[4] = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -615,14 +623,14 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
     } else {
       st.ring_wave_x = tx;
       st.ring_wave_y = ty;
-      st.ring_wave_r = scale_min_f(12.0f);
-      const float ref_r = scale_min_f(16.0f);
-      const float near_d = scale_min_f(22.0f);
-      const float imp_near = scale_min_f(620.0f);
-      const float imp_base = scale_min_f(480.0f);
-      const float imp_peak = scale_min_f(680.0f);
-      const float imp_cap = scale_min_f(820.0f);
-      const float falloff_ref = std::max(1.0f, scale_min_f(12.5f));
+      st.ring_wave_r = game_f(12.0f);
+      const float ref_r = game_f(16.0f);
+      const float near_d = game_f(22.0f);
+      const float imp_near = game_f(620.0f);
+      const float imp_base = game_f(480.0f);
+      const float imp_peak = game_f(680.0f);
+      const float imp_cap = game_f(820.0f);
+      const float falloff_ref = std::max(1.0f, game_f(12.5f));
       for (int i = 0; i < 5; i++) {
         if (balls[i].sunk) continue;
         const float tdx = balls[i].x - tx;
@@ -646,15 +654,15 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
 
   const float friction = std::pow(0.975f, dt / 0.05f);
   const float bounce = 0.82f;
-  const float arena_r = scale_min_f(208.0f);
-  const float hole_cap_r = scale_min_f(24.0f);
-  const float hole_bevel_r = scale_min_f(42.0f);
-  const float outer_lip_r = scale_min_f(180.0f);
-  const float unit_scale = std::max(0.25f, scale_min_f(1.0f));
+  const float arena_r = game_f(208.0f);
+  const float hole_cap_r = game_f(24.0f);
+  const float hole_bevel_r = game_f(42.0f);
+  const float outer_lip_r = game_f(180.0f);
+  const float unit_scale = std::max(0.25f, game_f(1.0f));
 
-  const float grav_lim = scale_min_f(650.0f);
-  const float ax = std::clamp(roll_delta * scale_min_f(34.0f), -grav_lim, grav_lim);
-  const float ay = std::clamp(-pitch_delta * scale_min_f(34.0f), -grav_lim, grav_lim);
+  const float grav_lim = game_f(650.0f);
+  const float ax = std::clamp(roll_delta * game_f(34.0f), -grav_lim, grav_lim);
+  const float ay = std::clamp(-pitch_delta * game_f(34.0f), -grav_lim, grav_lim);
 
   int sunk_count = 0;
   if (!st.round_over) {
@@ -702,13 +710,13 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
         balls[i].vy -= (dy / dist_hole) * rim_nudge * dt;
       }
 
-      const float inertia_scale = 0.92f + ((scale_min_f(20.0f) - balls[i].r) / unit_scale) * 0.02f;
+      const float inertia_scale = 0.92f + ((game_f(20.0f) - balls[i].r) / unit_scale) * 0.02f;
       balls[i].vx = (balls[i].vx + ax * inertia_scale * dt) * friction;
       balls[i].vy = (balls[i].vy + ay * inertia_scale * dt) * friction;
       balls[i].x += balls[i].vx * dt;
       balls[i].y += balls[i].vy * dt;
 
-      const float peg_kick = scale_min_f(38.0f);
+      const float peg_kick = game_f(38.0f);
       for (int p = 0; p < num_pegs; p++) {
         const float pdx = balls[i].x - peg_x[p];
         const float pdy = balls[i].y - peg_y[p];
@@ -824,7 +832,7 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
     }
   }
 
-  const int wall_hw = scale_min(151);
+  const int wall_hw = game_px(151);
   fast_line(it, cx - wall_hw, wall_y, cx + wall_hw, wall_y, scale_color(ctx.col_slate, 0.45f));
   fast_line(it, cx - wall_hw + 2, wall_y + 1, cx + wall_hw - 2, wall_y + 1, ctx.col_dark_gray);
   char hud_buf[56];
@@ -833,34 +841,34 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
   render_game_hud_footer(it, cx, hud_buf, ctx.font_small, time_remaining < 10 ? ctx.col_orange : ctx.col_gold);
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
-  fast_circle(it, cx, cy, scale_min(34), ctx.col_dark_gray);
-  fast_circle(it, cx, cy, scale_min(30), ctx.col_slate);
-  fast_circle(it, cx, cy, scale_min(29), ctx.col_white);
-  fast_circle(it, cx, cy, scale_min(28), ctx.col_white);
-  fast_filled_circle(it, cx, cy, scale_min(25), ctx.col_bg);
+  fast_circle(it, cx, cy, game_px(34), ctx.col_dark_gray);
+  fast_circle(it, cx, cy, game_px(30), ctx.col_slate);
+  fast_circle(it, cx, cy, game_px(29), ctx.col_white);
+  fast_circle(it, cx, cy, game_px(28), ctx.col_white);
+  fast_filled_circle(it, cx, cy, game_px(25), ctx.col_bg);
 
   const float swirl = static_cast<float>((now_ms / 25U) % 360U) * (PI_F / 180.0f);
   for (int s = 0; s < 4; s++) {
     const float sa = swirl + static_cast<float>(s) * (PI_F * 0.5f);
     float s_sa = 0.0f, c_sa = 1.0f;
     fast_sincos(sa, s_sa, c_sa);
-    fast_line(it, cx + static_cast<int>(c_sa * scale_min_f(26.0f)),
-              cy + static_cast<int>(s_sa * scale_min_f(26.0f)),
-              cx + static_cast<int>(c_sa * scale_min_f(32.0f)),
-              cy + static_cast<int>(s_sa * scale_min_f(32.0f)), ctx.col_slate);
+    fast_line(it, cx + static_cast<int>(c_sa * game_f(26.0f)),
+              cy + static_cast<int>(s_sa * game_f(26.0f)),
+              cx + static_cast<int>(c_sa * game_f(32.0f)),
+              cy + static_cast<int>(s_sa * game_f(32.0f)), ctx.col_slate);
   }
 
   const int peg_r_px = std::max(3, static_cast<int>(std::round(peg_r)));
   const int peg_hi_r = std::max(1, peg_r_px / 3);
-  const int peg_sh_x = std::max(1, scale_min(1));
-  const int peg_sh_y = std::max(1, scale_min(2));
+  const int peg_sh_x = std::max(1, game_px(1));
+  const int peg_sh_y = std::max(1, game_px(2));
   for (int p = 0; p < num_pegs; p++) {
     const int px = static_cast<int>(std::round(peg_x[p]));
     const int py = static_cast<int>(std::round(peg_y[p]));
     const bool peg_flashing = (st.peg_hit_ms[p] > 0U && (now_ms - st.peg_hit_ms[p] < 200U));
     if (peg_flashing) {
-      fast_circle(it, px, py, peg_r_px + std::max(2, scale_min(4)), ctx.col_gold);
-      fast_circle(it, px, py, peg_r_px + std::max(1, scale_min(2)), ctx.col_cyan);
+      fast_circle(it, px, py, peg_r_px + std::max(2, game_px(4)), ctx.col_gold);
+      fast_circle(it, px, py, peg_r_px + std::max(1, game_px(2)), ctx.col_cyan);
     }
     fast_filled_circle(it, px + peg_sh_x, py + peg_sh_y, peg_r_px, UiColor(10, 14, 20));
     fast_filled_circle(it, px, py, peg_r_px, peg_flashing ? ctx.col_gold : ctx.col_slate);
@@ -873,9 +881,9 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
     const int r_int = static_cast<int>(st.ring_wave_r);
     fast_circle(it, static_cast<int>(st.ring_wave_x), static_cast<int>(st.ring_wave_y), r_int, ctx.col_gold);
     fast_circle(it, static_cast<int>(st.ring_wave_x), static_cast<int>(st.ring_wave_y),
-                r_int + std::max(1, scale_min(2)), ctx.col_cyan);
-    st.ring_wave_r += scale_min_f(26.0f);
-    if (st.ring_wave_r > scale_min_f(190.0f)) st.ring_wave_r = -1.0f;
+                r_int + std::max(1, game_px(2)), ctx.col_cyan);
+    st.ring_wave_r += game_f(26.0f);
+    if (st.ring_wave_r > game_f(190.0f)) st.ring_wave_r = -1.0f;
   }
 
   const UiColor base_cols[5] = {ctx.col_gold, ctx.col_cyan, ctx.col_green, ctx.col_red, ctx.col_magenta};
@@ -904,7 +912,7 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
 
   if (!st.round_over && st.popup_ms > 0U && (now_ms - st.popup_ms < 650U)) {
     const uint32_t pel = now_ms - st.popup_ms;
-    const int py = cy - scale_min(42) - static_cast<int>((pel * static_cast<uint32_t>(scale_min(30))) / 650U);
+    const int py = cy - game_px(42) - static_cast<int>((pel * static_cast<uint32_t>(game_px(30))) / 650U);
     char pop_buf[24];
     if (st.popup_combo > 1) {
       std::snprintf(pop_buf, sizeof(pop_buf), "+%d %dx!", st.popup_pts, st.popup_combo);
@@ -919,10 +927,10 @@ void render_game_marbles(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
     char w_buf[36];
     if (now_ms - st.wave_clear_ms < 1100U) {
       std::snprintf(w_buf, sizeof(w_buf), "WAVE %d CLEAR! +6s", st.wave_num - 1);
-      fast_print(it, cx, cy - scale_y(107), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, w_buf);
+      fast_print(it, cx, cy - game_px(107), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, w_buf);
     } else {
       std::snprintf(w_buf, sizeof(w_buf), "GET READY! WAVE %d", st.wave_num);
-      fast_print(it, cx, cy - scale_y(107), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, w_buf);
+      fast_print(it, cx, cy - game_px(107), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, w_buf);
     }
   }
 
@@ -960,7 +968,7 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
   const uint32_t now_ms = ctx.now_ms;
   auto &st = arena.archery;
   auto *pinned = st.pinned;
-  const float target_base_y = static_cast<float>(scale_y(112));
+  const float target_base_y = static_cast<float>(std::max(dp_px(72), (SCREEN_H * 24) / 100));
 
   auto clear_pinned = [&]() {
     st.pinned_count = 0;
@@ -1000,23 +1008,23 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
   st.last_phys_ms = now_ms;
   dt = std::clamp(dt, 0.012f, 0.075f);
 
-  const int target_r = scale_min(std::max(26, 36 - (st.round_num - 1) * 2));
+  const int target_r = game_px(std::max(26, 36 - (st.round_num - 1) * 2));
   const float sway_spd = 0.78f + static_cast<float>(std::min(6, st.round_num - 1)) * 0.16f;
   st.target_phase += sway_spd * dt;
 
-  const float bow_y = static_cast<float>(layout().back_y - scale_y(88));
-  const float target_x = static_cast<float>(cx) + fast_sin(st.target_phase) * scale_min_f(102.0f);
-  const float target_y = target_base_y + fast_cos(st.target_phase * 1.4f) * scale_min_f(24.0f);
+  const float bow_y = static_cast<float>(layout().back_y - dp_px(88));
+  const float target_x = static_cast<float>(cx) + fast_sin(st.target_phase) * game_f(102.0f);
+  const float target_y = target_base_y + fast_cos(st.target_phase * 1.4f) * game_f(24.0f);
 
   const float max_wind = std::min(8.0f, 2.5f + static_cast<float>(st.round_num - 1) * 1.3f);
   st.wind_speed = fast_sin(static_cast<float>(now_ms % 62832U) * 0.00065f) * max_wind;
 
-  const float max_aim_dx = scale_min_f(173.0f);
-  const float min_aim_y = static_cast<float>(scale_y(48));
-  const float max_aim_y = bow_y - static_cast<float>(scale_y(50));
-  const float raw_ax = std::clamp(static_cast<float>(cx) + roll_delta * scale_min_f(6.8f),
+  const float max_aim_dx = game_f(173.0f);
+  const float min_aim_y = static_cast<float>(dp_px(48));
+  const float max_aim_y = bow_y - static_cast<float>(dp_px(50));
+  const float raw_ax = std::clamp(static_cast<float>(cx) + roll_delta * game_f(6.8f),
                                   static_cast<float>(cx) - max_aim_dx, static_cast<float>(cx) + max_aim_dx);
-  const float raw_ay = std::clamp(target_base_y - pitch_delta * scale_min_f(6.8f), min_aim_y, max_aim_y);
+  const float raw_ay = std::clamp(target_base_y - pitch_delta * game_f(6.8f), min_aim_y, max_aim_y);
   st.smooth_ax += (raw_ax - st.smooth_ax) * 0.45f;
   st.smooth_ay += (raw_ay - st.smooth_ay) * 0.45f;
 
@@ -1049,8 +1057,8 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
   if (st.arrow_in_flight) {
     st.flight_z += dt * (1.0f / 0.40f);
     const float z = std::min(1.0f, st.flight_z);
-    const float wind_k = scale_min_f(5.2f);
-    const float arc_k = scale_min_f(26.0f);
+    const float wind_k = game_f(5.2f);
+    const float arc_k = game_f(26.0f);
     const float wind_drift = st.launch_wind * wind_k * z * z;
     const float arc_lift = -arc_k * z * (1.0f - z);
 
@@ -1083,7 +1091,7 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
         base_pts = 5;
       } else if (dist_hit <= r_out * 0.78f) {
         base_pts = 3;
-      } else if (dist_hit <= r_out + scale_min_f(1.5f)) {
+      } else if (dist_hit <= r_out + game_f(1.5f)) {
         base_pts = 1;
       }
 
@@ -1152,10 +1160,10 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
                         ctx.col_white, ctx.col_black, ctx.col_cyan, ctx.col_red,
                         ctx.col_gold, ctx.col_slate, ctx.col_dark_gray);
 
-  const int pin_dx = scale_min(5), pin_dy = scale_min(11);
-  const int pin_f1x = scale_min(8), pin_f1y = scale_min(10);
-  const int pin_f2x = scale_min(3), pin_f2y = scale_min(13);
-  const int pin_dot_r = std::max(2, scale_min(2));
+  const int pin_dx = game_px(5), pin_dy = game_px(11);
+  const int pin_f1x = game_px(8), pin_f1y = game_px(10);
+  const int pin_f2x = game_px(3), pin_f2y = game_px(13);
+  const int pin_dot_r = std::max(2, game_px(2));
   for (int i = 0; i < st.pinned_count; i++) {
     if (!pinned[i].active) continue;
     const int px = tx_i + static_cast<int>(std::round(pinned[i].dx));
@@ -1168,9 +1176,9 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
 
   const int rx_i = static_cast<int>(std::round(st.smooth_ax));
   const int ry_i = static_cast<int>(std::round(st.smooth_ay));
-  const int ret_r = std::max(6, scale_min(13));
-  const int ret_in = std::max(2, scale_min(5));
-  const int ret_out = std::max(8, scale_min(17));
+  const int ret_r = std::max(6, game_px(13));
+  const int ret_in = std::max(2, game_px(5));
+  const int ret_out = std::max(8, game_px(17));
   fast_circle(it, rx_i, ry_i, ret_r, ctx.col_cyan);
   fast_line(it, rx_i - ret_out, ry_i, rx_i - ret_in, ry_i, ctx.col_cyan);
   fast_line(it, rx_i + ret_in, ry_i, rx_i + ret_out, ry_i, ctx.col_cyan);
@@ -1188,10 +1196,10 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
 
   const int bow_cx = cx;
   const int bow_cy = static_cast<int>(bow_y);
-  const float limb_w = scale_min_f(38.0f);
-  const float limb_pull = scale_min_f(10.0f);
-  const float mid_w = scale_min_f(20.0f);
-  const float mid_fwd = scale_min_f(4.0f);
+  const float limb_w = game_f(38.0f);
+  const float limb_pull = game_f(10.0f);
+  const float mid_w = game_f(20.0f);
+  const float mid_fwd = game_f(4.0f);
   const int left_tip_x = bow_cx - static_cast<int>(px_v * limb_w + ux * limb_pull);
   const int left_tip_y = bow_cy - static_cast<int>(py_v * limb_w + uy * limb_pull);
   const int right_tip_x = bow_cx + static_cast<int>(px_v * limb_w - ux * limb_pull);
@@ -1207,11 +1215,11 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
   fast_line(it, right_mid_x, right_mid_y, right_tip_x, right_tip_y, ctx.col_gold);
   fast_line(it, bow_cx, bow_cy + 1, left_mid_x, left_mid_y + 1, ctx.col_slate);
   fast_line(it, bow_cx, bow_cy + 1, right_mid_x, right_mid_y + 1, ctx.col_slate);
-  fast_filled_circle(it, bow_cx, bow_cy, std::max(2, scale_min(3)), ctx.col_red);
+  fast_filled_circle(it, bow_cx, bow_cy, std::max(2, game_px(3)), ctx.col_red);
 
   if (!st.arrow_in_flight && st.arrows_left > 0 && !st.round_over) {
-    const float nock_len = scale_min_f(14.0f);
-    const float tip_len = scale_min_f(18.0f);
+    const float nock_len = game_f(14.0f);
+    const float tip_len = game_f(18.0f);
     const int nock_x = bow_cx - static_cast<int>(ux * nock_len);
     const int nock_y = bow_cy - static_cast<int>(uy * nock_len);
     const int tip_x = bow_cx + static_cast<int>(ux * tip_len);
@@ -1219,14 +1227,14 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
     fast_line(it, left_tip_x, left_tip_y, nock_x, nock_y, ctx.col_slate);
     fast_line(it, right_tip_x, right_tip_y, nock_x, nock_y, ctx.col_slate);
     fast_line(it, nock_x, nock_y, tip_x, tip_y, ctx.col_white);
-    fast_filled_circle(it, tip_x, tip_y, std::max(2, scale_min(2)), ctx.col_gold);
+    fast_filled_circle(it, tip_x, tip_y, std::max(2, game_px(2)), ctx.col_gold);
   } else {
     fast_line(it, left_tip_x, left_tip_y, right_tip_x, right_tip_y, ctx.col_slate);
   }
 
   if (st.arrow_in_flight) {
     const float z = std::min(1.0f, st.flight_z);
-    const float a_len = scale_min_f(32.0f - z * 16.0f);
+    const float a_len = game_f(32.0f - z * 16.0f);
     const int head_x = static_cast<int>(std::round(cur_arrow_x));
     const int head_y = static_cast<int>(std::round(cur_arrow_y));
     const int tail_x = static_cast<int>(std::round(cur_arrow_x - arrow_dx * a_len));
@@ -1234,8 +1242,8 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
 
     fast_line(it, tail_x, tail_y, head_x, head_y, ctx.col_gold);
     fast_line(it, tail_x + 1, tail_y, head_x + 1, head_y, ctx.col_white);
-    fast_filled_circle(it, head_x, head_y, std::max(2, scale_min(z > 0.65f ? 2 : 3)), ctx.col_white);
-    const float f_sz = scale_min_f(4.0f);
+    fast_filled_circle(it, head_x, head_y, std::max(2, game_px(z > 0.65f ? 2 : 3)), ctx.col_white);
+    const float f_sz = game_f(4.0f);
     const int f_px = static_cast<int>(-arrow_dy * f_sz);
     const int f_py = static_cast<int>(arrow_dx * f_sz);
     const int f_bx = static_cast<int>(arrow_dx * f_sz);
@@ -1256,13 +1264,13 @@ void render_game_archery(Rgb565Surface &it, const UiFrameContext &ctx, GameArena
     char rb[36];
     if (now_ms - st.round_banner_ms < 1100U) {
       std::snprintf(rb, sizeof(rb), "ROUND %d CLEAR!", st.round_num - 1);
-      fast_print(it, cx, cy - scale_y(8), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, rb);
+      fast_print(it, cx, cy - dp_px(8), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, rb);
     } else {
       std::snprintf(rb, sizeof(rb), "ROUND %d! GOAL %d", st.round_num, round_goal);
-      fast_print(it, cx, cy - scale_y(8), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, rb);
+      fast_print(it, cx, cy - dp_px(8), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, rb);
     }
   } else if (!st.round_over && st.hit_feedback[0] != '\0' && (now_ms - st.feedback_timer < 1100U)) {
-    fast_print(it, cx, cy - scale_y(8), ctx.font_date,
+    fast_print(it, cx, cy - dp_px(8), ctx.font_date,
                UiColor(st.feedback_r, st.feedback_g, st.feedback_b), UiTextAlign::CENTER, st.hit_feedback);
   }
 
@@ -1312,14 +1320,14 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   auto init_brick_wave = [&](int wv) {
     static constexpr int ROW_COUNTS[4] = {4, 5, 5, 4};
     static constexpr int ROW_YS[4] = {82, 104, 126, 148};
-    const int brk_pitch = scale_min(46);
-    const int brk_w = scale_min(40);
-    const int brk_h = scale_min(14);
+    const int brk_pitch = game_px(46);
+    const int brk_w = game_px(40);
+    const int brk_h = game_px(14);
     int idx = 0;
     for (int r = 0; r < 4; r++) {
       const int cnt = ROW_COUNTS[r];
       const int start_x = cx - ((cnt - 1) * brk_pitch) / 2;
-      const int row_y = cy - scale_min(233 - ROW_YS[r]);
+      const int row_y = cy - game_px(233 - ROW_YS[r]);
       for (int c = 0; c < cnt; c++) {
         uint8_t hp = 1;
         if (wv == 2 && r == 0) {
@@ -1342,10 +1350,10 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     }
   };
 
-  const int paddle_y = std::min(layout().back_y - scale_y(76), cy + scale_min(117));
-  const int paddle_w = scale_min(58);
-  const int paddle_h = scale_min(10);
-  const float ball_r = scale_min_f(6.0f);
+  const int paddle_y = std::min(layout().back_y - dp_px(76), cy + game_px(117));
+  const int paddle_w = game_px(58);
+  const int paddle_h = game_px(10);
+  const float ball_r = game_f(6.0f);
   const float paddle_rest_off = static_cast<float>(paddle_h) * 0.5f + ball_r;
 
   auto reset_ball_on_paddle = [&]() {
@@ -1376,7 +1384,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     st.popup_ms = 0U;
     st.banner_ms = 0U;
     st.popup_x = cx;
-    st.popup_y = scale_y(140);
+    st.popup_y = (SCREEN_H * 30) / 100;
     st.popup_text[0] = '\0';
     st.banner_text[0] = '\0';
     init_brick_wave(1);
@@ -1391,13 +1399,13 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   st.last_phys_ms = now_ms;
   dt = std::clamp(dt, 0.012f, 0.075f);
 
-  const int max_pad_dx = scale_min(136);
-  const float raw_target_x = std::clamp(static_cast<float>(cx) + roll_delta * scale_min_f(8.4f),
+  const int max_pad_dx = game_px(136);
+  const float raw_target_x = std::clamp(static_cast<float>(cx) + roll_delta * game_f(8.4f),
                                         static_cast<float>(cx - max_pad_dx),
                                         static_cast<float>(cx + max_pad_dx));
   st.smooth_paddle_x += (raw_target_x - st.smooth_paddle_x) * 0.34f;
   const float paddle_x = st.smooth_paddle_x;
-  const float target_speed = scale_min_f(std::min(285.0f, 215.0f + static_cast<float>(st.wave_num - 1) * 14.0f));
+  const float target_speed = game_f(std::min(285.0f, 215.0f + static_cast<float>(st.wave_num - 1) * 14.0f));
 
   if (marble_touch_x >= 0.0f || game_btn_pressed) {
     marble_touch_x = -1.0f;
@@ -1438,17 +1446,17 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
       st.ball_x += st.ball_vx * dt;
       st.ball_y += st.ball_vy * dt;
 
-      const float dome_ball_r = scale_min_f(202.0f);
+      const float dome_ball_r = game_f(202.0f);
       const float b_dx = st.ball_x - static_cast<float>(cx);
       const float b_dy = st.ball_y - static_cast<float>(cy);
       const float b_dist = std::sqrt(b_dx * b_dx + b_dy * b_dy);
-      if (b_dist > dome_ball_r && st.ball_y < static_cast<float>(paddle_y) - scale_min_f(4.0f)) {
+      if (b_dist > dome_ball_r && st.ball_y < static_cast<float>(paddle_y) - game_f(4.0f)) {
         const float bnx = b_dx / b_dist;
         const float bny = b_dy / b_dist;
         st.ball_x = static_cast<float>(cx) + bnx * (dome_ball_r - 1.0f);
         st.ball_y = static_cast<float>(cy) + bny * (dome_ball_r - 1.0f);
         float rnx = bnx;
-        float rny = (st.ball_y > static_cast<float>(cy) + scale_min_f(12.0f)) ? 0.0f : bny;
+        float rny = (st.ball_y > static_cast<float>(cy) + game_f(12.0f)) ? 0.0f : bny;
         const float r_len = std::sqrt(rnx * rnx + rny * rny);
         if (r_len > 0.001f) {
           rnx /= r_len;
@@ -1460,10 +1468,10 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
           st.ball_vy -= 2.0f * v_dot * rny;
           st.wall_bounces++;
           if (st.wall_bounces >= 2) {
-            st.ball_vy += (st.ball_vy >= 0.0f) ? scale_min_f(55.0f) : scale_min_f(70.0f);
+            st.ball_vy += (st.ball_vy >= 0.0f) ? game_f(55.0f) : game_f(70.0f);
           }
-          const float min_vy = scale_min_f(95.0f);
-          const float clamp_vy = scale_min_f(98.0f);
+          const float min_vy = game_f(95.0f);
+          const float clamp_vy = game_f(98.0f);
           if (std::fabs(st.ball_vy) < min_vy) st.ball_vy = (st.ball_vy >= 0.0f) ? clamp_vy : -clamp_vy;
           const float spd = std::sqrt(st.ball_vx * st.ball_vx + st.ball_vy * st.ball_vy);
           if (spd > 1.0f) {
@@ -1474,8 +1482,8 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
       }
 
       if (st.ball_vy > 0.0f &&
-          st.ball_y >= static_cast<float>(paddle_y) - scale_min_f(10.0f) &&
-          st.ball_y <= static_cast<float>(paddle_y) + scale_min_f(8.0f)) {
+          st.ball_y >= static_cast<float>(paddle_y) - game_f(10.0f) &&
+          st.ball_y <= static_cast<float>(paddle_y) + game_f(8.0f)) {
         const float half_reach = static_cast<float>(paddle_w) * 0.5f + ball_r;
         if (std::fabs(st.ball_x - paddle_x) <= half_reach) {
           if (!st.hit_brick_since_paddle) st.rally_combo = 0;
@@ -1534,10 +1542,10 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
           st.popup_g = pcol.g;
           st.popup_b = pcol.b;
           const UiColor frag_c = (bricks[b].hp > 0) ? UiColor(200, 210, 225) : row_cols[bricks[b].row];
-          const float f_spd = scale_min_f((bricks[b].hp == 0) ? 95.0f : 55.0f);
-          const float off_x = scale_min_f(6.0f);
-          const float off_y = scale_min_f(4.0f);
-          const float up_kick = scale_min_f(25.0f);
+          const float f_spd = game_f((bricks[b].hp == 0) ? 95.0f : 55.0f);
+          const float off_x = game_f(6.0f);
+          const float off_y = game_f(4.0f);
+          const float up_kick = game_f(25.0f);
           for (int s = 0; s < 6; s++) {
             const float ang = static_cast<float>(s) * 1.047f + 0.35f;
             debris[s].x = static_cast<float>(bricks[b].x) + fast_cos(ang) * off_x;
@@ -1572,7 +1580,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
         st.banner_ms = now_ms;
         pending_game_sfx() = 5;
         reset_ball_on_paddle();
-      } else if (st.ball_y > static_cast<float>(paddle_y + scale_min(26))) {
+      } else if (st.ball_y > static_cast<float>(paddle_y + game_px(26))) {
         st.lives_left--;
         pending_game_sfx() = 14;
         st.rally_combo = 0;
@@ -1591,7 +1599,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   }
 
   if (st.debris_ms > 0U && (now_ms - st.debris_ms < 360U)) {
-    const float deb_g = scale_min_f(180.0f) * dt;
+    const float deb_g = game_f(180.0f) * dt;
     for (int s = 0; s < 6; s++) {
       debris[s].x += debris[s].vx * dt;
       debris[s].y += debris[s].vy * dt;
@@ -1599,7 +1607,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     }
   }
 
-  const int dome_r = scale_min(208);
+  const int dome_r = game_px(208);
   fast_circle(it, cx, cy, dome_r, ctx.col_dark_gray);
   fast_circle(it, cx, cy, dome_r - 1, scale_color(ctx.col_slate, 0.35f));
 
@@ -1634,7 +1642,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   }
 
   if (st.debris_ms > 0U && (now_ms - st.debris_ms < 360U)) {
-    const int d_sz = std::max(2, scale_min(4));
+    const int d_sz = std::max(2, game_px(4));
     const int d_half = d_sz / 2;
     for (int s = 0; s < 6; s++) {
       fill_rect_row_major(it, static_cast<int>(debris[s].x) - d_half, static_cast<int>(debris[s].y) - d_half,
@@ -1642,7 +1650,7 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     }
   }
   if (st.popup_ms > 0U && (now_ms - st.popup_ms < 650U)) {
-    const int py_off = static_cast<int>((now_ms - st.popup_ms) * static_cast<uint32_t>(scale_min(22)) / 650U);
+    const int py_off = static_cast<int>((now_ms - st.popup_ms) * static_cast<uint32_t>(game_px(22)) / 650U);
     fast_print(it, st.popup_x, st.popup_y - py_off, ctx.font_small,
                UiColor(st.popup_r, st.popup_g, st.popup_b), UiTextAlign::CENTER, st.popup_text);
   }
@@ -1652,11 +1660,11 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     if (b_el >= 3000U) {
       st.banner_ms = 0U;
     } else if (b_el < 1100U) {
-      fast_print(it, cx, cy - scale_y(21), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, st.banner_text);
+      fast_print(it, cx, cy - dp_px(21), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, st.banner_text);
     } else {
       char rdy_buf[32];
       std::snprintf(rdy_buf, sizeof(rdy_buf), "GET READY! WAVE %d", st.wave_num);
-      fast_print(it, cx, cy - scale_y(21), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, rdy_buf);
+      fast_print(it, cx, cy - dp_px(21), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, rdy_buf);
     }
   }
 
@@ -1666,17 +1674,17 @@ void render_game_bricks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   const int ball_r_px = std::max(3, static_cast<int>(std::round(ball_r)));
   if (st.ball_launched) {
     fast_filled_circle(it, static_cast<int>(st.trail_x[3]), static_cast<int>(st.trail_y[3]),
-                       std::max(1, scale_min(2)), UiColor(65, 52, 18));
+                       std::max(1, game_px(2)), UiColor(65, 52, 18));
     fast_filled_circle(it, static_cast<int>(st.trail_x[2]), static_cast<int>(st.trail_y[2]),
-                       std::max(2, scale_min(3)), UiColor(120, 95, 25));
+                       std::max(2, game_px(3)), UiColor(120, 95, 25));
     fast_filled_circle(it, static_cast<int>(st.trail_x[0]), static_cast<int>(st.trail_y[0]),
-                       std::max(2, scale_min(4)), UiColor(185, 145, 35));
+                       std::max(2, game_px(4)), UiColor(185, 145, 35));
   }
   fast_filled_circle(it, static_cast<int>(st.ball_x), static_cast<int>(st.ball_y), ball_r_px, ctx.col_gold);
   fast_circle(it, static_cast<int>(st.ball_x), static_cast<int>(st.ball_y), ball_r_px, ctx.col_white);
   const int spec_off = std::max(1, ball_r_px / 3);
   fast_filled_circle(it, static_cast<int>(st.ball_x) - spec_off, static_cast<int>(st.ball_y) - spec_off,
-                     std::max(1, scale_min(2)), ctx.col_white);
+                     std::max(1, game_px(2)), ctx.col_white);
 
   if (st.round_over) {
     char title_buf[32];
@@ -1709,7 +1717,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   auto &st = arena.chomp;
   auto *snacks = st.snacks;
   auto *confetti = st.confetti;
-  const int bot_wall_y = layout().back_y - scale_y(60);
+  const int bot_wall_y = layout().back_y - dp_px(60);
 
   auto spawn_level_platter = [&](int lv, uint32_t seed_base) {
     st.snacks_left = NUM_SNACKS;
@@ -1718,16 +1726,16 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
       const int s = static_cast<int>(seed_base + static_cast<uint32_t>(i) * 73U + static_cast<uint32_t>(lv) * 37U);
       const float ang = base_ang + static_cast<float>(i) * (2.0f * PI_F / static_cast<float>(NUM_SNACKS)) +
                         (hash2d_01(s, 11) - 0.5f) * 0.35f;
-      const float rad = scale_min_f(76.0f + (static_cast<float>((i * 3) % 4) * 26.0f) + hash2d_01(s, 29) * 18.0f);
+      const float rad = game_f(76.0f + (static_cast<float>((i * 3) % 4) * 26.0f) + hash2d_01(s, 29) * 18.0f);
       float tx = static_cast<float>(cx) + fast_cos(ang) * rad;
-      float ty = std::min(static_cast<float>(bot_wall_y - scale_min(18)),
+      float ty = std::min(static_cast<float>(bot_wall_y - game_px(18)),
                           static_cast<float>(cy) + fast_sin(ang) * rad);
-      const float dmx = tx - st.mon_x, dmy = ty - st.mon_y, min_sep = scale_min_f(70.0f);
+      const float dmx = tx - st.mon_x, dmy = ty - st.mon_y, min_sep = game_f(70.0f);
       if (dmx * dmx + dmy * dmy < min_sep * min_sep) {
         tx = static_cast<float>(cx) - dmx * 1.1f;
         ty = static_cast<float>(cy) - dmy * 1.1f;
       }
-      const float drift_spd = (lv <= 1) ? 0.0f : scale_min_f(std::min(68.0f, 22.0f + static_cast<float>(lv - 2) * 12.0f));
+      const float drift_spd = (lv <= 1) ? 0.0f : game_f(std::min(68.0f, 22.0f + static_cast<float>(lv - 2) * 12.0f));
       const float v_ang = hash2d_01(s, 47) * (2.0f * PI_F);
       snacks[i] = {tx, ty, fast_cos(v_ang) * drift_spd, fast_sin(v_ang) * drift_spd, st.next_kind++, false};
     }
@@ -1776,12 +1784,12 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   }
 
   if (!in_celebration && st.level_num >= 2) {
-    const float evade_r = scale_min_f(82.0f);
+    const float evade_r = game_f(82.0f);
     const float evade_r2 = evade_r * evade_r;
-    const float evade_cap = scale_min_f(std::min(110.0f, static_cast<float>(st.level_num - 2) * 32.0f));
-    const float max_t_spd = scale_min_f(std::min(78.0f, 24.0f + static_cast<float>(st.level_num - 2) * 14.0f));
-    const float snack_rim_r = scale_min_f(180.0f);
-    const float max_snack_y = static_cast<float>(bot_wall_y - scale_min(16));
+    const float evade_cap = game_f(std::min(110.0f, static_cast<float>(st.level_num - 2) * 32.0f));
+    const float max_t_spd = game_f(std::min(78.0f, 24.0f + static_cast<float>(st.level_num - 2) * 14.0f));
+    const float snack_rim_r = game_f(180.0f);
+    const float max_snack_y = static_cast<float>(bot_wall_y - game_px(16));
     for (int i = 0; i < NUM_SNACKS; i++) {
       if (snacks[i].eaten) continue;
       if (st.level_num >= 3) {
@@ -1820,7 +1828,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
     }
   }
 
-  float nearest_dist = scale_min_f(999.0f), look_dx = 0.0f, look_dy = 0.0f;
+  float nearest_dist = game_f(999.0f), look_dx = 0.0f, look_dy = 0.0f;
   for (int i = 0; i < NUM_SNACKS; i++) {
     if (snacks[i].eaten) continue;
     const float dx = snacks[i].x - st.mon_x, dy = snacks[i].y - st.mon_y;
@@ -1835,20 +1843,20 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   if (marble_touch_x >= 0.0f || game_btn_pressed) {
     marble_touch_x = -1.0f;
     game_btn_pressed = false;
-    if (!in_celebration && nearest_dist < scale_min_f(900.0f)) {
-      const float lunge = scale_min_f(165.0f);
+    if (!in_celebration && nearest_dist < game_f(900.0f)) {
+      const float lunge = game_f(165.0f);
       st.mon_vx += look_dx * lunge;
       st.mon_vy += look_dy * lunge;
     }
   }
 
-  const float grav_lim = scale_min_f(620.0f);
-  const float ax = std::clamp(roll_delta * scale_min_f(32.0f), -grav_lim, grav_lim);
-  const float ay = std::clamp(-pitch_delta * scale_min_f(32.0f), -grav_lim, grav_lim);
-  const float pull_r = scale_min_f(38.0f);
+  const float grav_lim = game_f(620.0f);
+  const float ax = std::clamp(roll_delta * game_f(32.0f), -grav_lim, grav_lim);
+  const float ay = std::clamp(-pitch_delta * game_f(32.0f), -grav_lim, grav_lim);
+  const float pull_r = game_f(38.0f);
   float pull_x = 0.0f, pull_y = 0.0f;
   if (!in_celebration && nearest_dist < pull_r) {
-    const float pull_mag = (1.0f - nearest_dist / pull_r) * scale_min_f(110.0f);
+    const float pull_mag = (1.0f - nearest_dist / pull_r) * game_f(110.0f);
     pull_x = look_dx * pull_mag;
     pull_y = look_dy * pull_mag;
   }
@@ -1859,7 +1867,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   st.mon_x += st.mon_vx * dt;
   st.mon_y += st.mon_vy * dt;
 
-  const int mon_r = scale_min(34);
+  const int mon_r = game_px(34);
   const float max_mon_y = static_cast<float>(bot_wall_y - mon_r);
   if (st.mon_y > max_mon_y) {
     st.mon_y = max_mon_y;
@@ -1867,7 +1875,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   }
   const float mdx = st.mon_x - static_cast<float>(cx), mdy = st.mon_y - static_cast<float>(cy);
   const float mdist = std::sqrt(mdx * mdx + mdy * mdy);
-  const float max_mon_r = scale_min_f(172.0f);
+  const float max_mon_r = game_f(172.0f);
   if (mdist > max_mon_r && mdist > 0.001f) {
     const float nx = mdx / mdist, ny = mdy / mdist;
     st.mon_x = static_cast<float>(cx) + nx * max_mon_r;
@@ -1879,7 +1887,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
     }
   }
 
-  const float chomp_cap_r = scale_min_f(36.0f);
+  const float chomp_cap_r = game_f(36.0f);
   if (!in_celebration) {
     for (int i = 0; i < NUM_SNACKS; i++) {
       if (snacks[i].eaten) continue;
@@ -1901,11 +1909,11 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
           in_celebration = true;
           pending_game_sfx() = 5;
           const UiColor p_cols[5] = {ctx.col_gold, ctx.col_cyan, ctx.col_magenta, ctx.col_green, ctx.col_orange};
-          const float c_off = scale_min_f(20.0f);
-          const float c_up = scale_min_f(40.0f);
+          const float c_off = game_f(20.0f);
+          const float c_up = game_f(40.0f);
           for (int c = 0; c < 16; c++) {
             const float ang = static_cast<float>(c) * (2.0f * PI_F / 16.0f);
-            const float spd = scale_min_f(105.0f + static_cast<float>((c % 3) * 34));
+            const float spd = game_f(105.0f + static_cast<float>((c % 3) * 34));
             confetti[c].x = st.mon_x + fast_cos(ang) * c_off;
             confetti[c].y = st.mon_y + fast_sin(ang) * c_off;
             confetti[c].vx = fast_cos(ang) * spd;
@@ -1924,7 +1932,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   }
 
   if (in_celebration) {
-    const float conf_g = scale_min_f(110.0f) * dt;
+    const float conf_g = game_f(110.0f) * dt;
     for (int c = 0; c < 16; c++) {
       confetti[c].x += confetti[c].vx * dt;
       confetti[c].y += confetti[c].vy * dt;
@@ -1933,10 +1941,10 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   }
 
   const bool is_chomping = in_celebration || (st.chomp_timer > 0U && (now_ms - st.chomp_timer < 520U));
-  const bool mouth_open = (!in_celebration && nearest_dist < scale_min_f(82.0f));
+  const bool mouth_open = (!in_celebration && nearest_dist < game_f(82.0f));
 
-  fast_circle(it, cx, cy, scale_min(208), ctx.col_dark_gray);
-  fast_line(it, cx - scale_min(151), bot_wall_y, cx + scale_min(151), bot_wall_y, ctx.col_dark_gray);
+  fast_circle(it, cx, cy, game_px(208), ctx.col_dark_gray);
+  fast_line(it, cx - game_px(151), bot_wall_y, cx + game_px(151), bot_wall_y, ctx.col_dark_gray);
   char t_buf[56];
   std::snprintf(t_buf, sizeof(t_buf), "Lv %d  •  Left:%d/7  •  Score:%d  •  Best:%d",
                 st.level_num, st.snacks_left, st.snack_score, static_cast<int>(high_score_chomp));
@@ -1944,7 +1952,7 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   render_back_button(it, cx, ctx.font_small, layout().back_y, "Exit");
 
   const float t_bob = static_cast<float>(now_ms) * 0.0045f;
-  const float bob_amp = scale_min_f(2.5f);
+  const float bob_amp = game_f(2.5f);
   for (int i = 0; i < NUM_SNACKS; i++) {
     if (snacks[i].eaten) continue;
     const int bob_y = static_cast<int>(fast_sin(t_bob + static_cast<float>(i) * 1.15f) * bob_amp);
@@ -1961,25 +1969,25 @@ void render_game_chomp(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
     const uint32_t rem_cel = st.level_clear_until_ms - now_ms;
     char p_msg[36];
     if (rem_cel > 1900U) {
-      const int conf_r = std::max(2, scale_min(3));
+      const int conf_r = std::max(2, game_px(3));
       for (int c = 0; c < 16; c++) {
         fast_filled_circle(it, static_cast<int>(confetti[c].x), static_cast<int>(confetti[c].y), conf_r,
                            UiColor(confetti[c].r, confetti[c].g, confetti[c].b));
       }
       std::snprintf(p_msg, sizeof(p_msg), "LEVEL %d CLEAR!", st.level_num);
-      fast_print(it, cx, imy - scale_min(62), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, p_msg);
+      fast_print(it, cx, imy - game_px(62), ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, p_msg);
     } else {
       std::snprintf(p_msg, sizeof(p_msg), "GET READY! LEVEL %d", st.level_num + 1);
-      fast_print(it, cx, imy - scale_min(62), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, p_msg);
+      fast_print(it, cx, imy - game_px(62), ctx.font_date, ctx.col_cyan, UiTextAlign::CENTER, p_msg);
     }
   } else if (is_chomping) {
     static constexpr const char *CHOMP_WORDS[5] = {
         "NOM NOM!", "YUMMY!", "COOKIE!", "CHOMP!", "DELICIOUS!"};
-    const int pop_y = (imy > scale_y(150)) ? (imy - scale_min(52)) : (imy + scale_min(52));
-    const int pop_x = std::clamp(imx, scale_x(115), SCREEN_W - scale_x(115));
+    const int pop_y = (imy > (SCREEN_H * 32) / 100) ? (imy - game_px(52)) : (imy + game_px(52));
+    const int pop_x = std::clamp(imx, dp_px(100), SCREEN_W - dp_px(100));
     fast_print(it, pop_x, pop_y, ctx.font_date, ctx.col_gold, UiTextAlign::CENTER, CHOMP_WORDS[st.chomp_word_idx]);
-    fast_filled_circle(it, imx - scale_min(42), imy - scale_min(16), std::max(2, scale_min(3)), ctx.col_gold);
-    fast_filled_circle(it, imx + scale_min(42), imy - scale_min(16), std::max(2, scale_min(3)), ctx.col_cyan);
+    fast_filled_circle(it, imx - game_px(42), imy - game_px(16), std::max(2, game_px(3)), ctx.col_gold);
+    fast_filled_circle(it, imx + game_px(42), imy - game_px(16), std::max(2, game_px(3)), ctx.col_cyan);
   }
 }
 #endif  // LATTER_HAS_IMU
@@ -2326,43 +2334,44 @@ void render_game_blocks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     }
   }
 
-  // Responsive multi-geometry layout (Remote 320x480, Desk 720x720, Landscape/Square fallback)
+  // Responsive multi-geometry layout driven by aspect ratio & SizeClass
   const auto &ly = layout();
   const int min_hit = ly.min_hit_px();
-  const bool is_remote = (SCREEN_W < 380);
-  const bool is_desk = (SCREEN_W >= 600 && SCREEN_H >= 600);
+  const bool is_portrait_compact = (SCREEN_H > SCREEN_W) && (ly.size_class == SizeClass::Compact);
   const bool is_landscape = (SCREEN_W > SCREEN_H);
 
   int cell = 18;
-  int well_x = 12;
-  int well_y = 14;
+  int well_x = dp_px(12);
+  int well_y = dp_px(14);
   int well_w = 180;
   int well_h = 360;
+  int right_col_w = 0;
 
-  if (is_remote) {
-    cell = 18;
+  if (is_portrait_compact) {
+    const int btn_h_est = std::max(dp_px(48), min_hit);
+    const int avail_h = std::max(200, ly.back_y - dp_px(24) - btn_h_est - dp_px(14));
+    const int avail_w = (SCREEN_W * 58) / 100;
+    cell = std::clamp(std::min(avail_w / 10, avail_h / 20), 12, 28);
     well_w = 10 * cell;
     well_h = 20 * cell;
-    well_x = 12;
-    well_y = 14;
-  } else if (is_desk) {
-    cell = 28;
-    well_w = 10 * cell;
-    well_h = 20 * cell;
-    well_x = 104;
-    well_y = 36;
+    well_x = dp_px(10);
+    well_y = dp_px(14);
   } else if (is_landscape) {
-    cell = std::clamp((ly.back_y - scale_y(36)) / 20, 12, 26);
+    cell = std::clamp((ly.back_y - dp_px(36)) / 20, 12, 30);
     well_w = 10 * cell;
     well_h = 20 * cell;
     well_x = (SCREEN_W - well_w) / 2;
-    well_y = 14;
+    well_y = dp_px(14);
   } else {
-    cell = std::clamp((ly.back_y - scale_y(44)) / 20, 14, 24);
+    const int avail_h = std::max(240, ly.back_y - dp_px(56));
+    cell = std::clamp(std::min((SCREEN_W * 40) / 100 / 10, avail_h / 20), 14, 34);
     well_w = 10 * cell;
     well_h = 20 * cell;
-    well_x = 18;
-    well_y = 16;
+    const int col_gap = dp_px(18);
+    right_col_w = std::min(dp_px(192), std::max(dp_px(136), SCREEN_W - well_w - col_gap - dp_px(36)));
+    const int total_w = well_w + col_gap + right_col_w;
+    well_x = std::max(dp_px(16), (SCREEN_W - total_w) / 2);
+    well_y = std::max(dp_px(16), (ly.back_y - dp_px(24) - well_h) / 2);
   }
 
   // Well backdrop & subtle grid
@@ -2430,7 +2439,7 @@ void render_game_blocks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
     const UiColor bg = accent ? ui::chrome_card_bg_on() : kChromeGlassTint;
     const UiColor brd = accent ? ctx.theme_primary : kChromeCardBorder;
     render_card_box(it, bx, by, bw, bh, bg, brd, kRadiusKeyPx(), GlassVariant::Clear, ctx.col_white);
-    const int icon_px = std::clamp(std::min(bw, bh) - scale_s(14), 18, scale_s(30));
+    const int icon_px = std::clamp(std::min(bw, bh) - dp_px(14), 18, dp_px(30));
     render_mdi_icon(it, mdi, bx + bw / 2, by + bh / 2, icon_px, ctx.col_white, true);
     if (!st.game_over) {
       const int pad_x = std::max(0, (min_hit - bw + 1) / 2);
@@ -2443,13 +2452,13 @@ void render_game_blocks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   auto draw_hold_card = [&](int hx, int hy, int hw, int hh) {
     const UiColor brd = st.hold_used ? kChromeCardBorder : ctx.theme_primary;
     render_card_box(it, hx, hy, hw, hh, kChromeGlassTint, brd, kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, hx + hw / 2, hy + scale_y(13), ctx.font_small,
+    ui::shadow_print(it, hx + hw / 2, hy + dp_px(13), ctx.font_small,
                      st.hold_used ? ctx.col_slate : ctx.col_gold, UiTextAlign::CENTER, "HOLD");
     if (st.hold_piece >= 0) {
-      draw_blocks_mini_piece(it, hx + 4, hy + scale_y(24), hw - 8, hh - scale_y(28),
+      draw_blocks_mini_piece(it, hx + 4, hy + dp_px(24), hw - 8, hh - dp_px(28),
                              st.hold_piece, ctx, st.hold_used);
     } else {
-      ui::shadow_print(it, hx + hw / 2, hy + hh / 2 + scale_y(8), ctx.font_small,
+      ui::shadow_print(it, hx + hw / 2, hy + hh / 2 + dp_px(8), ctx.font_small,
                        ctx.col_slate, UiTextAlign::CENTER, "TAP");
     }
     if (!st.game_over) {
@@ -2464,111 +2473,95 @@ void render_game_blocks(Rgb565Surface &it, const UiFrameContext &ctx, GameArena 
   std::snprintf(lv_buf, sizeof(lv_buf), "LV %d", st.level);
   std::snprintf(ln_buf, sizeof(ln_buf), "%d LN", st.lines);
 
-  if (is_remote) {
-    // Right HUD column: x=200..312
-    const int hx = 202;
-    const int hw = 108;
+  if (is_portrait_compact) {
+    const int hx = well_x + well_w + dp_px(10);
+    const int hw = std::max(dp_px(84), SCREEN_W - hx - dp_px(10));
     const int hcx = hx + hw / 2;
+    const int card_gap = dp_px(8);
+    const int next_h = dp_px(80);
+    const int hold_h = dp_px(76);
+    const int stats_y = well_y + next_h + hold_h + 2 * card_gap;
+    const int stats_h = std::max(dp_px(140), well_y + well_h - stats_y);
 
-    render_card_box(it, hx, 14, hw, 80, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+    render_card_box(it, hx, well_y, hw, next_h, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
                     GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, hcx, 27, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
-    draw_blocks_mini_piece(it, hx + 4, 38, hw - 8, 50, peek_next_piece(), ctx);
+    ui::shadow_print(it, hcx, well_y + dp_px(13), ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
+    draw_blocks_mini_piece(it, hx + 4, well_y + dp_px(24), hw - 8, next_h - dp_px(30), peek_next_piece(), ctx);
 
-    draw_hold_card(hx, 102, hw, 76);
+    draw_hold_card(hx, well_y + next_h + card_gap, hw, hold_h);
 
-    render_card_box(it, hx, 186, hw, 188, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+    render_card_box(it, hx, stats_y, hw, stats_h, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
                     GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, hcx, 203, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "SCORE");
-    ui::shadow_print(it, hcx, 226, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, score_buf);
-    ui::shadow_print(it, hcx, 257, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "BEST");
-    ui::shadow_print(it, hcx, 279, ctx.font_small, ctx.col_gold, UiTextAlign::CENTER, best_buf);
-    ui::shadow_print(it, hcx, 314, ctx.font_small, ctx.col_cyan, UiTextAlign::CENTER, lv_buf);
-    ui::shadow_print(it, hcx, 340, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, ln_buf);
+    ui::shadow_print(it, hcx, stats_y + (stats_h * 11) / 100, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "SCORE");
+    ui::shadow_print(it, hcx, stats_y + (stats_h * 24) / 100, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, score_buf);
+    ui::shadow_print(it, hcx, stats_y + (stats_h * 41) / 100, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "BEST");
+    ui::shadow_print(it, hcx, stats_y + (stats_h * 54) / 100, ctx.font_small, ctx.col_gold, UiTextAlign::CENTER, best_buf);
+    ui::shadow_print(it, hcx, stats_y + (stats_h * 72) / 100, ctx.font_small, ctx.col_cyan, UiTextAlign::CENTER, lv_buf);
+    ui::shadow_print(it, hcx, stats_y + (stats_h * 86) / 100, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, ln_buf);
 
-    // Bottom 4 tactile >= 7.0 mm frosted-glass controls (y=380..428, 70x48 px each >= 45x45)
-    const int by = 380;
-    const int bh = 48;
-    const int bw = 70;
-    const int gap = 8;
-    draw_ctrl_btn(8 + 0 * (bw + gap), by, bw, bh, "mdi:chevron-left", WidgetId::GAME_CTRL_LEFT);
-    draw_ctrl_btn(8 + 1 * (bw + gap), by, bw, bh, "mdi:rotate-right", WidgetId::GAME_CTRL_ROTATE, true);
-    draw_ctrl_btn(8 + 2 * (bw + gap), by, bw, bh, "mdi:arrow-collapse-down", WidgetId::GAME_CTRL_DROP);
-    draw_ctrl_btn(8 + 3 * (bw + gap), by, bw, bh, "mdi:chevron-right", WidgetId::GAME_CTRL_RIGHT);
-  } else if (is_desk) {
-    // Desk 720x720 right column: x=416..644 (228 px wide)
-    const int rx = 416;
-    const int rw = 228;
-    const int half_w = 108;
-    const int gap = 12;
-
-    render_card_box(it, rx, 36, half_w, 120, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
-                    GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, rx + half_w / 2, 56, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
-    draw_blocks_mini_piece(it, rx + 6, 74, half_w - 12, 74, peek_next_piece(), ctx);
-
-    draw_hold_card(rx + half_w + gap, 36, half_w, 120);
-
-    render_card_box(it, rx, 170, rw, 198, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
-                    GlassVariant::Clear, ctx.col_white);
-    const int rcx = rx + rw / 2;
-    ui::shadow_print(it, rcx, 196, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "SCORE");
-    ui::shadow_print(it, rcx, 228, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, score_buf);
-    ui::shadow_print(it, rcx, 266, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "BEST");
-    ui::shadow_print(it, rcx, 294, ctx.font_small, ctx.col_gold, UiTextAlign::CENTER, best_buf);
-    char lv_ln[36];
-    std::snprintf(lv_ln, sizeof(lv_ln), "LV %d  •  %d LINES", st.level, st.lines);
-    ui::shadow_print(it, rcx, 336, ctx.font_small, ctx.col_cyan, UiTextAlign::CENTER, lv_ln);
-
-    // 2x2 large >= 7.2 mm tactile controls (108x98 px each >= 70x70)
-    draw_ctrl_btn(rx, 386, half_w, 98, "mdi:chevron-left", WidgetId::GAME_CTRL_LEFT);
-    draw_ctrl_btn(rx + half_w + gap, 386, half_w, 98, "mdi:chevron-right", WidgetId::GAME_CTRL_RIGHT);
-    draw_ctrl_btn(rx, 498, half_w, 98, "mdi:rotate-right", WidgetId::GAME_CTRL_ROTATE, true);
-    draw_ctrl_btn(rx + half_w + gap, 498, half_w, 98, "mdi:arrow-collapse-down", WidgetId::GAME_CTRL_DROP);
+    // Bottom 4 tactile >= 7.0 mm frosted-glass controls
+    const int bh = std::max(dp_px(48), min_hit);
+    const int by = std::min(ly.back_y - dp_px(18) - bh, well_y + well_h + dp_px(8));
+    const int gap = dp_px(8);
+    const int row_safe = ly.band_safe_span(by + bh / 2, bh, dp_px(8));
+    const int bw = std::max(40, (row_safe - 3 * gap) / 4);
+    const int x0_btn = ctx.cx - (4 * bw + 3 * gap) / 2;
+    draw_ctrl_btn(x0_btn + 0 * (bw + gap), by, bw, bh, "mdi:chevron-left", WidgetId::GAME_CTRL_LEFT);
+    draw_ctrl_btn(x0_btn + 1 * (bw + gap), by, bw, bh, "mdi:rotate-right", WidgetId::GAME_CTRL_ROTATE, true);
+    draw_ctrl_btn(x0_btn + 2 * (bw + gap), by, bw, bh, "mdi:arrow-collapse-down", WidgetId::GAME_CTRL_DROP);
+    draw_ctrl_btn(x0_btn + 3 * (bw + gap), by, bw, bh, "mdi:chevron-right", WidgetId::GAME_CTRL_RIGHT);
   } else if (is_landscape) {
-    // Landscape fallback: left column NEXT/HOLD/stats, center well, right column 2x2 controls
-    const int col_w = std::max(76, well_x - 16);
-    const int lx = 8;
-    const int rx = well_x + well_w + 8;
-    render_card_box(it, lx, well_y, col_w, 78, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+    // Landscape: left column NEXT/HOLD/stats, center well, right column 2x2 controls
+    const int col_w = std::max(dp_px(76), well_x - dp_px(16));
+    const int lx = dp_px(8);
+    const int rx = well_x + well_w + dp_px(8);
+    const int box_h = dp_px(78);
+    render_card_box(it, lx, well_y, col_w, box_h, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
                     GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, lx + col_w / 2, well_y + 14, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
-    draw_blocks_mini_piece(it, lx + 4, well_y + 24, col_w - 8, 48, peek_next_piece(), ctx);
-    draw_hold_card(lx, well_y + 86, col_w, 78);
-    ui::shadow_print(it, lx + col_w / 2, well_y + 188, ctx.font_small, ctx.col_white, UiTextAlign::CENTER, score_buf);
-    ui::shadow_print(it, lx + col_w / 2, well_y + 214, ctx.font_small, ctx.col_gold, UiTextAlign::CENTER, lv_buf);
+    ui::shadow_print(it, lx + col_w / 2, well_y + dp_px(14), ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
+    draw_blocks_mini_piece(it, lx + 4, well_y + dp_px(24), col_w - 8, box_h - dp_px(30), peek_next_piece(), ctx);
+    draw_hold_card(lx, well_y + box_h + dp_px(8), col_w, box_h);
+    ui::shadow_print(it, lx + col_w / 2, well_y + 2 * box_h + dp_px(32), ctx.font_small, ctx.col_white, UiTextAlign::CENTER, score_buf);
+    ui::shadow_print(it, lx + col_w / 2, well_y + 2 * box_h + dp_px(58), ctx.font_small, ctx.col_gold, UiTextAlign::CENTER, lv_buf);
 
-    const int gap = 8;
-    const int bw = std::max(44, (SCREEN_W - rx - 8 - gap) / 2);
-    const int bh = std::max(48, (well_h - gap) / 2);
+    const int gap = dp_px(8);
+    const int bw = std::max(min_hit, (SCREEN_W - rx - dp_px(8) - gap) / 2);
+    const int bh = std::max(min_hit, (well_h - gap) / 2);
     draw_ctrl_btn(rx, well_y, bw, bh, "mdi:chevron-left", WidgetId::GAME_CTRL_LEFT);
     draw_ctrl_btn(rx + bw + gap, well_y, bw, bh, "mdi:chevron-right", WidgetId::GAME_CTRL_RIGHT);
     draw_ctrl_btn(rx, well_y + bh + gap, bw, bh, "mdi:rotate-right", WidgetId::GAME_CTRL_ROTATE, true);
     draw_ctrl_btn(rx + bw + gap, well_y + bh + gap, bw, bh, "mdi:arrow-collapse-down", WidgetId::GAME_CTRL_DROP);
   } else {
-    // Compact square fallback (e.g. 480x480 non-IMU)
-    const int rx = well_x + well_w + 14;
-    const int rw = SCREEN_W - rx - 14;
-    const int gap = 8;
-    const int half_w = std::max(60, (rw - gap) / 2);
+    // Square / Regular side-by-side layout (Desk 720x720, 480x480, etc.)
+    const int col_gap = dp_px(16);
+    const int rx = well_x + well_w + col_gap;
+    const int rw = std::max(dp_px(136), right_col_w);
+    const int gap = dp_px(10);
+    const int half_w = std::max(dp_px(60), (rw - gap) / 2);
+    const int top_h = std::max(dp_px(76), (well_h * 21) / 100);
+    const int stats_h = std::max(dp_px(100), (well_h * 34) / 100);
 
-    render_card_box(it, rx, well_y, half_w, 84, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+    render_card_box(it, rx, well_y, half_w, top_h, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
                     GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, rx + half_w / 2, well_y + 14, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
-    draw_blocks_mini_piece(it, rx + 4, well_y + 26, half_w - 8, 52, peek_next_piece(), ctx);
+    ui::shadow_print(it, rx + half_w / 2, well_y + dp_px(14), ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "NEXT");
+    draw_blocks_mini_piece(it, rx + 4, well_y + dp_px(26), half_w - 8, top_h - dp_px(32), peek_next_piece(), ctx);
 
-    draw_hold_card(rx + half_w + gap, well_y, half_w, 84);
+    draw_hold_card(rx + half_w + gap, well_y, half_w, top_h);
 
-    render_card_box(it, rx, well_y + 92, rw, 108, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
+    const int stats_y = well_y + top_h + gap;
+    render_card_box(it, rx, stats_y, rw, stats_h, kChromeGlassTint, kChromeCardBorder, kRadiusCardPx(),
                     GlassVariant::Clear, ctx.col_white);
-    ui::shadow_print(it, rx + rw / 2, well_y + 114, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "SCORE");
-    ui::shadow_print(it, rx + rw / 2, well_y + 138, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, score_buf);
-    char lv_ln[32];
+    const int rcx = rx + rw / 2;
+    ui::shadow_print(it, rcx, stats_y + (stats_h * 14) / 100, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "SCORE");
+    ui::shadow_print(it, rcx, stats_y + (stats_h * 32) / 100, ctx.font_date, ctx.col_white, UiTextAlign::CENTER, score_buf);
+    ui::shadow_print(it, rcx, stats_y + (stats_h * 52) / 100, ctx.font_small, ctx.col_slate, UiTextAlign::CENTER, "BEST");
+    ui::shadow_print(it, rcx, stats_y + (stats_h * 66) / 100, ctx.font_small, ctx.col_gold, UiTextAlign::CENTER, best_buf);
+    char lv_ln[36];
     std::snprintf(lv_ln, sizeof(lv_ln), "LV %d • %d LN", st.level, st.lines);
-    ui::shadow_print(it, rx + rw / 2, well_y + 174, ctx.font_small, ctx.col_cyan, UiTextAlign::CENTER, lv_ln);
+    ui::shadow_print(it, rcx, stats_y + (stats_h * 84) / 100, ctx.font_small, ctx.col_cyan, UiTextAlign::CENTER, lv_ln);
 
-    const int ctrl_y = well_y + 210;
-    const int bh = std::max(56, (well_y + well_h - ctrl_y - gap) / 2);
+    const int ctrl_y = stats_y + stats_h + gap;
+    const int bh = std::max(dp_px(48), (well_y + well_h - ctrl_y - gap) / 2);
     draw_ctrl_btn(rx, ctrl_y, half_w, bh, "mdi:chevron-left", WidgetId::GAME_CTRL_LEFT);
     draw_ctrl_btn(rx + half_w + gap, ctrl_y, half_w, bh, "mdi:chevron-right", WidgetId::GAME_CTRL_RIGHT);
     draw_ctrl_btn(rx, ctrl_y + bh + gap, half_w, bh, "mdi:rotate-right", WidgetId::GAME_CTRL_ROTATE, true);
@@ -2598,26 +2591,17 @@ void render_game_snake(Rgb565Surface &it, const UiFrameContext &ctx, GameArena &
   auto &st = arena.snake;
   const auto &ly = layout();
 
-  int cols = 14, rows = 18, cell = 20;
-  if (SCREEN_W < 380) {
-    cols = 14;
-    rows = 18;
-    cell = 20;
-  } else if (SCREEN_W >= 600 && SCREEN_H >= 600) {
-    cols = 18;
-    rows = 18;
-    cell = 32;
-  } else {
-    const int avail_h = std::max(140, ly.back_y - scale_y(68));
-    cell = std::clamp(std::min((SCREEN_W - 24) / 16, avail_h / 14), 14, 32);
-    cols = std::clamp((SCREEN_W - 24) / cell, 12, 24);
-    rows = std::clamp(avail_h / cell, 10, 24);
-  }
+  const int avail_w = std::max(dp_px(160), ly.safe_span(cy, dp_px(12)));
+  const int avail_h = std::max(dp_px(140), ly.back_y - dp_px(56));
+  const int target_cell = safe_clamp(dp_px(22), 14, 34);
+  const int cols = std::clamp(avail_w / target_cell, 12, 22);
+  const int rows = std::clamp(avail_h / target_cell, 10, 22);
+  const int cell = std::max(12, std::min(avail_w / cols, avail_h / rows));
 
   const int board_w = cols * cell;
   const int board_h = rows * cell;
   const int board_x = (SCREEN_W - board_w) / 2;
-  const int board_y = std::max(12, ((ly.back_y - scale_y(48)) - board_h) / 2);
+  const int board_y = std::max(dp_px(12), ((ly.back_y - dp_px(48)) - board_h) / 2);
 
   auto cell_occupied = [&](int x, int y, bool check_apple, bool check_bonus) -> bool {
     for (int i = 0; i < st.len; ++i) {
@@ -2915,29 +2899,18 @@ void render_game_drop_four(Rgb565Surface &it, const UiFrameContext &ctx, GameAre
   const int min_hit = ly.min_hit_px();
 
   // Layout geometry
-  const bool is_remote = (SCREEN_W < 380);
-  const bool is_desk = (SCREEN_W >= 600 && SCREEN_H >= 600);
-  const int toggle_h = std::max(scale_y(36), min_hit - scale_y(10));
-  const int toggle_w = is_remote ? 240 : (is_desk ? 340 : std::min(300, SCREEN_W - 40));
-  const int toggle_cy = is_remote ? 30 : (is_desk ? 48 : std::max(toggle_h / 2 + 12, scale_y(34)));
-  const int status_y = toggle_cy + toggle_h / 2 + scale_y(14);
+  const int toggle_h = std::max(dp_px(36), ly.min_row_hit_px());
+  const int toggle_cy = std::max(ly.hdr_y, toggle_h / 2 + dp_px(12));
+  const int toggle_w = std::min({dp_px(260), ly.band_safe_span(toggle_cy, toggle_h, dp_px(16)), ly.max_content_w()});
+  const int status_y = toggle_cy + toggle_h / 2 + dp_px(14);
 
-  const int avail_top = status_y + scale_y(14);
-  const int avail_bot = ly.back_y - scale_y(46);
-  const int avail_h = std::max(140, avail_bot - avail_top);
+  const int avail_top = status_y + dp_px(14);
+  const int avail_bot = ly.back_y - dp_px(44);
+  const int avail_h = std::max(dp_px(140), avail_bot - avail_top);
+  const int avail_w = ly.band_safe_span((avail_top + avail_bot) / 2, avail_h, dp_px(8));
 
-  int col_w = 45;
-  int board_pad_y = 5;
-  if (is_remote) {
-    col_w = 45;
-    board_pad_y = 5;
-  } else if (is_desk) {
-    col_w = 76;
-    board_pad_y = 8;
-  } else {
-    col_w = std::clamp(std::min((SCREEN_W - 8) / 7, (avail_h - 12) / 6), 24, 76);
-    board_pad_y = std::max(4, col_w / 10);
-  }
+  const int col_w = std::clamp(std::min(avail_w / 7, (avail_h - dp_px(12)) / 6), 24, dp_px(64));
+  const int board_pad_y = std::max(4, col_w / 10);
 
   const int board_w = 7 * col_w;
   const int board_h = 6 * col_w + 2 * board_pad_y;
@@ -3258,15 +3231,16 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
                            int &game_carousel_idx, bool menu_scroll_active,
                            int menu_scroll_dir, int menu_scroll_target_page) {
   const int cx = ctx.cx;
+  const auto &ly = layout();
   const auto &prefs = device_prefs();
   const bool game_sound_on = ctx.game_sound_enabled;
-  const bool compact_w = (SCREEN_W < 380);
+  const bool stacked_hero = (ly.size_class == SizeClass::Compact && SCREEN_H > SCREEN_W);
+  const int hdr_y = ly.hdr_y + dp_px(18);
 
   int enabled_ids[kMaxGamesLauncherItems]{};
   const int game_count = collect_enabled_games(enabled_ids, prefs);
   if (game_count <= 0) {
     game_carousel_idx = 0;
-    const int hdr_y = compact_w ? 64 : scale_y(84);
     ui::shadow_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, UiTextAlign::CENTER, "GAMES");
     render_empty_state(it, cx, ctx.cy, "No games enabled", ctx.font_small, ctx.col_slate);
     return;
@@ -3276,7 +3250,7 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
     game_carousel_idx = std::clamp(game_carousel_idx, 0, game_count - 1);
   }
 
-  auto gs = [](int v) constexpr -> int { return scale_min(v); };
+  auto gs = [](int v) constexpr -> int { return game_px(v); };
 
   auto draw_game_icon = [&](int g_idx, int icon_x, int icon_y) {
     if (g_idx == 0) {
@@ -3290,10 +3264,10 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
       fast_circle(it, icon_x, icon_y, gs(14), UiColor(45, 55, 65));
       for (int a = 0; a < 4; a++) {
         const float sa = static_cast<float>(a) * 1.570796f;
-        fast_line(it, icon_x + static_cast<int>(fast_cos(sa) * scale_min_f(18.0f)),
-                  icon_y + static_cast<int>(fast_sin(sa) * scale_min_f(18.0f)),
-                  icon_x + static_cast<int>(fast_cos(sa + 0.8f) * scale_min_f(40.0f)),
-                  icon_y + static_cast<int>(fast_sin(sa + 0.8f) * scale_min_f(40.0f)),
+        fast_line(it, icon_x + static_cast<int>(fast_cos(sa) * game_f(18.0f)),
+                  icon_y + static_cast<int>(fast_sin(sa) * game_f(18.0f)),
+                  icon_x + static_cast<int>(fast_cos(sa + 0.8f) * game_f(40.0f)),
+                  icon_y + static_cast<int>(fast_sin(sa + 0.8f) * game_f(40.0f)),
                   UiColor(35, 45, 55));
       }
       render_glass_marble(it, icon_x - gs(24), icon_y - gs(18), gs(13), ctx.col_red, UiColor(255, 138, 128));
@@ -3523,25 +3497,36 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
     int w_lbl = 0, w_val = 0, x_off = 0, base = 0, th = 0;
     ctx.font_small->measure(lbl_str, &w_lbl, &x_off, &base, &th);
     ctx.font_small->measure(val_str, &w_val, &x_off, &base, &th);
-    const int gap_px = scale_x(8);
+    const int gap_px = dp_px(8);
     const int start_x = text_center_x - (w_lbl + gap_px + w_val) / 2;
 
     ui::shadow_print(it, start_x, score_y, ctx.font_small, ctx.col_gold, UiTextAlign::CENTER_LEFT, lbl_str);
     ui::shadow_print(it, start_x + w_lbl + gap_px, score_y, ctx.font_small, ctx.col_white, UiTextAlign::CENTER_LEFT, val_str);
   };
 
-  const int icon_cx = compact_w ? cx : (cx - scale_x(118));
-  const int card_cy = compact_w ? 158 : scale_y(194);
-  const int text_cx = compact_w ? cx : (cx + scale_x(57));
-  const int base_title_y = compact_w ? 242 : scale_y(176);
-  const int base_score_y = compact_w ? 274 : scale_y(216);
-  const int pips_y = compact_w ? 314 : scale_y(282);
-  const int btn_row_y = layout().app_dock_y;
+  const int btn_row_y = ly.app_dock_y;
+  const int play_h = std::max(ly.slot5_h, dp_px(44));
+  const int spk_r = std::max(dp_px(20), play_h / 2);
+  const int top_zone = hdr_y + dp_px(26);
+  const int pips_y = btn_row_y - spk_r - dp_px(24);
+  const int zone_h = std::max(dp_px(110), pips_y - dp_px(10) - top_zone);
+  const int hero_mid_y = top_zone + zone_h / 2;
+  const int hero_span = std::min(dp_px(340), ly.safe_span(hero_mid_y, dp_px(18)));
+
+  const int icon_cx = stacked_hero ? cx : (cx - (hero_span * 32) / 100);
+  const int card_cy = stacked_hero ? (top_zone + (zone_h * 34) / 100) : hero_mid_y;
+  const int text_cx = stacked_hero ? cx : (cx + (hero_span * 17) / 100);
+  const int base_title_y = stacked_hero
+      ? std::min(pips_y - dp_px(44), card_cy + game_px(54) + dp_px(18))
+      : (card_cy - dp_px(16));
+  const int base_score_y = stacked_hero
+      ? std::min(pips_y - dp_px(18), base_title_y + dp_px(28))
+      : (card_cy + dp_px(22));
   const int cur_game_id = enabled_ids[game_carousel_idx];
   const int cur_g_idx = cur_game_id - 1;
 
   if (menu_scroll_active && game_count > 1) {
-    const int full_span = scale_x(252);
+    const int full_span = dp_px(252);
     const int offset = menu_scroll_shift(full_span, ctx.now_ms);
     const int out_dx = -menu_scroll_dir * offset;
     const int in_dx = menu_scroll_dir * (full_span - offset);
@@ -3555,22 +3540,21 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
         PageId::GAMES, GestureAxisLock::Horizontal, ctx.now_ms, LATTER_PANEL_PPI);
     draw_game_card(cur_g_idx, icon_cx + bounce_x, card_cy, text_cx + bounce_x, base_title_y, base_score_y);
 
-    const int flank_w = scale_x(72);
-    const int hero_top = scale_y(112);
-    const int hero_h = std::max(80, pips_y - hero_top - scale_y(8));
+    const int flank_w = dp_px(72);
+    const int hero_top = top_zone;
+    const int hero_h = std::max(dp_px(80), pips_y - hero_top - dp_px(8));
     if (game_count > 1) {
       frame_hits().add_rect(0, hero_top, flank_w, hero_h, WidgetId::GAMES_PREV_BTN, kHitTap, -1);
       frame_hits().add_rect(SCREEN_W - flank_w, hero_top, flank_w, hero_h, WidgetId::GAMES_NEXT_BTN, kHitTap, 1);
       frame_hits().add_rect(flank_w, hero_top, SCREEN_W - 2 * flank_w, hero_h,
                             WidgetId::GAMES_HERO_CARD, kHitTap, static_cast<int16_t>(cur_game_id));
     } else {
-      frame_hits().add_rect(scale_x(24), hero_top, SCREEN_W - 2 * scale_x(24), hero_h,
+      frame_hits().add_rect(dp_px(24), hero_top, SCREEN_W - 2 * dp_px(24), hero_h,
                             WidgetId::GAMES_HERO_CARD, kHitTap, static_cast<int16_t>(cur_game_id));
     }
   }
 
   // Documented arcade carve-out (D-070): Orbitron "GAMES" display header
-  const int hdr_y = compact_w ? 64 : scale_y(84);
   ui::shadow_print(it, cx, hdr_y, ctx.font_games_title, ctx.col_white, UiTextAlign::CENTER, "GAMES");
 
   const int active_pip = (menu_scroll_active && game_count > 1)
@@ -3578,20 +3562,24 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
                              : game_carousel_idx;
   render_dock_page_pips(it, cx, pips_y, game_count, active_pip, ctx.col_white, kChromePipInactive);
 
-  const int play_h = std::max(44, scale_s(44));
-  const int play_w = std::min(scale_x(154), safe_span(btn_row_y, 24) - scale_x(72));
-  ui::action_pill_centered(it, cx + scale_x(36), play_w, btn_row_y, play_h,
+  const int row_gap = dp_px(12);
+  const int row_safe = ly.band_safe_span(btn_row_y, play_h, dp_px(18));
+  const int play_w = std::min(dp_px(154), std::max(dp_px(88), row_safe - 2 * spk_r - row_gap));
+  const int total_row_w = 2 * spk_r + row_gap + play_w;
+  const int spk_x = cx - total_row_w / 2 + spk_r;
+  const int play_cx = spk_x + spk_r + row_gap + play_w / 2;
+  const int spk_pad = std::max(4, (ly.min_hit_px() - (2 * spk_r + 1) + 1) / 2);
+
+  ui::action_pill_centered(it, play_cx, play_w, btn_row_y, play_h,
                            ctx.theme_primary, kChromeGlassTint, "PLAY", ctx.col_white, ctx.font_btn_bold,
                            WidgetId::GAMES_PLAY_BTN, kHitTap | kHitFocusSlot, static_cast<int16_t>(cur_game_id));
 
-  const int spk_x = cx - scale_x(91);
-  const int spk_r = scale_s(22);
   ui::icon_circle_button(it, spk_x, btn_row_y, spk_r, kChromeGlassTint,
                          game_sound_on ? ctx.theme_secondary : kChromeCardBorder,
                          game_sound_on ? ctx.col_white : ctx.col_slate,
                          draw_games_speaker_icon,
                          game_sound_on ? reinterpret_cast<void *>(1) : nullptr,
-                         WidgetId::GAMES_SOUND_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 1, 6);
+                         WidgetId::GAMES_SOUND_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 1, spk_pad);
 }
 
 #if !LATTER_HAS_IMU
@@ -3971,8 +3959,8 @@ void compute_3d_game_tilt(float raw_ax, float raw_ay, float raw_az,
   out_roll_delta = 0.0f;
   out_pitch_delta = 0.0f;
   // Universal Marbles touch-tilt fallback on stationary / no-IMU displays
-  if (touch_gesture().active && touch_gesture().last_y < (layout().back_y - scale_y(50))) {
-    const float span = static_cast<float>(std::max(110, scale_s(160)));
+  if (touch_gesture().active && touch_gesture().last_y < (layout().back_y - dp_px(50))) {
+    const float span = static_cast<float>(std::max(dp_px(110), game_px(160)));
     out_roll_delta = std::clamp((static_cast<float>(touch_gesture().last_x - SCREEN_CX) / span) * 28.0f, -35.0f, 35.0f);
     out_pitch_delta = std::clamp((static_cast<float>(SCREEN_CY - touch_gesture().last_y) / span) * 28.0f, -35.0f, 35.0f);
   }

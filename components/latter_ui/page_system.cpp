@@ -94,11 +94,12 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const UiColor card_brd_on = kChromeCardBrdOn;
   const UiColor card_brd_off = kChromeCardBrdOff;
 
-  const int row_w = layout().list_card_w;
-  const int row_h = layout().slot5_h;
+  const auto &ly = layout();
+  const int row_w = ly.list_card_w;
+  const int row_h = ly.slot5_h;
 
   auto draw_back = [&]() {
-    render_back_button(it, cx, font_small, layout().back_y, "< Back");
+    render_back_button(it, cx, font_small, ly.back_y, "< Back");
   };
 
   auto add_row_hit = [&](int y_mid, uint16_t wid, uint8_t flags, int16_t param) {
@@ -138,7 +139,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                 UiColor txt_c, UiColor bg_c,
                                 uint16_t wid = WidgetId::NONE,
                                 int16_t param = 0) {
-    const std::string fit_lbl = fit_text_to_width_font(label != nullptr ? label : "", row_w - scale_x(20), font_small);
+    const std::string fit_lbl = fit_text_to_width_font(label != nullptr ? label : "", row_w - dp_px(20), font_small);
     render_card_box(it, cx - row_w / 2, y_mid - row_h / 2, row_w, row_h, bg_c, brd_c, kRadiusCardPx());
     ui::shadow_print(it, cx, y_mid, font_small, txt_c, TextAlign::CENTER, fit_lbl.c_str());
     add_row_hit(y_mid, wid, kHitTap | kHitFocusSlot, param);
@@ -148,12 +149,12 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     render_vertical_page_pips(it, show_up, show_down, col_bg, theme_secondary, col_slate);
   };
 
-  const int row0_y = layout().slot5_y(0);
-  const int row_s = layout().slot5_stride;
-  const int mask_top_h = scale_y(82);
-  const int mask_btm_y = scale_y(388);
-  const int min_vis_y = scale_y(60);
-  const int max_vis_y = scale_y(395);
+  const int row0_y = ly.slot5_y(0);
+  const int row_s = ly.slot5_stride;
+  const int mask_top_h = std::max(ly.hdr_y + dp_px(18), row0_y - row_h / 2 - dp_px(4));
+  const int mask_btm_y = std::min(ly.back_y - dp_px(16), ly.slot5_y(4) + row_h / 2 + dp_px(4));
+  const int min_vis_y = mask_top_h - row_h / 2;
+  const int max_vis_y = mask_btm_y + row_h / 2;
 
   auto compute_scroll_offset = [&](int cur_page, int step_rows) -> int {
     const int step_shift = step_rows * row_s;
@@ -214,7 +215,11 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 #else
     std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: N/A");
 #endif
+#if LATTER_HAS_TOUCH
     std::snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Tap Wake: %s", ctx.tap_wake_opt.c_str());
+#else
+    std::snprintf(sleep_labels[1], sizeof(sleep_labels[1]), "Tap Wake: N/A");
+#endif
 #if LATTER_HAS_BATTERY
     std::snprintf(sleep_labels[2], sizeof(sleep_labels[2]), "Battery Timeout: %s", ctx.display_off_timeout_opt.c_str());
 #else
@@ -253,6 +258,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
           draw_toggle_card_y(y, "Do Not Disturb", ctx.do_not_disturb, row_slot, row_slot);
         } else {
           const bool en = (i == 0) ? (LATTER_HAS_IMU != 0)
+                        : (i == 1) ? (LATTER_HAS_TOUCH != 0)
                         : (i == 2) ? (LATTER_HAS_BATTERY != 0)
                         : (i == 4) ? saver_enabled
                         : (i == 6) ? (LATTER_HAS_BATTERY != 0)
@@ -341,12 +347,12 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                    : WidgetId::NONE;
           draw_cycle_card_y(y, disp_labels[i], active, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
           if (i == 3) {
-            const int swatch_x = layout().sys_color_swatch_x();
-            const int sw_r = scale_s(9);
+            const int swatch_x = ly.sys_color_swatch_x();
+            const int sw_r = dp_px(9);
             fast_filled_circle(it, swatch_x, y, sw_r, theme_primary);
             fast_circle(it, swatch_x, y, sw_r, col_white);
             if (!menu_scroll_active && row_slot >= 0) {
-              frame_hits().add_circle(swatch_x, y, sw_r + scale_s(8),
+              frame_hits().add_circle(swatch_x, y, sw_r + dp_px(8),
                                       static_cast<uint16_t>(WidgetId::COLOR_SWATCH_BASE + 0),
                                       kHitTap, 0);
             }
@@ -389,8 +395,11 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   } else if (system_menu_mode == 5) {
     render_page_header(it, cx, "UPDATE", font_small, col_white);
+    const int y_inst = ly.hdr_y + dp_px(44);
+    const int y_avail = y_inst + dp_px(30);
+    const int y_summ = y_avail + dp_px(34);
     std::snprintf(buf, sizeof(buf), "Installed: v%s", version_str);
-    ui::shadow_print(it, cx, scale_y(95), font_small, col_slate, TextAlign::CENTER, buf);
+    ui::shadow_print(it, cx, y_inst, font_small, col_slate, TextAlign::CENTER, buf);
 
     const bool has_update = is_newer_semver_local(ctx.fw_latest_ver.sv(), version_str);
     if (rs.nav.update_check_state == 1) {
@@ -404,43 +413,44 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       }
     }
 
-    const int cta_w = std::min({kMaxContentColW, row_w, scale_x(248)});
-    const int cta_h = std::max(44, scale_y(44));
+    const int cta_h = std::max(row_h, dp_px(44));
+    const int y_cta = std::min(ly.back_y - dp_px(30) - cta_h / 2, y_summ + dp_px(52));
+    const int cta_w = std::min({ly.max_content_w(), row_w, ly.band_safe_span(y_cta, cta_h, dp_px(18)), dp_px(248)});
     if (has_update) {
       if (ctx.fw_latest_ver.empty()) {
         std::snprintf(buf, sizeof(buf), "Update available");
       } else {
         std::snprintf(buf, sizeof(buf), "Available: v%s", ctx.fw_latest_ver.c_str());
       }
-      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, TextAlign::CENTER, buf);
+      ui::shadow_print(it, cx, y_avail, font_small, theme_secondary, TextAlign::CENTER, buf);
       std::string summ = ctx.fw_release_summary.str();
       if (summ.empty() || summ == "unavailable" || summ == "unknown") {
         summ = "Firmware update ready.";
       }
-      summ = fit_text_to_width_font(summ, std::min(kMaxContentColW, safe_span(scale_y(160), 20)), font_small);
-      ui::shadow_print(it, cx, scale_y(160), font_small, col_white, TextAlign::CENTER, summ.c_str());
-      ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+      summ = fit_text_to_width_font(summ, std::min(ly.max_content_w(), ly.safe_span(y_summ, dp_px(20))), font_small);
+      ui::shadow_print(it, cx, y_summ, font_small, col_white, TextAlign::CENTER, summ.c_str());
+      ui::action_pill_centered(it, cx, cta_w, y_cta, cta_h,
                                theme_primary, card_bg_on, "Update Now", theme_secondary,
                                font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
     } else {
       std::snprintf(buf, sizeof(buf), "Latest: v%s", version_str);
-      ui::shadow_print(it, cx, scale_y(125), font_small, theme_secondary, TextAlign::CENTER, buf);
+      ui::shadow_print(it, cx, y_avail, font_small, theme_secondary, TextAlign::CENTER, buf);
       if (rs.nav.update_check_state == 1) {
-        ui::shadow_print(it, cx, scale_y(160), font_small, theme_secondary, TextAlign::CENTER,
+        ui::shadow_print(it, cx, y_summ, font_small, theme_secondary, TextAlign::CENTER,
                          "Checking Home Assistant...");
-        ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+        ui::action_pill_centered(it, cx, cta_w, y_cta, cta_h,
                                  theme_primary, card_bg_on, "Checking...", theme_secondary,
                                  font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       } else if (rs.nav.update_check_state == 2) {
-        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, TextAlign::CENTER,
+        ui::shadow_print(it, cx, y_summ, font_small, col_slate, TextAlign::CENTER,
                          "No updates available");
-        ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+        ui::action_pill_centered(it, cx, cta_w, y_cta, cta_h,
                                  card_brd_on, card_bg_on, "Up to date", col_white,
                                  font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       } else {
-        ui::shadow_print(it, cx, scale_y(160), font_small, col_slate, TextAlign::CENTER,
+        ui::shadow_print(it, cx, y_summ, font_small, col_slate, TextAlign::CENTER,
                          "Firmware is up to date");
-        ui::action_pill_centered(it, cx, cta_w, scale_y(215), cta_h,
+        ui::action_pill_centered(it, cx, cta_w, y_cta, cta_h,
                                  theme_primary, card_bg_on, "Check for Updates", col_white,
                                  font_small, WidgetId::SYS_PRIMARY_BTN, kHitTap | kHitFocusSlot);
       }
@@ -471,14 +481,19 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   } else if (system_menu_mode == 8) {
     // D-048 / D-070: Passive read-only telemetry renders cleanly on canvas with shadow (ZERO passive glass card!).
     render_page_header(it, cx, "SYSTEM INFO", font_small, col_white);
-    const int info_x = layout().sys_info_x();
+    const int info_x = ly.sys_info_x();
     const int info_right = SCREEN_W - info_x;
-    auto print_info_row = [&](int y, const char *lbl, const char *val, UiColor val_col) {
-      const int ey = scale_y(y);
+    const int info_top = ly.hdr_y + dp_px(32);
+    const int info_bot = ly.back_y - dp_px(30);
+    const int row_step = safe_clamp((info_bot - info_top) / 8, dp_px(22), dp_px(34));
+    const int start_y = info_top + std::max(0, (info_bot - info_top - row_step * 8) / 2);
+    auto print_info_row = [&](int row_idx, const char *lbl, const char *val, UiColor val_col) {
+      const int ey = start_y + row_idx * row_step;
+      const int row_safe_right = std::min(info_right, cx + ly.safe_span(ey + row_step / 2, dp_px(14)) / 2);
       int w_lbl = 0, x_off = 0, base = 0, th = 0;
       font_small->measure(lbl, &w_lbl, &x_off, &base, &th);
-      const int val_x = info_x + w_lbl + 8;
-      const int max_val_w = std::max(60, info_right - val_x);
+      const int val_x = info_x + w_lbl + dp_px(8);
+      const int max_val_w = std::max(dp_px(60), row_safe_right - val_x);
       const std::string fit_val = fit_text_to_width_font(val != nullptr ? val : "", max_val_w, font_small);
       ui::shadow_print(it, info_x, ey, font_small, col_white, TextAlign::TOP_LEFT, lbl);
       ui::shadow_print(it, val_x, ey, font_small, val_col, TextAlign::TOP_LEFT, fit_val.c_str());
@@ -487,10 +502,10 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const bool has_update = is_newer_semver_local(ctx.fw_latest_ver.sv(), version_str);
     if (has_update) {
       std::snprintf(buf, sizeof(buf), "v%s (Update: v%s)", version_str, ctx.fw_latest_ver.c_str());
-      print_info_row(84, "Version:", buf, col_gold);
+      print_info_row(0, "Version:", buf, col_gold);
     } else {
       std::snprintf(buf, sizeof(buf), "v%s (Up to date)", version_str);
-      print_info_row(84, "Version:", buf, col_slate);
+      print_info_row(0, "Version:", buf, col_slate);
     }
 
     const uint32_t up_sec = now_ms / 1000U;
@@ -501,13 +516,13 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                   static_cast<unsigned long>(up_d),
                   static_cast<unsigned long>(up_h),
                   static_cast<unsigned long>(up_m));
-    print_info_row(116, "Uptime:", buf, col_slate);
+    print_info_row(1, "Uptime:", buf, col_slate);
 
     if (!latter_site_id().empty() && latter_site_id() != "primary") {
       std::snprintf(buf, sizeof(buf), "Site: %s", latter_site_id().c_str());
-      print_info_row(148, "Latter:", buf, theme_secondary);
+      print_info_row(2, "Latter:", buf, theme_secondary);
     } else {
-      print_info_row(148, "Home Assistant:", ctx.now.is_valid() ? "Connected" : "Syncing...", col_slate);
+      print_info_row(2, "Home Assistant:", ctx.now.is_valid() ? "Connected" : "Syncing...", col_slate);
     }
 
     if (std::isnan(ctx.wifi_rssi)) {
@@ -515,16 +530,15 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       std::snprintf(buf, sizeof(buf), "%.0f dBm  •  BLE: %s", ctx.wifi_rssi, ctx.ble_active ? "Active" : "Off");
     }
-    print_info_row(180, "Wi-Fi:", buf, col_slate);
+    print_info_row(3, "Wi-Fi:", buf, col_slate);
 
-    print_info_row(212, "IP:", ctx.ip_addr.empty() ? "Connecting..." : ctx.ip_addr.c_str(), col_slate);
+    print_info_row(4, "IP:", ctx.ip_addr.empty() ? "Connecting..." : ctx.ip_addr.c_str(), col_slate);
 
     std::string area_str = latter_area_label().empty() ? std::string(kUnknownGlyph) : latter_area_label();
     if (!latter_ble_proxy().empty()) {
       area_str += " (" + latter_ble_proxy() + ")";
     }
-    area_str = fit_text_to_width_font(area_str, scale_x(220), font_small);
-    print_info_row(244, "Area:", area_str.c_str(), col_slate);
+    print_info_row(5, "Area:", area_str.c_str(), col_slate);
 
     if (std::isnan(rs.hw_batt_level) || std::isnan(rs.hw_batt_voltage)) {
       std::snprintf(buf, sizeof(buf), "%s", kUnknownGlyph);
@@ -532,7 +546,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       std::snprintf(buf, sizeof(buf), "%.0f%% (%.2fV)%s",
                     rs.hw_batt_level, rs.hw_batt_voltage, rs.hw_batt_charging ? " • Chg" : "");
     }
-    print_info_row(276, "Battery:", buf, col_slate);
+    print_info_row(6, "Battery:", buf, col_slate);
 
     if (std::isnan(rs.hw_imu_temp)) {
       std::snprintf(buf, sizeof(buf), "%s • %dKB", kUnknownGlyph, ctx.free_heap_kb);
@@ -541,32 +555,33 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       const float temp_f = temp_c * 1.8f + 32.0f;
       std::snprintf(buf, sizeof(buf), "%.1fC (%.1fF) • %dKB", temp_c, temp_f, ctx.free_heap_kb);
     }
-    print_info_row(308, "HW / RAM:", buf, col_slate);
+    print_info_row(7, "HW / RAM:", buf, col_slate);
 
     draw_back();
 
   } else if (system_menu_mode == 9) {
     const int pg = std::clamp(rs.music.settings_page, 1, 2);
+    const int by = edge_bounce().offset_px(PageId::SYSTEM, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     render_page_header(it, cx, "MUSIC", font_small, col_white);
     if (pg == 1) {
       std::snprintf(buf, sizeof(buf), "Art: %s", ctx.music_fullscreen_art_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(0), buf, true,
+      draw_cycle_card_y(layout().slot5_y(0) + by, buf, true,
                         static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
       std::snprintf(buf, sizeof(buf), "Overlay: %s", ctx.music_overlay_style_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(1), buf, true,
+      draw_cycle_card_y(layout().slot5_y(1) + by, buf, true,
                         static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), kHitTap | kHitFocusSlot, 1);
       std::snprintf(buf, sizeof(buf), "Auto-Open: %s", ctx.music_auto_open_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(2), buf, true,
+      draw_cycle_card_y(layout().slot5_y(2) + by, buf, true,
                         static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 2), kHitTap | kHitFocusSlot, 2);
       std::snprintf(buf, sizeof(buf), "Album Sort: %s", ctx.music_album_sort_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(3), buf, true,
+      draw_cycle_card_y(layout().slot5_y(3) + by, buf, true,
                         static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 3), kHitTap | kHitFocusSlot, 3);
       std::snprintf(buf, sizeof(buf), "Artist Discog: %s", ctx.music_artist_album_sort_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(4), buf, true,
+      draw_cycle_card_y(layout().slot5_y(4) + by, buf, true,
                         static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 4), kHitTap | kHitFocusSlot, 4);
     } else {
       std::snprintf(buf, sizeof(buf), "Podcast Sort: %s", ctx.music_podcast_sort_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(0), buf, true,
+      draw_cycle_card_y(layout().slot5_y(0) + by, buf, true,
                         static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
     }
     draw_back();
@@ -617,12 +632,12 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     draw_back();
 
   } else if (system_menu_mode == 13) {
-    const int wheel_cy = scale_y(180);
-    ui::hsv_color_wheel(it, cx, wheel_cy, 156, 56, color_wheel_hue_deg(), color_wheel_sat(),
+    ui::hsv_color_wheel(it, ui::system_color_wheel_geom(), color_wheel_hue_deg(), color_wheel_sat(),
                         col_bg, col_white, WidgetId::COLOR_WHEEL_RING);
-    const int save_h = std::max(40, scale_y(42));
-    const int save_w = std::min({kMaxContentColW, safe_span(scale_y(376), 18), scale_x(236)});
-    ui::action_pill_centered(it, cx, save_w, scale_y(376), save_h,
+    const int save_h = std::max(row_h, dp_px(42));
+    const int save_y = ly.back_y - dp_px(26) - save_h / 2;
+    const int save_w = std::min({ly.max_content_w(), ly.band_safe_span(save_y, save_h, dp_px(18)), dp_px(236)});
+    ui::action_pill_centered(it, cx, save_w, save_y, save_h,
                              theme_primary, card_bg_on, "Save Custom Color", col_white, font_small,
                              WidgetId::COLOR_WHEEL_SAVE, kHitTap | kHitFocusSlot);
     draw_back();

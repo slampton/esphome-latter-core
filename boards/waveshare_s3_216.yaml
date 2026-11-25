@@ -2,7 +2,7 @@
 # Hardware Abstraction Layer (HAL): Waveshare ESP32-S3-Touch-AMOLED-2.16 ("Mobile Assistant")
 # SKU:     33969
 # Display: 2.16" 480x480 Square AMOLED (CO5300 over Quad-SPI, RST: GPIO39, CS: GPIO12). LCD_TE unrouted.
-# Touch:   CST9217 @ 0x5A (INT: GPIO11, RST: GPIO40) - marketed as "CST9220", driven by the cst9220 platform
+# Touch:   CST9217 @ 0x5A (INT: GPIO11, RST: GPIO40) - first-party platform: latter_core (protocol: cst9217)
 # Audio:   ES8311 DAC @ 0x18 (DOUT: GPIO8) + ES7210 ADC @ 0x40 (DIN: GPIO10), PA: GPIO46
 # Clocks:  MCLK: GPIO42, BCLK: GPIO9, LRCLK/WS: GPIO45
 # PMU:     AXP2101 @ 0x34 (AXP_IRQ NOT routed; DCDC1 = all 3V3, ALDO1 = audio A3V3, other rails unused),
@@ -14,13 +14,13 @@
 # ==============================================================================
 
 substitutions:
-  font_time_size: "77"
-  font_chrono_size: "38"
-  font_date_size: "27"
-  font_btn_bold_size: "26"
+  font_time_size: "89"
+  font_chrono_size: "45"
+  font_date_size: "33"
+  font_btn_bold_size: "29"
   font_small_size: "25"   # >= 2.0 mm at this panel's PPI (device-ui-design.md, accessibility)
   font_micro_size: "17"   # >= 1.3 mm
-  font_games_size: "38"
+  font_games_size: "45"
   art_resize: "480x480"
   # 4x fewer pixels decoded & ~345 KB less PSRAM per album art buffer (exact 2x upscale in draw_album_art)
   sendspin_art_resize: "240x240"
@@ -70,6 +70,7 @@ latter_core:
     dcs_sleep: true
     # Waveshare 2D CAD (ESP32-S3-Touch-AMOLED-2.16-2D-20260209.dxf): VA corner spline cuts 21.85 px at 45 deg
     corner_r: 76
+    view_scale: 1.00
     touch_int_pin: 11
     touch_rst_pin: 40
   power:
@@ -104,7 +105,6 @@ latter_core:
     rtc_pcf85063: true
     imu_qmi8658: true
     codec_es8311: true
-    touch_ft5x06: false
 
 esp32:
   flash_size: 16MB

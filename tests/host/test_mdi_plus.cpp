@@ -42,6 +42,15 @@ void test_icon_provider_contract_and_state_resolver() {
   LATTER_CHECK(raw_spans > 0);
   LATTER_CHECK(!rasterize_icon("mdi:nonexistent-icon-xyz", 32, 32, 24, raw_emit, &raw_spans));
 
+  // Large tablet/wall-panel MDI icon (> 128 px ceiling) + PSRAM cache eviction drop/rebuild
+  int large_spans = 0;
+  LATTER_CHECK(rasterize_icon("mdi:weather-sunny", 100, 100, 180, raw_emit, &large_spans));
+  LATTER_CHECK(large_spans > 20);
+  mdi_raster_cache_drop();
+  int rebuilt_spans = 0;
+  LATTER_CHECK(rasterize_icon("mdi:weather-sunny", 100, 100, 180, raw_emit, &rebuilt_spans));
+  LATTER_CHECK(rebuilt_spans == large_spans);
+
   // Item 2: resolve_state_mdi_slug() across all states and edge cases
   char buf[96]{};
 
@@ -403,8 +412,13 @@ void test_outline_solid_helpers_and_5geom_shortcut_rendering() {
     render_pinned_page(fix.surf, fix.ctx);
     const std::vector<uint16_t> pin_inv_px = fix.pixels;
     LATTER_CHECK(count_nonzero_pixels(pin_inv_px) > 200U);
-    // Slots 0..4 are interactive; slot 5 is unavailable (disabled -> no hit registered)
-    for (uint16_t s = 0; s < 5; ++s) {
+    // Interactive slots on page 0 (capped by per_pg = 4 on 2x2 mini-round, 5 on >= 2x3); slot 5 is unavailable.
+    const int per_pg = tile_grid_cols_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                                          LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0) *
+                       tile_grid_rows_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                                          LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
+    const uint16_t exp_interactive = static_cast<uint16_t>(std::min(5, per_pg));
+    for (uint16_t s = 0; s < exp_interactive; ++s) {
       LATTER_CHECK(frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::PINNED_CARD_BASE + s)) != nullptr);
     }
     LATTER_CHECK(frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::PINNED_CARD_BASE + 5)) == nullptr);
@@ -528,13 +542,21 @@ void test_home_dock_custom_shortcut_adaptive_glass() {
     frame_hits().clear();
     render_home_page(fix.surf, fix.ctx);
     const int r = layout().dock_r;
-    const int off = std::max(4, r - 3);
+    const int off = std::max(6, r - 3);
     for (int i = 0; i < 4; ++i) {
       const HitRegion *hit = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::DOCK_SLOT_BASE + i));
       LATTER_CHECK(hit != nullptr);
-      const int sx = std::clamp(hit->cx() - off, 0, SCREEN_W - 1);
-      const int sy = std::clamp(hit->cy(), 0, SCREEN_H - 1);
-      out_luma[i] = avg_luma(decode_px(fix.pixels[static_cast<size_t>(sy) * SCREEN_W + sx]));
+      // Average a 4x4 Bayer tile inside the clear glass margin (outside icon, inside rim)
+      // so non-mod-4 dock strides do not alias single-pixel Bayer dither phase.
+      int sum_luma = 0;
+      for (int dy = -1; dy <= 2; ++dy) {
+        const int sy = std::clamp(hit->cy() + dy, 0, SCREEN_H - 1);
+        for (int dx = 0; dx < 4; ++dx) {
+          const int sx = std::clamp(hit->cx() - off + dx, 0, SCREEN_W - 1);
+          sum_luma += avg_luma(decode_px(fix.pixels[static_cast<size_t>(sy) * SCREEN_W + sx]));
+        }
+      }
+      out_luma[i] = (sum_luma + 8) / 16;
     }
   };
 

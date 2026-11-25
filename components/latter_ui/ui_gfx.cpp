@@ -1,5 +1,6 @@
 #include "ui_gfx.h"
 #include "ui_dirty_band.h"
+#include "ui_mdi.h"
 #include "state/state_prefs.h"
 
 #include <algorithm>
@@ -737,6 +738,89 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
 #endif
 
   std::memcpy(dst_ptr, src_ptr, total_bytes);
+}
+
+bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int dst_y0,
+                          int dst_w, int dst_h, const uint16_t *src, int src_w, int src_h,
+                          int crop_x0, int crop_y0, int crop_w, int crop_h) noexcept {
+#if LATTER_FB_PPA
+  if (dst_fb == nullptr || src == nullptr || dst_fb == src || dst_stride_px <= 0 ||
+      dst_x0 < 0 || dst_y0 < 0 || dst_w <= 0 || dst_h <= 0 ||
+      dst_x0 + dst_w > dst_stride_px || src_w <= 0 || src_h <= 0 ||
+      crop_x0 < 0 || crop_y0 < 0 || crop_w <= 0 || crop_h <= 0 ||
+      crop_x0 + crop_w > src_w || crop_y0 + crop_h > src_h) {
+    return false;
+  }
+  const int endian = active_frame_endian_mode();
+  if (endian != 1 && endian != 3) return false;
+  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+  if ((reinterpret_cast<uintptr_t>(dst_fb) & kMask) != 0U) return false;
+
+  const float sx = static_cast<float>(dst_w) / static_cast<float>(crop_w);
+  const float sy = static_cast<float>(dst_h) / static_cast<float>(crop_h);
+  if (sx < 0.0625f || sx > 16.0f || sy < 0.0625f || sy > 16.0f) return false;
+  if (!ppa_srm_blit_init()) return false;
+
+  const size_t src_bytes = static_cast<size_t>(src_w) * static_cast<size_t>(src_h) * sizeof(uint16_t);
+  const size_t out_pic_h = static_cast<size_t>(dst_y0 + dst_h);
+  const size_t out_bytes = align_up_psram(static_cast<size_t>(dst_stride_px) * out_pic_h * sizeof(uint16_t));
+  ui_psram_cache_writeback(src, src_bytes);
+
+  auto &st = ppa_srm_blit_state();
+  ppa_srm_oper_config_t cfg = {};
+  cfg.in.buffer = src;
+  cfg.in.pic_w = static_cast<uint32_t>(src_w);
+  cfg.in.pic_h = static_cast<uint32_t>(src_h);
+  cfg.in.block_w = static_cast<uint32_t>(crop_w);
+  cfg.in.block_h = static_cast<uint32_t>(crop_h);
+  cfg.in.block_offset_x = static_cast<uint32_t>(crop_x0);
+  cfg.in.block_offset_y = static_cast<uint32_t>(crop_y0);
+  cfg.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+
+  cfg.out.buffer = dst_fb;
+  cfg.out.buffer_size = static_cast<uint32_t>(out_bytes);
+  cfg.out.pic_w = static_cast<uint32_t>(dst_stride_px);
+  cfg.out.pic_h = static_cast<uint32_t>(out_pic_h);
+  cfg.out.block_offset_x = static_cast<uint32_t>(dst_x0);
+  cfg.out.block_offset_y = static_cast<uint32_t>(dst_y0);
+  cfg.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
+
+  cfg.rotation_angle = PPA_SRM_ROTATION_ANGLE_0;
+  cfg.scale_x = sx;
+  cfg.scale_y = sy;
+  cfg.alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+  cfg.mode = PPA_TRANS_MODE_BLOCKING;
+
+  const esp_err_t err = ppa_do_scale_rotate_mirror(st.ppa, &cfg);
+  if (err != ESP_OK) return false;
+  const uintptr_t y0_addr = reinterpret_cast<uintptr_t>(dst_fb + static_cast<size_t>(dst_y0) * static_cast<size_t>(dst_stride_px));
+  const uintptr_t y1_addr = reinterpret_cast<uintptr_t>(dst_fb + out_pic_h * static_cast<size_t>(dst_stride_px));
+  const uintptr_t lo = y0_addr & ~kMask;
+  const uintptr_t hi = (y1_addr + kMask) & ~kMask;
+  if (hi > lo) {
+    if (esp_cache_msync(reinterpret_cast<void *>(lo), static_cast<size_t>(hi - lo),
+                        ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
+      return false;
+    }
+  }
+  st.blits++;
+  return true;
+#else
+  (void)dst_fb;
+  (void)dst_stride_px;
+  (void)dst_x0;
+  (void)dst_y0;
+  (void)dst_w;
+  (void)dst_h;
+  (void)src;
+  (void)src_w;
+  (void)src_h;
+  (void)crop_x0;
+  (void)crop_y0;
+  (void)crop_w;
+  (void)crop_h;
+  return false;
+#endif
 }
 
 bool blend_psram_vertical_wash_fast(uint16_t *dst_fb, const uint16_t *src_bg, int y0, int y1,
@@ -1596,11 +1680,46 @@ bool font_supports_cp(const UiFontView &font, uint32_t cp) noexcept {
 }
 
 constexpr int kTextCacheEntries = 32;
-constexpr int kTextScratchSpans = 4096;
+constexpr int kTextScratchSpans = 6144;
+
+TextCacheEntry *&text_cache_entries_slot() {
+  static TextCacheEntry *entries = nullptr;
+  return entries;
+}
+
+TextSpan *&text_cache_scratch_slot() {
+  static TextSpan *scratch = nullptr;
+  return scratch;
+}
+
+void text_cache_drop() noexcept {
+  TextCacheEntry *&entries = text_cache_entries_slot();
+  if (entries != nullptr) {
+    for (int i = 0; i < kTextCacheEntries; ++i) {
+      if (entries[i].spans != nullptr) {
+        ui_psram_free(entries[i].spans);
+        entries[i].spans = nullptr;
+      }
+      entries[i].font = nullptr;
+      entries[i].count = 0;
+      entries[i].cap = 0;
+      entries[i].bpp = 0;
+      entries[i].last_use = 0;
+      entries[i].text[0] = '\0';
+    }
+  }
+  TextSpan *&scratch = text_cache_scratch_slot();
+  if (scratch != nullptr) {
+    ui_psram_free(scratch);
+    scratch = nullptr;
+  }
+}
 
 // Retryable allocation — never permanently latches nullptr on transient OOM.
 TextCacheEntry *text_cache_entries() {
-  static TextCacheEntry *entries = nullptr;
+  static const bool s_evictor_reg = register_psram_cache_evictor(&text_cache_drop);
+  (void)s_evictor_reg;
+  TextCacheEntry *&entries = text_cache_entries_slot();
   if (entries == nullptr) {
     entries = static_cast<TextCacheEntry *>(
         ui_psram_calloc(static_cast<size_t>(kTextCacheEntries), sizeof(TextCacheEntry)));
@@ -1609,7 +1728,7 @@ TextCacheEntry *text_cache_entries() {
 }
 
 TextSpan *text_cache_scratch() {
-  static TextSpan *scratch = nullptr;
+  TextSpan *&scratch = text_cache_scratch_slot();
   if (scratch == nullptr) {
     scratch = static_cast<TextSpan *>(
         ui_psram_malloc(sizeof(TextSpan) * static_cast<size_t>(kTextScratchSpans)));
@@ -1617,7 +1736,9 @@ TextSpan *text_cache_scratch() {
   return scratch;
 }
 
-int text_decode_spans_1bpp(const UiFontView &font, const char *text, TextSpan *out, int cap) {
+int text_decode_spans(const UiFontView &font, const char *text, int bpp, TextSpan *out, int cap) {
+  if (bpp <= 0 || bpp > 4) return -1;
+  const int bpp_max = (1 << bpp) - 1;
   int n = 0;
   int x_at = 0;
   for (const char *p = text; *p != 0;) {
@@ -1633,28 +1754,51 @@ int text_decode_spans_1bpp(const UiFontView &font, const char *text, TextSpan *o
       uint8_t pixel_data = 0;
       for (int gy = 0; gy < glyph.height; gy++) {
         int run_start = -1;
+        uint8_t run_alpha = 0;
         for (int gx = 0; gx < glyph.width; gx++) {
-          if (bitmask == 0) {
-            pixel_data = *data++;
-            bitmask = 0x80U;
+          uint8_t a = 0;
+          if (bpp == 1) {
+            if (bitmask == 0) {
+              pixel_data = *data++;
+              bitmask = 0x80U;
+            }
+            if ((pixel_data & bitmask) != 0U) a = 255U;
+            bitmask >>= 1;
+          } else {
+            uint8_t pixel = 0;
+            for (int bit = 0; bit < bpp; bit++) {
+              if (bitmask == 0) {
+                pixel_data = *data++;
+                bitmask = 0x80U;
+              }
+              pixel <<= 1;
+              if ((pixel_data & bitmask) != 0U) pixel |= 1U;
+              bitmask >>= 1;
+            }
+            if (pixel != 0U) {
+              a = (pixel == bpp_max)
+                      ? 255U
+                      : static_cast<uint8_t>((static_cast<int>(pixel) * 255 + (bpp_max >> 1)) / bpp_max);
+            }
           }
-          const bool on = (pixel_data & bitmask) != 0U;
-          bitmask >>= 1;
-          if (on) {
-            if (run_start < 0) run_start = gx;
-          } else if (run_start >= 0) {
-            if (n >= cap) return -1;
-            out[n++] = {static_cast<int16_t>(gx0 + run_start),
-                        static_cast<int16_t>(glyph.offset_y + gy),
-                        static_cast<int16_t>(gx - run_start)};
-            run_start = -1;
+          if (a != run_alpha) {
+            if (run_start >= 0 && run_alpha > 0U) {
+              if (n >= cap) return -1;
+              out[n++] = {static_cast<int16_t>(gx0 + run_start),
+                          static_cast<int16_t>(glyph.offset_y + gy),
+                          static_cast<int16_t>(gx - run_start),
+                          run_alpha, 0};
+            }
+            run_start = (a > 0U) ? gx : -1;
+            run_alpha = a;
           }
         }
-        if (run_start >= 0) {
+        if (run_start >= 0 && run_alpha > 0U) {
           if (n >= cap) return -1;
           out[n++] = {static_cast<int16_t>(gx0 + run_start),
                       static_cast<int16_t>(glyph.offset_y + gy),
-                      static_cast<int16_t>(glyph.width - run_start)};
+                      static_cast<int16_t>(glyph.width - run_start),
+                      run_alpha, 0};
         }
       }
     }
@@ -1664,7 +1808,8 @@ int text_decode_spans_1bpp(const UiFontView &font, const char *text, TextSpan *o
 }
 
 const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &count) {
-  if (font.handle == nullptr || font.find_glyph_fn == nullptr) return nullptr;
+  const int bpp = font.get_bpp();
+  if (font.handle == nullptr || font.find_glyph_fn == nullptr || bpp <= 0 || bpp > 4) return nullptr;
   TextCacheEntry *entries = text_cache_entries();
   TextSpan *scratch = text_cache_scratch();
   const size_t len = std::strlen(text);
@@ -1674,14 +1819,14 @@ const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &co
   TextCacheEntry *victim = &entries[0];
   for (int i = 0; i < kTextCacheEntries; i++) {
     TextCacheEntry &e = entries[i];
-    if (e.font == font.handle && std::strcmp(e.text, text) == 0) {
+    if (e.font == font.handle && e.bpp == static_cast<uint8_t>(bpp) && std::strcmp(e.text, text) == 0) {
       e.last_use = use_seq;
       count = e.count;
       return e.spans;
     }
     if (e.last_use < victim->last_use) victim = &e;
   }
-  const int n = text_decode_spans_1bpp(font, text, scratch, kTextScratchSpans);
+  const int n = text_decode_spans(font, text, bpp, scratch, kTextScratchSpans);
   if (n < 0) return nullptr;
   if (victim->cap < n) {
     if (victim->spans != nullptr) ui_psram_free(victim->spans);
@@ -1690,6 +1835,7 @@ const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &co
     victim->cap = (victim->spans != nullptr) ? static_cast<uint16_t>(n) : 0;
     if (victim->spans == nullptr) {
       victim->font = nullptr;
+      victim->bpp = 0;
       victim->text[0] = 0;
       victim->count = 0;
       count = n;
@@ -1698,6 +1844,7 @@ const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &co
   }
   if (n > 0) std::memcpy(victim->spans, scratch, sizeof(TextSpan) * static_cast<size_t>(n));
   victim->font = font.handle;
+  victim->bpp = static_cast<uint8_t>(bpp);
   std::memcpy(victim->text, text, len + 1);
   victim->count = static_cast<uint16_t>(n);
   victim->last_use = use_seq;
@@ -1921,29 +2068,11 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
 }
 
 int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *text) {
+  (void)it;
   if (font == nullptr || text == nullptr || *text == '\0') return 0;
-  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
-  it.get_text_bounds(0, 0, text, font, UiTextAlign::CENTER_LEFT, &x_start, &y_start, &text_w, &text_h);
-  if (font.find_glyph_fn != nullptr) {
-    int x_at = x_start;
-    int max_x1 = 0;
-    bool any = false;
-    for (const char *p = text; *p != 0;) {
-      UiGlyphData glyph{};
-      if (!font.find_glyph(utf8_next_cp(p), glyph)) {
-        x_at += std::max(4, font.get_height() / 3);
-        continue;
-      }
-      if (glyph.width > 0) {
-        const int gx1 = x_at + glyph.offset_x + glyph.width;
-        max_x1 = any ? std::max(max_x1, gx1) : gx1;
-        any = true;
-      }
-      x_at += glyph.advance;
-    }
-    if (any) return max_x1;
-  }
-  return x_start + text_w;
+  int ink_x0 = 0, ink_x1 = 0, text_h = 0, baseline = 0;
+  measure_text_ink_span(font, text, ink_x0, ink_x1, text_h, baseline);
+  return std::max(0, ink_x1);
 }
 
 void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
@@ -1963,8 +2092,8 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
     return;
   }
 
-  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
-  it.get_text_bounds(x, y, text, font, align, &x_start, &y_start, &text_w, &text_h);
+  int x_start = 0, y_start = 0, text_h = 0;
+  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
   if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
 
   const int eff_cy0 = std::max(0, cy0);
@@ -1972,28 +2101,55 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
   if (eff_cy1 < eff_cy0) return;
 
   const int bpp_max = (1 << bpp) - 1;
+  const uint16_t full_hw = encode_hw_rgb565(color);
+  const bool solid_bg = background.is_on();
+  const int cr5 = (static_cast<int>(color.r) * 31 + 127) / 255;
+  const int cg6 = (static_cast<int>(color.g) * 63 + 127) / 255;
+  const int cb5 = (static_cast<int>(color.b) * 31 + 127) / 255;
+
   uint16_t lut[16]{};
-  const float diff_r = static_cast<float>(color.r) - static_cast<float>(background.r);
-  const float diff_g = static_cast<float>(color.g) - static_cast<float>(background.g);
-  const float diff_b = static_cast<float>(color.b) - static_cast<float>(background.b);
-  for (int lv = 1; lv <= bpp_max; lv++) {
-    if (lv == bpp_max) {
-      lut[lv] = encode_hw_rgb565(color);
-    } else {
-      const float on = static_cast<float>(lv) / static_cast<float>(bpp_max);
-      lut[lv] = encode_hw_rgb565(UiColor{
-          static_cast<uint8_t>(diff_r * on + static_cast<float>(background.r)),
-          static_cast<uint8_t>(diff_g * on + static_cast<float>(background.g)),
-          static_cast<uint8_t>(diff_b * on + static_cast<float>(background.b)),
-      });
+  if (solid_bg) {
+    const float diff_r = static_cast<float>(color.r) - static_cast<float>(background.r);
+    const float diff_g = static_cast<float>(color.g) - static_cast<float>(background.g);
+    const float diff_b = static_cast<float>(color.b) - static_cast<float>(background.b);
+    for (int lv = 1; lv <= bpp_max; lv++) {
+      if (lv == bpp_max) {
+        lut[lv] = full_hw;
+      } else {
+        const float on = static_cast<float>(lv) / static_cast<float>(bpp_max);
+        lut[lv] = encode_hw_rgb565(UiColor{
+            static_cast<uint8_t>(diff_r * on + static_cast<float>(background.r)),
+            static_cast<uint8_t>(diff_g * on + static_cast<float>(background.g)),
+            static_cast<uint8_t>(diff_b * on + static_cast<float>(background.b)),
+        });
+      }
     }
   }
 
-  if (bpp == 1) {
+  auto blend_live = [&](uint16_t &dst, uint8_t alpha) {
+    if (alpha >= 255U) {
+      dst = full_hw;
+      return;
+    }
+    if (solid_bg) {
+      const int lv = std::clamp((static_cast<int>(alpha) * bpp_max + 127) / 255, 1, bpp_max);
+      dst = lut[lv];
+      return;
+    }
+    const uint16_t bg = decode_hw_rgb565_raw(dst);
+    const int a_q8 = static_cast<int>(alpha) + static_cast<int>(alpha >> 7);
+    const int ia = 256 - a_q8;
+    const int r = (cr5 * a_q8 + ((bg >> 11) & 0x1F) * ia + 128) >> 8;
+    const int g = (cg6 * a_q8 + ((bg >> 5) & 0x3F) * ia + 128) >> 8;
+    const int b = (cb5 * a_q8 + (bg & 0x1F) * ia + 128) >> 8;
+    dst = encode_hw_rgb565_raw(static_cast<uint16_t>(
+        (std::min(31, r) << 11) | (std::min(63, g) << 5) | std::min(31, b)));
+  };
+
+  {
     int span_count = 0;
     const TextSpan *spans = text_cache_get(font, text, span_count);
     if (spans != nullptr) {
-      const uint16_t hw = lut[1];
       for (int i = 0; i < span_count; i++) {
         const int py = y_start + spans[i].y;
         if (py < eff_cy0 || py > eff_cy1) continue;
@@ -2003,14 +2159,29 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
         if (len <= 0) continue;
         if (len > SCREEN_W - px) len = SCREEN_W - px;
         uint16_t *dst = fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(px);
-        for (int k = 0; k < len; k++) dst[k] = hw;
+        const uint8_t sa = spans[i].alpha;
+        if (sa >= 255U) {
+          for (int k = 0; k < len; k++) dst[k] = full_hw;
+        } else {
+          for (int k = 0; k < len; k++) blend_live(dst[k], sa);
+        }
       }
       return;
     }
   }
 
   rasterize_glyph_pixels(fb, font, text, x_start, y_start, eff_cy0, eff_cy1, bpp,
-                         [&](uint16_t &dst, uint8_t pixel) { dst = lut[pixel]; });
+                         [&](uint16_t &dst, uint8_t pixel) {
+                           if (pixel == bpp_max) {
+                             dst = full_hw;
+                           } else if (solid_bg) {
+                             dst = lut[pixel];
+                           } else {
+                             const uint8_t a = static_cast<uint8_t>(
+                                 (static_cast<int>(pixel) * 255 + (bpp_max >> 1)) / bpp_max);
+                             blend_live(dst, a);
+                           }
+                         });
 }
 
 void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
@@ -2028,8 +2199,8 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
     return;
   }
 
-  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
-  it.get_text_bounds(x, y, text, font, align, &x_start, &y_start, &text_w, &text_h);
+  int x_start = 0, y_start = 0, text_h = 0;
+  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
   if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
 
   const int eff_cy0 = std::max(0, cy0), eff_cy1 = std::min(SCREEN_H - 1, cy1);
@@ -2037,13 +2208,14 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
 
   const int bpp_max = (1 << bpp) - 1;
   const int a_clamped = std::min(256, alpha_q8);
+  const uint16_t full_hw = encode_hw_rgb565(color);
   const int cr5 = (static_cast<int>(color.r) * 31 + 127) / 255;
   const int cg6 = (static_cast<int>(color.g) * 63 + 127) / 255;
   const int cb5 = (static_cast<int>(color.b) * 31 + 127) / 255;
 
   auto blend_px = [&](uint16_t &dst, int a) {
     if (a <= 0) return;
-    if (a >= 256) { dst = encode_hw_rgb565(color); return; }
+    if (a >= 256) { dst = full_hw; return; }
     const uint16_t bg = decode_hw_rgb565_raw(dst);
     const int ia = 256 - a;
     const int r = (cr5 * a + ((bg >> 11) & 0x1F) * ia + 128) >> 8;
@@ -2053,7 +2225,7 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
         (std::min(31, r) << 11) | (std::min(63, g) << 5) | std::min(31, b)));
   };
 
-  if (bpp == 1) {
+  {
     int span_count = 0;
     const TextSpan *spans = text_cache_get(font, text, span_count);
     if (spans != nullptr) {
@@ -2066,7 +2238,10 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
         if (len <= 0) continue;
         if (len > SCREEN_W - px) len = SCREEN_W - px;
         uint16_t *dst = fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(px);
-        for (int k = 0; k < len; k++) blend_px(dst[k], a_clamped);
+        const int eff_a = (spans[i].alpha >= 255U)
+                              ? a_clamped
+                              : ((a_clamped * static_cast<int>(spans[i].alpha) + 127) / 255);
+        for (int k = 0; k < len; k++) blend_px(dst[k], eff_a);
       }
       return;
     }
@@ -2093,25 +2268,25 @@ int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int 
     return v_a + ((v_b - v_a) * (yy - y_a)) / (y_b - y_a);
   };
   if (dim_level == kArtDimLyrics) {
-    const int top_y0 = scale_y(52);
-    const int top_y1 = scale_y(104);
-    const int bot_y0 = SCREEN_H - scale_y(104);
-    const int bot_y1 = SCREEN_H - scale_y(52);
+    const int top_y0 = dp_px(52);
+    const int top_y1 = dp_px(104);
+    const int bot_y0 = SCREEN_H - dp_px(104);
+    const int bot_y1 = SCREEN_H - dp_px(52);
     if (y < top_y1) return ramp(y, top_y0, 108, top_y1, 132);
     if (y > bot_y0) return ramp(y, bot_y0, 132, bot_y1, 108);
     return 132;
   }
   if (dim_level >= kArtDimMenu) return 64;
   if (show_controls) return 140;
-  if (show_metadata) return ramp(y, scale_y(104), 140, scale_y(148), 256);
+  if (show_metadata) return ramp(y, dp_px(104), 140, dp_px(148), 256);
   return 256;
 }
 
 void art_letterbox_bounds(bool show_metadata, bool show_controls, int &out_y0, int &out_y1) {
   if (show_metadata || show_controls) {
-    out_y0 = scale_y(132);
-    const int bot_pad = LATTER_ROUND_DISPLAY ? scale_y(66) : scale_y(54);
-    out_y1 = std::max(out_y0 + scale_y(120), SCREEN_H - bot_pad);
+    out_y0 = dp_px(132);
+    const int bot_pad = LATTER_ROUND_DISPLAY ? dp_px(66) : dp_px(54);
+    out_y1 = std::max(out_y0 + dp_px(120), SCREEN_H - bot_pad);
   } else {
     const int half_h = (SCREEN_H * 31) / 100;
     out_y0 = std::max(0, SCREEN_CY - half_h);
@@ -2366,50 +2541,78 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
     const int src_x0_fp = std::max(0, ((src_w << 12) - vis_src_w_fp) / 2);
     const int src_y0_fp = std::max(0, ((src_h << 12) - vis_src_h_fp) / 2);
 
-    uint16_t *const sx_lut = scratch.sx_lut;
-    uint16_t *const scaled_row = scratch.scaled_row;
-    {
-      int curr_x = src_x0_fp;
-      for (int x = 0; x < SCREEN_W; x++) {
-        sx_lut[x] = static_cast<uint16_t>(std::min(src_w - 1, curr_x >> 12));
-        curr_x += step_fp;
+    bool ppa_scaled = false;
+#if LATTER_FB_PPA && !LATTER_ROUND_DISPLAY
+    uint16_t *const fb_tgt = active_frame_buf16();
+    if (fb_tgt != nullptr && !is_letterbox && start_y == 0 && end_y == SCREEN_H &&
+        clip_y0() <= 0 && clip_y1() >= SCREEN_H - 1) {
+      const int crop_w = std::clamp(vis_src_w_fp >> 12, 1, src_w);
+      const int crop_h = std::clamp(vis_src_h_fp >> 12, 1, src_h);
+      const int crop_x0 = std::clamp((src_w - crop_w) / 2, 0, src_w - crop_w);
+      const int crop_y0 = std::clamp((src_h - crop_h) / 2, 0, src_h - crop_h);
+      if (ppa_srm_scale_rgb565(fb_tgt, SCREEN_W, 0, 0, SCREEN_W, SCREEN_H,
+                               src_data, src_w, src_h, crop_x0, crop_y0, crop_w, crop_h)) {
+        ppa_scaled = true;
+        for (int y = 0; y < SCREEN_H; ++y) {
+          const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
+          uint16_t *const dst_row = fb_tgt + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+          if (mul_q8 < 256) {
+            blit_dimmed_rgb565_scanline(it, 0, y, SCREEN_W, dst_row, mul_q8, row_buf,
+                                        scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
+          } else if (mirror_fb != nullptr && mirror_fb != fb_tgt && y >= mirror_y_lo && y <= mirror_y_hi) {
+            std::memcpy(mirror_fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W),
+                        dst_row, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+          }
+        }
       }
     }
-
-    int curr_y = src_y0_fp;
-    int prev_sy = -1;
-    int prev_sx0 = SCREEN_W;
-    int prev_sx1 = -1;
-    for (int y = start_y; y < end_y; y++) {
-      const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
-      curr_y += step_fp;
-      const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
-      int start_x = 0, end_x = 0;
-      art_row_span(y, cx, start_x, end_x);
-      const int span_w = end_x - start_x + 1;
-      if (span_w <= 0) continue;
-      if (sy != prev_sy) {
-        const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
-        for (int x = start_x; x <= end_x; x++) {
-          scaled_row[x] = src_row[sx_lut[x]];
+#endif
+    if (!ppa_scaled) {
+      uint16_t *const sx_lut = scratch.sx_lut;
+      uint16_t *const scaled_row = scratch.scaled_row;
+      {
+        int curr_x = src_x0_fp;
+        for (int x = 0; x < SCREEN_W; x++) {
+          sx_lut[x] = static_cast<uint16_t>(std::min(src_w - 1, curr_x >> 12));
+          curr_x += step_fp;
         }
-        prev_sy = sy;
-        prev_sx0 = start_x;
-        prev_sx1 = end_x;
-      } else if (start_x < prev_sx0 || end_x > prev_sx1) {
-        // On round displays the visible chord widens toward the equator across repeated source rows.
-        const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
-        for (int x = start_x; x < prev_sx0; x++) {
-          scaled_row[x] = src_row[sx_lut[x]];
-        }
-        for (int x = prev_sx1 + 1; x <= end_x; x++) {
-          scaled_row[x] = src_row[sx_lut[x]];
-        }
-        if (start_x < prev_sx0) prev_sx0 = start_x;
-        if (end_x > prev_sx1) prev_sx1 = end_x;
       }
-      blit_dimmed_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, mul_q8, row_buf + start_x,
-                                  scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
+
+      int curr_y = src_y0_fp;
+      int prev_sy = -1;
+      int prev_sx0 = SCREEN_W;
+      int prev_sx1 = -1;
+      for (int y = start_y; y < end_y; y++) {
+        const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
+        curr_y += step_fp;
+        const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
+        int start_x = 0, end_x = 0;
+        art_row_span(y, cx, start_x, end_x);
+        const int span_w = end_x - start_x + 1;
+        if (span_w <= 0) continue;
+        if (sy != prev_sy) {
+          const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
+          for (int x = start_x; x <= end_x; x++) {
+            scaled_row[x] = src_row[sx_lut[x]];
+          }
+          prev_sy = sy;
+          prev_sx0 = start_x;
+          prev_sx1 = end_x;
+        } else if (start_x < prev_sx0 || end_x > prev_sx1) {
+          // On round displays the visible chord widens toward the equator across repeated source rows.
+          const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
+          for (int x = start_x; x < prev_sx0; x++) {
+            scaled_row[x] = src_row[sx_lut[x]];
+          }
+          for (int x = prev_sx1 + 1; x <= end_x; x++) {
+            scaled_row[x] = src_row[sx_lut[x]];
+          }
+          if (start_x < prev_sx0) prev_sx0 = start_x;
+          if (end_x > prev_sx1) prev_sx1 = end_x;
+        }
+        blit_dimmed_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, mul_q8, row_buf + start_x,
+                                    scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
+      }
     }
   }
 
@@ -2496,8 +2699,8 @@ ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool
   const int box = STD_ART_SIZE;
   int art_cy = SCREEN_CY;
   if (show_metadata || apply_scrim) {
-    const int meta_bottom = scale_y(128);
-    const int bot_pad = LATTER_ROUND_DISPLAY ? scale_y(62) : scale_y(38);
+    const int meta_bottom = dp_px(128);
+    const int bot_pad = LATTER_ROUND_DISPLAY ? dp_px(62) : dp_px(38);
     art_cy = (meta_bottom + (SCREEN_H - bot_pad)) / 2;
   }
   int w = box;
@@ -2540,7 +2743,7 @@ void art_canvas_drop_all() noexcept {
 }
 
 namespace {
-constexpr size_t kMaxPsramCacheEvictors = 8U;
+constexpr size_t kMaxPsramCacheEvictors = 16U;
 PsramCacheEvictorFn g_psram_cache_evictors[kMaxPsramCacheEvictors]{};
 size_t g_psram_cache_evictor_count = 0U;
 }  // namespace
@@ -2618,11 +2821,13 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
   bool mirrored_to_fb = false;
 
   if (hit == nullptr) {
+    static const bool s_mdi_evictor_reg = register_psram_cache_evictor(&mdi_raster_cache_drop);
+    (void)s_mdi_evictor_reg;
     const bool full_rect_overwrite = full_bleed && (LATTER_ROUND_DISPLAY == 0);
     const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
     const size_t frame_bytes = px_count * sizeof(uint16_t);
     if (victim->px == nullptr) {
-      if (LATTER_CHIP_P4 == 0 || frame_bytes > 1536U * 1024U) {
+      if (LATTER_PSRAM_MB < 16 || frame_bytes > 1536U * 1024U) {
         evict_registered_psram_caches();
       }
       const PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);

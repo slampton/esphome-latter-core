@@ -251,8 +251,6 @@ struct DeviceRuntimeState {
   void (*hw_update_batt_level)() = nullptr;
   void (*hw_set_imu_power_mode)(ImuPowerMode mode) = nullptr;
   void (*hw_set_backlight_level)(uint8_t pct) = nullptr;
-  void (*hw_recover_touchscreen)(uint32_t now_ms) = nullptr;
-  void (*hw_set_touch_sleep_mode)(bool sleep) = nullptr;
 
   // Generic OS service callbacks bound by battery_service.yaml & motion_service.yaml so chip HALs
   // under modules/hal/ stay 100% free of Universal GUI pages, widgets, and display/audio IDs.

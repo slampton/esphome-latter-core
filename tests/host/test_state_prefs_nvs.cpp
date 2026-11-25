@@ -76,10 +76,24 @@ void test_device_prefs_v2_and_event_timer_sync() {
   const std::string full_manifest = latter_core::build_hardware_manifest_json();
   LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"grid_cols\":") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"grid_rows\":3") != std::string::npos);
+  const int exp_gcols = latter_core::tile_grid_cols_for(
+      LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+      LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
+  const int exp_grows = latter_core::tile_grid_rows_for(
+      LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+      LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
+  LATTER_CHECK(full_manifest.find("\"grid_cols\":" + std::to_string(exp_gcols)) != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"grid_rows\":" + std::to_string(exp_grows)) != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"has_rtc\":") != std::string::npos);
-  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112404") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"ppi\":" + std::to_string(LATTER_PANEL_PPI)) != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"corner_r\":" + std::to_string(LATTER_CORNER_R)) != std::string::npos);
+  const int exp_art_edge = (LATTER_SCREEN_W < LATTER_SCREEN_H) ? LATTER_SCREEN_W : LATTER_SCREEN_H;
+  LATTER_CHECK(full_manifest.find("\"art_edge\":" + std::to_string(exp_art_edge)) != std::string::npos);
+  const char *exp_shape = (LATTER_ROUND_DISPLAY != 0)
+                              ? "\"shape\":\"circle\""
+                              : ((LATTER_SCREEN_W == LATTER_SCREEN_H) ? "\"shape\":\"square\"" : "\"shape\":\"rect\"");
+  LATTER_CHECK(full_manifest.find(exp_shape) != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"core_rev\":2026112501") != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"sdk\":") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"max_payload_bytes\"") == std::string::npos);
   LATTER_CHECK(full_manifest.find("\"beacon\":null") != std::string::npos);

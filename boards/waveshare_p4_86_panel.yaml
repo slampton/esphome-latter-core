@@ -28,13 +28,13 @@ substitutions:
   p4_silicon: "rev1"
   p4_engineering_sample: "true"
   p4_cpu_frequency: "360MHz"
-  font_time_size: "112"
-  font_chrono_size: "56"
-  font_date_size: "38"
-  font_btn_bold_size: "36"
-  font_small_size: "30"
-  font_micro_size: "20"
-  font_games_size: "56"
+  font_time_size: "105"
+  font_chrono_size: "53"
+  font_date_size: "39"
+  font_btn_bold_size: "35"
+  font_small_size: "29"
+  font_micro_size: "19"
+  font_games_size: "53"
   art_resize: "720x720"
   # 4x fewer pixels decoded on track changes (exact 2x upscale in draw_album_art), avoiding audio/touch stalls
   sendspin_art_resize: "360x360"
@@ -69,6 +69,8 @@ latter_core:
     ppi: 254
     round: false
     ips: true
+    corner_r: 0
+    view_scale: 1.45
     dsi_iram_safe: true
   backlight:
     pin: 26
@@ -99,7 +101,6 @@ latter_core:
     rtc_pcf85063: false
     imu_qmi8658: false
     codec_es8311: true
-    touch_ft5x06: false
 
 esp32:
   flash_size: 32MB

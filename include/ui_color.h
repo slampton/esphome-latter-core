@@ -13,6 +13,8 @@
 #include <string>
 #include <type_traits>
 
+#include "latter_traits.h"
+
 namespace latter_ui {
 
 struct UiColor {
@@ -125,15 +127,26 @@ inline constexpr UiColor kChromeTrackBorder{50, 62, 78};
 inline constexpr UiColor kChromeTrackDim{16, 20, 26};
 inline constexpr UiColor kChromeTrackBorderDim{24, 30, 38};
 inline constexpr UiColor kChromeBarTrack{16, 20, 27};
-inline constexpr UiColor kChromeCardBorder{38, 46, 58};
 inline constexpr UiColor kChromePipInactive{95, 112, 134};
 inline constexpr UiColor kChromeBackLabel{158, 158, 158};
-inline constexpr UiColor kChromeGlassTint{22, 27, 36};
 inline constexpr UiColor kChromeGlassSheen{255, 255, 255};
+#if LATTER_PANEL_IPS
+// IPS backlight bleed reduces black-level separation; lift dark card/glass chrome subtly
+// while preserving >= 4.5:1 WCAG AA contrast across all 24 foreground text tokens.
+inline constexpr UiColor kChromeCardBorder{48, 58, 74};
+inline constexpr UiColor kChromeGlassTint{27, 33, 44};
+inline constexpr UiColor kChromeCardBgOn{26, 33, 42};
+inline constexpr UiColor kChromeCardBgOff{19, 24, 31};
+inline constexpr UiColor kChromeCardBrdOn{64, 76, 94};
+inline constexpr UiColor kChromeCardBrdOff{42, 50, 64};
+#else
+inline constexpr UiColor kChromeCardBorder{38, 46, 58};
+inline constexpr UiColor kChromeGlassTint{22, 27, 36};
 inline constexpr UiColor kChromeCardBgOn{24, 30, 38};
 inline constexpr UiColor kChromeCardBgOff{15, 18, 24};
 inline constexpr UiColor kChromeCardBrdOn{52, 62, 78};
 inline constexpr UiColor kChromeCardBrdOff{34, 40, 50};
+#endif
 inline constexpr UiColor kChromeDangerBg{34, 18, 22};
 inline constexpr UiColor kChromeDangerBrd{148, 52, 52};
 inline constexpr UiColor kChromeModalBg{16, 20, 28};

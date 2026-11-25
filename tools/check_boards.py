@@ -202,6 +202,7 @@ _CORE_SECTION_FLAG_MAP: dict[str, dict[str, tuple[str, bool, bool]]] = {
         "dcs_sleep": ("LATTER_PANEL_DCS_SLEEP", True, False),
         "dc_pin": ("LATTER_DISPLAY_DC_PIN", False, True),
         "corner_r": ("LATTER_CORNER_R", False, False),
+        "view_scale": ("LATTER_VIEW_SCALE_PCT", False, False),
         "dsi_iram_safe": ("LATTER_DSI_IRAM_SAFE", True, False),
         "slot_count": ("LATTER_SLOT_COUNT", False, False),
         "card_slot_count": ("LATTER_CARD_SLOT_COUNT", False, False),
@@ -253,7 +254,6 @@ _CORE_SECTION_FLAG_MAP: dict[str, dict[str, tuple[str, bool, bool]]] = {
         "rtc_pcf85063": ("LATTER_DRV_RTC_PCF85063", True, False),
         "imu_qmi8658": ("LATTER_DRV_IMU_QMI8658", True, False),
         "codec_es8311": ("LATTER_DRV_CODEC_ES8311", True, False),
-        "touch_ft5x06": ("LATTER_DRV_TOUCH_FT5X06", True, False),
     },
     "diagnostics": {
         "nvs_guard": ("LATTER_DIAG_NVS_GUARD", True, False),
@@ -316,11 +316,14 @@ def _parse_latter_core_block(code: str) -> tuple[dict[str, str], set[int]]:
                 flags["LATTER_PSRAM_MB"] = val_clean
         elif indent >= 4 and section in _CORE_SECTION_FLAG_MAP and ":" in stripped:
             key, val = stripped.split(":", 1)
-            spec = _CORE_SECTION_FLAG_MAP[section].get(key.strip())
+            k_clean = key.strip()
+            spec = _CORE_SECTION_FLAG_MAP[section].get(k_clean)
             if spec is None:
                 continue
             macro, is_bool, is_pin = spec
             norm = _norm_core_val(val, is_bool)
+            if section == "display" and k_clean == "view_scale":
+                norm = str(round(float(norm) * 100.0))
             flags[macro] = norm
             if is_pin:
                 pin_num = _safe_int(norm)
@@ -434,10 +437,6 @@ def _check_driver_identity_parity(
     """Ensure explicit LATTER_DRV_* macros match the board's real hardware facts."""
     i2c_devs = facts.get("i2c_devices", [])
     parts = [str(d.get("part", "")).lower() for d in i2c_devs]
-    t_spec = facts.get("touch")
-    t_proto = (
-        str(t_spec.get("protocol", "")).lower() if isinstance(t_spec, dict) else ""
-    )
     expected = {
         "LATTER_DRV_PMU_AXP2101": facts.get("power", {}).get("pmu") == "AXP2101",
         "LATTER_DRV_RTC_PCF85063": any(
@@ -447,7 +446,6 @@ def _check_driver_identity_parity(
         ),
         "LATTER_DRV_IMU_QMI8658": any("qmi8658" in p for p in parts),
         "LATTER_DRV_CODEC_ES8311": any("es8311" in p for p in parts),
-        "LATTER_DRV_TOUCH_FT5X06": t_proto in {"ft6336", "ft3168", "ft5x06"},
     }
     for macro, want in expected.items():
         actual = scan["flags"].get(macro, "0")
@@ -750,6 +748,13 @@ def check_board(
                     err(
                         f"touch.rst_gpio={rst_raw} does not match a "
                         "touch_reset net in facts.pins"
+                    )
+                elif uses_latter_touch and not re.search(
+                    rf"(?m)^\s*reset_pin:\s*GPIO{rst_gpio}\b", scan["code"]
+                ):
+                    err(
+                        f"touchscreen block must declare 'reset_pin: GPIO{rst_gpio}' "
+                        "(LatterTouchscreen owns non-blocking touch reset)"
                     )
 
     # 6c. Driver-identity parity (LATTER_DRV_* vs real hardware facts).

@@ -574,7 +574,7 @@ bool compute_night_star_pos(int idx, int cx, int cy, int cel_cx, int cel_cy, boo
   const int sx = cx + static_cast<int>(ca * r_px);
   const int sy = cy + static_cast<int>(sa * r_px);
   if (!is_inside_bezel(sx, sy, cy, 6)) return false;
-  const int excl_r = LATTER_ROUND_DISPLAY ? 30 : scale_min(36);
+  const int excl_r = LATTER_ROUND_DISPLAY ? 30 : std::max(24, (SCREEN_MIN_DIM * 36 + 233) / 466);
   if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
       (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
     return false;
@@ -619,8 +619,8 @@ void render_solar_orb_disc(Rgb565Surface &it, int cel_cx, int cel_cy, bool is_fo
   const UiColor c_body = is_fog_mist ? UiColor(174, 160, 102) : UiColor(250, 204, 24);
   const UiColor c_core = is_fog_mist ? UiColor(198, 186, 128) : UiColor(255, 228, 72);
 
-  const int s_r_out = LATTER_ROUND_DISPLAY ? 27 : scale_min(32);
-  const int s_r_in  = LATTER_ROUND_DISPLAY ? 23 : scale_min(29);
+  const int s_r_out = LATTER_ROUND_DISPLAY ? 27 : std::max(22, (SCREEN_MIN_DIM * 32 + 233) / 466);
+  const int s_r_in  = LATTER_ROUND_DISPLAY ? 23 : std::max(19, (SCREEN_MIN_DIM * 29 + 233) / 466);
   const int r2_out  = s_r_out * s_r_out;
   const int r2_in   = s_r_in * s_r_in;
   const float r2_span = static_cast<float>(std::max(1, r2_out - r2_in));
@@ -712,7 +712,7 @@ void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy) {
   const float h_scale = static_cast<float>(SCREEN_H) * (1.0f / 466.0f);
   const float x0 = ((dir_x > 0) ? (75.0f + rx * 210.0f) : (180.0f + rx * 215.0f)) * w_scale;
   const float y0 = (42.0f + ry * 128.0f) * h_scale;
-  const float total_dist = scale_min_f(145.0f + rlen * 75.0f);
+  const float total_dist = (145.0f + rlen * 75.0f) * (static_cast<float>(SCREEN_MIN_DIM) / 466.0f);
 
   const float d_head = total_dist * u_head;
   const float d_tail = total_dist * u_tail;
@@ -762,11 +762,15 @@ bool is_night_meteor_active(uint32_t now_ms) {
 void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, UiColor col_warm_gold) {
   const auto &ws = weather_state();
   const auto &prefs = persisted_prefs();
+  const auto ly = layout();
   const int cx = ctx.cx;
-  const int sun_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 34 : scale_y(44));
-  const int arc_rx = LATTER_ROUND_DISPLAY
-      ? 122
-      : ((SCREEN_W < 380) ? 116 : ((SCREEN_H > 520) ? scale_s(138) : ((SCREEN_H >= 500) ? 138 : 134)));
+  const int sun_top_y = ly.hdr_y + dp_px(36);
+  const int bot_y = ly.mode_bar_zone_top() - dp_px(10);
+  const int below_need = dp_px(88) + (kAutoFonts.date / 2);
+  const int max_ry = std::max(52, bot_y - below_need - sun_top_y);
+  const int safe_w = ly.safe_span(sun_top_y + max_ry, dp_px(24));
+  const int max_rx = std::max(52, (safe_w / 2) - dp_px(18));
+  const int arc_rx = std::min({dp_px(136), max_rx, max_ry});
   const int arc_ry = arc_rx;
   const int arc_cy = sun_top_y + arc_ry;
   const bool has_bd_shadow = backdrop_active();
@@ -774,12 +778,13 @@ void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, Ui
   for (int hx = cx - arc_rx; hx <= cx + arc_rx - 4; hx += 8) {
     fast_line(it, hx, arc_cy, hx + 4, arc_cy, ctx.col_gray);
   }
+  const int ew_off = dp_px(14);
   if (has_bd_shadow) {
-    fast_print(it, cx - arc_rx - 13, arc_cy + 1, ctx.font_micro, kChromeShadow, UiTextAlign::CENTER, "E");
-    fast_print(it, cx + arc_rx + 15, arc_cy + 1, ctx.font_micro, kChromeShadow, UiTextAlign::CENTER, "W");
+    fast_print(it, cx - arc_rx - ew_off + 1, arc_cy + 1, ctx.font_micro, kChromeShadow, UiTextAlign::CENTER, "E");
+    fast_print(it, cx + arc_rx + ew_off + 1, arc_cy + 1, ctx.font_micro, kChromeShadow, UiTextAlign::CENTER, "W");
   }
-  fast_print(it, cx - arc_rx - 14, arc_cy, ctx.font_micro, ctx.col_slate, UiTextAlign::CENTER, "E");
-  fast_print(it, cx + arc_rx + 14, arc_cy, ctx.font_micro, ctx.col_slate, UiTextAlign::CENTER, "W");
+  fast_print(it, cx - arc_rx - ew_off, arc_cy, ctx.font_micro, ctx.col_slate, UiTextAlign::CENTER, "E");
+  fast_print(it, cx + arc_rx + ew_off, arc_cy, ctx.font_micro, ctx.col_slate, UiTextAlign::CENTER, "W");
 
   for (int a = 0; a <= 180; a += 2) {
     const float rad = static_cast<float>(a) * (PI_F / 180.0f);
@@ -791,7 +796,7 @@ void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, Ui
 
   if (!std::isnan(ws.sun_elevation)) {
     const char *sol_st = (ws.sun_elevation > 0.0f) ? "Above Horizon" : "Below Horizon";
-    ui::shadow_print(it, cx, arc_cy + scale_y(18), ctx.font_small,
+    ui::shadow_print(it, cx, arc_cy + dp_px(18), ctx.font_small,
                      ws.sun_elevation > 0.0f ? col_warm_gold : ctx.col_slate, UiTextAlign::CENTER, sol_st);
   }
 
@@ -819,8 +824,8 @@ void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, Ui
   format_iso_time_to(ws.sun_next_setting, prefs.is_24h_format, s_set, sizeof(s_set));
 
   const int col_dx = (arc_rx * 60) / 100;
-  const int lbl_y  = LATTER_ROUND_DISPLAY ? (arc_cy + 62) : (arc_cy + scale_y(78));
-  const int val_y  = lbl_y + scale_y(30);
+  const int lbl_y  = std::min(bot_y - std::max(dp_px(32), kAutoFonts.date + dp_px(10)), arc_cy + dp_px(60));
+  const int val_y  = std::min(bot_y - dp_px(8), lbl_y + std::max(dp_px(26), kAutoFonts.date + dp_px(4)));
 
   if (has_bd_shadow) {
     fast_print(it, cx - col_dx + 1, lbl_y + 1, ctx.font_small, kChromeShadow, UiTextAlign::CENTER, "SUNRISE");
@@ -836,6 +841,7 @@ void render_weather_sun_subpage(Rgb565Surface &it, const UiFrameContext &ctx, Ui
 
 void render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ws = weather_state();
+  const auto ly = layout();
   const int cx = ctx.cx;
   double cycle = 0.5;
   int illum_pct = 0;
@@ -848,16 +854,16 @@ void render_weather_moon_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
     return;
   }
 
-  const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400);
-  const int moon_top_y = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 30 : scale_y(36));
-  const int illum_y    = layout().app_dock_y - (LATTER_ROUND_DISPLAY ? 64 : scale_y(64));
-  const int phase_y    = illum_y - (large_moon_txt ? scale_y(32) : 28);
-  const int text_gap   = LATTER_ROUND_DISPLAY ? 28 : (large_moon_txt ? scale_y(34) : 22);
-  const int disc_span  = (phase_y - text_gap) - moon_top_y;
-  const int moon_r     = LATTER_ROUND_DISPLAY
-      ? 86
-      : std::min(scale_s(120), std::min((SCREEN_W / 2) - scale_x(42), disc_span / 2));
-  const int moon_cy    = moon_top_y + moon_r;
+  const bool large_moon_txt = (!LATTER_ROUND_DISPLAY && ly.frame.w_dp >= 360);
+  const int moon_top_y = ly.hdr_y + dp_px(30);
+  const int illum_y    = ly.mode_bar_zone_top() - dp_px(22);
+  const int phase_y    = illum_y - std::max(dp_px(26), kAutoFonts.date + dp_px(4));
+  const int text_gap   = std::max(dp_px(18), (kAutoFonts.date / 2) + dp_px(12));
+  const int disc_span  = std::max(64, (phase_y - text_gap) - moon_top_y);
+  const int moon_cy    = moon_top_y + disc_span / 2;
+  const int moon_r     = std::clamp(
+      std::min({dp_px(110), ly.safe_span(moon_cy, dp_px(24)) / 2, disc_span / 2}),
+      34, dp_px(110));
 
   render_lunar_disc(it, cx, moon_cy, moon_r, cycle);
 
@@ -999,14 +1005,15 @@ namespace {
 
 static constexpr int kCloudShapeEntries = 24;
 static constexpr int kCloudScratchRuns = 3072;
-static constexpr int kCloudMaxCols = 168;
-static constexpr int kCloudColStep = (SCREEN_W > 520) ? 3 : 2;
-static constexpr int kVeilStep = (SCREEN_W > 520) ? 4 : 3;
-static constexpr int kMaxVeilCols = 180;
+static constexpr int kCloudColStep = (SCREEN_W >= 640) ? 3 : 2;
+static constexpr int kCloudMaxCols = ((SCREEN_W + kCloudColStep - 1) / kCloudColStep) + 64;
+static constexpr int kVeilStep = (SCREEN_W >= 640) ? 4 : 3;
+static constexpr int kMaxVeilCols = ((SCREEN_W + kVeilStep - 1) / kVeilStep) + 64;
 
 struct CloudRun {
   int16_t y;
-  uint8_t k0, ncols, band;
+  uint16_t k0, ncols;
+  uint8_t band;
 };
 
 struct CloudShape {
@@ -1018,7 +1025,7 @@ struct CloudShape {
 };
 
 struct CloudBuildCol {
-  uint8_t k;
+  uint16_t k;
   int16_t y_top, y_c1, y_c2, y_c3, y_mid_b, y_bot;
   uint8_t top_band;
 };
@@ -1101,7 +1108,7 @@ int cloud_build_runs(int half_w, float scale, int seed, CloudRun *out, int cap, 
     const int y_top = -h_top, y_bot = h_bot, span = y_bot - y_top;
     if (span <= 2) continue;
     const int y_c3 = y_top + (span * 76) / 100;
-    cols[n_cols++] = {static_cast<uint8_t>(k), static_cast<int16_t>(y_top),
+    cols[n_cols++] = {static_cast<uint16_t>(k), static_cast<int16_t>(y_top),
                       static_cast<int16_t>(y_top + std::max(2, span / 6)),
                       static_cast<int16_t>(y_top + (span * 46) / 100), static_cast<int16_t>(y_c3),
                       static_cast<int16_t>((y_c3 + y_bot) >> 1), static_cast<int16_t>(y_bot),
@@ -1131,7 +1138,7 @@ int cloud_build_runs(int half_w, float scale, int seed, CloudRun *out, int cap, 
       i++;
       while (i < n_cols && cols[i].k == k_end && band_at(cols[i], y) == band) { k_end++; i++; }
       if (n >= cap) return -1;
-      out[n++] = {static_cast<int16_t>(y), static_cast<uint8_t>(k0), static_cast<uint8_t>(k_end - k0), band};
+      out[n++] = {static_cast<int16_t>(y), static_cast<uint16_t>(k0), static_cast<uint16_t>(k_end - k0), band};
     }
   }
   return n;
@@ -1181,9 +1188,9 @@ int ceil_div_int(int a, int b) { return -floor_div_int(-a, b); }
 
 void render_cumulus_cloud(Rgb565Surface &it, int bx, int by, float scale,
                           bool overcast_mode, bool is_night, int cloud_seed = -1) {
-  if (SCREEN_W > 520) {
+  if (SCREEN_W >= 600) {
     scale *= (static_cast<float>(SCREEN_W) / 466.0f);
-    by = scale_y(by);
+    by = (by * SCREEN_H + 233) / 466;
   }
   const int half_w = static_cast<int>(84.0f * scale);
   if (bx + half_w < 5 || bx - half_w >= SCREEN_W - 5 || by + 45 < 5 || by - 65 >= SCREEN_H - 5) return;
@@ -1298,7 +1305,7 @@ void render_wispy_cloud_veil(Rgb565Surface &it, int center_x, int base_y, int ha
                              float phase, int seed_id,
                              UiColor c_crest, UiColor c_body, UiColor c_base, int cy) {
   if (half_w <= 10) return;
-  if (SCREEN_W > 520) base_y = scale_y(base_y);
+  if (SCREEN_W >= 600) base_y = (base_y * SCREEN_H + 233) / 466;
   const float inv_hw = 1.0f / static_cast<float>(half_w);
 
   auto &cc = weather_cloud_cache();
@@ -1573,7 +1580,7 @@ void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view co
 
   if (is_clear_or_partly_night) render_night_starfield_dome(it, cx, cy, cel_cx, cel_cy, show_celestial);
   if (show_celestial && cel_cx > 0 && cel_cy > 0 && weather_condition_shows_celestial(cond, is_night)) {
-    if (is_night) render_lunar_disc(it, cel_cx, cel_cy, LATTER_ROUND_DISPLAY ? 24 : scale_min(30), moon_cycle);
+    if (is_night) render_lunar_disc(it, cel_cx, cel_cy, LATTER_ROUND_DISPLAY ? 24 : std::max(20, (SCREEN_MIN_DIM * 30 + 233) / 466), moon_cycle);
     else render_solar_orb_disc(it, cel_cx, cel_cy, is_fog_mist);
   }
 
@@ -1932,12 +1939,15 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
     const UiColor haze_c = is_night ? UiColor(110, 140, 178) : UiColor(188, 216, 246);
     const int base_q8 = static_cast<int>((is_fog_mist ? 26.0f : 14.0f) * precip_alpha);
     if (base_q8 > 1 && fb != nullptr) {
+      const float wx_s = static_cast<float>(SCREEN_W) / 466.0f;
+      const float wy_s = static_cast<float>(SCREEN_H) / 466.0f;
       for (int b = 0; b < drift_bands; b++) {
         const float dir = (b & 1) ? -1.0f : 1.0f;
         const int center_x = cx + static_cast<int>(
-            fast_sin(eng.phase_s * 0.45f * dir + static_cast<float>(b) * 1.9f) * static_cast<float>(scale_x(64)) + par_x * 0.35f);
-        const int center_y = scale_y(118 + b * 68) + static_cast<int>(par_y * 0.25f);
-        const int hw = scale_x(110), hh = scale_y(8);
+            fast_sin(eng.phase_s * 0.45f * dir + static_cast<float>(b) * 1.9f) * (64.0f * wx_s) + par_x * 0.35f);
+        const int center_y = static_cast<int>(static_cast<float>(118 + b * 68) * wy_s) + static_cast<int>(par_y * 0.25f);
+        const int hw = std::max(40, static_cast<int>(110.0f * wx_s));
+        const int hh = std::max(5, static_cast<int>(8.0f * wy_s));
         const int y_lo = std::max(clip_y0(), center_y - hh), y_hi = std::min(clip_y1(), center_y + hh);
         for (int py = y_lo; py <= y_hi; py += 2) {
           const float vy_u = static_cast<float>(py - center_y) / static_cast<float>(std::max(1, hh));
@@ -2082,9 +2092,9 @@ void draw_tumbling_leaf_3d(Rgb565Surface &it, Vec3 center_3d, float rx, float ry
 }
 
 void render_forecast_glyph(Rgb565Surface &it, int gx, int gy, const std::string &c_name) {
-  auto S = [](int v) -> int { return scale_s(v); };
-  auto SR = [](int v) -> int { return std::max(1, scale_s(v)); };
-  const int thick = (SCREEN_MIN_DIM > 520) ? 2 : 1;
+  auto S = [](int v) -> int { return dp_px(v); };
+  auto SR = [](int v) -> int { return std::max(1, dp_px(v)); };
+  const int thick = (kUiScaleMilli >= 1200) ? 2 : 1;
 
   if (c_name == "sunny" || c_name == "clear-day" || c_name == "clear" || c_name == "clearday") {
     fast_filled_circle_aa(it, gx, gy, SR(7), UiColor(250, 185, 30));
@@ -2355,21 +2365,25 @@ void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
   const uint32_t el_ms = now_ms - lt.flash_start_ms;
   if (el_ms < 430U) {
     const float w_scale = static_cast<float>(SCREEN_W) / 466.0f;
+    const float h_scale = static_cast<float>(SCREEN_H) / 466.0f;
+    const float m_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
+    auto sy = [h_scale](int v) -> int { return static_cast<int>(static_cast<float>(v) * h_scale); };
+    auto sx = [w_scale](int v) -> int { return static_cast<int>(static_cast<float>(v) * w_scale); };
     const int b_seed = static_cast<int>(lt.flash_seq * 43U + 19U);
-    const int x0 = static_cast<int>((132.0f + hash2d_01(b_seed, 11) * 202.0f) * w_scale), y0 = scale_y(54);
-    const int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 52.0f * w_scale), y1 = scale_y(104);
-    const int x2 = x1 + static_cast<int>((hash2d_01(b_seed, 37) - 0.5f) * 56.0f * w_scale), y2 = scale_y(158);
-    const int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 60.0f * w_scale), y3 = scale_y(214);
-    const int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 54.0f * w_scale), y4 = scale_y(270);
-    const int x5 = x4 + static_cast<int>((hash2d_01(b_seed, 89) - 0.5f) * 46.0f * w_scale), y5 = scale_y(324);
+    const int x0 = static_cast<int>((132.0f + hash2d_01(b_seed, 11) * 202.0f) * w_scale), y0 = sy(54);
+    const int x1 = x0 + static_cast<int>((hash2d_01(b_seed, 23) - 0.5f) * 52.0f * w_scale), y1 = sy(104);
+    const int x2 = x1 + static_cast<int>((hash2d_01(b_seed, 37) - 0.5f) * 56.0f * w_scale), y2 = sy(158);
+    const int x3 = x2 + static_cast<int>((hash2d_01(b_seed, 53) - 0.5f) * 60.0f * w_scale), y3 = sy(214);
+    const int x4 = x3 + static_cast<int>((hash2d_01(b_seed, 71) - 0.5f) * 54.0f * w_scale), y4 = sy(270);
+    const int x5 = x4 + static_cast<int>((hash2d_01(b_seed, 89) - 0.5f) * 46.0f * w_scale), y5 = sy(324);
 
     const int core_q8 = std::clamp(static_cast<int>(env * 256.0f), 0, 256);
     const int mid_q8  = (core_q8 * 3) / 4;
     const int fork_q8 = std::clamp(static_cast<int>(env * 210.0f), 0, 256);
     const int trunk_hw = (SCREEN_W >= 600) ? 2 : 1;
-    const int glow_hi  = std::max(3, scale_min(4));
-    const int glow_mid = std::max(2, scale_min(3));
-    const int glow_tip = std::max(2, scale_min(2));
+    const int glow_hi  = std::max(3, static_cast<int>(4.0f * m_scale));
+    const int glow_mid = std::max(2, static_cast<int>(3.0f * m_scale));
+    const int glow_tip = std::max(2, static_cast<int>(2.0f * m_scale));
     const UiColor c_core(255, 255, 255), c_fork(150, 212, 255);
 
     draw_lightning_seg_q8(it, fb, x0, y0, x1, y1, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi, cy);
@@ -2379,14 +2393,14 @@ void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
     draw_lightning_seg_q8(it, fb, x4, y4, x5, y5, c_core, c_fork, mid_q8,  0,       0, glow_tip, cy);
 
     const int f1_dir = (x2 >= x1) ? 1 : -1;
-    const int fx1 = x1 + f1_dir * scale_x(30), fy1 = y1 + scale_y(30);
-    const int fx2 = fx1 + f1_dir * scale_x(22), fy2 = fy1 + scale_y(32);
+    const int fx1 = x1 + f1_dir * sx(30), fy1 = y1 + sy(30);
+    const int fx2 = fx1 + f1_dir * sx(22), fy2 = fy1 + sy(32);
     draw_lightning_seg_q8(it, fb, x1, y1, fx1, fy1, c_core, c_fork, fork_q8, (fork_q8 * 3) / 5, 0, glow_tip, cy);
     draw_lightning_seg_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, (fork_q8 * 3) / 5, 0,     0, glow_tip, cy);
 
     const int f2_dir = -f1_dir;
-    const int gx1 = x3 + f2_dir * scale_x(26), gy1 = y3 + scale_y(28);
-    const int gx2 = gx1 + f2_dir * scale_x(18), gy2 = gy1 + scale_y(26);
+    const int gx1 = x3 + f2_dir * sx(26), gy1 = y3 + sy(28);
+    const int gx2 = gx1 + f2_dir * sx(18), gy2 = gy1 + sy(26);
     const int f2_q8 = (fork_q8 * 4) / 5;
     draw_lightning_seg_q8(it, fb, x3, y3, gx1, gy1, c_core, c_fork, f2_q8, f2_q8 / 2, 0, glow_tip, cy);
     draw_lightning_seg_q8(it, fb, gx1, gy1, gx2, gy2, c_fork, c_fork, f2_q8 / 2, 0,   0, glow_tip, cy);
@@ -2400,15 +2414,16 @@ void render_wind_gusts_and_leaves(Rgb565Surface &it, uint16_t *fb, int cy, bool 
   const UiColor gust_c = is_night ? UiColor(92, 128, 168) : UiColor(150, 194, 236);
   const float gust_wrap = static_cast<float>(SCREEN_W + 94);
   const float gust_spd = 190.0f * (static_cast<float>(SCREEN_W) / 466.0f);
+  const int gust_seg = std::max(12, (SCREEN_MIN_DIM * 18 + 233) / 466);
   const int gust_a = static_cast<int>(88.0f * precip_alpha);
   for (int g = 0; g < 3; g++) {
     eng.gust_x[g] += gust_spd * dt_s;
     if (eng.gust_x[g] > gust_wrap - 50.0f) eng.gust_x[g] -= gust_wrap;
     const int gx_head = static_cast<int>(eng.gust_x[g]);
-    const int gy_base = scale_y(kGustY[g]);
+    const int gy_base = (kGustY[g] * SCREEN_H + 233) / 466;
     int prev_x = 0, prev_y = 0;
     for (int s = 0; s <= 6; s++) {
-      const int sx = gx_head - s * scale_min(18);
+      const int sx = gx_head - s * gust_seg;
       const int sy = gy_base + static_cast<int>(fast_sin(static_cast<float>(sx) * 0.025f + static_cast<float>(g) * 1.7f) * 7.0f);
       if (s > 0) {
         const int seg_a = (s >= 2 && s <= 4) ? gust_a : (gust_a / 2);
@@ -2591,38 +2606,45 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   if (sky_weather_subpage == 0) {
     // SUBPAGE 0: CURRENT CONDITIONS
+    const auto ly = layout();
     const std::string cond = (!sim_override_on && !sun_ready) ? std::string{} : sky_cond;
 
     render_page_header(it, cx, "CURRENT", font_small, col_white);
+
+    const int content_top = ly.hdr_y + dp_px(24);
+    const int content_bot = ly.mode_bar_zone_top() - dp_px(14);
+    const int avail_h = std::max(140, content_bot - content_top);
+    const int temp_y = content_top + (avail_h * 22) / 100;
+    const int cond_y = content_top + (avail_h * 46) / 100;
+    const int hilo_y = content_top + (avail_h * 68) / 100;
+    const int tele_y = content_top + (avail_h * 88) / 100;
 
     char temp_num[16];
     if (!std::isnan(ws.temperature)) std::snprintf(temp_num, sizeof(temp_num), "%.0f", ws.temperature);
     else std::snprintf(temp_num, sizeof(temp_num), "%s", kUnknownGlyph);
     int w_num = 0, x_off = 0, base = 0, th = 0;
     font_time->measure(temp_num, &w_num, &x_off, &base, &th);
-    const int num_cx = cx - scale_x(5);
-    const int deg_cx = num_cx + (w_num / 2) + scale_x(18);
-    const int deg_cy = scale_y(100);
+    const int num_cx = cx - dp_px(5);
+    const int deg_cx = num_cx + (w_num / 2) + dp_px(16);
+    const int deg_cy = temp_y - (kAutoFonts.time * 26) / 100;
 
     if (backdrop_active()) {
-      fast_print(it, num_cx + 2, scale_y(120) + 2, font_time, kChromeShadow, UiTextAlign::CENTER, temp_num);
+      fast_print(it, num_cx + 2, temp_y + 2, font_time, kChromeShadow, UiTextAlign::CENTER, temp_num);
     }
-    fast_print(it, num_cx, scale_y(120), font_time, col_white, UiTextAlign::CENTER, temp_num);
+    fast_print(it, num_cx, temp_y, font_time, col_white, UiTextAlign::CENTER, temp_num);
 
-    const float deg_r = std::max(5.0f, static_cast<float>(scale_s(7)));
-    const float deg_th = std::max(2.0f, static_cast<float>(scale_s(2)) + 0.35f);
+    const float deg_r = std::max(5.0f, dp_f(7.0f));
+    const float deg_th = std::max(2.0f, dp_f(2.0f) + 0.35f);
     if (backdrop_active()) fast_circle_aa(it, deg_cx + 1, deg_cy + 1, deg_r, kChromeShadow, deg_th);
     fast_circle_aa(it, deg_cx, deg_cy, deg_r, kChromeDegSilver, deg_th);
 
-    const int cond_max_w = std::min({kMaxContentColW, safe_span(scale_y(182), 16), scale_x(340)});
+    const int cond_max_w = std::min({ly.max_content_w(), ly.safe_span(cond_y, dp_px(16)), dp_px(340)});
     const bool weather_syncing = (!sim_override_on && ws.rev == 0U && ws.epoch == 0U && cond.empty());
     const std::string raw_cond_title = weather_syncing ? std::string("Syncing...") : format_weather_title(cond);
     const std::string cond_title = fit_text_to_width_font(raw_cond_title, cond_max_w, font_date);
-    ui::shadow_print(it, cx, scale_y(182), font_date, theme_secondary, UiTextAlign::CENTER, cond_title.c_str());
+    ui::shadow_print(it, cx, cond_y, font_date, theme_secondary, UiTextAlign::CENTER, cond_title.c_str());
 
-    const bool large_cur = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 400 && SCREEN_H >= 480);
-    const int hilo_y = (SCREEN_H > 520) ? scale_y(248) : ((SCREEN_H >= 500) ? 256 : (large_cur ? 248 : 236));
-    const int tele_y = (SCREEN_H > 520) ? scale_y(316) : ((SCREEN_H >= 500) ? 326 : (large_cur ? 314 : 284));
+    const bool large_cur = (!LATTER_ROUND_DISPLAY && ly.frame.w_dp >= 360 && ly.frame.h_dp >= 400);
     const UiColor icon_c = kChromeTeleIce;
     const bool has_bd_shadow = backdrop_active();
 
@@ -2637,14 +2659,14 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       const UiFontView hilo_font = (large_cur && font_chrono_time != nullptr) ? font_chrono_time : font_date;
       hilo_font->measure(hi_str, &w_hi, &x_off, &base, &th);
       hilo_font->measure(lo_str, &w_lo, &x_off, &base, &th);
-      const int arr_slot = scale_x(14), arr_pad = scale_x(10), pair_gap = scale_x(32);
+      const int arr_slot = dp_px(14), arr_pad = dp_px(10), pair_gap = dp_px(28);
       const int total_hilo_w = arr_slot + arr_pad + w_hi + pair_gap + arr_slot + arr_pad + w_lo;
       const int hilo_left = cx - (total_hilo_w / 2);
       const int up_arr_x = hilo_left + arr_slot / 2;
       const int hi_txt_x = hilo_left + arr_slot + arr_pad;
       const int dn_arr_x = hi_txt_x + w_hi + pair_gap + arr_slot / 2;
       const int lo_txt_x = dn_arr_x + (arr_slot - arr_slot / 2) + arr_pad;
-      const int arr_r = std::max(7, scale_s(10));
+      const int arr_r = std::max(7, dp_px(10));
 
       ui::draw_icon_arrow_v(it, up_arr_x, hilo_y, arr_r, true, icon_c, has_bd_shadow);
       ui::shadow_print(it, hi_txt_x, hilo_y, hilo_font, col_white, UiTextAlign::CENTER_LEFT, hi_str);
@@ -2652,17 +2674,9 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       ui::shadow_print(it, lo_txt_x, hilo_y, hilo_font, col_slate, UiTextAlign::CENTER_LEFT, lo_str);
     }
 
-    const int drop_r = scale_s(10);
-    const int drop_x = cx - ((SCREEN_W < 380) ? 96 : (large_cur ? scale_x(120) : 105));
-    ui::draw_icon_droplet(it, drop_x, tele_y, drop_r, icon_c, has_bd_shadow);
     char hum_str[20];
     if (!std::isnan(ws.humidity)) std::snprintf(hum_str, sizeof(hum_str), "%.0f%%", ws.humidity);
     else std::snprintf(hum_str, sizeof(hum_str), "%s%%", kUnknownGlyph);
-    const UiFontView tele_font = large_cur ? font_date : font_small;
-    ui::shadow_print(it, drop_x + drop_r + scale_x(8), tele_y, tele_font, col_white, UiTextAlign::CENTER_LEFT, hum_str);
-
-    const int w_icon_x = cx - scale_x(5);
-    ui::draw_icon_wind(it, w_icon_x, tele_y, std::max(9, scale_s(12)), icon_c, has_bd_shadow);
     char wind_str[28];
     const char *w_dir = wind_bearing_to_cardinal(ws.wind_bearing);
     if (!std::isnan(ws.wind_speed)) {
@@ -2671,7 +2685,23 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       std::snprintf(wind_str, sizeof(wind_str), "%s mph", kUnknownGlyph);
     }
-    ui::shadow_print(it, w_icon_x + scale_x(20), tele_y, tele_font, col_white, UiTextAlign::CENTER_LEFT, wind_str);
+    const UiFontView tele_font = large_cur ? font_date : font_small;
+    int w_hum = 0, w_wind = 0;
+    tele_font->measure(hum_str, &w_hum, &x_off, &base, &th);
+    tele_font->measure(wind_str, &w_wind, &x_off, &base, &th);
+    const int drop_r = std::max(7, dp_px(10));
+    const int wind_r = std::max(9, dp_px(12));
+    const int ic_gap = dp_px(8);
+    const int mid_gap = dp_px(22);
+    const int tele_w = (2 * drop_r + ic_gap + w_hum) + mid_gap + (2 * wind_r + ic_gap + w_wind);
+    const int tele_left = cx - tele_w / 2;
+    const int drop_x = tele_left + drop_r;
+    const int hum_x = drop_x + drop_r + ic_gap;
+    const int w_icon_x = hum_x + w_hum + mid_gap + wind_r;
+    ui::draw_icon_droplet(it, drop_x, tele_y, drop_r, icon_c, has_bd_shadow);
+    ui::shadow_print(it, hum_x, tele_y, tele_font, col_white, UiTextAlign::CENTER_LEFT, hum_str);
+    ui::draw_icon_wind(it, w_icon_x, tele_y, wind_r, icon_c, has_bd_shadow);
+    ui::shadow_print(it, w_icon_x + wind_r + ic_gap, tele_y, tele_font, col_white, UiTextAlign::CENTER_LEFT, wind_str);
 
   } else if (sky_weather_subpage == 1) {
     // SUBPAGE 1: 5-DAY FORECAST
@@ -2702,34 +2732,27 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       apply_weather_sim_override(weather_sim_opt, fc_days[0].cond, dummy_night);
     }
 
-    const bool large_fc = (!LATTER_ROUND_DISPLAY && SCREEN_W >= 460);
-    const int fc_top_y  = layout().hdr_y + (LATTER_ROUND_DISPLAY ? 48 : scale_y(54));
-    const int fc_step_y = LATTER_ROUND_DISPLAY ? 47 : ((SCREEN_W < 380) ? 46 : ((SCREEN_H > 520) ? scale_y(54) : ((SCREEN_H >= 500) ? 55 : 52)));
-    const int row_hw    = (SCREEN_W < 380) ? 132 : std::min(kMaxContentColW / 2, large_fc ? scale_x(190) : 154);
-    const int x_day     = cx - row_hw + ((SCREEN_W < 380) ? 28 : (large_fc ? scale_x(36) : 34));
-    const int x_glyph   = cx - row_hw + ((SCREEN_W < 380) ? 76 : (large_fc ? scale_x(94) : 92));
-    const int x_cond    = x_glyph + ((SCREEN_W < 380) ? 18 : (large_fc ? scale_x(24) : 22));
-    const int x_slash   = cx + row_hw - ((SCREEN_W < 380) ? 30 : (large_fc ? scale_x(42) : 34));
-    const int slash_gap = large_fc ? scale_x(10) : scale_x(8);
-    const int cond_pad  = large_fc ? scale_x(56) : scale_x(44);
-    const UiFontView row_font = large_fc ? font_date : font_small;
-    const UiFontView sep_font = large_fc ? font_small : font_micro;
+    const WeatherForecastGeom fg = compute_weather_forecast_geom(
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_PANEL_PPI,
+        LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
+    const UiFontView row_font = fg.large_font ? font_date : font_small;
+    const UiFontView sep_font = fg.large_font ? font_small : font_micro;
 
     for (int i = 0; i < fc_count && i < 5; i++) {
-      const int ry = fc_top_y + i * fc_step_y;
+      const int ry = fg.fc_top_y + i * fg.fc_step_y;
       const int ry_data = ry + 1;
       const auto &d = fc_days[i];
-      if (!d.cond.empty()) render_forecast_glyph(it, x_glyph, ry_data, d.cond);
+      if (!d.cond.empty()) render_forecast_glyph(it, fg.x_glyph, ry_data, d.cond);
 
       const std::string hi_str = (d.high == kUnknownGlyph) ? d.high : d.high + "°";
       const std::string lo_str = (d.low == kUnknownGlyph) ? d.low : d.low + "°";
       const std::string c_txt = fit_text_to_width_font(
-          format_forecast_short_name(d.cond), std::max(36, (x_slash - cond_pad) - x_cond), row_font);
-      ui::shadow_print(it, x_day, ry, row_font, (i == 0) ? theme_primary : col_white, UiTextAlign::CENTER, d.day.c_str());
-      ui::shadow_print(it, x_cond, ry_data, row_font, col_slate, UiTextAlign::CENTER_LEFT, c_txt.c_str());
-      ui::shadow_print(it, x_slash - slash_gap, ry_data, row_font, col_white, UiTextAlign::CENTER_RIGHT, hi_str.c_str());
-      ui::shadow_print(it, x_slash, ry_data, sep_font, col_slate, UiTextAlign::CENTER, "/");
-      ui::shadow_print(it, x_slash + slash_gap, ry_data, row_font, col_slate, UiTextAlign::CENTER_LEFT, lo_str.c_str());
+          format_forecast_short_name(d.cond), fg.cond_max_w, row_font);
+      ui::shadow_print(it, fg.x_day, ry, row_font, (i == 0) ? theme_primary : col_white, UiTextAlign::CENTER, d.day.c_str());
+      ui::shadow_print(it, fg.x_cond, ry_data, row_font, col_slate, UiTextAlign::CENTER_LEFT, c_txt.c_str());
+      ui::shadow_print(it, fg.x_slash - fg.slash_gap, ry_data, row_font, col_white, UiTextAlign::CENTER_RIGHT, hi_str.c_str());
+      ui::shadow_print(it, fg.x_slash, ry_data, sep_font, col_slate, UiTextAlign::CENTER, "/");
+      ui::shadow_print(it, fg.x_slash + fg.slash_gap, ry_data, row_font, col_slate, UiTextAlign::CENTER_LEFT, lo_str.c_str());
     }
 
   } else if (sky_weather_subpage == 2) {

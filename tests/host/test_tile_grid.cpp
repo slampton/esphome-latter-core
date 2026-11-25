@@ -16,32 +16,41 @@ void test_tile_grid_traits_and_6geom_bezel_invariants() {
     bool wearable;
     int corner_r;
     int ppi;
+    int view_scale_pct;
+    bool stationary;
     int expected_cols;
     int expected_rows;
   };
-  static constexpr BoardGeomSpec kBoards[6] = {
-      {"320x480_rect",      320, 480, false, false,  20, 165, 2, 3},
-      {"410x502_wearable",  410, 502, false, true,   98, 315, 2, 3},
-      {"466x466_round",     466, 466, true,  false, 233, 266, 2, 3},
-      {"480x480_square",    480, 480, false, false,  76, 313, 2, 3},
-      {"720x720_square",    720, 720, false, false,  20, 254, 3, 3},
-      {"1024x600_wide",    1024, 600, false, false,  20, 170, 4, 3},
+  static constexpr BoardGeomSpec kBoards[9] = {
+      {"320x480_rect",      320, 480, false, false,   0, 165, 145, false, 2, 3},
+      {"410x502_wearable",  410, 502, false, true,   98, 315, 100, false, 2, 3},
+      {"466x466_round",     466, 466, true,  false, 233, 266, 100, false, 2, 3},
+      {"480x480_square",    480, 480, false, false,  76, 313, 100, false, 2, 3},
+      {"720x720_square",    720, 720, false, false,   0, 254, 145, true,  3, 3},
+      {"360x360_mini",      360, 360, true,  false, 180, 255, 100, false, 2, 2},
+      {"800x480_wide",      800, 480, false, false,   0, 187, 135, true,  4, 2},
+      {"1024x600_wide",    1024, 600, false, false,   0, 170, 145, true,  4, 3},
+      {"1280x800_tablet",  1280, 800, false, false,   0, 149, 150, true,  4, 3},
   };
 
   // Extra edge-case trait checks
-  static_assert(tile_grid_cols_for(800, 480, false) == 2);
+  static_assert(tile_grid_cols_for(800, 480, false) == 4);
+  static_assert(tile_grid_rows_for(800, 480, false) == 2);
+  static_assert(tile_grid_cols_for(360, 360, true) == 2);
+  static_assert(tile_grid_rows_for(360, 360, true) == 2);
   static_assert(tile_grid_cols_for(1280, 800, false) == 4);
   static_assert(tile_grid_cols_for(800, 800, true) == 2);
   static_assert(tile_grid_rows_for(1024, 600, false) == 3);
 
   for (const auto &b : kBoards) {
-    const int cols = tile_grid_cols_for(b.w, b.h, b.round);
-    const int rows = tile_grid_rows_for(b.w, b.h, b.round);
+    const int cols = tile_grid_cols_for(b.w, b.h, b.round, b.ppi, b.view_scale_pct, b.stationary);
+    const int rows = tile_grid_rows_for(b.w, b.h, b.round, b.ppi, b.view_scale_pct, b.stationary);
     LATTER_CHECK(cols == b.expected_cols);
     LATTER_CHECK(rows == b.expected_rows);
 
-    const auto geom = compute_tile_grid_geom(b.w, b.h, b.corner_r, b.round, cols, rows);
-    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+    const auto geom = compute_tile_grid_geom(b.w, b.h, b.corner_r, b.round, cols, rows,
+                                             b.ppi, b.view_scale_pct, b.stationary);
+    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
     const int min_hit = mm_to_px_for(7.0f, b.ppi);
 
     LATTER_CHECK(geom.cols == cols && geom.rows == rows);
@@ -217,8 +226,10 @@ void test_protocol_v3_14col_titles_and_hibernate_v3() {
 
     // Hardware manifest reports matching grid_cols / grid_rows
     const std::string manifest = build_hardware_manifest_json();
-    const int exp_cols = tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
-    const int exp_rows = tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+    const int exp_cols = tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                                            LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
+    const int exp_rows = tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                                            LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
     LATTER_CHECK(manifest.find("\"grid_cols\":" + std::to_string(exp_cols)) != std::string::npos);
     LATTER_CHECK(manifest.find("\"grid_rows\":" + std::to_string(exp_rows)) != std::string::npos);
   }
@@ -428,11 +439,20 @@ void test_tile_grid_render_and_horizontal_touch() {
     it.row_span = rs_span;
     sc.pinned_items.push_back(it);
   };
-  push_span("Hero Scene", 0, 0, 2, 2, 1);
-  push_span("Wide Bar", 0, 2, 2, 1, 0);
-  if (cols >= 3) {
-    push_span("Tall Lamp", 2, 0, 1, 2, 1);
-    push_span("Unit", 2, 2, 1, 1, 0);
+  if (rows >= 3) {
+    push_span("Hero Scene", 0, 0, 2, 2, 1);
+    push_span("Wide Bar", 0, 2, 2, 1, 0);
+    if (cols >= 3) {
+      push_span("Tall Lamp", 2, 0, 1, 2, 1);
+      push_span("Unit", 2, 2, 1, 1, 0);
+    }
+  } else if (cols >= 4) {
+    push_span("Hero Scene", 0, 0, 2, 2, 1);
+    push_span("Wide Bar", 2, 0, 2, 1, 0);
+    push_span("Unit", 2, 1, 1, 1, 1);
+  } else {
+    push_span("Wide Bar", 0, 0, 2, 1, 1);
+    push_span("Unit", 0, 1, 1, 1, 0);
   }
   dirty_band() = DirtyBandTracker{};
   (void)dirty_band().begin_frame(PageId::PINNED, 0, 0U, true);

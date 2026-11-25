@@ -51,11 +51,12 @@ void fill_black_around_rect(Rgb565Surface &it, const CameraRect &inner, UiColor 
 
 void draw_live_dot(Rgb565Surface &it, const UiFrameContext &ctx,
                    bool streaming, bool paused) {
-  const int r = std::max(4, scale_s(5));
-  int dx = SCREEN_W - scale_x(26);
-  int dy = scale_y(26);
+  const int r = std::max(4, dp_px(5));
+  int dy = std::max(dp_px(26), r + 8);
+  const int corner_in = bezel_x_inset_for(dy, SCREEN_W, SCREEN_H, LATTER_CORNER_R, false, r + 6);
+  int dx = SCREEN_W - std::max(dp_px(26), corner_in);
 #if LATTER_ROUND_DISPLAY
-  dx = ctx.cx + scale_x(72);
+  dx = ctx.cx + dp_px(72);
   dy = layout().hdr_y;
 #endif
   const UiColor dot_col = paused ? ctx.col_gold : (streaming ? ctx.col_green : ctx.col_slate);
@@ -132,8 +133,16 @@ void render_cameras_grid_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                              const CameraRecord *cams, int cam_count) {
   auto &rs = runtime_state();
   const auto &ly = layout();
-  const CameraGridGeom g = compute_camera_grid_geom(
+  CameraGridGeom g = compute_camera_grid_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+  const int bounce_y = edge_bounce().offset_px(PageId::CAMERAS, GestureAxisLock::Vertical,
+                                               ctx.now_ms, LATTER_PANEL_PPI);
+  if (bounce_y != 0) {
+    g.frame.y0 = std::clamp(g.frame.y0 + bounce_y, 0, std::max(0, SCREEN_H - g.frame.h));
+    for (int q = 0; q < 4; ++q) {
+      g.tiles[q].y0 = g.frame.y0 + (q / 2) * g.tiles[q].h;
+    }
+  }
 
   rs.cameras.video_y0 = g.frame.y0;
   rs.cameras.video_y1 = g.frame.y1();
@@ -172,8 +181,8 @@ void render_cameras_grid_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     const char *st_lbl = (video_client().state() == VideoStreamState::ERROR) ? "Stream unavailable" : "Connecting...";
     for (int q = 0; q < vis_cnt; ++q) {
       const auto &tr = g.tiles[q];
-      ui::draw_icon_camera(it, tr.cx(), tr.cy() - scale_y(8), scale_s(14), ctx.col_slate, false);
-      fast_print(it, tr.cx(), tr.cy() + scale_y(14), ctx.font_micro, ctx.col_slate, TextAlign::CENTER, st_lbl);
+      ui::draw_icon_camera(it, tr.cx(), tr.cy() - dp_px(8), dp_px(14), ctx.col_slate, false);
+      fast_print(it, tr.cx(), tr.cy() + dp_px(14), ctx.font_micro, ctx.col_slate, TextAlign::CENTER, st_lbl);
     }
   }
 
@@ -185,7 +194,7 @@ void render_cameras_grid_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   for (int q = 0; q < vis_cnt; ++q) {
     const int cam_idx = page_start + q;
     const auto &tr = g.tiles[q];
-    const int lbl_h = std::max(18, scale_y(20));
+    const int lbl_h = std::max(18, dp_px(20));
     const int lbl_y0 = tr.y1() - lbl_h + 1;
     fill_rect_row_major(it, tr.x0 + 1, lbl_y0, std::max(1, tr.w - 2), lbl_h - 1, kChromeCaptionBg);
     const std::string fit_name = fit_text_to_width_font(cams[cam_idx].name, std::max(32, tr.w - 10), ctx.font_micro);
@@ -256,8 +265,8 @@ void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
 
   // Live Doorbell PTT Banner (D-066): NEVER hide live video during talk!
   if (rs.voice.intercom_turn) {
-    const int banner_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 60);
-    const int tap_h = std::max(1, banner_y - ly.min_hit_px() / 2 - scale_y(8));
+    const int banner_y = SCREEN_H - dp_px(LATTER_ROUND_DISPLAY ? 76 : 60);
+    const int tap_h = std::max(1, banner_y - ly.min_hit_px() / 2 - dp_px(8));
     frame_hits().add_rect(0, 0, SCREEN_W, tap_h, WidgetId::CAM_VIDEO_TAP, kHitTap);
     render_doorbell_ptt_banner(it, ctx, banner_y);
     return;
@@ -278,9 +287,9 @@ void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   // Portrait-only 90° rotate pill (Framing Fit/Fill lives exclusively in Settings so Single & Carousel match)
   int top_hud_bot = (cam_count > 1) ? (ly.hdr_y + ly.min_hit_px() / 2 + 1) : 0;
   if (SCREEN_H > SCREEN_W) {
-    const int sub_y = ly.sub_hdr_y + scale_y(10);
-    const int rot_h = std::max(34, scale_y(36));
-    const int rot_w = std::max(68, scale_x(76));
+    const int sub_y = ly.sub_hdr_y + dp_px(10);
+    const int rot_h = std::max(34, dp_px(36));
+    const int rot_w = std::max(68, dp_px(76));
     const int rot_pad = std::max(0, (ly.min_hit_px() - rot_h + 1) / 2);
     top_hud_bot = std::max(top_hud_bot, sub_y + rot_h / 2 + rot_pad + 1);
     ui::action_pill_centered(it, ctx.cx, rot_w, sub_y, rot_h,
@@ -325,9 +334,9 @@ void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
         ctx.col_gold, ui::chrome_card_bg_on(), ctx.col_white, 0, nullptr};
   }
 
-  const int act_h = std::max(38, scale_y(40));
-  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s(3);
-  const int act_y = mode_bar_top - scale_y(14) - act_h / 2;
+  const int act_h = std::max(38, dp_px(40));
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - std::max(2, dp_px(3));
+  const int act_y = mode_bar_top - dp_px(14) - act_h / 2;
   const int act_pad = std::max(0, (ly.min_hit_px() - act_h + 1) / 2);
   const int bot_hud_top = (btn_cnt > 0)
       ? (act_y - act_h / 2 - act_pad - 1)
@@ -337,13 +346,13 @@ void render_cameras_single_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                           WidgetId::CAM_VIDEO_TAP, kHitTap);
   }
   if (btn_cnt > 0) {
-    ui::action_pill_row(it, act_y, act_h, std::min(kMaxContentColW, scale_s(376)),
-                        scale_s(104), scale_s(8), btns, btn_cnt, ctx.font_small, 12);
+    ui::action_pill_row(it, act_y, act_h, std::min(ly.max_content_w(380), dp_px(376)),
+                        dp_px(104), dp_px(8), btns, btn_cnt, ctx.font_small, dp_px(12));
   }
 
   if (!rs.intercom.cam_intercom_status.empty() &&
       (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
-    ui::shadow_print(it, ctx.cx, act_y - act_h / 2 - scale_y(14), ctx.font_small,
+    ui::shadow_print(it, ctx.cx, act_y - act_h / 2 - dp_px(14), ctx.font_small,
                      ctx.theme_secondary, TextAlign::CENTER,
                      rs.intercom.cam_intercom_status.c_str());
   }
@@ -407,7 +416,7 @@ void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     std::snprintf(idx_buf, sizeof(idx_buf), " (%d/%d)", rs.cameras.carousel_idx + 1, car_cnt);
     cap_txt += idx_buf;
   }
-  const int cap_w = std::min(kMaxContentColW, ly.safe_span(cap_y, 24));
+  const int cap_w = std::min(ly.max_content_w(), ly.safe_span(cap_y, dp_px(24)));
   const std::string fit_cap = fit_text_to_width_font(cap_txt, cap_w - 18, ctx.font_small);
   ui::shadow_print(it, ctx.cx, cap_y, ctx.font_small, ctx.col_white,
                    TextAlign::CENTER, fit_cap.c_str());
@@ -422,9 +431,9 @@ void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                            ? 0.0f
                            : std::clamp(static_cast<float>(elapsed) / static_cast<float>(std::max<uint32_t>(1000U, dwell_ms)),
                                         0.0f, 1.0f);
-    const int bar_w = std::min(scale_w(180), ly.safe_span(cap_y + scale_y(16), 28));
+    const int bar_y = cap_y + dp_px(16);
+    const int bar_w = std::min(dp_px(180), ly.safe_span(bar_y, dp_px(28)));
     const int bar_x = ctx.cx - bar_w / 2;
-    const int bar_y = cap_y + scale_y(16);
     fill_rect_row_major(it, bar_x, bar_y, bar_w, 3, kChromeDwellTrack);
     const int fill_w = static_cast<int>(std::lround(static_cast<float>(bar_w) * frac));
     if (fill_w > 0) {
@@ -438,13 +447,13 @@ void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   }
 
   // HUD controls: [‹] | Pause/Resume | [›] above 4-slot mode bar
-  const int ctrl_h = std::max(38, scale_y(40));
-  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s(3);
-  const int ctrl_y = mode_bar_top - scale_y(14) - ctrl_h / 2;
+  const int ctrl_h = std::max(38, dp_px(40));
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - std::max(2, dp_px(3));
+  const int ctrl_y = mode_bar_top - dp_px(14) - ctrl_h / 2;
   const int ctrl_pad = std::max(0, (ly.min_hit_px() - ctrl_h + 1) / 2);
   const int bot_hud_top = std::max(1, ctrl_y - ctrl_h / 2 - ctrl_pad - 1);
   frame_hits().add_rect(0, 0, SCREEN_W, bot_hud_top, WidgetId::CAM_VIDEO_TAP, kHitTap);
-  const int pause_w = std::max(96, scale_s(118));
+  const int pause_w = std::max(96, dp_px(118));
   ui::action_pill_centered(it, ctx.cx, pause_w, ctrl_y, ctrl_h,
                            rs.cameras.carousel_paused ? ctx.col_gold : ui::chrome_card_brd_on(),
                            rs.cameras.carousel_paused ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
@@ -453,7 +462,7 @@ void render_cameras_carousel_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                            WidgetId::CAM_CAROUSEL_PAUSE_BTN, kHitTap | kHitFocusSlot);
   if (car_cnt > 1) {
     const int btn_r = ctrl_h / 2;
-    const int gap = scale_s(12);
+    const int gap = dp_px(12);
     ui::icon_circle_button(it, ctx.cx - pause_w / 2 - gap - btn_r, ctrl_y, btn_r,
                            ui::chrome_card_bg_off(), ui::chrome_card_brd_on(), ctx.col_white,
                            draw_cam_chev_left, nullptr, WidgetId::CAM_PREV_BTN);
@@ -494,9 +503,11 @@ void render_cameras_settings_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int start_i = rs.cameras.settings_page * 4;
   const int vis_cnt = std::min(4, row_cnt - start_i);
 
+  const int bounce_y = edge_bounce().offset_px(PageId::CAMERAS, GestureAxisLock::Vertical,
+                                               ctx.now_ms, LATTER_PANEL_PPI);
   for (int i = 0; i < vis_cnt; ++i) {
     const int idx = start_i + i;
-    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i), ly.list_card_w, ly.slot5_h, labels[idx], true,
+    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i) + bounce_y, ly.list_card_w, ly.slot5_h, labels[idx], true,
                           ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
                           static_cast<uint16_t>(WidgetId::CAM_SETTINGS_ROW_BASE + ids[idx]),
                           kHitTap | kHitFocusSlot, static_cast<int16_t>(ids[idx]));
@@ -518,15 +529,15 @@ void render_camera_video_placeholder(Rgb565Surface &it, const UiFrameContext &ct
                                      UiColor icon_col) {
   fill_rect_row_major(it, vp.x0, vp.y0, vp.w, vp.h, kChromeGridBg);
   const int cy = vp.cy();
-  ui::draw_icon_camera(it, vp.cx(), cy - scale_y(22), scale_s(22), icon_col, true);
+  ui::draw_icon_camera(it, vp.cx(), cy - dp_px(22), dp_px(22), icon_col, true);
   if (title != nullptr && title[0] != '\0') {
-    const std::string fit = fit_text_to_width_font(std::string(title), std::max(60, vp.w - scale_x(24)), ctx.font_small);
-    ui::shadow_print(it, vp.cx(), cy + scale_y(16), ctx.font_small, ctx.col_white,
+    const std::string fit = fit_text_to_width_font(std::string(title), std::max(60, vp.w - dp_px(24)), ctx.font_small);
+    ui::shadow_print(it, vp.cx(), cy + dp_px(16), ctx.font_small, ctx.col_white,
                      TextAlign::CENTER, fit.c_str());
   }
   if (subtitle != nullptr && subtitle[0] != '\0') {
-    const std::string fit = fit_text_to_width_font(std::string(subtitle), std::max(60, vp.w - scale_x(24)), ctx.font_small);
-    ui::shadow_print(it, vp.cx(), cy + scale_y(42), ctx.font_small, ctx.col_slate,
+    const std::string fit = fit_text_to_width_font(std::string(subtitle), std::max(60, vp.w - dp_px(24)), ctx.font_small);
+    ui::shadow_print(it, vp.cx(), cy + dp_px(42), ctx.font_small, ctx.col_slate,
                      TextAlign::CENTER, fit.c_str());
   }
 }
@@ -588,6 +599,16 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
   if (y_start > y_end) return true;
 
   const bool one_to_one = (crop_w == fit_r.w && crop_h == fit_r.h && crop_x0 == 0 && crop_y0 == 0);
+
+  // ESP32-P4 hardware bilinear PPA SRM scaling fast path when unclipped and rectangular.
+  uint16_t *const fb_direct = active_frame_buf16();
+  if (!one_to_one && !clip_round_bezel && fb_direct != nullptr &&
+      y_start == fit_r.y0 && y_end == (fit_r.y0 + fit_r.h - 1) &&
+      fit_r.x0 >= 0 && (fit_r.x0 + fit_r.w) <= SCREEN_W &&
+      ppa_srm_scale_rgb565(fb_direct, SCREEN_W, fit_r.x0, fit_r.y0, fit_r.w, fit_r.h,
+                           src, src_w, src_h, crop_x0, crop_y0, crop_w, crop_h)) {
+    return true;
+  }
   // Dynamically sized scanline buffer (zero 1024 px ceiling so 1280x800+ never clips).
   static uint16_t s_small_row_buf[512];
   static uint16_t *s_dyn_row_buf = nullptr;
@@ -673,8 +694,8 @@ void render_doorbell_ptt_banner(Rgb565Surface &it, const UiFrameContext &ctx,
                                 int center_y) {
   const auto &rs = runtime_state();
   const auto &ly = layout();
-  const int bh = std::max(scale_y(44), ly.min_hit_px());
-  const int bw = ui::compute_uniform_stack_w(center_y, center_y, bh, std::min(kMaxContentColW, scale_s(340)), 16);
+  const int bh = std::max(dp_px(44), ly.min_hit_px());
+  const int bw = ui::compute_uniform_stack_w(center_y, center_y, bh, std::min(ly.max_content_w(340), dp_px(340)), dp_px(16));
   const int bx0 = ctx.cx - bw / 2;
   const int by0 = center_y - bh / 2;
   const UiColor brd = rs.voice.vad_active ? ctx.col_green : ctx.col_gold;
@@ -682,15 +703,15 @@ void render_doorbell_ptt_banner(Rgb565Surface &it, const UiFrameContext &ctx,
   render_card_box(it, bx0, by0, bw, bh, ui::chrome_card_bg_on(), brd, bh / 2, GlassVariant::Clear);
 
   // Live VAD pulse indicator on left
-  const int dot_x = bx0 + scale_s(20);
+  const int dot_x = bx0 + dp_px(20);
   const bool pulse_hi = ((ctx.now_ms / 240U) % 2U) == 0U;
-  const int dot_r = std::max(4, scale_s(rs.voice.vad_active && pulse_hi ? 7 : 5));
+  const int dot_r = std::max(4, dp_px(rs.voice.vad_active && pulse_hi ? 7 : 5));
   fast_filled_circle_aa(it, dot_x, center_y, dot_r, brd);
 
-  const char *msg = (SCREEN_W < 380) ? "Listening... Tap"
-                                     : "Listening... (Tap to send)";
-  const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - scale_s(46)), ctx.font_small);
-  ui::shadow_print(it, bx0 + scale_s(34), center_y, ctx.font_small, ctx.col_white,
+  const char *msg = (ly.frame.w_dp < 380) ? "Listening... Tap"
+                                          : "Listening... (Tap to send)";
+  const std::string fit_msg = fit_text_to_width_font(msg, std::max(40, bw - dp_px(46)), ctx.font_small);
+  ui::shadow_print(it, bx0 + dp_px(34), center_y, ctx.font_small, ctx.col_white,
                    TextAlign::CENTER_LEFT, fit_msg.c_str());
 
   frame_hits().add_rect(bx0, by0, bw, bh, WidgetId::CAM_PTT_BANNER_STOP, kHitTap | kHitFocusSlot);

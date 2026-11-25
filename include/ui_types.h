@@ -27,20 +27,12 @@
 namespace latter_ui {
 
 inline constexpr int mm_to_px(float mm) { return mm_to_px_for(mm, LATTER_PANEL_PPI); }
-inline constexpr int scale_x(int v466) { return scale_x_for(v466, SCREEN_W); }
-inline constexpr int scale_y(int v466) { return scale_y_for(v466, SCREEN_H); }
-inline constexpr int scale_s(int v466) { return scale_s_for(v466, SCREEN_MIN_DIM); }
-inline constexpr int scale_min(int v466) { return scale_min_for(v466, SCREEN_MIN_DIM); }
-inline constexpr float scale_min_f(float v466) {
-  return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
-}
-inline constexpr int scale_w(int v466) { return scale_w_for(v466, SCREEN_W); }
 inline constexpr int kRadiusCardPx() { return radius_card_for(SCREEN_MIN_DIM); }
 inline constexpr int kRadiusKeyPx() { return radius_key_for(SCREEN_MIN_DIM); }
 
-static constexpr int STD_ART_SIZE = scale_min(264);
-static constexpr int kBackLabelY = LATTER_ROUND_DISPLAY ? scale_min(426) : (SCREEN_H - scale_y(28));
-static constexpr int kHomeBarY = LATTER_ROUND_DISPLAY ? scale_min(434) : (SCREEN_H - scale_y(11));
+static constexpr int STD_ART_SIZE = (SCREEN_MIN_DIM * 566) / 1000;
+static constexpr int kBackLabelY = compute_dock_metrics(current_display_spec()).back_y;
+static constexpr int kHomeBarY = compute_dock_metrics(current_display_spec()).home_bar_y;
 
 namespace HomeSubpage {
   static constexpr int MAIN             = 0;
@@ -107,94 +99,27 @@ static constexpr float DIAL_COS[60] = {
   0.809017f, 0.866025f, 0.913545f, 0.951057f, 0.978148f, 0.994522f
 };
 
-static constexpr int16_t CIRCLE_HW[466] = {
-    0,  21,  30,  37,  42,  48,  52,  56,  60,  64,  67,  70,
-   73,  76,  79,  82,  84,  87,  89,  92,  94,  96,  98, 100,
-  102, 105, 106, 108, 110, 112, 114, 116, 117, 119, 121, 122,
-  124, 125, 127, 129, 130, 132, 133, 134, 136, 137, 138, 140,
-  141, 142, 144, 145, 146, 147, 149, 150, 151, 152, 153, 154,
-  156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167,
-  168, 169, 170, 171, 172, 173, 173, 174, 175, 176, 177, 178,
-  179, 179, 180, 181, 182, 183, 183, 184, 185, 186, 186, 187,
-  188, 189, 189, 190, 191, 192, 192, 193, 194, 194, 195, 195,
-  196, 197, 197, 198, 199, 199, 200, 200, 201, 202, 202, 203,
-  203, 204, 204, 205, 205, 206, 206, 207, 208, 208, 208, 209,
-  209, 210, 210, 211, 211, 212, 212, 213, 213, 214, 214, 214,
-  215, 215, 216, 216, 216, 217, 217, 218, 218, 218, 219, 219,
-  219, 220, 220, 220, 221, 221, 221, 222, 222, 222, 223, 223,
-  223, 224, 224, 224, 224, 225, 225, 225, 225, 226, 226, 226,
-  226, 227, 227, 227, 227, 228, 228, 228, 228, 228, 228, 229,
-  229, 229, 229, 229, 230, 230, 230, 230, 230, 230, 230, 231,
-  231, 231, 231, 231, 231, 231, 231, 231, 232, 232, 232, 232,
-  232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232,
-  232, 232, 232, 232, 232, 233, 232, 232, 232, 232, 232, 232,
-  232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232, 232,
-  232, 232, 232, 231, 231, 231, 231, 231, 231, 231, 231, 231,
-  230, 230, 230, 230, 230, 230, 230, 229, 229, 229, 229, 229,
-  228, 228, 228, 228, 228, 228, 227, 227, 227, 227, 226, 226,
-  226, 226, 225, 225, 225, 225, 224, 224, 224, 224, 223, 223,
-  223, 222, 222, 222, 221, 221, 221, 220, 220, 220, 219, 219,
-  219, 218, 218, 218, 217, 217, 216, 216, 216, 215, 215, 214,
-  214, 214, 213, 213, 212, 212, 211, 211, 210, 210, 209, 209,
-  208, 208, 208, 207, 206, 206, 205, 205, 204, 204, 203, 203,
-  202, 202, 201, 200, 200, 199, 199, 198, 197, 197, 196, 195,
-  195, 194, 194, 193, 192, 192, 191, 190, 189, 189, 188, 187,
-  186, 186, 185, 184, 183, 183, 182, 181, 180, 179, 179, 178,
-  177, 176, 175, 174, 173, 173, 172, 171, 170, 169, 168, 167,
-  166, 165, 164, 163, 162, 161, 160, 159, 158, 157, 156, 154,
-  153, 152, 151, 150, 149, 147, 146, 145, 144, 142, 141, 140,
-  138, 137, 136, 134, 133, 132, 130, 129, 127, 125, 124, 122,
-  121, 119, 117, 116, 114, 112, 110, 108, 106, 105, 102, 100,
-   98,  96,  94,  92,  89,  87,  84,  82,  79,  76,  73,  70,
-   67,  64,  60,  56,  52,  48,  42,  37,  30,  21
-};
-
 inline int chord_half_span_int(int r, int dy, bool round_nearest = false) {
-  return chord_half_span_constexpr(r, dy, round_nearest);
+  return scale_chord_half_span(r, dy, round_nearest);
 }
 
 inline int circle_half_span(int c, int inset = 5) {
-#if LATTER_ROUND_DISPLAY
   if (c < 0 || c >= SCREEN_H) return 0;
-  int span = 0;
-  if constexpr (SCREEN_W == 466 && SCREEN_H == 466) {
-    span = static_cast<int>(CIRCLE_HW[c]) - inset;
-  } else {
-    int lut_idx = (c * 465) / ((SCREEN_H > 1) ? (SCREEN_H - 1) : 1);
-    if (lut_idx < 0) lut_idx = 0;
-    if (lut_idx > 465) lut_idx = 465;
-    span = ((static_cast<int>(CIRCLE_HW[lut_idx]) * SCREEN_W) / 466) - inset;
-  }
-  return (span > 0) ? span : 0;
-#else
-  if (c < 0 || c >= SCREEN_H) return 0;
-  int half_w = (SCREEN_W / 2) - inset;
-  const int cr = LATTER_CORNER_R;
-  if (cr > 8) {
-    int dy = 0;
-    if (c < cr) dy = cr - c;
-    else if (c >= SCREEN_H - cr) dy = c - (SCREEN_H - 1 - cr);
-    if (dy > 0 && dy < cr) {
-      const int dx_corner = chord_half_span_int(cr, dy, false);
-      const int corner_half_w = (SCREEN_W / 2) - (cr - dx_corner) - inset;
-      if (corner_half_w < half_w) half_w = corner_half_w;
-    }
-  }
-  return (half_w > 0) ? half_w : 0;
-#endif
+  const int x_in = bezel_x_inset_for(c, SCREEN_W, SCREEN_H, LATTER_CORNER_R,
+                                     LATTER_ROUND_DISPLAY != 0, inset);
+  const int hw = (SCREEN_W / 2) - x_in;
+  return (hw > 0) ? hw : 0;
 }
 
-inline int safe_span(int y, int inset = 12) { return 2 * circle_half_span(y, inset); }
+inline int safe_span(int y, int inset = 12) {
+  return safe_span_for(y, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                       LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R);
+}
 
 inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
-#if LATTER_ROUND_DISPLAY
-  const int h = circle_half_span(x, inset);
-  return (h > 0) && (y >= cy - h) && (y <= cy + h);
-#else
   (void)cy;
   return is_inside_bezel_for(
-      x, y, SCREEN_W, SCREEN_H, false, LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R);
-#endif
+      x, y, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R);
 }
 
 inline float fast_sin(float rad) {
@@ -267,7 +192,7 @@ inline Vec3 rotate_3d_xyz(Vec3 v, float rx, float ry, float rz) {
 inline ProjectedPoint project_3d(Vec3 v, int cx, int cy, float fov = 240.0f, float viewer_dist = 320.0f) {
   const float depth = v.z + viewer_dist;
   if (depth <= 15.0f) return {cx, cy, 0.0f, false};
-  const float k = scale_min_f(fov) / depth;
+  const float k = dp_f(fov) / depth;
   const int sx = cx + static_cast<int>(v.x * k);
   const int sy = cy + static_cast<int>(v.y * k);
   return {sx, sy, k, is_inside_bezel(sx, sy, cy, 4)};

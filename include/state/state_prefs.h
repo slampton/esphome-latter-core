@@ -792,6 +792,11 @@ inline void clamp_prefs_to_capabilities(PersistedDevicePrefs &p = persisted_pref
       find_pref_option_index(std::span<const std::string_view>{kPrefOptsPickupToWake}, "Disabled"));
   p.pickup_to_wake = kPickupDisabledIdx;  // Disabled
 #endif
+#if !LATTER_HAS_TOUCH
+  constexpr uint8_t kTapWakeDisabledIdx = static_cast<uint8_t>(
+      find_pref_option_index(std::span<const std::string_view>{kPrefOptsTapToWake}, "Disabled"));
+  p.tap_to_wake = kTapWakeDisabledIdx;  // Disabled on touchless displays
+#endif
 #if !LATTER_HAS_BATTERY || LATTER_IS_STATIONARY
   constexpr uint8_t kHibernateDisabledIdx = static_cast<uint8_t>(
       find_pref_option_index(std::span<const std::string_view>{kPrefOptsBatteryHibernateTimeout}, "Disabled"));

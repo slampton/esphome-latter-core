@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 import sys
 from pathlib import Path
@@ -37,14 +36,13 @@ PWM_ROLES = {"backlight_pwm", "backlight_analog_dim"}
 BOARD_LIFECYCLE_SCRIPTS = (
     (
         "hal_release_deep_sleep_holds",
-        "Release GPIO holds at boot; pulse touch reset if the driver cannot",
+        "Release GPIO holds at boot (LatterTouchscreen owns touch reset)",
     ),
     (
         "hal_enter_hardware_hibernate",
         "Hold pins and cut power (called after state is saved)",
     ),
 )
-_FOCALTECH_PROTOCOLS = {"ft6336", "ft3168", "ft5x06"}
 _SOC_CHIP_MAP = {
     "ESP32-P4": "esp32p4",
     "ESP32-S3": "esp32s3",
@@ -87,34 +85,51 @@ def detect_drivers(facts: dict[str, Any]) -> dict[str, bool]:
         and "pcf85063" in str(d.get("part", "")).lower()
         for d in i2c_devs
     )
-    t_spec = facts.get("touch")
-    t_proto = (
-        str(t_spec.get("protocol", "")).lower() if isinstance(t_spec, dict) else ""
-    )
     return {
         "pmu_axp2101": facts.get("power", {}).get("pmu") == "AXP2101",
         "rtc_pcf85063": has_pcf85063,
         "imu_qmi8658": any("qmi8658" in p for p in parts),
         "codec_es8311": any("es8311" in p for p in parts),
-        "touch_ft5x06": t_proto in _FOCALTECH_PROTOCOLS,
     }
 
 
-def compute_font_sizes(w_px: int, h_px: int, ppi: int) -> dict[str, int]:
-    """Compute PPI-accurate font pixel sizes satisfying [FONT MM] (>=2.0 mm small, >=1.3 mm micro)."""
-    ref_ppi = max(int(ppi), 120)
-    min_dim = max(min(int(w_px), int(h_px)), 240)
-    scale = max(1.0, min_dim / 466.0)
-    small = max(math.ceil(2.0 * ref_ppi / 25.4), round(21 * scale))
-    micro = max(math.ceil(1.3 * ref_ppi / 25.4), round(14 * scale))
+def compute_font_sizes(
+    w_px: int,
+    h_px: int,
+    ppi: int,
+    *,
+    view_scale_pct: int = 0,
+    is_stationary: bool = False,
+) -> dict[str, int]:
+    """Compute isotropic dp-scaled font pixel sizes matching include/ui_scale.h & latter_core."""
+    del h_px
+    eff_w = max(int(w_px), 120)
+    eff_ppi = max(int(ppi), 50)
+    eff_vs = max(75, min(200, int(view_scale_pct))) if view_scale_pct > 0 else (145 if is_stationary else 100)
+    s_min = 900 if (is_stationary or eff_vs >= 120) else 760
+    s = max(s_min, (eff_ppi * eff_vs * 10 + 133) // 266)
+
+    def _dp(v: int) -> int:
+        return (v * s + 500) // 1000
+
+    def _mm_ceil(mm_x10: int) -> int:
+        return (mm_x10 * eff_ppi + 253) // 254
+
+    micro = max(12, _mm_ceil(13), _dp(14))
+    small = max(15, _mm_ceil(20), _dp(21))
+    btn_bold = max(small + 1, min(_dp(25), (eff_w * 71) // 1000))
+    date = max(btn_bold + 1, min(_dp(28), (eff_w * 78 + 20) // 1000))
+    chrono = max(date + 4, min(_dp(38), (eff_w * 108) // 1000))
+    clock_pm = 215 if eff_vs >= 120 else 185
+    time_px = max(chrono + 10, min(_dp(76), (eff_w * clock_pm + 200) // 1000))
     return {
-        "font_time_size": round(77 * scale),
-        "font_chrono_size": round(38 * scale),
-        "font_date_size": max(small + 2, round(27 * scale)),
-        "font_btn_bold_size": max(small + 1, round(26 * scale)),
+        "font_time_size": time_px,
+        "font_chrono_size": chrono,
+        "font_date_size": date,
+        "font_btn_bold_size": btn_bold,
         "font_small_size": small,
         "font_micro_size": micro,
-        "font_games_size": round(38 * scale),
+        "font_games_size": chrono,
     }
 
 
@@ -221,6 +236,9 @@ def _render_core_display(flags: dict[str, Any]) -> list[str]:
     ):
         if flag_key in flags:
             lines.append(f"    {yaml_key}: {flags[flag_key]}")
+    if "LATTER_VIEW_SCALE_PCT" in flags:
+        vs_f = int(flags["LATTER_VIEW_SCALE_PCT"]) / 100.0
+        lines.append(f"    view_scale: {vs_f:.2f}")
     if _flag_bool(flags, "LATTER_DSI_IRAM_SAFE"):
         lines.append("    dsi_iram_safe: true")
     return lines
@@ -316,7 +334,6 @@ def _render_latter_core_block(facts: dict[str, Any], drivers: dict[str, bool]) -
         f"    rtc_pcf85063: {_yaml_bool(drivers['rtc_pcf85063'])}",
         f"    imu_qmi8658: {_yaml_bool(drivers['imu_qmi8658'])}",
         f"    codec_es8311: {_yaml_bool(drivers['codec_es8311'])}",
-        f"    touch_ft5x06: {_yaml_bool(drivers['touch_ft5x06'])}",
     ]
     return lines
 
@@ -636,7 +653,8 @@ def render_board(facts: dict[str, Any]) -> str:
     w_px = int(flags.get("LATTER_SCREEN_W", 466))
     h_px = int(flags.get("LATTER_SCREEN_H", 466))
     ppi = int(flags.get("LATTER_PANEL_PPI", 266))
-    fonts = compute_font_sizes(w_px, h_px, ppi)
+    vs_pct = int(flags.get("LATTER_VIEW_SCALE_PCT", 0))
+    fonts = compute_font_sizes(w_px, h_px, ppi, view_scale_pct=vs_pct, is_stationary=stationary)
     art_sq = f"{max(w_px, h_px)}x{max(w_px, h_px)}"
     body = [
         "",
@@ -692,18 +710,6 @@ def render_board(facts: dict[str, Any]) -> str:
             "",
         ]
     body += [*_render_board_packages(facts, flags, drivers), ""]
-    if drivers["touch_ft5x06"] and _flag_bool(flags, "LATTER_HAS_BATTERY") and not stationary:
-        body += [
-            "esphome:",
-            "  on_boot:",
-            "    - priority: 850",
-            "      then:",
-            "        - lambda: |-",
-            "            latter_core::runtime_state().hw_set_touch_sleep_mode = +[](bool sleep) {",
-            "              latter_core::hal_set_touch_sleep_mode(id(bus_internal), sleep);",
-            "            };",
-            "",
-        ]
     body += [
         (
             "# BRINGUP-STEP display: id disp1, full-frame PSRAM buffer "

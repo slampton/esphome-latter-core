@@ -34,19 +34,22 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   frame_hits().add_rect(0, 0, SCREEN_W, SCREEN_H, WidgetId::HOME_TIME_READOUT, kHitTap);
 
   if (is_minimal_digital) {
+    const int time_cy = cy - dp_px(6);
     if (!ctx.now.is_valid()) {
-      fast_print(it, cx, cy - scale_y(8), ctx.font_time, ctx.col_slate,
+      fast_print(it, cx, time_cy, ctx.font_time, ctx.col_slate,
                  UiTextAlign::CENTER, kUnknownGlyph);
       return;
     }
+    const int date_cy = time_cy - (kAutoFonts.time / 2) - (kAutoFonts.date / 2) - dp_px(18);
+    const int sec_cy = time_cy + (kAutoFonts.time / 2) + (kAutoFonts.small / 2) + dp_px(18);
     char date_buf[32];
     ctx.now.strftime(date_buf, sizeof(date_buf), "%a, %b %d");
-    fast_print(it, cx, cy - scale_y(82), ctx.font_date, ctx.theme_primary,
+    fast_print(it, cx, date_cy, ctx.font_date, ctx.theme_primary,
                UiTextAlign::CENTER, date_buf);
 
     char sq_dig[16], sq_ap[8] = "";
     format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, sq_dig, sizeof(sq_dig), sq_ap);
-    fast_print(it, cx, cy - scale_y(8), ctx.font_time, ctx.col_white,
+    fast_print(it, cx, time_cy, ctx.font_time, ctx.col_white,
                UiTextAlign::CENTER, sq_dig);
 
     char sq_sec[32];
@@ -55,7 +58,7 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       std::snprintf(sq_sec, sizeof(sq_sec), "%s  •  %02ds", sq_ap, ctx.now.second);
     }
-    fast_print(it, cx, cy + scale_y(56), ctx.font_small, ctx.theme_secondary,
+    fast_print(it, cx, sec_cy, ctx.font_small, ctx.theme_secondary,
                UiTextAlign::CENTER, sq_sec);
     return;
   }

@@ -30289,7 +30289,7 @@ struct MdiRuntimeScratch {
   DecodedMdiEntry cache[kCacheSlots]{};
   uint32_t stamp = 0;
   uint8_t bucket[kMdiMaxBucketUncompBytes]{};
-  uint16_t cov[128]{};
+  uint16_t cov[256]{};
   MdiEdgeHit hits[96]{};
 };
 
@@ -30301,7 +30301,7 @@ struct MdiSpan {
 };
 
 constexpr std::size_t kRasterCacheSlots = 24;
-constexpr std::size_t kMaxCachedSpans = 512;
+constexpr std::size_t kMaxCachedSpans = 1024;
 
 struct RasterizedMdiEntry {
   uint32_t hash = 0;
@@ -30335,19 +30335,28 @@ MdiRuntimeScratch *mdi_scratch() noexcept {
 
 // PSRAM-only span cache: avoids re-running 4x scanline rasterization for shadow+fg
 // and across frames without consuming internal RAM if PSRAM is unavailable.
+#if defined(USE_ESP32) || defined(ESP_PLATFORM)
+MdiRasterCache *&mdi_raster_cache_ptr() noexcept {
+  static MdiRasterCache *s_ptr = nullptr;
+  return s_ptr;
+}
+#else
+MdiRasterCache &mdi_raster_cache_host() noexcept {
+  static MdiRasterCache s_host{};
+  return s_host;
+}
+#endif
+
 MdiRasterCache *mdi_raster_cache() noexcept {
 #if defined(USE_ESP32) || defined(ESP_PLATFORM)
-  static MdiRasterCache *s_ptr = nullptr;
-  static bool s_tried = false;
-  if (!s_tried) {
-    s_tried = true;
+  MdiRasterCache *&s_ptr = mdi_raster_cache_ptr();
+  if (s_ptr == nullptr) {
     void *p = heap_caps_calloc(1, sizeof(MdiRasterCache), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_ptr = static_cast<MdiRasterCache *>(p);
   }
   return s_ptr;
 #else
-  static MdiRasterCache s_host{};
-  return &s_host;
+  return &mdi_raster_cache_host();
 #endif
 }
 
@@ -30541,10 +30550,29 @@ bool has_mdi_icon(std::string_view name) noexcept {
   return find_mdi_icon_id(mdi_icon_hash(name)) >= 0;
 }
 
+void mdi_raster_cache_drop() noexcept {
+#if defined(USE_ESP32) || defined(ESP_PLATFORM)
+  MdiRasterCache *&s_ptr = mdi_raster_cache_ptr();
+  if (s_ptr != nullptr) {
+    heap_caps_free(s_ptr);
+    s_ptr = nullptr;
+  }
+#else
+  auto &rc = mdi_raster_cache_host();
+  for (auto &slot : rc.slots) {
+    slot.hash = 0;
+    slot.stamp = 0;
+    slot.size_px = 0;
+    slot.span_count = 0;
+  }
+  rc.stamp = 0;
+#endif
+}
+
 bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
                         MdiSpanEmitFn emit_fn, void *user) noexcept {
   if (emit_fn == nullptr || size_px < 4) return false;
-  if (size_px > 128) size_px = 128;
+  if (size_px > 255) size_px = 255;
 
   const uint32_t hash = mdi_icon_hash(name);
   if (hash == 0U) return false;

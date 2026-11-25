@@ -1529,7 +1529,7 @@ const HomeActivityItem *TouchGestureEngine::resolve_home_activities_(uint32_t no
 }
 
 bool TouchGestureEngine::handle_tap_home_area_(
-    int tx, int /*ty*/, uint32_t now_rel, const HitRegion *hit, uint16_t wid) {
+    int /*tx*/, int /*ty*/, uint32_t now_rel, const HitRegion *hit, uint16_t wid) {
   auto &rs = runtime_state();
   auto &prefs = persisted_prefs();
   const uint32_t tkey = make_tap_target_key(rs.nav.gui_page, wid, (hit != nullptr) ? hit->param : 0);
@@ -1662,10 +1662,13 @@ bool TouchGestureEngine::handle_tap_home_area_(
     if (rs.nav.home_subpage == 2) {
       int act_count = 0;
       const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
-      if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 && act_count > 0) {
+      const bool is_open_slot = (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5);
+      const bool is_quick_slot = (wid >= WidgetId::HOME_ACT_OVERLAY_ACTION_BASE &&
+                                  wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + 5);
+      if ((is_open_slot || is_quick_slot) && act_count > 0) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          const bool quick_tap = (tx >= hit->x1 - scale_s(56));
-          TouchGestureEngine::handle_home_activity_action_(act_items, act_count, hit->param, quick_tap, now_rel, rs, prefs, rt_);
+          TouchGestureEngine::handle_home_activity_action_(
+              act_items, act_count, hit->param, is_quick_slot, now_rel, rs, prefs, rt_);
         }
       } else if (wid == WidgetId::NONE &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_DISMISS, tkey)) {
@@ -2879,7 +2882,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
 
     if (sub == TimeSubpage::TIMERS && timer_view_slot() > 0) {
       int &view_idx = timer_view_slot();
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         view_idx = 0;
         mark_dirty_full();
@@ -2888,14 +2891,14 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
       }
       const int s_idx = std::clamp(view_idx - 1, 0, 2);
       auto &s = timer_slots()[s_idx];
-      if (wid == WidgetId::TIMER_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::TIMER_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         toggle_timer_slot_run(s, now_ms, rt);
         return true;
       }
       if (wid >= WidgetId::STEPPER_BASE && wid < WidgetId::STEPPER_BASE + 4) {
         gest.active = false;
-        if (!s.running && !s.paused && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+        if (!s.running && !s.paused && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
           static constexpr int kStepSecs[4] = {-300, -60, 60, 300};
           const int col = static_cast<int>(wid - WidgetId::STEPPER_BASE);
           s.duration_sec = std::clamp(s.duration_sec + kStepSecs[col], 60, 3600);
@@ -2907,7 +2910,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         return true;
       }
       if (wid == WidgetId::TIMER_PLUS_1M_BTN && (s.running || s.paused) &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
         gest.active = false;
         if (s.running) {
           const int cur_rem = (s.target_ms > now_ms)
@@ -2925,7 +2928,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         rt.schedule_disp();
         return true;
       }
-      if (wid == WidgetId::TIMER_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::TIMER_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         if (s.running || s.paused) {
           s.running = false;
@@ -2945,7 +2948,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
     }
 
     if (sub == TimeSubpage::ALARMS && rs.alarms.edit_idx > 0) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         rs.alarms.edit_idx = 0;
         mark_dirty_full();
@@ -2953,7 +2956,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         return true;
       }
       if ((wid == WidgetId::ALARM_HH_BTN || wid == WidgetId::ALARM_MM_BTN) &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
         gest.active = false;
         rs.nav.alarm_edit_field = (wid == WidgetId::ALARM_HH_BTN) ? 0 : 1;
         rt.schedule_disp();
@@ -2963,7 +2966,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
       auto &ap = prefs.alarms[a_idx];
       if (wid >= WidgetId::STEPPER_BASE && wid < WidgetId::STEPPER_BASE + 4) {
         gest.active = false;
-        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
           const int col = static_cast<int>(wid - WidgetId::STEPPER_BASE);
           if (rs.nav.alarm_edit_field == 0) {
             static constexpr int kHSteps[4] = {-6, -1, 1, 6};
@@ -2977,7 +2980,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         }
         return true;
       }
-      if (wid == WidgetId::ALARM_RECUR_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::ALARM_RECUR_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         ap.recurrence = static_cast<uint8_t>((ap.recurrence + 1) % 4);
         latter_core::sync_local_alarms_edit(now_ms);
@@ -2987,7 +2990,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
     }
 
     if (sub == TimeSubpage::STOPWATCH) {
-      if (wid == WidgetId::SW_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::SW_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         if (!rs.stopwatch.running) {
           rs.stopwatch.running = true;
@@ -3002,7 +3005,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         rt.schedule_disp();
         return true;
       }
-      if (wid == WidgetId::SW_LAP_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+      if (wid == WidgetId::SW_LAP_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
         gest.active = false;
         if (rs.stopwatch.running) {
           record_stopwatch_lap(rs.stopwatch, now_ms - rs.stopwatch.start_time_ms);
@@ -3010,7 +3013,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
         }
         return true;
       }
-      if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         rs.stopwatch.reset();
         latter_core::check_and_emit_timer_alarm_state(now_ms);
@@ -3040,7 +3043,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
     s_touch_cal_anchored = true;
   }
 
-  if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+  if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
     gest.active = false;
     if (rs.cal.delete_confirm_open) {
       rs.cal.delete_confirm_open = false;
@@ -3282,7 +3285,17 @@ bool TouchGestureEngine::handle_tap_time_cal_(
              rs.cal.drilldown <= CalDrilldown::PICK_REPEAT) {
     if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-      rs.cal.picker_page = std::max(0, rs.cal.picker_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1));
+      int total_opts = 10;
+      if (rs.cal.drilldown == CalDrilldown::PICK_LOCATION) {
+        std::string locs[kMaxCalendarLocations]{};
+        total_opts = 1 + parse_calendar_locations_catalog(calendar_state().locations_catalog, locs);
+      } else if (rs.cal.drilldown == CalDrilldown::PICK_CALENDAR) {
+        total_opts = std::max(1, collect_writable_calendar_sources(calendar_state().calendars_meta, nullptr, nullptr));
+      } else if (rs.cal.drilldown == CalDrilldown::PICK_REPEAT) {
+        total_opts = 7;
+      }
+      const int max_pg = std::max(0, (total_opts - 1) / 5);
+      rs.cal.picker_page = std::clamp(rs.cal.picker_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 0, max_pg);
       rt_.schedule_disp();
     } else if (wid >= WidgetId::CAL_PICKER_SLOT_BASE && wid < WidgetId::CAL_PICKER_SLOT_BASE + 5 &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -3332,9 +3345,15 @@ bool TouchGestureEngine::handle_tap_time_cal_(
   } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
     const int step_d = (wid == WidgetId::CHEVRON_UP) ? -1 : 1;
-    if (rs.cal.subpage == CalendarSubpage::OVERVIEW) rs.cal.overview_page = std::max(0, rs.cal.overview_page + step_d);
-    else if (rs.cal.subpage == CalendarSubpage::DAY) rs.cal.day_page = std::max(0, rs.cal.day_page + step_d);
-    else if (rs.cal.subpage == CalendarSubpage::WEEK) rs.cal.week_page = std::max(0, rs.cal.week_page + step_d);
+    const int per_pg = (SCREEN_H > 520) ? 5 : (LATTER_ROUND_DISPLAY ? 3 : 4);
+    const int max_ev_pg = std::max(0, (store.count - 1) / per_pg);
+    if (rs.cal.subpage == CalendarSubpage::OVERVIEW) {
+      rs.cal.overview_page = std::clamp(rs.cal.overview_page + step_d, 0, max_ev_pg);
+    } else if (rs.cal.subpage == CalendarSubpage::DAY) {
+      rs.cal.day_page = std::clamp(rs.cal.day_page + step_d, 0, max_ev_pg);
+    } else if (rs.cal.subpage == CalendarSubpage::WEEK) {
+      rs.cal.week_page = std::clamp(rs.cal.week_page + step_d, 0, max_ev_pg);
+    }
     rt_.schedule_disp();
   } else if (wid >= WidgetId::CAL_EVENT_BASE && wid < WidgetId::CAL_EVENT_BASE + 5 &&
              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
@@ -3505,9 +3524,10 @@ bool TouchGestureEngine::handle_down_cameras_games_(TouchGestureEngine &eng, int
   auto &gest = touch_gesture();
 
   if (rs.nav.gui_page == PageId::GAMES) {
+    const uint32_t tkey = make_tap_target_key(PageId::GAMES, wid, 0);
     if (rs.nav.active_game > 0) {
       if (wid == WidgetId::BACK_BUTTON) {
-        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.nav.active_game = 0;
           rs.nav.game_btn_pressed = false;
           game_input().clear();
@@ -3595,8 +3615,9 @@ bool TouchGestureEngine::handle_down_cameras_games_(TouchGestureEngine &eng, int
   }
 
   if (rs.nav.gui_page == PageId::CAMERAS) {
+    const uint32_t tkey = make_tap_target_key(PageId::CAMERAS, wid, 0);
     if (rs.voice.intercom_turn && wid == WidgetId::CAM_PTT_BANNER_STOP &&
-        touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+        touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       gest.active = false;
       rt.cmd(UiHostCmd::ABORT_VOICE_ASSISTANT);
       intercom_session().resume_listen(now_ms);
@@ -3606,7 +3627,7 @@ bool TouchGestureEngine::handle_down_cameras_games_(TouchGestureEngine &eng, int
       rt.schedule_disp();
       return true;
     }
-    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       gest.active = false;
       if (rs.cameras.quick_reply_open) {
         rs.cameras.quick_reply_open = false;
@@ -3767,9 +3788,10 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
     } else if ((wid == WidgetId::CAM_GRID_PREV_BTN || wid == WidgetId::CAM_GRID_NEXT_BTN) &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       const int total_pg = std::max(1, (c_total + 3) / 4);
-      if (total_pg > 1) {
-        rs.cameras.grid_page = step_wrap(
-            rs.cameras.grid_page, (wid == WidgetId::CAM_GRID_NEXT_BTN) ? 1 : -1, total_pg);
+      const int next_pg = std::clamp(
+          rs.cameras.grid_page + ((wid == WidgetId::CAM_GRID_NEXT_BTN) ? 1 : -1), 0, total_pg - 1);
+      if (next_pg != rs.cameras.grid_page) {
+        rs.cameras.grid_page = next_pg;
         trigger_cam_refresh();
         mark_dirty_full();
         rt_.schedule_disp();
@@ -3975,18 +3997,18 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
   if (rs.nav.gui_page == PageId::SYSTEM) {
     const int mode = rs.nav.system_menu_mode;
     if (mode == 1 || mode == 2 || mode == 8) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
       }
       return true;
     }
     if (mode == 3) {
       if (wid == WidgetId::BACK_BUTTON) {
-        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) back_to_sys_root();
+        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) back_to_sys_root();
         return true;
       }
       if (wid == WidgetId::SYS_SECONDARY_BTN) {
-        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+        if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.nav.system_menu_mode = 4;
           mark_dirty_full();
           rt.schedule_disp();
@@ -3994,7 +4016,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
         return true;
       }
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int slot = hit->param;
         if (slot == 0) {
           rt.cmd(UiHostCmd::TRIGGER_SCREENSAVER_NOW);
@@ -4019,12 +4041,12 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       return true;
     }
     if (mode == 5) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.update_check_state = 0;
         back_to_sys_root();
         return true;
       }
-      if (wid == WidgetId::SYS_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::SYS_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const bool has_update = is_newer_semver(
             rt.fw_latest_version, (rt.fw_version != nullptr) ? rt.fw_version : "0.0.0");
         if (has_update) {
@@ -4041,25 +4063,25 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       return true;
     }
     if (mode == 7) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
         return true;
       }
       if (wid == WidgetId::SYS_VOL_SLIDER) return true;
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
         const int slot = hit->param;
-        if (slot == 1 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+        if (slot == 1 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
           const float cur_a_f = rt.num_val(UiNumberId::ALERT_VOLUME);
           const int cur_a = (std::isnan(cur_a_f) || cur_a_f < 20.0f) ? 70 : static_cast<int>(std::round(cur_a_f));
           const int nxt_a = static_cast<int>(step_wrap_range(static_cast<float>(cur_a), 10.0f, 50.0f, 100.0f));
           rt.set_num_val(UiNumberId::ALERT_VOLUME, static_cast<float>(nxt_a));
           rt.schedule_disp();
-        } else if (slot == 2 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+        } else if (slot == 2 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           const int cur_sz = static_cast<int>(std::round(rt.num_val(UiNumberId::VOLUME_STEP_SIZE)));
           const int nxt_sz = (cur_sz < 5) ? 5 : ((cur_sz < 10) ? 10 : 2);
           rt.set_num_val(UiNumberId::VOLUME_STEP_SIZE, static_cast<float>(nxt_sz));
           rt.schedule_disp();
-        } else if (slot == 3 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+        } else if (slot == 3 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rt.sw_toggle(UiSwitchId::GAME_SOUND);
           rt.schedule_disp();
         }
@@ -4067,19 +4089,19 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       return true;
     }
     if (mode == 9) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
         return true;
       }
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
         rs.music.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
         mark_dirty_full();
         rt.schedule_disp();
         return true;
       }
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int pg = std::clamp(rs.music.settings_page, 1, 2);
         cycle_music_pref_slot(rt, (pg - 1) * 5 + hit->param);
         rt.schedule_disp();
@@ -4087,12 +4109,12 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       return true;
     }
     if (mode == 11) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
         return true;
       }
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int slot = hit->param;
         if (slot == 0) {
           rt.set_select_opt(UiSelectId::VA_WAKE_WORD_MODE,
@@ -4123,14 +4145,14 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       return true;
     }
     if (mode == 12) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.system_menu_mode = 11;
         mark_dirty_full();
         rt.schedule_disp();
         return true;
       }
       if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
-          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+          touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int slot = std::clamp(static_cast<int>(hit->param), 0, 4);
         static constexpr UiSelectId kSensIds[5] = {
             UiSelectId::WW_SENS_OKAY_NABU, UiSelectId::WW_SENS_HEY_LUNA,
@@ -4144,14 +4166,14 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       return true;
     }
     if (mode == 13) {
-      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.system_menu_mode = 2;
         rt.cmd(UiHostCmd::APPLY_THEME_PRESET);
         mark_dirty_full();
         rt.schedule_disp();
         return true;
       }
-      if (wid == WidgetId::COLOR_WHEEL_SAVE && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+      if (wid == WidgetId::COLOR_WHEEL_SAVE && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         save_persisted_prefs();
         rt.set_select_opt(UiSelectId::THEME_PALETTE, "Custom");
         do_save_custom_color_to_latter();
@@ -4162,7 +4184,9 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       if (wid == WidgetId::COLOR_WHEEL_RING) {
         float hue = 0.0f, sat = 1.0f;
-        if (ui::hsv_wheel_pick(tx, ty, SCREEN_CX, scale_y(180), 156, 56, hue, sat)) {
+        if (ui::hsv_wheel_pick(tx, ty, ui::system_color_wheel_geom(), hue, sat)) {
+          gest.axis_lock = GestureAxisLock::Slider;
+          gest.tap_cancelled = true;
           color_wheel_hue_deg() = hue;
           color_wheel_sat() = sat;
           const UiColor c = hsv_to_rgb(hue / 360.0f, sat, 1.0f);
@@ -4244,7 +4268,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
     if (remote_key >= 0 && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, eff_tkey)) {
       gest.active = false;
       TouchGestureEngine::do_remote_send_key_(remote_key, act_slot, false, now_ms);
-      rt.schedule_band_disp(0, std::min(SCREEN_H - 1, ly.hdr_y + scale_y(24)));
+      rt.schedule_band_disp(0, std::min(SCREEN_H - 1, ly.hdr_y + dp_px(24)));
     }
     return true;
   }
@@ -4264,11 +4288,11 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
 
 #if LATTER_ROUND_DISPLAY
   if (sub == ToolsSubpage::STOPWATCH) {
-    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       exit_tool_subpage(false);
       return true;
     }
-    if (wid == WidgetId::SW_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::SW_PRIMARY_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       if (!rs.stopwatch.running) {
         rs.stopwatch.running = true;
         rs.stopwatch.started_in_analog = true;
@@ -4282,7 +4306,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       rt.schedule_disp();
       return true;
     }
-    if (wid == WidgetId::SW_LAP_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::SW_LAP_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       if (rs.stopwatch.running) {
         record_stopwatch_lap(rs.stopwatch, now_ms - rs.stopwatch.start_time_ms);
       } else if (rs.stopwatch.elapsed_ms > 0) {
@@ -4291,7 +4315,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       rt.schedule_disp();
       return true;
     }
-    if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::SW_RESET_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       rs.stopwatch.reset();
       latter_core::check_and_emit_timer_alarm_state(now_ms);
       rt.schedule_disp();
@@ -4301,10 +4325,10 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
 #endif
 
   if (sub == ToolsSubpage::DICE) {
-    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       exit_tool_subpage(true);
     } else if (wid == WidgetId::DICE_ROLL_BTN && !dice_state().anim_active &&
-               touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+               touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       trigger_dice_roll(now_ms, next_rng_u32(), next_rng_u32());
       rt.schedule_disp();
     }
@@ -4313,7 +4337,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
 
   if (sub == ToolsSubpage::FLASHLIGHT) {
     if (ty <= ly.top_edge_zone_y()) return true;
-    if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       rs.nav.tools_subpage = 0;
       rt.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
       if (!TouchGestureEngine::return_from_shortcut_origin_(rs, rt, now_ms)) {
@@ -4325,29 +4349,29 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
   }
 
   if (sub == ToolsSubpage::CALCULATOR) {
-    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       reset_calculator_state();
       exit_tool_subpage(false);
     } else if (wid >= WidgetId::CALC_KEY_BASE && wid < WidgetId::CALC_KEY_BASE + 20 &&
-               touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID)) {
-      handle_calculator_keypad_tap(tx, ty);
+               touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
+      handle_calculator_key_index(static_cast<int>(wid - WidgetId::CALC_KEY_BASE));
       rt.schedule_disp();
     }
     return true;
   }
 
   if (sub == ToolsSubpage::LEVEL) {
-    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       exit_tool_subpage(true);
     }
     return true;
   }
 
   if (sub == ToolsSubpage::COIN_FLIP) {
-    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+    if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       exit_tool_subpage(true);
     } else if (wid == WidgetId::COIN_FLIP_BTN && !coin_state().anim_active &&
-               touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON)) {
+               touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       trigger_coin_flip(now_ms, next_rng_u32());
       rt.schedule_disp();
     }
@@ -4551,7 +4575,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
         const int act_slot = resolve_active_remote_slot(rs.remote.active_slot);
         rs.remote.active_slot = act_slot;
         TouchGestureEngine::do_remote_send_key_(remote_key, act_slot, false, now_rel);
-        rt_.schedule_band_disp(0, std::min(SCREEN_H - 1, layout().hdr_y + scale_y(24)));
+        rt_.schedule_band_disp(0, std::min(SCREEN_H - 1, layout().hdr_y + dp_px(24)));
       }
     } else if (rs.nav.remote_subpage == 1) {
       if (wid == WidgetId::REMOTE_PRIMARY_PWR &&

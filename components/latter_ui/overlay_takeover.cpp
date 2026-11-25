@@ -65,35 +65,37 @@ void render_alert_ringing_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                                : (st.find_my_active ? ctx.theme_secondary : st.col_dark_gray);
   render_bezel_alert_border(it, st.cx, st.cy, ring_c);
 
-  const int cta_h = std::max(44, scale_y(48));
+  const auto &ly = layout();
+  const int cta_h = std::max(44, dp_px(48));
+  const int hdr_y = std::max(ly.hdr_y + dp_px(18), (SCREEN_H * 16) / 100);
 
   if (st.find_my_active) {
-    const int base_r = scale_min(50);
-    const uint32_t max_span = static_cast<uint32_t>(std::max(scale_min(60), SCREEN_MIN_R - scale_min(76)));
+    const int base_r = std::max(32, SCREEN_MIN_R / 4);
+    const uint32_t max_span = static_cast<uint32_t>(std::max(40, SCREEN_MIN_R - base_r - dp_px(16)));
     const int radar_r = base_r + static_cast<int>((st.now_ms / 8U) % max_span);
     fast_circle(it, st.cx, st.cy, radar_r, ctx.theme_primary);
     fast_circle(it, st.cx, st.cy, radar_r + 1, pulse ? st.col_white : ctx.theme_secondary);
     const int radar_r2 = base_r + static_cast<int>(((st.now_ms / 8U) + (max_span / 2U)) % max_span);
     fast_circle(it, st.cx, st.cy, radar_r2, ctx.theme_secondary);
 
-    ui::shadow_print(it, st.cx, scale_y(75), ctx.font_small,
+    ui::shadow_print(it, st.cx, hdr_y, ctx.font_small,
                      pulse ? st.col_white : ctx.theme_secondary, UiTextAlign::CENTER, "LOCATING DEVICE");
-    ui::shadow_print(it, st.cx, scale_y(156), ctx.font_date, st.col_white, UiTextAlign::CENTER, "LATTER");
-    ui::shadow_print(it, st.cx, scale_y(196), ctx.font_date, ctx.theme_primary, UiTextAlign::CENTER, "COMPANION");
-    ui::shadow_print(it, st.cx, scale_y(244), ctx.font_small, ctx.theme_secondary,
+    ui::shadow_print(it, st.cx, (SCREEN_H * 34) / 100, ctx.font_date, st.col_white, UiTextAlign::CENTER, "LATTER");
+    ui::shadow_print(it, st.cx, (SCREEN_H * 43) / 100, ctx.font_date, ctx.theme_primary, UiTextAlign::CENTER, "COMPANION");
+    ui::shadow_print(it, st.cx, (SCREEN_H * 53) / 100, ctx.font_small, ctx.theme_secondary,
                      UiTextAlign::CENTER, "Acoustic Beacon Active");
 
-    const int btn_y = scale_y(330);
-    const int btn_w = std::min({kMaxContentColW, safe_span(btn_y, 18), scale_x(240)});
+    const int btn_y = std::min(ly.back_y - dp_px(28), (SCREEN_H * 72) / 100);
+    const int btn_w = std::min({ly.max_content_w(), ly.band_safe_span(btn_y, cta_h, dp_px(18)), dp_px(240)});
     ui::action_pill_centered(it, st.cx, btn_w, btn_y, cta_h,
                              ctx.theme_primary, kChromeGlassTint,
                              "Tap to Dismiss", st.col_white, ctx.font_small,
-                             WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, cta_h + scale_y(16));
+                             WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, cta_h + dp_px(16));
     return;
   }
 
   if (st.alarm_ringing) {
-    ui::shadow_print(it, st.cx, scale_y(75), ctx.font_small,
+    ui::shadow_print(it, st.cx, hdr_y, ctx.font_small,
                      pulse ? ctx.theme_secondary : st.col_white, UiTextAlign::CENTER, "ALARM RINGING");
 
     char cur_t_buf[16];
@@ -103,12 +105,13 @@ void render_alert_ringing_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
       format_time_hhmm(ctx.now.hour, ctx.now.minute, st.is_24h_format,
                        cur_t_buf, sizeof(cur_t_buf), ampm_buf);
     }
-    ui::shadow_print(it, st.cx, scale_y(160), ctx.font_time, st.col_white, UiTextAlign::CENTER, cur_t_buf);
+    const int time_y = (SCREEN_H * 34) / 100;
+    ui::shadow_print(it, st.cx, time_y, ctx.font_time, st.col_white, UiTextAlign::CENTER, cur_t_buf);
     if (!st.is_24h_format && ampm_buf[0] != '\0') {
       int tw = 0, xo = 0, base = 0, th = 0;
       if (ctx.font_time != nullptr) ctx.font_time->measure(cur_t_buf, &tw, &xo, &base, &th);
-      const int ap_x = st.cx + (tw / 2) + scale_x(10);
-      ui::shadow_print(it, ap_x, scale_y(175), ctx.font_small, ctx.theme_secondary,
+      const int ap_x = st.cx + (tw / 2) + dp_px(10);
+      ui::shadow_print(it, ap_x, time_y + dp_px(15), ctx.font_small, ctx.theme_secondary,
                        UiTextAlign::CENTER_LEFT, ampm_buf);
     }
 
@@ -116,42 +119,45 @@ void render_alert_ringing_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
                           ? st.alarm3_recurrence
                           : ((st.alarm_ringing_idx == 2) ? st.alarm2_recurrence : st.alarm1_recurrence);
     static constexpr const char *kRecNames[4] = {"Daily", "Weekdays", "Weekends", "Once"};
-    ui::shadow_print(it, st.cx, scale_y(225), ctx.font_small, ctx.theme_primary,
+    const int rec_y = time_y + (kAutoFonts.time / 2) + dp_px(18);
+    ui::shadow_print(it, st.cx, rec_y, ctx.font_small, ctx.theme_primary,
                      UiTextAlign::CENTER, kRecNames[r_idx & 3]);
 
-    const int snz_y = scale_y(295);
-    const int snz_w = std::min({kMaxContentColW, safe_span(snz_y, 18), scale_x(232)});
+    const int dis_y = std::min(ly.back_y - dp_px(24), (SCREEN_H * 78) / 100);
+    const int snz_y = std::max(rec_y + cta_h / 2 + dp_px(14), dis_y - cta_h - dp_px(18));
+    const int snz_w = std::min({ly.max_content_w(), ly.band_safe_span(snz_y, cta_h, dp_px(18)), dp_px(232)});
     ui::action_pill_centered(it, st.cx, snz_w, snz_y, cta_h,
                              ctx.theme_secondary, kChromeGlassTint,
                              "Snooze (+5m)", st.col_white, ctx.font_small,
-                             WidgetId::ALERT_SNOOZE_BTN, kHitTap | kHitFocusSlot, 0, cta_h + scale_y(12));
+                             WidgetId::ALERT_SNOOZE_BTN, kHitTap | kHitFocusSlot, 0, cta_h + dp_px(12));
 
-    const int dis_y = scale_y(364);
-    const int dis_w = std::min({kMaxContentColW, safe_span(dis_y, 18), scale_x(216)});
+    const int dis_w = std::min({ly.max_content_w(), ly.band_safe_span(dis_y, cta_h, dp_px(18)), dp_px(216)});
     ui::action_pill_centered(it, st.cx, dis_w, dis_y, cta_h,
                              ctx.col_red, ui::chrome_danger_bg(),
                              "Dismiss", st.col_white, ctx.font_small,
-                             WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 1, cta_h + scale_y(12));
+                             WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 1, cta_h + dp_px(12));
     return;
   }
 
-  ui::shadow_print(it, st.cx, scale_y(75), ctx.font_small,
+  ui::shadow_print(it, st.cx, hdr_y, ctx.font_small,
                    pulse ? ctx.theme_secondary : st.col_white, UiTextAlign::CENTER, "TIMER EXPIRED");
-  ui::shadow_print(it, st.cx, scale_y(170), ctx.font_time, st.col_white, UiTextAlign::CENTER, "00:00");
+  const int tm_y = (SCREEN_H * 36) / 100;
+  ui::shadow_print(it, st.cx, tm_y, ctx.font_time, st.col_white, UiTextAlign::CENTER, "00:00");
+  const int lbl_y = tm_y + (kAutoFonts.time / 2) + dp_px(20);
   const std::string t_lbl = st.va_timer_name.empty()
                                 ? std::string("Time is up!")
                                 : fit_text_to_width_font(st.va_timer_name.str(),
-                                                         std::min(kMaxContentColW, safe_span(scale_y(230), 18)),
+                                                         std::min(ly.max_content_w(), safe_span(lbl_y, 18)),
                                                          ctx.font_small);
-  ui::shadow_print(it, st.cx, scale_y(230), ctx.font_small, ctx.theme_secondary,
+  ui::shadow_print(it, st.cx, lbl_y, ctx.font_small, ctx.theme_secondary,
                    UiTextAlign::CENTER, t_lbl.c_str());
 
-  const int btn_y = scale_y(330);
-  const int btn_w = std::min({kMaxContentColW, safe_span(btn_y, 18), scale_x(232)});
+  const int btn_y = std::min(ly.back_y - dp_px(28), (SCREEN_H * 72) / 100);
+  const int btn_w = std::min({ly.max_content_w(), ly.band_safe_span(btn_y, cta_h, dp_px(18)), dp_px(232)});
   ui::action_pill_centered(it, st.cx, btn_w, btn_y, cta_h,
                            ctx.theme_primary, kChromeGlassTint,
                            "Dismiss", st.col_white, ctx.font_small,
-                           WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, cta_h + scale_y(16));
+                           WidgetId::ALERT_DISMISS_BTN, kHitTap | kHitFocusSlot, 0, cta_h + dp_px(16));
 }
 
 bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
@@ -161,34 +167,38 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
     frame_base(it, st.col_bg);
     const int pct = std::max(0, std::min(100, st.ota_progress_pct));
     if constexpr (LATTER_ROUND_DISPLAY != 0) {
+      const int r_in = std::max(24, SCREEN_MIN_R - dp_px(13));
+      const int r_out = std::max(r_in + 4, SCREEN_MIN_R - dp_px(5));
       for (int i = 0; i <= pct; i++) {
         const float rad = (static_cast<float>(i) / 100.0f) * 2.0f * PI_F - HALF_PI_F;
         float s = 0.0f;
         float c = 1.0f;
         fast_sincos(rad, s, c);
-        fast_line(it, st.cx + static_cast<int>(scale_min(220) * c),
-                  st.cy + static_cast<int>(scale_min(220) * s),
-                  st.cx + static_cast<int>(scale_min(228) * c),
-                  st.cy + static_cast<int>(scale_min(228) * s), st.theme_secondary);
+        fast_line(it, st.cx + static_cast<int>(static_cast<float>(r_in) * c),
+                  st.cy + static_cast<int>(static_cast<float>(r_in) * s),
+                  st.cx + static_cast<int>(static_cast<float>(r_out) * c),
+                  st.cy + static_cast<int>(static_cast<float>(r_out) * s), st.theme_secondary);
       }
     } else {
-      const int ota_bw = std::min(scale_w(280), SCREEN_W - 48);
+      const int ota_bw = std::min(dp_px(280), SCREEN_W - 48);
       const int ota_bx = st.cx - (ota_bw / 2);
       const int ota_fill = (ota_bw * pct) / 100;
-      fill_rect_row_major(it, ota_bx, st.cy + scale_y(104), ota_bw, scale_y(10), st.col_dark_gray);
+      const int bar_y = st.cy + dp_px(104);
+      const int bar_h = std::max(6, dp_px(10));
+      fill_rect_row_major(it, ota_bx, bar_y, ota_bw, bar_h, st.col_dark_gray);
       if (ota_fill > 0) {
-        fill_rect_row_major(it, ota_bx, st.cy + scale_y(104), ota_fill, scale_y(10), st.theme_primary);
+        fill_rect_row_major(it, ota_bx, bar_y, ota_fill, bar_h, st.theme_primary);
       }
     }
-    fast_print(it, st.cx, st.cy - scale_y(60), ctx.font_date, st.col_white, UiTextAlign::CENTER, "FIRMWARE UPDATE");
+    fast_print(it, st.cx, st.cy - dp_px(60), ctx.font_date, st.col_white, UiTextAlign::CENTER, "FIRMWARE UPDATE");
     char prog_buf[32];
     std::snprintf(prog_buf, sizeof(prog_buf), "%d%%", pct);
-    fast_print(it, st.cx, st.cy + scale_y(8), ctx.font_time, st.col_white, UiTextAlign::CENTER, prog_buf);
+    fast_print(it, st.cx, st.cy + dp_px(8), ctx.font_time, st.col_white, UiTextAlign::CENTER, prog_buf);
     const char *status_msg = "Preparing flash...";
     if (pct >= 99) status_msg = "Rebooting device...";
     else if (pct >= 85) status_msg = "Verifying image...";
     else if (pct >= 10) status_msg = "Writing flash memory...";
-    fast_print(it, st.cx, st.cy + scale_y(65), ctx.font_small, st.col_slate, UiTextAlign::CENTER, status_msg);
+    fast_print(it, st.cx, st.cy + dp_px(65), ctx.font_small, st.col_slate, UiTextAlign::CENTER, status_msg);
     return true;
   }
 
@@ -196,14 +206,14 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
   if (st.is_hibernating) {
     frame_base(it, st.col_bg);
     if (st.hibernate_countdown_val > 0) {
-      fast_print(it, st.cx, st.cy - scale_y(65), ctx.font_date, st.col_white, UiTextAlign::CENTER, "HIBERNATING");
+      fast_print(it, st.cx, st.cy - dp_px(65), ctx.font_date, st.col_white, UiTextAlign::CENTER, "HIBERNATING");
       char c_buf[16];
       std::snprintf(c_buf, sizeof(c_buf), "%d", st.hibernate_countdown_val);
-      fast_print(it, st.cx, st.cy + scale_y(5), ctx.font_chrono_time, st.theme_secondary, UiTextAlign::CENTER, c_buf);
-      fast_print(it, st.cx, st.cy + scale_y(65), ctx.font_small, st.col_slate, UiTextAlign::CENTER, "Tap screen to stay awake");
+      fast_print(it, st.cx, st.cy + dp_px(5), ctx.font_chrono_time, st.theme_secondary, UiTextAlign::CENTER, c_buf);
+      fast_print(it, st.cx, st.cy + dp_px(65), ctx.font_small, st.col_slate, UiTextAlign::CENTER, "Tap screen to stay awake");
     } else {
-      fast_print(it, st.cx, st.cy - scale_y(10), ctx.font_date, st.col_white, UiTextAlign::CENTER, "HIBERNATING");
-      fast_print(it, st.cx, st.cy + scale_y(30), ctx.font_small, st.col_slate, UiTextAlign::CENTER, "Shutting down...");
+      fast_print(it, st.cx, st.cy - dp_px(10), ctx.font_date, st.col_white, UiTextAlign::CENTER, "HIBERNATING");
+      fast_print(it, st.cx, st.cy + dp_px(30), ctx.font_small, st.col_slate, UiTextAlign::CENTER, "Shutting down...");
     }
     return true;
   }

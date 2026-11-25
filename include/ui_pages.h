@@ -113,7 +113,8 @@ void render_climate_controls_deck(Rgb565Surface &it,
                                   int content_bot);
 
 void reset_calculator_state();
-void handle_calculator_keypad_tap(int tx, int ty);
+void handle_calculator_key_index(int key_idx);
+const char *calculator_display_text() noexcept;
 
 #if !LATTER_HAS_IMU
 bool blocks_can_place(const int8_t board[20][10], int kind, int rot, int px, int py) noexcept;

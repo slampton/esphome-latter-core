@@ -83,7 +83,7 @@ interval:
             } else if (t_eff.sec_changed) {
               if (!rs.voice.active && rs.voice.status_text.empty() && rs.nav.display_power_state == 0) {
                 if (rs.nav.gui_page == 10 && rs.nav.time_subpage == 1) {
-                  latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::scale_y(68), latter_ui::layout().back_y - 8);
+                  latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::dp_px(68), latter_ui::layout().back_y - 8);
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
                   if (now_t_ms - latter_ui::last_disp_update_ms() >= 200U) {
                     latter_ui::schedule_disp_update(&id(disp1));
@@ -117,7 +117,7 @@ interval:
               if (cur_blink != s_prev_alarm_blink) {
                 s_prev_alarm_blink = cur_blink;
                 latter_ui::schedule_band_disp_update(
-                    &id(disp1), latter_ui::scale_y(102), latter_ui::scale_y(200));
+                    &id(disp1), latter_ui::dp_px(102), latter_ui::dp_px(200));
               }
             } else {
               s_prev_alarm_blink = false;

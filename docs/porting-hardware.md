@@ -33,7 +33,7 @@ The core modules invoke board/chip hooks through `DeviceRuntimeState` callbacks 
 | `hal_set_audio_codecs_standby` | `modules/hal/audio_es8311*_duplex.yaml` | `standby: bool` | Put codecs into low-power standby, or wake them |
 | `hal_set_imu_power_mode` | `modules/hal/imu_qmi8658.yaml` (`LATTER_HAS_IMU=1`) | `mode_id: int` | Generic `latter_core::ImuPowerMode` (`Off`, `AccelOnly`, `AccelAndGyro`, `WakeOnMotion`) mapped onto chip registers |
 | `hal_init_pmu` | `modules/hal/pmu_axp2101.yaml` (`LATTER_HAS_BATTERY=1`) | — | Configure PMU at boot: mask IRQs, apply rail, TS, and charger traits |
-| `hal_release_deep_sleep_holds` | `boards/<board_id>.yaml` | — | Release GPIO holds at boot and pulse touch reset if the touch driver cannot |
+| `hal_release_deep_sleep_holds` | `boards/<board_id>.yaml` | — | Release GPIO holds at boot (`LatterTouchscreen` owns non-blocking `reset_pin` pulses) |
 | `hal_enter_hardware_hibernate` | `boards/<board_id>.yaml` | — | Hold pins and cut power after state is saved (`return;` on mains-powered boards) |
 
 **Audio bus (when `capabilities.audio: true`, full duplex at 48 kHz is required):**
@@ -66,8 +66,8 @@ Hardware drivers compile inside [`components/latter_core/`](../components/latter
 | :--- | :--- |
 | `power_battery.cpp` + `include/hal_battery.h` | AXP2101 boot init (`LATTER_DRV_PMU_AXP2101`), 0.5C charge current derived from `LATTER_BATTERY_MAH` (up to `20000` mAh), `65 °C` die-temperature foldback, rail keep-masks, hibernate/alarm-sleep entry, load-compensated OCV + hardware fuel-gauge `hw_gauge_pct` (`0..100`, including SoC-only gauges) SoC modeling, and PCF85063 hardware RTC restore/sync (`LATTER_DRV_RTC_PCF85063`) |
 | `imu_qmi8658.cpp` + `include/hal_imu_qmi8658.h` | QMI8658 (`LATTER_DRV_IMU_QMI8658`) `ImuPowerMode` active, accelerometer-only, power-down, and hardware wake-on-motion (`INT1`) register programming |
-| `include/hal_touch.h` + `touch_hal.cpp` + `touchscreen.py` | First-party `platform: latter_core` I2C capacitive touch driver (`protocol: ft6336 | ft3168 | gt911 | cst9217 | cst816s`), IRAM GPIO edge ISR wake (`App.wake_loop_threadsafe`), high-rate `8–16 ms` active-finger tracking, hardware-verified `0 ms` lift release, race-free `GT911` `0x814E` ack, and `[PROF:TOUCH_HAL]` diagnostics |
-| `include/hal_panel_power.h` + `panel_power.cpp` | Backlight PWM (`ledc_channel_config` initialized once, active-low `en_inverted`, or `custom` via `hw_set_backlight_level`), `mipi_spi` DCS `0x10 SLPIN` / `0x11 SLPOUT` panel sleep templates, and FocalTech touch low-power monitor-mode helper (`LATTER_DRV_TOUCH_FT5X06` + `0xA3` chip-ID check) |
+| `include/hal_touch.h` + `touch_hal.cpp` + `touchscreen.py` | First-party `platform: latter_core` I2C capacitive touch driver (`protocol: ft6336 | ft3168 | gt911 | cst9217 | cst816s`), IRAM GPIO edge ISR wake (`pm_wake_loop_from_isr` -> `App.wake_loop_threadsafe`), non-blocking `reset_pin:` + boot recovery, polymorphic FocalTech low-power monitor-mode (`0xA3` chip-ID verified), high-rate `8–16 ms` active-finger tracking, hardware-verified `0 ms` lift release, race-free `GT911` `0x814E` ack, and `[PROF:TOUCH_HAL]` diagnostics |
+| `include/hal_panel_power.h` | Backlight PWM (`ledc_channel_config` initialized once, active-low `en_inverted`, or `custom` via `hw_set_backlight_level`), and `mipi_spi` DCS `0x10 SLPIN` / `0x11 SLPOUT` panel sleep templates |
 | `audio_es8311.cpp` + `include/audio_router.h` | ES8311 / ES7210 (`LATTER_DRV_CODEC_ES8311`) low-power standby and wake register transitions |
 | `pm_light_sleep.cpp` + `include/hal_{sleep_pm,radio_policy,display_lifecycle}.h` | `latter_awake` power-management lock (`latter_core::pm_apply`), `DisplayLifecycleController`, light-sleep wake-pin critical section & ISR edge re-delivery, `< 1 ms` `latter_beacon` pause/resume, raw GPIO retention (`LATTER_TOUCH_RST_PIN`), and `#ifdef USE_WIFI`-guarded Wi-Fi modem-sleep policy |
 | `esphome_bridge.cpp` + `include/esphome_bridge.h` | `ESPHOME_VERSION_CODE` `static_assert` guard, 6 `latter_core::` VoiceAssistant/API helpers, `MipiDsi` zero-copy framebuffer access, and throttled OTA lifecycle handlers (`handle_ota_*`) |
@@ -125,7 +125,6 @@ latter_core:
     rtc_pcf85063: false       # LATTER_DRV_RTC_PCF85063 (0x51)
     imu_qmi8658: true         # LATTER_DRV_IMU_QMI8658 (0x6B)
     codec_es8311: true        # LATTER_DRV_CODEC_ES8311 (0x18 / 0x40)
-    touch_ft5x06: false       # LATTER_DRV_TOUCH_FT5X06 (0x38 + reg 0xA3 chip-ID check)
 ```
 
 `display.ppi` (`LATTER_PANEL_PPI`) converts physical millimetre touch and typography thresholds in `UiLayout`. See [Device UI design guide → Per-board adaptation](device-ui-design.md#6-per-board-adaptation).

@@ -471,13 +471,23 @@ def _check_ota_block_no_password(yrel: str, ytxt: str, failures: list[str]) -> N
 
 
 def _verify_core_cpp_and_prof_gates(failures: list[str]) -> None:
-    panel_cpp = (ROOT / "components" / "latter_core" / "panel_power.cpp").read_text(encoding="utf-8")
     panel_hdr_path = ROOT / "include" / "hal_panel_power.h"
-    panel_combined = panel_cpp + "\n" + (panel_hdr_path.read_text(encoding="utf-8") if panel_hdr_path.is_file() else "")
+    panel_combined = panel_hdr_path.read_text(encoding="utf-8") if panel_hdr_path.is_file() else ""
     if "ledc_channel_inited" not in panel_combined:
-        failures.append("[OTA SAFETY] panel_power.cpp / hal_panel_power.h must provide ledc_channel_inited guard")
+        failures.append("[OTA SAFETY] hal_panel_power.h must provide ledc_channel_inited guard")
     if "esp_lcd_dpi_panel_register_event_callbacks" in panel_combined:
-        failures.append("[DSI IRAM] panel_power contains retired esp_lcd_dpi_panel_register_event_callbacks")
+        failures.append("[DSI IRAM] hal_panel_power.h contains retired esp_lcd_dpi_panel_register_event_callbacks")
+    for legacy_pat, label in (
+        (r"\bLATTER_DRV_TOUCH_FT5X06\b|\btouch_ft5x06\b", "retired touch_ft5x06 / LATTER_DRV_TOUCH_FT5X06"),
+        (r"\bhal_set_touch_sleep_mode(?:_bus)?\b|\bhal_recover_touchscreen_if_failed\b|\bhal_pulse_touch_reset_pin\b", "retired external touch sleep/reset helper"),
+    ):
+        for scan_root in (ROOT / "boards", ROOT / "modules", ROOT / "guis", ROOT / "include", ROOT / "components"):
+            for p in iter_repo_files(scan_root):
+                if p.suffix.lower() not in {".h", ".hpp", ".cpp", ".yaml", ".yml", ".py"}:
+                    continue
+                txt = strip_cpp_comments(p.read_text(encoding="utf-8")) if p.suffix.lower() in {".h", ".hpp", ".cpp"} else strip_yaml_comments(p.read_text(encoding="utf-8"))
+                if re.search(legacy_pat, txt):
+                    failures.append(f"[TOUCH LEGACY] {p.relative_to(ROOT).as_posix()} still references {label}")
 
     bridge_cpp = (ROOT / "components" / "latter_core" / "esphome_bridge.cpp").read_text(encoding="utf-8")
     bridge_hdr = (ROOT / "include" / "esphome_bridge.h").read_text(encoding="utf-8")

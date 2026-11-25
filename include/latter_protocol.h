@@ -435,6 +435,7 @@ enum class PrefContractCap : uint8_t {
   SPEAKER = 6,
   BEACON = 7,
   BEACON_BATTERY = 8,
+  TOUCH = 9,
 };
 
 inline constexpr std::array<std::string_view, 3> kPrefOptsWakeWordMode = {{"Docked Only", "Always On", "Disabled"}};
@@ -637,7 +638,7 @@ struct PrefContractSpec {
 
 inline constexpr std::array<PrefContractSpec, 70> kPrefContractSpecs = {{
     {DevicePrefsField::WAKE_WORD_MODE, "wake_word_mode", PrefContractDomain::SELECT, PrefContractCap::MIC, std::span<const std::string_view>{kPrefOptsWakeWordMode}, kPrefDefaultWakeWordMode, false, 0, kPrefDefaultWakeWordModeIdx, false, 0, 0, 0},
-    {DevicePrefsField::TAP_TO_WAKE, "tap_to_wake", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsTapToWake}, kPrefDefaultTapToWake, false, 2, kPrefDefaultTapToWakeIdx, false, 0, 0, 0},
+    {DevicePrefsField::TAP_TO_WAKE, "tap_to_wake", PrefContractDomain::SELECT, PrefContractCap::TOUCH, std::span<const std::string_view>{kPrefOptsTapToWake}, kPrefDefaultTapToWake, false, 2, kPrefDefaultTapToWakeIdx, false, 0, 0, 0},
     {DevicePrefsField::PICKUP_TO_WAKE, "pickup_to_wake", PrefContractDomain::SELECT, PrefContractCap::DISPLAY_IMU, std::span<const std::string_view>{kPrefOptsPickupToWake}, kPrefDefaultPickupToWake, false, 1, kPrefDefaultPickupToWakeIdx, false, 0, 0, 0},
     {DevicePrefsField::BATTERY_SCREEN_TIMEOUT, "battery_screen_timeout", PrefContractDomain::SELECT, PrefContractCap::DISPLAY_BATTERY, std::span<const std::string_view>{kPrefOptsBatteryScreenTimeout}, kPrefDefaultBatteryScreenTimeout, false, 2, kPrefDefaultBatteryScreenTimeoutIdx, false, 0, 0, 0},
     {DevicePrefsField::DOCKED_IDLE_TIMEOUT, "docked_idle_timeout", PrefContractDomain::SELECT, PrefContractCap::DISPLAY, std::span<const std::string_view>{kPrefOptsDockedIdleTimeout}, kPrefDefaultDockedIdleTimeout, false, 3, kPrefDefaultDockedIdleTimeoutIdx, false, 0, 0, 0},

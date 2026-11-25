@@ -238,8 +238,8 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   const MusicLyricsTransportGeom tg = compute_music_lyrics_transport_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
   const int min_hit = mm_to_px(7.0f);
-  int vp_top = LATTER_ROUND_DISPLAY ? scale_y(28) : scale_y(20);
-  int vp_bot = SCREEN_H - (LATTER_ROUND_DISPLAY ? scale_y(28) : scale_y(20));
+  int vp_top = LATTER_ROUND_DISPLAY ? dp_px(28) : dp_px(20);
+  int vp_bot = SCREEN_H - (LATTER_ROUND_DISPLAY ? dp_px(28) : dp_px(20));
 
   if (show_hud) {
     std::string hdr_txt = trk.title.empty() ? std::string("Lyrics") : trk.title;
@@ -251,11 +251,11 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
     const bool manual_override = lyr.synced && !lyr.lines.empty() && (ctx.now_ms < lyr.manual_override_until_ms);
     int sync_hit_bottom = 0;
     if (manual_override) {
-      const int sync_vis_h = std::clamp(scale_y(32), 28, 42);
-      const int sync_hit_h = std::max(sync_vis_h, std::min(min_hit, scale_y(54)));
-      const int sync_cy = ly.hdr_y + scale_y(30);
-      const int span_w = std::min(kMaxContentColW, safe_span(sync_cy, 16));
-      const int sync_vis_w = std::clamp(scale_x(86), 72, 124);
+      const int sync_vis_h = std::clamp(dp_px(32), 28, 46);
+      const int sync_hit_h = std::max(sync_vis_h, std::min(min_hit, dp_px(54)));
+      const int sync_cy = ly.hdr_y + dp_px(30);
+      const int span_w = std::min(ly.max_content_w(), safe_span(sync_cy, 16));
+      const int sync_vis_w = std::clamp(dp_px(86), 72, 132);
       const int right_edge = ctx.cx + span_w / 2;
       const int sync_x0 = right_edge - sync_vis_w;
       ui::action_pill(it, sync_x0, sync_vis_w, sync_cy, sync_vis_h,
@@ -264,7 +264,7 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
                       WidgetId::MUSIC_LYRIC_SYNC_BTN, kHitTap | kHitFocusSlot, 0, sync_hit_h);
       sync_hit_bottom = sync_cy + sync_hit_h / 2 + 2;
     }
-    vp_top = std::max(ly.hdr_y + scale_y(24), sync_hit_bottom);
+    vp_top = std::max(ly.hdr_y + dp_px(24), sync_hit_bottom);
     vp_bot = std::max(vp_top + 60, tg.vp_bot);
   }
 
@@ -298,17 +298,23 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   const UiFontView active_font =
-      (SCREEN_W >= 640) ? ctx.font_date
-                        : ((SCREEN_W >= 440) ? ctx.font_btn_bold : ctx.font_small);
+      (ly.size_class == SizeClass::Expanded || kAutoFonts.date >= 36)
+          ? ctx.font_date
+          : ((ly.frame.w_dp >= 400) ? ctx.font_btn_bold : ctx.font_small);
   const UiFontView body_font = ctx.font_small;
-  const int active_lh = (SCREEN_W >= 640) ? 36 : ((SCREEN_W >= 440) ? 26 : 22);
-  const int body_lh = (SCREEN_W >= 640) ? 28 : 21;
-  const int line_gap = scale_y(12);
+  auto measure_font_lh = [](UiFontView f, int fallback_px) -> int {
+    int mw = 0, mxo = 0, mbl = 0, mh = 0;
+    if (f != nullptr) f->measure("Ag", &mw, &mxo, &mbl, &mh);
+    return (mh > 0) ? mh : fallback_px;
+  };
+  const int active_lh = measure_font_lh(active_font, kAutoFonts.btn_bold) + dp_px(6);
+  const int body_lh = measure_font_lh(body_font, kAutoFonts.small) + dp_px(5);
+  const int line_gap = dp_px(12);
 
   const int anchor_screen_y = std::clamp((SCREEN_H * 38) / 100, vp_top + 28, vp_bot - 28);
-  const int wrap_w = std::max(120, std::min({kMaxContentColW,
+  const int wrap_w = std::max(120, std::min({ly.max_content_w(),
                                              safe_span(anchor_screen_y, 26),
-                                             safe_span(vp_top + scale_y(28), 26)}));
+                                             safe_span(vp_top + dp_px(28), 26)}));
 
   const uint32_t pos_ms = ms.interpolated_position_ms(ctx.now_ms);
   const int live_act_idx = lyr.synced ? lyr.find_active_line(pos_ms) : -1;
@@ -375,7 +381,7 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   int *const doc_y0 = s_doc_buf.data();
   int *const doc_y1 = doc_y0 + kMaxMusicLyricLines;
   int *const doc_cy = doc_y0 + (kMaxMusicLyricLines * 2U);
-  int cur_doc_y = scale_y(16);
+  int cur_doc_y = dp_px(16);
 
   for (int i = 0; i < n_lines; ++i) {
     const bool is_act = lyr.synced && (i == live_act_idx);
@@ -388,12 +394,12 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
     cur_doc_y = doc_y1[i] + line_gap;
   }
 
-  const int total_doc_h = cur_doc_y + scale_y(24);
+  const int total_doc_h = cur_doc_y + dp_px(24);
   const int anchor_in_vp = anchor_screen_y - vp_top;
   const int max_scroll = std::max(0, total_doc_h - vp_h / 2);
   step_music_lyrics_auto_scroll(lyr, pos_ms, ctx.now_ms, anchor_in_vp, doc_cy, n_lines, max_scroll);
 
-  const int fade_band = std::max(16, scale_y(28));
+  const int fade_band = std::max(16, dp_px(28));
   int hit_slot = 0;
   int last_hit_y1 = vp_top - 1;
 
@@ -426,7 +432,7 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
           alpha_q8 = std::clamp(((vp_bot - draw_cy) * 256) / fade_band, 56, 256);
         }
       }
-      const int row_span = std::min(kMaxContentColW, safe_span(draw_cy, 20));
+      const int row_span = std::min(ly.max_content_w(), safe_span(draw_cy, 20));
       const std::string clamped_line = fit_text_to_width_font(sub[s], row_span, f);
       draw_lyrics_alpha_print(it, ctx.cx, draw_cy, f, fg_c, TextAlign::CENTER,
                               clamped_line.c_str(), alpha_q8);
@@ -436,10 +442,7 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
       const int hy0 = std::max(scr_y0 - 2, last_hit_y1 + 1);
       const int hy1 = std::min(scr_y1 + 2, vp_bot - 2);
       if (hy1 - hy0 >= 16) {
-        const int hw = std::max(80, band_safe_span_for((hy0 + hy1) / 2, hy1 - hy0,
-                                                       SCREEN_W, SCREEN_H,
-                                                       LATTER_ROUND_DISPLAY != 0,
-                                                       LATTER_IS_WEARABLE != 0, 20));
+        const int hw = std::max(80, ly.band_safe_span((hy0 + hy1) / 2, hy1 - hy0, 20));
         frame_hits().add_rect(ctx.cx - hw / 2, hy0, hw, hy1 - hy0,
                               static_cast<uint16_t>(WidgetId::MUSIC_LYRIC_LINE_BASE + hit_slot),
                               kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
@@ -456,6 +459,7 @@ void render_music_info_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const auto &ms = media_state();
   const auto &ac = area_ctx_state();
+  const auto &ly = layout();
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
 
   if (ctx.music_fullscreen_art_opt == "None") {
@@ -482,7 +486,7 @@ void render_music_info_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   const MusicInfoGeom g = compute_music_info_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
 
-  int vp_top = LATTER_ROUND_DISPLAY ? scale_y(30) : scale_y(22);
+  int vp_top = LATTER_ROUND_DISPLAY ? dp_px(30) : dp_px(22);
   int vp_bot = g.vp_bot_ambient;
 
   if (show_hud) {
@@ -491,7 +495,7 @@ void render_music_info_view(Rgb565Surface &it, const UiFrameContext &ctx) {
     vp_bot = g.vp_bot_hud;
   }
 
-  const int wrap_w = std::max(120, std::min({kMaxContentColW, safe_span(ctx.cy, 24), safe_span(vp_top + 24, 24)}));
+  const int wrap_w = std::max(120, std::min({ly.max_content_w(), safe_span(ctx.cy, 24), safe_span(vp_top + 24, 24)}));
 
   std::string body;
   body += "Track: " + (trk.title.empty() ? std::string(kUnknownGlyph) : trk.title) + "\n";
@@ -512,14 +516,16 @@ void render_music_info_view(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   std::string lines[24];
   const int lc = ui::wrap_text_lines(body, wrap_w, ctx.font_small, lines, 24);
-  const int lh = (SCREEN_W >= 640) ? 28 : 22;
+  int imw = 0, imxo = 0, imbl = 0, imh = 0;
+  if (ctx.font_small != nullptr) ctx.font_small->measure("Ag", &imw, &imxo, &imbl, &imh);
+  const int lh = ((imh > 0) ? imh : kAutoFonts.small) + dp_px(6);
   const int max_scroll = std::max(0, lc * lh - std::max(40, vp_bot - vp_top));
   rs.music.info_scroll_px = std::clamp(rs.music.info_scroll_px, 0, max_scroll);
 
   for (int i = 0; i < lc; ++i) {
     const int dy = vp_top + 14 + i * lh - rs.music.info_scroll_px;
     if (dy < vp_top + 6 || dy > vp_bot - 6) continue;
-    const std::string fit_l = fit_text_to_width_font(lines[i], std::min(kMaxContentColW, safe_span(dy, 20)), ctx.font_small);
+    const std::string fit_l = fit_text_to_width_font(lines[i], std::min(ly.max_content_w(), safe_span(dy, 20)), ctx.font_small);
     const UiColor c = (i == 0) ? ctx.col_white
                                : ((i <= 2) ? ctx.theme_secondary
                                            : mix_color_q8(ctx.col_white, ctx.col_slate, 72));
@@ -539,7 +545,7 @@ int compute_two_line_half_gap(UiFontView font, int card_h) {
   int fw = 0, fxo = 0, fb = 0, fh = 0;
   if (font != nullptr) font->measure("Ag", &fw, &fxo, &fb, &fh);
   const int line_h = (fh > 0) ? fh : 18;
-  const int desired = std::max(scale_y(11), (line_h / 2) + 2);
+  const int desired = std::max(dp_px(11), (line_h / 2) + 2);
   const int max_safe = std::max(desired, (card_h - line_h) / 2 - 2);
   return std::min(desired, std::max(line_h / 2 + 1, max_safe));
 }
@@ -549,15 +555,19 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
                           const char *primary_txt, const char *badge_txt,
                           bool is_highlighted, bool has_leading_play,
                           bool enable_long_press, bool has_pips, bool register_hits) {
-  const MusicListRowGeom g = compute_music_list_row_geom(
+  MusicListRowGeom g = compute_music_list_row_geom(
       row_idx, visible_rows, content_top, content_bot, has_leading_play, has_pips,
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+  const int bounce_y = edge_bounce().offset_px(PageId::MUSIC, GestureAxisLock::Vertical,
+                                               ctx.now_ms, LATTER_PANEL_PPI);
+  g.card_y0 += bounce_y;
+  g.cy_row += bounce_y;
 
   const std::string clean_primary = sanitize_utf8_for_font(
       std::string(primary_txt != nullptr ? primary_txt : ""), ctx.font_small);
 
   if (!register_hits) {
-    const std::string fit_p = fit_text_to_width_font(clean_primary, std::max(40, g.card_w - scale_x(24)), ctx.font_small);
+    const std::string fit_p = fit_text_to_width_font(clean_primary, std::max(40, g.card_w - dp_px(24)), ctx.font_small);
     ui::shadow_print(it, g.card_x0 + g.card_w / 2, g.cy_row, ctx.font_small, ctx.col_slate,
                      TextAlign::CENTER, fit_p.c_str());
     return;
@@ -569,13 +579,13 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
   render_card_box(it, g.card_x0, g.card_y0, g.card_w, g.card_h,
                   bg, brd, kRadiusCardPx(), GlassVariant::Clear, fg);
 
-  int text_x0 = g.card_x0 + scale_x(14);
+  int text_x0 = g.card_x0 + dp_px(14);
   if (g.play_vis_w > 0) {
     const int play_cx = g.card_x0 + g.play_vis_w / 2;
     render_mdi_icon(it, "mdi:play", play_cx, g.cy_row,
-                    std::clamp(scale_s(18), 15, g.card_h - 14), ctx.theme_primary, true);
+                    std::clamp(dp_px(18), 15, g.card_h - 14), ctx.theme_primary, true);
     fast_vline(it, g.card_x0 + g.play_vis_w, g.card_y0 + 8, std::max(8, g.card_h - 16), kChromeCardBorder);
-    text_x0 = g.card_x0 + g.play_vis_w + scale_x(12);
+    text_x0 = g.card_x0 + g.play_vis_w + dp_px(12);
   }
 
   int badge_reserve_w = 0;
@@ -583,14 +593,14 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
   if (has_badge) {
     int bw = 0, xo = 0, b = 0, bh = 0;
     if (ctx.font_small != nullptr) ctx.font_small->measure(badge_txt, &bw, &xo, &b, &bh);
-    badge_reserve_w = std::max(bw, scale_x(28)) + scale_x(16);
-    const int bx = g.card_x0 + g.card_w - scale_x(12);
+    badge_reserve_w = std::max(bw, dp_px(28)) + dp_px(16);
+    const int bx = g.card_x0 + g.card_w - dp_px(12);
     ui::shadow_print(it, bx, g.cy_row, ctx.font_small,
                      is_highlighted ? ctx.theme_primary : ctx.col_slate,
                      TextAlign::CENTER_RIGHT, badge_txt);
   }
 
-  const int text_right = g.card_x0 + g.card_w - scale_x(12) - badge_reserve_w;
+  const int text_right = g.card_x0 + g.card_w - dp_px(12) - badge_reserve_w;
   const int text_max_w = std::max(40, text_right - text_x0);
 
   int sw = 0, xo = 0, b = 0, sh = 0;
@@ -598,7 +608,7 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
     ctx.font_small->measure(clean_primary.c_str(), &sw, &xo, &b, &sh);
   }
 
-  if (sw <= text_max_w || g.card_h < scale_y(56)) {
+  if (sw <= text_max_w || g.card_h < dp_px(56)) {
     const std::string fit_p = fit_text_to_width_font(clean_primary, text_max_w, ctx.font_small);
     ui::shadow_print(it, text_x0, g.cy_row, ctx.font_small, fg,
                      TextAlign::CENTER_LEFT, fit_p.c_str());
@@ -678,7 +688,7 @@ void render_music_action_sheet_takeover(Rgb565Surface &it, const UiFrameContext 
     const int row_cx = g.item_x0[i] + g.item_w[i] / 2;
     render_card_box(it, g.item_x0[i], row_cy - eh / 2, g.item_w[i], eh,
                     bg, brd, kRadiusCardPx(), GlassVariant::Clear, ctx.col_white);
-    const int icon_px = std::clamp(scale_s(17), 14, eh - 10);
+    const int icon_px = std::clamp(dp_px(17), 14, eh - 10);
     const int max_txt_w = std::max(24, g.item_w[i] - icon_px - 20);
     const std::string fit_l = fit_text_to_width_font(std::string(labels[i]), max_txt_w, ctx.font_small);
     int tw = 0, xo = 0, b = 0, th = 0;
@@ -721,11 +731,13 @@ void render_music_settings_view(Rgb565Surface &it, const UiFrameContext &ctx) {
     count = 2;
   }
 
+  const int bounce_y = edge_bounce().offset_px(PageId::MUSIC, GestureAxisLock::Vertical,
+                                               ctx.now_ms, LATTER_PANEL_PPI);
   for (int i = 0; i < count; ++i) {
     char buf[72];
     std::snprintf(buf, sizeof(buf), "%s: %.*s", items[i].prefix,
                   static_cast<int>(items[i].value.size()), items[i].value.data());
-    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i), ly.list_card_w, ly.slot5_h,
+    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i) + bounce_y, ly.list_card_w, ly.slot5_h,
                           buf, true, ctx.font_small, ctx.col_white, ctx.col_slate,
                           ctx.theme_secondary,
                           static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
@@ -744,8 +756,8 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ly = layout();
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
   const int min_hit = mm_to_px(7.0f);
-  const int mode_bar_bot_limit = ly.mode_bar_zone_top() - scale_y(8);
-  const int full_list_bot_limit = (LATTER_ROUND_DISPLAY ? scale_min(404) : (SCREEN_H - scale_y(64))) - scale_y(6);
+  const int mode_bar_bot_limit = ly.mode_bar_zone_top() - dp_px(8);
+  const int full_list_bot_limit = ly.back_y - dp_px(26);
 
   render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
                                      /*has_metadata_scrim=*/true, kArtDimMenu);
@@ -778,7 +790,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
 
     render_page_header(it, ctx.cx, "SPEAKERS", ctx.font_small, ctx.col_white, true);
-    const int content_top = ly.hdr_y + scale_y(24);
+    const int content_top = ly.hdr_y + dp_px(24);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
     const bool has_pips = (pg > 1) || (pg < tot);
@@ -808,13 +820,12 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   if (m.view == MusicView::QUEUE) {
     render_page_header(it, ctx.cx, "PLAYBACK QUEUE", ctx.font_small, ctx.col_white, true);
 
-    const int strip_h = std::clamp(scale_y(32), 28, 44);
-    const int sy0 = ly.hdr_y + scale_y(16);
+    const int strip_h = std::clamp(dp_px(32), 28, 46);
+    const int sy0 = ly.hdr_y + dp_px(22);
     const int strip_cy = sy0 + strip_h / 2;
-    const int strip_span = band_safe_span_for(
-        strip_cy, strip_h, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, 16);
-    const int strip_w = std::clamp(std::min(ly.list_card_w, strip_span), 180, SCREEN_W - 24);
-    const int gap = scale_s(6);
+    const int strip_span = ly.band_safe_span(strip_cy, strip_h, dp_px(12));
+    const int strip_w = std::clamp(std::min(ly.max_content_w(380), strip_span), 180, SCREEN_W - 24);
+    const int gap = std::max(4, dp_px(5));
     const int pw = (strip_w - 2 * gap) / 3;
     const int sx0 = ctx.cx - strip_w / 2;
 
@@ -830,7 +841,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
       std::snprintf(rep_txt, sizeof(rep_txt), "Rep: %s", music_repeat_mode_label(ms.repeat_mode));
     }
 
-    const int q_hit_h = std::max(strip_h, std::min(min_hit, scale_y(44)));
+    const int q_hit_h = std::max(strip_h, std::min(min_hit, ly.slot5_h));
     ui::action_pill(it, sx0, pw, strip_cy, strip_h,
                     (can_shuf && shuf_on) ? ctx.theme_primary : ui::chrome_card_brd_off(),
                     (can_shuf && shuf_on) ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
@@ -852,7 +863,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
                     "Clear", ctx.col_slate, ctx.font_small,
                     WidgetId::MUSIC_QUEUE_CLEAR, kHitTap | kHitFocusSlot, 0, q_hit_h);
 
-    const int content_top = sy0 + strip_h + scale_y(6);
+    const int content_top = sy0 + strip_h + dp_px(6);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
     const bool has_pips = (pg > 1) || (pg < tot);
@@ -919,7 +930,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
   render_page_header(it, ctx.cx, hdr_title, ctx.font_small, ctx.col_white, true);
 
-  const int content_top = ly.hdr_y + scale_y(24);
+  const int content_top = ly.hdr_y + dp_px(24);
   const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
   const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
   const bool has_pips = (pg > 1) || (pg < tot);
@@ -974,7 +985,7 @@ void render_scrub_takeover(Rgb565Surface &it, const UiFrameContext &ctx,
   ui::shadow_print(it, g.cx, g.hdr_time_y, ctx.font_small, ctx.col_white,
                    TextAlign::CENTER, time_lbl, true);
 
-  const int track_h = (SCREEN_W >= 640) ? 12 : 8;
+  const int track_h = std::max(8, dp_px(8));
   const int sl_cy = g.slider_y0 + g.slider_h / 2;
   const float prog = (dur_sec > 0.5f) ? std::clamp(live_pos_sec / dur_sec, 0.0f, 1.0f) : 0.0f;
   fill_round_rect_aa(it, g.slider_x0, sl_cy - track_h / 2, g.slider_w, track_h,
@@ -984,7 +995,7 @@ void render_scrub_takeover(Rgb565Surface &it, const UiFrameContext &ctx,
     fill_round_rect_aa(it, g.slider_x0, sl_cy - track_h / 2, fill_w, track_h,
                        static_cast<float>(track_h / 2), ctx.theme_primary, ctx.theme_secondary);
   }
-  const int thumb_r = std::clamp(scale_s(11), 9, 16);
+  const int thumb_r = std::clamp(dp_px(11), 9, 16);
   const int thumb_cx = std::clamp(g.slider_x0 + fill_w, g.slider_x0 + thumb_r, g.slider_x0 + g.slider_w - thumb_r);
   ui::draw_aa_disc(it, static_cast<float>(thumb_cx), static_cast<float>(sl_cy),
                    static_cast<float>(thumb_r + 2), kChromeShadow, 155);
@@ -1123,7 +1134,7 @@ void render_now_playing_view(Rgb565Surface &it, const UiFrameContext &ctx) {
                        TextAlign::CENTER, fit_fb.c_str());
     } else {
       const UiColor spk_col = ms.is_local ? ctx.col_slate : ctx.theme_secondary;
-      const int spk_ic = std::clamp(scale_s(17), 14, 26);
+      const int spk_ic = std::clamp(dp_px(17), 14, 26);
       const std::string fit_spk = fit_text_to_width_font(trk.speaker_name, std::max(40, cap_span - spk_ic - 8),
                                                          ctx.font_small);
       int tw = 0, xo = 0, b = 0, th = 0;
@@ -1172,7 +1183,7 @@ void render_volume_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   ui::shadow_print(it, g.cx, g.hdr_pct_y, ctx.font_small,
                    ms.muted ? ctx.col_gold : ctx.col_white, TextAlign::CENTER, pct_buf, true);
 
-  const int sl_r = std::min(g.slider_w / 2, scale_s(24));
+  const int sl_r = std::min(g.slider_w / 2, dp_px(24));
   render_card_box(it, g.slider_x0, g.slider_y0, g.slider_w, g.slider_h,
                   kChromeTrack, kChromeTrackBorder, sl_r, GlassVariant::Clear, ctx.col_white);
   const float frac = ms.muted ? 0.0f : (static_cast<float>(vol_pct) * 0.01f);
@@ -1189,8 +1200,8 @@ void render_volume_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
       g.slider_y0 + 8, g.slider_y0 + g.slider_h - 8);
   fill_round_rect_aa(it, g.slider_x0 + 8, thumb_y - 3, g.slider_w - 16, 6, 3.0f,
                      ctx.col_white, ctx.col_white);
-  ui::draw_icon_speaker(it, g.slider_x0 + g.slider_w / 2, g.slider_y0 + g.slider_h - scale_y(20),
-                        std::max(7, scale_s(9)), ctx.col_white, !ms.muted, true, ms.muted);
+  ui::draw_icon_speaker(it, g.slider_x0 + g.slider_w / 2, g.slider_y0 + g.slider_h - dp_px(20),
+                        std::max(7, dp_px(9)), ctx.col_white, !ms.muted, true, ms.muted);
 
   const int step_v = std::clamp(ctx.vol_step_pct, 1, 25);
   char up_lbl[16], dn_lbl[16];

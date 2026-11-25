@@ -452,22 +452,32 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
   }
 
   {
-    for (const auto &g : kFlagshipPanels) {
+    for (const auto &g : kAllNinePanels) {
       LATTER_CHECK(is_inside_bezel_for(g.w / 2, g.h / 2, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
-      LATTER_CHECK(!is_inside_bezel_for(6, 6, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
-      LATTER_CHECK(!is_inside_bezel_for(g.w - 7, g.h - 7, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      if (g.round || g.corner_r >= 16) {
+        LATTER_CHECK(!is_inside_bezel_for(6, 6, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+        LATTER_CHECK(!is_inside_bezel_for(g.w - 7, g.h - 7, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      } else {
+        LATTER_CHECK(!is_inside_bezel_for(4, 4, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+        LATTER_CHECK(!is_inside_bezel_for(g.w - 5, g.h - 5, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+        LATTER_CHECK(is_inside_bezel_for(6, 6, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+        LATTER_CHECK(is_inside_bezel_for(g.w - 7, g.h - 7, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
+      }
       if (g.corner_r >= 76) {
         LATTER_CHECK(!is_inside_bezel_for(18, 18, g.w, g.h, g.round, g.wearable, 5, g.corner_r));
       }
 
-      const int min_hit = std::max(scale_s_for(36, std::min(g.w, g.h)), mm_to_px_for(7.0f, g.ppi));
+      const int min_hit = std::max(dp_px_for(36, compute_ui_scale_milli(g.ppi, g.view_scale_pct, g.stationary)),
+                                   mm_to_px_for(7.0f, g.ppi));
       const int div_off = compute_area_card_div_offset(g.w, g.h, g.ppi);
       LATTER_CHECK(div_off >= min_hit);
 
-      const auto ly = compute_panel_layout(g.w, g.h, g.round, g.wearable, g.ppi);
+      const auto ly = compute_panel_layout(g.w, g.h, g.round, g.wearable, g.ppi, g.corner_r, g.view_scale_pct,
+                                           g.stationary);
       const int card_max_pad = std::max(0, (ly.area_card3_stride - ly.area_card3_h - 1) / 2);
       const int card_pad = std::min(card_max_pad, std::max(0, (min_hit - ly.area_card3_h + 1) / 2));
-      LATTER_CHECK(ly.area_card3_h + 2 * card_pad >= min_hit);
+      const int expected_card_floor = (g.h >= 460) ? min_hit : min_row_hit_px_for(g.ppi);
+      LATTER_CHECK(ly.area_card3_h + 2 * card_pad >= expected_card_floor);
     }
 
     FrameHitTable ht{};
@@ -738,7 +748,7 @@ void test_wave2_v3_wire_escaping_and_base_fold() {
     const std::string sys_core = read_repo_file("../../modules/system_core.yaml");
     const std::string sys_sync = read_repo_file("../../modules/system_ui_sync.yaml");
     const std::string pmu_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
-    LATTER_CHECK(sys_core.find("LATTER_YAML_REV = 2026112404L") != std::string::npos);
+    LATTER_CHECK(sys_core.find("LATTER_YAML_REV = 2026112501L") != std::string::npos);
     LATTER_CHECK(sys_core.find("base.yaml") == std::string::npos);
     LATTER_CHECK(sys_core.find("send_device_hello") != std::string::npos);
     LATTER_CHECK(sys_core.find("latter_rpc_outbox") != std::string::npos);

@@ -25,7 +25,7 @@ MIN_SMALL_FONT_MM: Final[float] = 1.95
 MIN_MICRO_FONT_MM: Final[float] = 1.29
 SRGB_LINEAR_CUTOFF: Final[float] = 0.04045
 WEARABLE_DEFAULT_CORNER_R: Final[int] = 98
-RECT_DEFAULT_CORNER_R: Final[int] = 20
+RECT_DEFAULT_CORNER_R: Final[int] = 0
 
 LOW_LEVEL_GFX_FILES: Final[frozenset[str]] = frozenset(
     {
@@ -51,6 +51,11 @@ RETIRED_UI_TOKENS: Final[tuple[str, ...]] = (
     "INTERCOM_SEG_CALL",
     "ENTRY_CARD_BASE",
     "resolve_doorbell_quick_unlock_target",
+    "kMaxContentColW",
+    "SCREEN_R",
+)
+RETIRED_SCALE_CALL_RE: Final[re.Pattern[str]] = re.compile(
+    r"(?<!\.)\bscale_(?:x|y|s|w|min|min_f)(?:_for)?\s*\("
 )
 BTN_WIDGET_PAT: Final[str] = (
     r"\b(ui::(?:action_pill(?:_centered|_row)?|setting_cycle_row|slider_card_row|"
@@ -140,10 +145,17 @@ def _check_gui_yaml_and_fast_primitives(gui_uncommented: str, failures: list[str
         failures.append("[TOUCH ENGINE] components/latter_ui/touch_engine.cpp missing")
 
     for path in list((ROOT / "include").glob("ui_*.h")) + list((ROOT / "components" / "latter_ui").glob("*.cpp")):
+        rel = path.relative_to(ROOT).as_posix()
+        raw = path.read_text(encoding="utf-8")
+        masked = strip_cpp_strings_and_comments(raw)
+        if RETIRED_SCALE_CALL_RE.search(masked):
+            failures.append(f"[UI SCALING D-087] {rel} calls retired scale_*() helper — use dp_px()/dp_f()/SafeFrame")
+        for retired_scale_tok in ("kMaxContentColW", "SCREEN_R"):
+            if re.search(rf"\b{retired_scale_tok}\b", masked):
+                failures.append(f"[UI SCALING D-087] {rel} references retired '{retired_scale_tok}'")
         if path.name in LOW_LEVEL_GFX_FILES:
             continue
-        rel = path.relative_to(ROOT).as_posix()
-        clean = strip_cpp_comments(path.read_text(encoding="utf-8"))
+        clean = strip_cpp_comments(raw)
         if RAW_IT_DRAW_RE.search(clean) or re.search(r"(?<![\w.>])it\.draw_pixel_at\s*\(", clean):
             failures.append(f"[FAST PRIMITIVES] {rel} calls raw ESPHome it.* drawing primitive outside ui_gfx.cpp")
     if RAW_IT_DRAW_RE.search(gui_uncommented):
@@ -230,7 +242,7 @@ def _check_single_page_file(page_cpp: Path, family: str, failures: list[str]) ->
     for _fn, arg_str in _iter_balanced_calls(pclean, r"\b(render_card_box)"):
         parts = _split_top_level_args(arg_str)
         if len(parts) > CARD_BOX_RAD_ARG_IDX and re.fullmatch(
-            r"(?:scale_s\s*\(\s*)?(?:10|12|14|15|16)\s*\)?", parts[CARD_BOX_RAD_ARG_IDX]
+            r"(?:(?:scale_s|dp_px)\s*\(\s*)?(?:10|12|14|15|16)\s*\)?", parts[CARD_BOX_RAD_ARG_IDX]
         ):
             failures.append(
                 f"[UI RADIUS TOKENS] {rel} passes magic radius '{parts[CARD_BOX_RAD_ARG_IDX]}' to render_card_box()"

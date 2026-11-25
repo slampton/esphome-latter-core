@@ -124,6 +124,7 @@ namespace WidgetId {
   static constexpr uint16_t HOME_ACT_ROW_1     = 532;  // param = rendered act_items slot index
   static constexpr uint16_t HOME_ACT_ACTION_1  = 533;  // param = rendered act_items slot index
   static constexpr uint16_t HOME_ACT_EXPAND    = 534;  // opens Active Items overlay (home_subpage = 2)
+  static constexpr uint16_t HOME_ACT_OVERLAY_ACTION_BASE = 540;  // 540..544 (right quick-action pill in subpage 2)
 
   // Area Control & Home Hub (Page 6 / Page 9)
   static constexpr uint16_t AREA_PICKER_PILL    = 600;

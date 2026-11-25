@@ -50,6 +50,7 @@
 #include "../../include/ui_page_geoms.h"
 #include "../../include/ui_pages.h"
 #include "../../include/ui_panel_metrics.h"
+#include "../../include/ui_scale.h"
 #include "../../include/ui_surface.h"
 #include "../../include/ui_tile_grid.h"
 #include "../../include/ui_touch_engine.h"
@@ -81,14 +82,28 @@ struct PanelSpec5 {
   int corner_r;
   int ppi;
   bool chip_p4;
+  int view_scale_pct;
+  bool stationary;
 };
 
 inline constexpr PanelSpec5 kFlagshipPanels[5] = {
-    {"p4_320x480_rect",   320, 480, false, false,  20, 165, true},
-    {"s3_410x502_wrist",  410, 502, false, true,   98, 315, false},
-    {"s3_466x466_pocket", 466, 466, true,  false, 233, 266, false},
-    {"s3_480x480_mobile", 480, 480, false, false,  76, 313, false},
-    {"p4_720x720_desk",   720, 720, false, false,  20, 254, true},
+    {"p4_320x480_rect",   320, 480, false, false,   0, 165, true,  145, false},
+    {"s3_410x502_wrist",  410, 502, false, true,   98, 315, false, 100, false},
+    {"s3_466x466_pocket", 466, 466, true,  false, 233, 266, false, 100, false},
+    {"s3_480x480_mobile", 480, 480, false, false,  76, 313, false, 100, false},
+    {"p4_720x720_desk",   720, 720, false, false,   0, 254, true,  145, true},
+};
+
+inline constexpr PanelSpec5 kAllNinePanels[9] = {
+    {"p4_320x480_rect",    320, 480, false, false,   0, 165, true,  145, false},
+    {"s3_410x502_wrist",   410, 502, false, true,   98, 315, false, 100, false},
+    {"s3_466x466_pocket",  466, 466, true,  false, 233, 266, false, 100, false},
+    {"s3_480x480_mobile",  480, 480, false, false,  76, 313, false, 100, false},
+    {"p4_720x720_desk",    720, 720, false, false,   0, 254, true,  145, true},
+    {"s3_360x360_mini",    360, 360, true,  false, 180, 255, false, 100, false},
+    {"p4_800x480_wide",    800, 480, false, false,   0, 187, true,  135, true},
+    {"p4_1024x600_wall",  1024, 600, false, false,   0, 170, true,  145, true},
+    {"p4_1280x800_tab",   1280, 800, false, false,   0, 149, true,  150, true},
 };
 
 inline std::string build_v3_packet(uint32_t epoch, uint32_t rev,
@@ -211,13 +226,13 @@ struct HostSurfaceFixture {
     ctx.now.minute = 35;
     ctx.now.second = 20;
     ctx.now.timestamp = 1795271720LL;
-    ctx.font_time = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(58));
-    ctx.font_chrono_time = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(46));
-    ctx.font_date = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(24));
-    ctx.font_btn_bold = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(20));
-    ctx.font_small = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(17));
-    ctx.font_micro = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(14));
-    ctx.font_games_title = latter_ui::UiFontView::make_host_font(latter_ui::scale_min(28));
+    ctx.font_time = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.time);
+    ctx.font_chrono_time = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.chrono);
+    ctx.font_date = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.date);
+    ctx.font_btn_bold = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.btn_bold);
+    ctx.font_small = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.small);
+    ctx.font_micro = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.micro);
+    ctx.font_games_title = latter_ui::UiFontView::make_host_font(latter_ui::kAutoFonts.games);
   }
 
   ~HostSurfaceFixture() {

@@ -16,7 +16,7 @@
 #include "state/state_tile_grid.h"
 
 #ifndef LATTER_CORE_REV
-#define LATTER_CORE_REV 2026112404L
+#define LATTER_CORE_REV 2026112501L
 #endif
 
 namespace latter_core {
@@ -78,13 +78,22 @@ inline bool firmware_rolled_back() { return false; }
 inline std::string build_hardware_manifest_json() {
   const int disp_w = LATTER_HAS_DISPLAY ? LATTER_SCREEN_W : 0;
   const int disp_h = LATTER_HAS_DISPLAY ? LATTER_SCREEN_H : 0;
+  const int disp_ppi = LATTER_HAS_DISPLAY ? static_cast<int>(LATTER_PANEL_PPI) : 0;
+  const int disp_corner_r = LATTER_HAS_DISPLAY ? static_cast<int>(LATTER_CORNER_R) : 0;
+  const int art_edge = LATTER_HAS_DISPLAY ? ((disp_w < disp_h) ? disp_w : disp_h) : 0;
   const int grid_cols = LATTER_HAS_DISPLAY
-                            ? tile_grid_cols_for(disp_w, disp_h, LATTER_ROUND_DISPLAY != 0)
+                            ? tile_grid_cols_for(disp_w, disp_h, LATTER_ROUND_DISPLAY != 0,
+                                                 LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT,
+                                                 LATTER_IS_STATIONARY != 0)
                             : 0;
   const int grid_rows = LATTER_HAS_DISPLAY
-                            ? tile_grid_rows_for(disp_w, disp_h, LATTER_ROUND_DISPLAY != 0)
+                            ? tile_grid_rows_for(disp_w, disp_h, LATTER_ROUND_DISPLAY != 0,
+                                                 LATTER_PANEL_PPI, LATTER_VIEW_SCALE_PCT,
+                                                 LATTER_IS_STATIONARY != 0)
                             : 0;
-  const char *shape = !LATTER_HAS_DISPLAY ? "none" : (LATTER_ROUND_DISPLAY ? "circle" : "square");
+  const char *shape = !LATTER_HAS_DISPLAY
+                          ? "none"
+                          : (LATTER_ROUND_DISPLAY ? "circle" : ((disp_w == disp_h) ? "square" : "rect"));
   const char *chip = detect_chip_name();
 #if defined(USE_ESP32) && !defined(CONFIG_SPIRAM)
   const int psram_mb = 0;
@@ -124,7 +133,7 @@ inline std::string build_hardware_manifest_json() {
   const int len = std::snprintf(
       buf, sizeof(buf),
       "{\"v\":2,\"contract\":%d,\"fw\":\"3.0.0\",\"board\":\"%s\",\"boot_id\":%lu,"
-      "\"w\":%d,\"h\":%d,\"shape\":\"%s\","
+      "\"w\":%d,\"h\":%d,\"shape\":\"%s\",\"ppi\":%d,\"corner_r\":%d,\"art_edge\":%d,"
       "\"display\":%d,\"touch\":%d,\"audio\":%s,\"mic\":%d,\"spk\":%d,"
       "\"imu\":%d,\"battery\":%d,\"has_rtc\":%d,\"stationary\":%d,\"wearable\":%d,"
       "\"ips\":%d,\"chip\":\"%s\",\"psram_mb\":%d,"
@@ -134,7 +143,7 @@ inline std::string build_hardware_manifest_json() {
       "\"beacon\":%s,"
       "\"core_rev\":%ld,\"reset\":\"%s\",\"crash\":%d,\"rollback\":%d}",
       kManifestProtocolContractVersion, LATTER_BOARD_ID, static_cast<unsigned long>(device_boot_id()),
-      disp_w, disp_h, shape,
+      disp_w, disp_h, shape, disp_ppi, disp_corner_r, art_edge,
       static_cast<int>(LATTER_HAS_DISPLAY), static_cast<int>(LATTER_HAS_TOUCH),
       audio_buf, static_cast<int>(LATTER_HAS_MIC), static_cast<int>(LATTER_HAS_SPEAKER),
       static_cast<int>(LATTER_HAS_IMU), static_cast<int>(LATTER_HAS_BATTERY), static_cast<int>(LATTER_HAS_RTC),

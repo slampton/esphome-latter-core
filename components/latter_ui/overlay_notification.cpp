@@ -36,7 +36,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
   const bool can_reply = (cam_rec != nullptr) && cam_rec->show_reply();
   const bool can_unlock = (cam_rec != nullptr) && cam_rec->has_unlock();
 
-  const int wrap_max_w = scale_x(280);
+  const int wrap_max_w = std::min(ly.max_content_w(), dp_px(280));
   const std::string fit_title = fit_text_to_width_font(
       st.notif_title.empty() ? std::string("Notification") : st.notif_title.str(), wrap_max_w, ctx.font_date);
 
@@ -85,18 +85,18 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
 
     // Live PTT talk banner keeps video 100% visible during talk!
     if (rs.voice.intercom_turn) {
-      const int ptt_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 76 : 62);
-      const int ptt_top = std::max(1, ptt_y - ly.min_hit_px() / 2 - scale_y(8));
+      const int ptt_y = SCREEN_H - dp_px(LATTER_ROUND_DISPLAY ? 76 : 62);
+      const int ptt_top = std::max(1, ptt_y - ly.min_hit_px() / 2 - dp_px(8));
       frame_hits().add_rect(0, 0, SCREEN_W, ptt_top, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
       render_doorbell_ptt_banner(it, ctx, ptt_y);
       return;
     }
 
     // Interactive action rows directly on P4 Live Popup (D-070 canonical action_pill_row)
-    const int btn_h = std::max(38, scale_y(40));
-    const int row2_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 54 : 38);
-    const int row1_y = row2_y - btn_h - scale_y(12);
-    const int gap = scale_s(8);
+    const int btn_h = std::max(38, dp_px(40));
+    const int row2_y = SCREEN_H - dp_px(LATTER_ROUND_DISPLAY ? 54 : 38);
+    const int row1_y = row2_y - btn_h - dp_px(12);
+    const int gap = dp_px(8);
 
     ui::ActionPillSpec r1[4]{};
     int r1_cnt = 0;
@@ -126,9 +126,9 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     const int media_tap_h = std::max(1, top_btn_y - btn_h / 2 - btn_pad - 1);
     frame_hits().add_rect(0, 0, SCREEN_W, media_tap_h, WidgetId::NOTIF_EXPAND_BTN, kHitTap, 1);
     const int stack_row_w = ui::compute_uniform_stack_w(
-        (r1_cnt > 0) ? row1_y : row2_y, row2_y, btn_h, std::min(kMaxContentColW, scale_s(376)), 14);
+        (r1_cnt > 0) ? row1_y : row2_y, row2_y, btn_h, std::min(ly.max_content_w(), dp_px(376)), 14);
     if (r1_cnt > 0) {
-      ui::action_pill_row(it, row1_y, btn_h, stack_row_w, scale_s(104), gap,
+      ui::action_pill_row(it, row1_y, btn_h, stack_row_w, dp_px(104), gap,
                           r1, r1_cnt, ctx.font_small, 14);
     }
 
@@ -138,8 +138,8 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
         {"Dismiss", WidgetId::NOTIF_DISMISS_BTN, accent_c,
          ui::chrome_card_bg_off(), st.col_white, 0, nullptr},
     };
-    ui::action_pill_row(it, row2_y, btn_h, std::min(stack_row_w, scale_s(276)),
-                        scale_s(132), gap, r2, 2, ctx.font_small, 16);
+    ui::action_pill_row(it, row2_y, btn_h, std::min(stack_row_w, dp_px(276)),
+                        dp_px(132), gap, r2, 2, ctx.font_small, 16);
     return;
   }
 
@@ -152,7 +152,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
 
   std::string msg_lines[2];
   const int msg_line_cnt = ui::wrap_text_lines(
-      st.notif_message.str(), std::min(kMaxContentColW, wrap_max_w), ctx.font_small, msg_lines, 2);
+      st.notif_message.str(), std::min(ly.max_content_w(), wrap_max_w), ctx.font_small, msg_lines, 2);
   if (msg_line_cnt < 1) msg_lines[0].clear();
   if (msg_line_cnt < 2) msg_lines[1].clear();
   const std::string &line1 = msg_lines[0];
@@ -160,16 +160,16 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
 
   if (is_cam_notif) {
     // Uncropped snapshot viewport above action pills (never crops visitor!)
-    const int btn_h = std::max(38, scale_y(40));
-    const int btn_y = SCREEN_H - scale_y(LATTER_ROUND_DISPLAY ? 64 : 46);
-    const int snap_top = ly.hdr_y + scale_y(24);
-    const int msg_reserve = line1.empty() ? scale_y(16) : (line2.empty() ? scale_y(30) : scale_y(52));
+    const int btn_h = std::max(38, dp_px(40));
+    const int btn_y = SCREEN_H - dp_px(LATTER_ROUND_DISPLAY ? 64 : 46);
+    const int snap_top = ly.hdr_y + dp_px(24);
+    const int msg_reserve = line1.empty() ? dp_px(16) : (line2.empty() ? dp_px(30) : dp_px(52));
     const int snap_bot = btn_y - btn_h / 2 - msg_reserve;
     const int snap_h = std::max(80, snap_bot - snap_top);
-    int snap_w = SCREEN_W - scale_x(24);
+    int snap_w = SCREEN_W - dp_px(24);
     if (LATTER_ROUND_DISPLAY) {
       snap_w = std::min(ly.safe_span(snap_top, 14), ly.safe_span(snap_bot, 14));
-      snap_w = std::clamp(snap_w, 180, SCREEN_W - 24);
+      snap_w = std::clamp(snap_w, 160, SCREEN_W - 24);
     }
     const CameraRect snap_vp{cx - snap_w / 2, snap_top, snap_w, snap_h};
 
@@ -185,10 +185,10 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     render_page_header(it, cx, fit_title, ctx.font_small, st.col_white);
 
     if (!line1.empty()) {
-      const int msg_y = snap_bot + scale_y(14);
+      const int msg_y = snap_bot + dp_px(14);
       ui::shadow_print(it, cx, msg_y, ctx.font_small, st.col_white, UiTextAlign::CENTER, line1.c_str());
       if (!line2.empty()) {
-        ui::shadow_print(it, cx, msg_y + scale_y(22), ctx.font_small, st.theme_secondary,
+        ui::shadow_print(it, cx, msg_y + dp_px(22), ctx.font_small, st.theme_secondary,
                          UiTextAlign::CENTER, line2.c_str());
       }
     }
@@ -213,8 +213,8 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     sb[sb_cnt++] = {"Dismiss", WidgetId::NOTIF_DISMISS_BTN, accent_c,
                     ui::chrome_card_bg_off(), st.col_white, 0, nullptr};
 
-    ui::action_pill_row(it, btn_y, btn_h, std::min(kMaxContentColW, scale_s(348)),
-                        scale_s(112), scale_s(8), sb, sb_cnt, ctx.font_small, 14);
+    ui::action_pill_row(it, btn_y, btn_h, std::min(ly.max_content_w(), dp_px(348)),
+                        dp_px(112), dp_px(8), sb, sb_cnt, ctx.font_small, 14);
     return;
   }
 
@@ -222,21 +222,28 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
   render_bezel_alert_border(it, cx, cy, ring_c);
   const char *hdr_lbl = is_crit ? "CRITICAL ALERT" : (is_warn ? "WARNING" : "NOTIFICATION");
   render_page_header(it, cx, hdr_lbl, ctx.font_small, st.col_white);
-  ui::draw_icon_bell(it, cx, scale_y(118), ui::hero_icon_r(scale_y(84)), accent_c, true);
-  ui::shadow_print(it, cx, scale_y(168), ctx.font_date, st.col_white, UiTextAlign::CENTER, fit_title.c_str());
+  const int dis_h = std::max(44, dp_px(48));
+  const int dis_y = std::min(ly.back_y - dp_px(32), (SCREEN_H * 72) / 100);
+  const int bell_y = ly.hdr_y + std::max(dp_px(48), (dis_y - ly.hdr_y) * 24 / 100);
+  const int title_y = bell_y + dp_px(46);
+  const int line1_y = title_y + std::max(kAutoFonts.date, dp_px(36));
+  const int line2_y = line1_y + std::max(kAutoFonts.small + dp_px(4), dp_px(24));
+
+  ui::draw_icon_bell(it, cx, bell_y, ui::hero_icon_r(dp_px(84)), accent_c, true);
+  ui::shadow_print(it, cx, title_y, ctx.font_date, st.col_white, UiTextAlign::CENTER, fit_title.c_str());
 
   if (!line1.empty()) {
-    ui::shadow_print(it, cx, line2.empty() ? scale_y(222) : scale_y(210), ctx.font_small,
+    ui::shadow_print(it, cx, line1_y, ctx.font_small,
                      st.theme_secondary, UiTextAlign::CENTER, line1.c_str());
   }
   if (!line2.empty()) {
-    ui::shadow_print(it, cx, scale_y(238), ctx.font_small, st.theme_secondary,
+    ui::shadow_print(it, cx, line2_y, ctx.font_small, st.theme_secondary,
                      UiTextAlign::CENTER, line2.c_str());
   }
 
-  const int dis_h = std::max(44, scale_y(48));
-  const int dis_w = std::min(kMaxContentColW, scale_s(216));
-  ui::action_pill_centered(it, cx, dis_w, scale_y(336), dis_h,
+  const int dis_safe = ly.band_safe_span(dis_y, dis_h, dp_px(16));
+  const int dis_w = std::min({ly.max_content_w(), dp_px(216), dis_safe});
+  ui::action_pill_centered(it, cx, dis_w, dis_y, dis_h,
                            accent_c, ui::chrome_card_bg_off(), "Dismiss", st.col_white,
                            ctx.font_small, WidgetId::NOTIF_DISMISS_BTN, kHitTap | kHitFocusSlot);
 }

@@ -162,6 +162,43 @@ inline constexpr uint16_t default_active_poll_ms(TouchHalProtocol p) noexcept {
   return 10U;
 }
 
+// FocalTech FT5x06 / FT6x36 / FT3x68 CIPHER (REG 0xA3) chip family IDs.
+// Rejects non-FocalTech chips sharing I2C 0x38 (e.g. AHT20 status byte 0x18/0x1C, PCA9554A 0x00/0xFF).
+inline constexpr bool is_known_focaltech_chip_id(uint8_t chip_id) noexcept {
+  switch (chip_id) {
+    case 0x06:  // FT6206 / FT6306
+    case 0x08:  // FT3168 / FT3x68
+    case 0x11:  // FT5316 / FT6236G
+    case 0x36:  // FT6236 / FT6336U
+    case 0x54:  // FT5426 / FT5446 / FT5436
+    case 0x55:  // FT5x06 / FT5306 / FT5406
+    case 0x58:  // FT5826
+    case 0x64:  // FT6336 / FT6436
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Pure bounded boot-recovery policy (max 2 retries, >= 2 s apart, after 1.5 s boot settle).
+struct TouchRecoveryPolicy {
+  uint8_t attempts{0};
+  uint32_t last_attempt_ms{0};
+
+  constexpr void reset() noexcept {
+    attempts = 0U;
+    last_attempt_ms = 0U;
+  }
+
+  constexpr bool should_attempt(bool is_failed, uint32_t now_ms) noexcept {
+    if (!is_failed || now_ms <= 1500U || attempts >= 2U) return false;
+    if (last_attempt_ms != 0U && (now_ms - last_attempt_ms) < 2000U) return false;
+    ++attempts;
+    last_attempt_ms = now_ms;
+    return true;
+  }
+};
+
 struct TouchHalTelemetry {
   uint32_t irq_edges{0};
   uint32_t i2c_reads{0};
@@ -200,16 +237,65 @@ inline void hal_touch_pump() noexcept {
   if (b.fn != nullptr) b.fn(b.ctx);
 }
 
+using TouchSleepModeFn = void (*)(void *ctx, bool sleep);
+using TouchRecoverFn = void (*)(void *ctx, uint32_t now_ms);
+using TouchPrepareRestartFn = void (*)(void *ctx);
+
+struct TouchControlBridge {
+  void *ctx{nullptr};
+  TouchSleepModeFn sleep_mode_fn{nullptr};
+  TouchRecoverFn recover_fn{nullptr};
+  TouchPrepareRestartFn prepare_restart_fn{nullptr};
+
+  void bind(void *c, TouchSleepModeFn sm, TouchRecoverFn rec, TouchPrepareRestartFn rst) noexcept {
+    ctx = c;
+    sleep_mode_fn = sm;
+    recover_fn = rec;
+    prepare_restart_fn = rst;
+  }
+
+  void reset() noexcept {
+    ctx = nullptr;
+    sleep_mode_fn = nullptr;
+    recover_fn = nullptr;
+    prepare_restart_fn = nullptr;
+  }
+};
+
+inline TouchControlBridge &touch_control_bridge() noexcept {
+  static TouchControlBridge s_bridge{};
+  return s_bridge;
+}
+
+inline void hal_touch_set_sleep_mode(bool sleep) noexcept {
+  const auto &b = touch_control_bridge();
+  if (b.sleep_mode_fn != nullptr) b.sleep_mode_fn(b.ctx, sleep);
+}
+
+inline void hal_touch_recover_if_failed(uint32_t now_ms) noexcept {
+  const auto &b = touch_control_bridge();
+  if (b.recover_fn != nullptr) b.recover_fn(b.ctx, now_ms);
+}
+
+inline void hal_touch_prepare_for_restart() noexcept {
+  const auto &b = touch_control_bridge();
+  if (b.prepare_restart_fn != nullptr) b.prepare_restart_fn(b.ctx);
+}
+
 using TouchIsStandbyFn = bool (*)();
 using TouchWakeGraceFn = void (*)(uint32_t now_ms);
+using TouchIrqWakeFn = void (*)() noexcept;
 
 struct TouchWakeBridge {
   TouchIsStandbyFn is_standby_fn{nullptr};
   TouchWakeGraceFn wake_grace_fn{nullptr};
+  TouchIrqWakeFn wake_isr_fn{nullptr};
 
-  void bind(TouchIsStandbyFn is_standby, TouchWakeGraceFn wake_grace) noexcept {
+  void bind(TouchIsStandbyFn is_standby, TouchWakeGraceFn wake_grace,
+            TouchIrqWakeFn wake_isr = nullptr) noexcept {
     is_standby_fn = is_standby;
     wake_grace_fn = wake_grace;
+    wake_isr_fn = wake_isr;
   }
 
   bool is_standby() const noexcept {
@@ -241,6 +327,7 @@ namespace latter_core {
 struct LatterTouchIrqStore {
   std::atomic<bool> irq_pending{false};
   std::atomic<uint32_t> edge_count{0};
+  TouchIrqWakeFn wake_isr_fn{nullptr};
 #ifdef USE_ESP32
   static void IRAM_ATTR gpio_intr(LatterTouchIrqStore *store);
 #else
@@ -260,10 +347,16 @@ class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::e
   void update() override;
   void loop() override;
   void pump_from_host();
+  void set_sleep_mode(bool sleep);
+  void recover_if_failed(uint32_t now_ms);
+  void prepare_for_restart();
 
  protected:
   void finish_setup_();
+  void finish_cst9217_setup_();
+  void complete_setup_ready_();
   bool init_controller_();
+  void consume_edge_delta_(uint32_t now);
   void service_once_(uint32_t now);
   void update_touches() override;
 
@@ -272,10 +365,15 @@ class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::e
   ::esphome::GPIOPin *reset_pin_{nullptr};
   LatterTouchIrqStore irq_store_{};
   ::esphome::HighFrequencyLoopRequester touch_hf_{};
+  TouchRecoveryPolicy recovery_policy_{};
   uint32_t last_edge_snapshot_{0};
   uint32_t last_service_ms_{0};
+  uint32_t last_prof_tel_ms_{0};
+  uint32_t last_prof_reads_{0};
   uint16_t active_poll_ms_{10};
   uint16_t detected_chip_id_{0};
+  int8_t last_sleep_mode_{-1};
+  bool focaltech_id_verified_{false};
   bool active_poll_explicit_{false};
   bool setup_complete_{false};
   bool irq_active_high_{false};

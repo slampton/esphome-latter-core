@@ -311,36 +311,6 @@ struct UiFontView {
   }
 };
 
-inline void compute_text_bounds(int x, int y, const char *text, const UiFontView &font,
-                                UiTextAlign align, int *x1, int *y1, int *width, int *height) {
-  int w = 0, x_off = 0, baseline = 0, h = 0;
-  font.measure(text, &w, &x_off, &baseline, &h);
-  const uint8_t bits = static_cast<uint8_t>(align);
-  const uint8_t h_align = static_cast<uint8_t>(bits & 0x18U);
-  const uint8_t v_align = static_cast<uint8_t>(bits & 0x07U);
-
-  int xs = x;
-  if (h_align == static_cast<uint8_t>(UiTextAlign::CENTER_HORIZONTAL)) {
-    xs = x - w / 2;
-  } else if (h_align == static_cast<uint8_t>(UiTextAlign::RIGHT)) {
-    xs = x - w;
-  }
-
-  int ys = y;
-  if (v_align == static_cast<uint8_t>(UiTextAlign::CENTER_VERTICAL)) {
-    ys = y - h / 2;
-  } else if (v_align == static_cast<uint8_t>(UiTextAlign::BASELINE)) {
-    ys = y - baseline;
-  } else if (v_align == static_cast<uint8_t>(UiTextAlign::BOTTOM)) {
-    ys = y - h;
-  }
-
-  if (x1 != nullptr) *x1 = xs + x_off;
-  if (y1 != nullptr) *y1 = ys;
-  if (width != nullptr) *width = w;
-  if (height != nullptr) *height = h;
-}
-
 inline uint32_t utf8_next_cp(const char *&p) noexcept {
   const unsigned char b0 = static_cast<unsigned char>(*p);
   if (b0 == 0U) return 0U;
@@ -369,6 +339,94 @@ inline uint32_t utf8_next_cp(const char *&p) noexcept {
   return 0xFFFDU;
 }
 
+inline void measure_text_ink_span(const UiFontView &font, const char *text,
+                                  int &out_ink_x0, int &out_ink_x1,
+                                  int &out_h, int &out_baseline) {
+  int w = 0, x_off = 0, baseline = 0, h = 0;
+  font.measure(text, &w, &x_off, &baseline, &h);
+  out_h = h;
+  out_baseline = baseline;
+  if (text != nullptr && *text != '\0' && font.find_glyph_fn != nullptr) {
+    int x_at = 0;
+    int min_x = 0;
+    int max_x = 0;
+    bool any = false;
+    for (const char *p = text; *p != '\0';) {
+      UiGlyphData glyph{};
+      if (!font.find_glyph(utf8_next_cp(p), glyph)) {
+        x_at += std::max(4, font.get_height() / 3);
+        continue;
+      }
+      if (glyph.width > 0) {
+        const int gx0 = x_at + glyph.offset_x;
+        const int gx1 = gx0 + glyph.width;
+        if (!any) {
+          min_x = gx0;
+          max_x = gx1;
+          any = true;
+        } else {
+          if (gx0 < min_x) min_x = gx0;
+          if (gx1 > max_x) max_x = gx1;
+        }
+      }
+      x_at += glyph.advance;
+    }
+    if (any) {
+      out_ink_x0 = min_x;
+      out_ink_x1 = max_x;
+      return;
+    }
+  }
+  out_ink_x0 = x_off;
+  out_ink_x1 = x_off + w;
+}
+
+// Computes exact rasterization pen origin (x_pen, y_pen) so glyph rendering (gx0 = x_pen + glyph.offset_x)
+// never double-adds first-glyph left bearing (x_off) and optically centers ink for CENTER_HORIZONTAL.
+inline void compute_text_pen_origin(int x, int y, const char *text, const UiFontView &font,
+                                    UiTextAlign align, int *x_pen, int *y_pen,
+                                    int *ink_x0_out = nullptr, int *ink_w_out = nullptr,
+                                    int *height_out = nullptr) {
+  int ink_x0 = 0, ink_x1 = 0, h = 0, baseline = 0;
+  measure_text_ink_span(font, text, ink_x0, ink_x1, h, baseline);
+  const int ink_w = std::max(0, ink_x1 - ink_x0);
+  const uint8_t bits = static_cast<uint8_t>(align);
+  const uint8_t h_align = static_cast<uint8_t>(bits & 0x18U);
+  const uint8_t v_align = static_cast<uint8_t>(bits & 0x07U);
+
+  int px = x;
+  if (h_align == static_cast<uint8_t>(UiTextAlign::CENTER_HORIZONTAL)) {
+    px = x - ((ink_x0 + ink_x1) / 2);
+  } else if (h_align == static_cast<uint8_t>(UiTextAlign::RIGHT)) {
+    px = x - ink_x1;
+  }
+
+  int py = y;
+  if (v_align == static_cast<uint8_t>(UiTextAlign::CENTER_VERTICAL)) {
+    py = y - h / 2;
+  } else if (v_align == static_cast<uint8_t>(UiTextAlign::BASELINE)) {
+    py = y - baseline;
+  } else if (v_align == static_cast<uint8_t>(UiTextAlign::BOTTOM)) {
+    py = y - h;
+  }
+
+  if (x_pen != nullptr) *x_pen = px;
+  if (y_pen != nullptr) *y_pen = py;
+  if (ink_x0_out != nullptr) *ink_x0_out = ink_x0;
+  if (ink_w_out != nullptr) *ink_w_out = ink_w;
+  if (height_out != nullptr) *height_out = h;
+}
+
+inline void compute_text_bounds(int x, int y, const char *text, const UiFontView &font,
+                                UiTextAlign align, int *x1, int *y1, int *width, int *height) {
+  int px = 0, py = 0, ink_x0 = 0, ink_w = 0, h = 0;
+  compute_text_pen_origin(x, y, text, font, align, &px, &py, &ink_x0, &ink_w, &h);
+  if (x1 != nullptr) *x1 = px + ink_x0;
+  if (y1 != nullptr) *y1 = py;
+  if (width != nullptr) *width = ink_w;
+  if (height != nullptr) *height = h;
+}
+
 template <typename NativeDispT>
 inline void render_fallback_glyphs(NativeDispT &disp, int x, int y, const UiFontView &font,
                                    UiColor color, UiTextAlign align, const char *text,
@@ -380,8 +438,8 @@ inline void render_fallback_glyphs(NativeDispT &disp, int x, int y, const UiFont
   const int eff_cy1 = std::min(disp_h - 1, cy1);
   if (disp_w <= 0 || eff_cy1 < eff_cy0) return;
 
-  int x_start = 0, y_start = 0, text_w = 0, text_h = 0;
-  compute_text_bounds(x, y, text, font, align, &x_start, &y_start, &text_w, &text_h);
+  int x_start = 0, y_start = 0, text_h = 0;
+  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
   if (text_h > 0 && (y_start + text_h <= eff_cy0 || y_start > eff_cy1)) return;
 
   const int bpp = std::clamp(font.get_bpp(), 1, 4);

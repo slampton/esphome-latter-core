@@ -16,14 +16,32 @@ static constexpr int kTileGridMaxRows = 3;
 static constexpr int kTileGridMaxLogicalPages = 32;
 static constexpr int kTileGridMaxSlotsPerPage = 16;
 
-constexpr int tile_grid_cols_for(int w, int h, bool is_round) noexcept {
+constexpr int tile_grid_cols_for(int w, int h, bool is_round,
+                                 int ppi = 266, int view_scale_pct = 0,
+                                 bool is_stationary = false) noexcept {
   if (is_round) return 2;
-  if (w >= 800 && h >= 520) return 4;
+  const int eff_ppi = (ppi > 50) ? ppi : 266;
+  const int eff_vs = (view_scale_pct > 0) ? view_scale_pct : (is_stationary ? 145 : 100);
+  const int s_min = (is_stationary || eff_vs >= 120) ? 900 : 760;
+  const int raw_s = (eff_ppi * eff_vs * 10 + 133) / 266;
+  const int s = (raw_s > s_min) ? raw_s : s_min;
+  const int w_dp = (w * 1000 + s / 2) / s;
+  if (w_dp >= 800 || (w >= 800 && h >= 480)) return 4;
   if (w >= 600 && h >= 600) return 3;
   return 2;
 }
 
-constexpr int tile_grid_rows_for(int /*w*/, int /*h*/, bool /*is_round*/) noexcept {
+constexpr int tile_grid_rows_for(int w, int h, bool is_round,
+                                 int ppi = 266, int view_scale_pct = 0,
+                                 bool is_stationary = false) noexcept {
+  const int eff_ppi = (ppi > 50) ? ppi : 266;
+  const int eff_vs = (view_scale_pct > 0) ? view_scale_pct : (is_stationary ? 145 : 100);
+  const int s_min = (is_stationary || eff_vs >= 120) ? 900 : 760;
+  const int raw_s = (eff_ppi * eff_vs * 10 + 133) / 266;
+  const int s = (raw_s > s_min) ? raw_s : s_min;
+  const int h_dp = (h * 1000 + s / 2) / s;
+  if (is_round && (h < 400 || h_dp < 400)) return 2;
+  if (!is_round && w >= 800 && h < 540) return 2;
   return 3;
 }
 

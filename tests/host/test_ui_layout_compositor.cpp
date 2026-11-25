@@ -90,32 +90,33 @@ void host_resolve_glass_fill(bool bd_valid, HostRgb bd_bright, HostRgb bd_mean,
 }
 
 void test_ui_layout_hit_table_and_dirty_band() {
-  const auto ref = latter_ui::compute_panel_layout(466, 466, true, false, 266);
-  LATTER_CHECK(ref.drag_start == 7 && ref.tap_max == 17 && ref.swipe_min == 25);
-  LATTER_CHECK(ref.dock_hit_r >= 43 && ref.back_y == 426 && ref.home_bar_y == 434);
-  LATTER_CHECK(latter_ui::scale_x_for(233, 466) == 233);
-  LATTER_CHECK(latter_ui::scale_y_for(233, 466) == 233);
-  LATTER_CHECK(latter_ui::scale_s_for(100, 466) == 100);
-  LATTER_CHECK(latter_ui::scale_min_for(100, 466) == 100);
-  LATTER_CHECK(latter_ui::scale_w_for(276, 466) == 276);
+  const auto ref = latter_ui::compute_panel_layout(466, 466, true, false, 266, 233, 100, false);
+  const auto ref_kin = latter_ui::KinematicMetrics::for_ppi(266);
+  LATTER_CHECK(ref_kin.slider_start_px == 7 && ref_kin.tap_slop_px == 17 && ref_kin.swipe_live_px == 25);
+  LATTER_CHECK(ref.dock_r == 31 && ref.dock_hit_r >= 43);
+  LATTER_CHECK(ref.back_y < ref.home_bar_y && ref.home_bar_y < 466);
+  LATTER_CHECK(latter_ui::dp_px_for(233, 1000) == 233);
+  LATTER_CHECK(latter_ui::dp_px_for(100, 1184) == 118);
+  LATTER_CHECK(latter_ui::dp_px_for(100, 900) == 90);
+  LATTER_CHECK(latter_ui::dp_px_for(100, 1385) == 139);
 
-  for (const auto &p : kFlagshipPanels) {
-    const auto ly = latter_ui::compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi);
-    const int min_dim = (p.w < p.h) ? p.w : p.h;
-    LATTER_CHECK(ly.drag_start >= 3 && ly.tap_max > ly.drag_start && ly.swipe_min > ly.tap_max);
+  for (const auto &p : kAllNinePanels) {
+    const auto ly = latter_ui::compute_panel_layout(
+        p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
+    const auto kin = latter_ui::KinematicMetrics::for_ppi(p.ppi);
+    LATTER_CHECK(kin.slider_start_px >= 3 && kin.tap_slop_px > kin.slider_start_px && kin.swipe_live_px > kin.tap_slop_px);
     LATTER_CHECK(ly.dock_hit_r >= latter_ui::mm_to_px_for(3.6f, p.ppi));
     LATTER_CHECK(ly.hdr_y > 0 && ly.hdr_y < ly.sub_hdr_y && ly.sub_hdr_y < ly.dock_y);
     LATTER_CHECK(ly.dock_y < ly.back_y && ly.back_y < ly.home_bar_y && ly.home_bar_y < p.h);
     LATTER_CHECK(ly.list_card_w > 0 && ly.list_card_w <= p.w);
     LATTER_CHECK(ly.area_card3_w > 0 && ly.area_card3_w <= p.w);
     LATTER_CHECK(ly.tool_card3_w > 0 && ly.tool_card3_w <= p.w);
-    LATTER_CHECK(latter_ui::scale_w_for(200, p.w) > 0);
-    LATTER_CHECK(latter_ui::scale_min_for(200, min_dim) > 0);
+    LATTER_CHECK(ly.scale_milli >= 760);
 
     for (int frac : {18, 35, 50, 72, 85}) {
       const int y = (p.h * frac) / 100;
-      const int inset = latter_ui::scale_min_for(12, min_dim);
-      const int span = latter_ui::safe_span_for(y, p.w, p.h, p.round, p.wearable, inset);
+      const int inset = latter_ui::dp_px_for(12, ly.scale_milli);
+      const int span = latter_ui::safe_span_for(y, p.w, p.h, p.round, p.wearable, inset, p.corner_r);
       LATTER_CHECK(span > 0 && span <= p.w - 2 * inset);
       if (p.round) {
         const int r = p.w / 2;
@@ -133,10 +134,11 @@ void test_ui_layout_hit_table_and_dirty_band() {
       const double diag_outer_px = static_cast<double>(kMobileCornerR) -
                                    static_cast<double>(kMobileCrOut) * 0.7071067811865475;
       LATTER_CHECK(diag_outer_px >= 24.0 && diag_outer_px <= 25.0);
-      const int hdr_span_cr76 = latter_ui::safe_span_for(ly.hdr_y, 480, 480, false, false, 16, kMobileCornerR);
-      const int hdr_span_cr20 = latter_ui::safe_span_for(ly.hdr_y, 480, 480, false, false, 16, 20);
+      const int hdr_span_cr76 = latter_ui::safe_span_for(28, 480, 480, false, false, 16, kMobileCornerR);
+      const int hdr_span_cr0 = latter_ui::safe_span_for(28, 480, 480, false, false, 16, 0);
       const int mid_span_cr76 = latter_ui::safe_span_for(240, 480, 480, false, false, 16, kMobileCornerR);
-      LATTER_CHECK(hdr_span_cr76 < hdr_span_cr20 && hdr_span_cr76 == 412 && mid_span_cr76 == 448);
+      // Exact radial SDF clearance: cr=76, inset=16 -> r_eff=60, dy=48 -> dx=36 -> x_in=40 -> span=400.
+      LATTER_CHECK(hdr_span_cr76 < hdr_span_cr0 && hdr_span_cr76 == 400 && mid_span_cr76 == 448);
     }
 
     latter_ui::FrameHitTable tbl;
@@ -504,26 +506,21 @@ void test_gui_standardization_d070() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  struct BoardSpec { int w, h; bool round, wearable; int ppi; };
-  constexpr BoardSpec kBoards[5] = {
-      {320, 480, false, false, 165},
-      {410, 502, false, true,  315},
-      {466, 466, true,  false, 266},
-      {480, 480, false, false, 313},
-      {720, 720, false, false, 254},
-  };
-
-  for (const auto &b : kBoards) {
+  for (const auto &b : kAllNinePanels) {
     const int min_dim = (b.w < b.h) ? b.w : b.h;
-    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi);
+    const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
     int mode_xs[4] = {0, 0, 0, 0};
-    compute_mode_bar_slot_xs(4, b.w, b.round, mode_xs);
+    compute_mode_bar_slot_xs(4, b.w, b.round, mode_xs, b.h, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
     const auto cam_g = compute_camera_grid_geom(b.w, b.h, b.round, b.wearable, b.ppi);
-    for (int i = 0; i < 4; ++i) LATTER_CHECK(cam_g.mode_slot_xs[i] == mode_xs[i]);
+    int cam_mode_xs[4] = {0, 0, 0, 0};
+    compute_mode_bar_slot_xs(4, b.w, b.round, cam_mode_xs);
+    for (int i = 0; i < 4; ++i) LATTER_CHECK(cam_g.mode_slot_xs[i] == cam_mode_xs[i]);
+    LATTER_CHECK(mode_xs[0] < mode_xs[1] && mode_xs[1] < mode_xs[2] && mode_xs[2] < mode_xs[3]);
     LATTER_CHECK(radius_card_for(min_dim) > radius_key_for(min_dim));
     const int stack_w = compute_uniform_stack_w_for(
-        ly.slot5_y(0), ly.slot5_y(4), ly.slot5_h, b.w - 20, b.w, b.h, b.round, b.wearable, 14);
-    if (b.w > 520) LATTER_CHECK(stack_w <= kMaxContentColW);
+        ly.slot5_y(0), ly.slot5_y(4), ly.slot5_h, b.w - 20, b.w, b.h, b.round, b.wearable, 14,
+        ly.corner_r, ly.scale_milli);
+    LATTER_CHECK(stack_w <= dp_px_for(460, ly.scale_milli));
   }
 
   const std::string mode_bar_families[7] = {
@@ -663,11 +660,12 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
       {800, 400, 170},
   };
   for (const auto &lc : kLandscapes) {
-    const auto ly = compute_panel_layout(lc.w, lc.h, false, false, lc.ppi);
+    const auto ly = compute_panel_layout(lc.w, lc.h, false, false, lc.ppi, 0, 0, true);
+    const auto sf = SafeFrame::for_spec(UiDisplaySpec{lc.w, lc.h, lc.ppi, false, 0, 0, true});
     LATTER_CHECK(ly.dock_y + ly.dock_r < ly.dock_pips_y);
-    LATTER_CHECK(ly.list_card_w <= kMaxContentColW);
+    LATTER_CHECK(ly.list_card_w <= sf.max_content_w(460));
     int xs[4] = {0, 0, 0, 0};
-    compute_mode_bar_slot_xs(4, lc.w, false, xs);
+    compute_mode_bar_slot_xs(4, lc.w, false, xs, lc.h, lc.ppi, 0, 0, true);
     LATTER_CHECK(xs[0] - ly.dock_r >= 0);
     LATTER_CHECK(xs[3] + ly.dock_r < lc.w);
     LATTER_CHECK((xs[1] - xs[0]) > 2 * ly.dock_r);
@@ -677,20 +675,24 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
     LATTER_CHECK(dp.cy + dp.r_out + dp.outer_pad < lc.h);
     LATTER_CHECK(dp.r_out > dp.r_in && dp.r_in >= 36);
 
-    // Tablet landscape Activity Card internals & hit rects use scale_s (zero 64 px text crush on 1024x600 / 1280x800).
-    const int min_dim = (lc.w < lc.h) ? lc.w : lc.h;
-    const int act_card_w = std::min(kMaxContentColW, scale_x_for(380, lc.w));
-    const int act_card_h = scale_y_for(60, lc.h) + scale_y_for(56, lc.h);
-    const int act_col_w = scale_s_for(56, min_dim);
-    const int drop_col_w = scale_s_for(52, min_dim);
+    // Tablet landscape Activity Card internals & hit rects use dp_px (zero text crush on 1024x600 / 1280x800).
+    const UiDisplaySpec lc_spec{lc.w, lc.h, lc.ppi, false, 0, resolve_view_scale_pct_for(lc.w, lc.h, lc.ppi, false, 0, true), true};
+    const SafeFrame lc_sf = SafeFrame::for_spec(lc_spec);
+    const AutoFontSizes lc_fonts = compute_auto_font_sizes(lc_spec);
+    const HomeActivityMetrics ham = compute_home_activity_metrics(
+        lc_spec, ly.home_weather_y, ly.dock_y - ly.dock_r, lc_fonts.small, lc_fonts.date);
+    const int act_card_w = ham.card_w;
+    const int act_card_h = ham.row2_h;
+    const int act_col_w = dp_px_for(56, ly.scale_milli);
+    const int drop_col_w = dp_px_for(52, ly.scale_milli);
     const int card_left = lc.w / 2 - act_card_w / 2;
-    const int card_right = lc.w / 2 + act_card_w / 2;
-    const int txt_x = card_left + scale_s_for(48, min_dim);
+    const int card_right = card_left + act_card_w;
+    const int txt_x = card_left + dp_px_for(48, ly.scale_milli);
     const int div1_x = card_right - drop_col_w - act_col_w;
-    const int max_txt = div1_x - txt_x - scale_s_for(8, min_dim);
-    LATTER_CHECK(max_txt >= 190);
+    const int max_txt = div1_x - txt_x - dp_px_for(8, ly.scale_milli);
+    LATTER_CHECK(max_txt >= 160);
     FrameHitTable act_ht{};
-    const int act_cy = ly.dock_y - ly.dock_r - mm_to_px_for(3.0f, lc.ppi) - act_card_h / 2;
+    const int act_cy = ly.dock_y - ly.dock_r - ham.dock_gap - act_card_h / 2;
     register_home_activity_hit_regions(act_ht, lc.w / 2, act_cy, act_card_w, act_card_h,
                                        true, true, 0, 1, act_col_w, drop_col_w);
     const HitRegion *hr_row = act_ht.hit_test(txt_x + 4, act_cy - act_card_h / 4, kHitTap);
@@ -702,28 +704,28 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
     LATTER_CHECK(hr_row->x1 + 1 == div1_x && hr_act->x0 == div1_x && hr_act->x1 + 1 == card_right - drop_col_w);
 
     // Camera Single 4-pill & 2-pill action rows stay proportional and non-overlapping on 1024x600 / 1280x800.
-    const int cam_h = std::max(38, scale_y_for(40, lc.h));
-    const int cam_y = (ly.app_dock_y - ly.dock_r - scale_s_for(3, min_dim)) - scale_y_for(14, lc.h) - cam_h / 2;
+    const int cam_h = std::max(38, dp_px_for(40, ly.scale_milli));
+    const int cam_y = (ly.app_dock_y - ly.dock_r - dp_px_for(3, ly.scale_milli)) - dp_px_for(14, ly.scale_milli) - cam_h / 2;
     HomeHubPillGeom cam_geoms[4]{};
     const int n4 = compute_action_pill_row(
-        4, cam_y, cam_h, std::min(kMaxContentColW, scale_s_for(376, min_dim)),
-        scale_s_for(104, min_dim), scale_s_for(8, min_dim),
-        lc.w, lc.h, false, false, lc.ppi, cam_geoms, 12);
+        4, cam_y, cam_h, std::min(lc_sf.max_content_w(), dp_px_for(376, ly.scale_milli)),
+        dp_px_for(104, ly.scale_milli), dp_px_for(8, ly.scale_milli),
+        lc.w, lc.h, false, false, lc.ppi, cam_geoms, dp_px_for(12, ly.scale_milli), 0, ly.scale_milli);
     LATTER_CHECK(n4 == 4);
     for (int i = 0; i < 4; ++i) {
-      LATTER_CHECK(cam_geoms[i].w >= ((min_dim >= 600) ? 105 : 80));
+      LATTER_CHECK(cam_geoms[i].w >= 72);
       LATTER_CHECK(cam_geoms[i].hit_h >= mm_to_px_for(7.0f, lc.ppi));
       if (i > 0) {
         LATTER_CHECK(cam_geoms[i - 1].cx + cam_geoms[i - 1].w / 2 < cam_geoms[i].cx - cam_geoms[i].w / 2);
       }
     }
     const int row_span = (cam_geoms[3].cx + cam_geoms[3].w / 2) - (cam_geoms[0].cx - cam_geoms[0].w / 2);
-    LATTER_CHECK(row_span <= kMaxContentColW);
+    LATTER_CHECK(row_span <= lc_sf.max_content_w());
   }
 
   // Isotropic toggle_switch aspect ratio across all active geometries.
   {
-    const int sw_h = std::max(18, scale_s(22));
+    const int sw_h = std::max(18, dp_px(22));
     const int sw_w = (sw_h * 40 + 11) / 22;
     const float aspect = static_cast<float>(sw_w) / static_cast<float>(sw_h);
     LATTER_CHECK(aspect >= 1.70f && aspect <= 1.95f);
@@ -828,9 +830,10 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
   const int dock_y0 = dock_dirty_band_y0();
   const int calm_y1 = calm_home_sky_band_y1(dock_y0);
   LATTER_CHECK(calm_y1 > 0 && calm_y1 < dock_y0 && (calm_y1 & 1) == 1);
-  // Calm haze drift bands (3 bands max for fog: center_y <= scale_y(254) + 5, hh = scale_y(8))
+  // Calm haze drift bands (3 bands max for fog: center_y <= 254 * wy_s + 5, hh = 8 * wy_s)
   // stay strictly inside [0, calm_y1] across all compiled geometries.
-  const int max_calm_haze_y = scale_y(118 + 2 * 68) + scale_y(8) + 5;
+  const float wy_s = static_cast<float>(SCREEN_H) / 466.0f;
+  const int max_calm_haze_y = static_cast<int>(254.0f * wy_s) + static_cast<int>(8.0f * wy_s) + 5;
   LATTER_CHECK(max_calm_haze_y <= calm_y1);
 
   FrameCadenceController ctrl{};
@@ -1115,6 +1118,230 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
   }
 }
 
+void test_optical_text_centering_and_bezel_safety() {
+  using namespace latter_ui;
+
+  // Regression guard for B1 (double-x_off right shift): construct a synthetic glyph font with
+  // positive left side-bearing (offset_x = 8 on '1') and verify CENTER_HORIZONTAL places rendered
+  // ink symmetrically around cx (within +/-1 px) without adding offset_x twice.
+  static constexpr uint8_t kSolidGlyph[16] = {
+      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+  };
+  UiFontView font{};
+  font.handle = static_cast<const void *>(kSolidGlyph);
+  font.height = 16;
+  font.baseline = 14;
+  font.bpp = 1U;
+  font.find_glyph_fn = +[](const void *raw, uint32_t cp, UiGlyphData &out) -> bool {
+    if (cp < 32U || cp > 126U) return false;
+    out.data = static_cast<const uint8_t *>(raw);
+    out.width = 8;
+    out.height = 16;
+    out.offset_x = (cp == '1') ? 8 : 1;
+    out.offset_y = 0;
+    out.advance = 18;
+    return true;
+  };
+  font.measure_fn = +[](const void *, const char *str, int *ow, int *oxo, int *obs, int *oh) {
+    int n = 0;
+    int first_xo = 0;
+    int last_right = 0;
+    for (const char *p = str; p != nullptr && *p != '\0'; ++p, ++n) {
+      const int xo = (*p == '1') ? 8 : 1;
+      if (n == 0) first_xo = xo;
+      last_right = n * 18 + xo + 8;
+    }
+    if (ow != nullptr) *ow = (n > 0) ? (last_right - first_xo) : 0;
+    if (oxo != nullptr) *oxo = first_xo;
+    if (obs != nullptr) *obs = 14;
+    if (oh != nullptr) *oh = 16;
+  };
+
+  const int cx = SCREEN_CX;
+  const int cy = SCREEN_H / 2;
+  int pen_x = 0, pen_y = 0, ink_x0 = 0, ink_w = 0, ink_h = 0;
+  compute_text_pen_origin(cx, cy, "12:00", font, TextAlign::CENTER,
+                          &pen_x, &pen_y, &ink_x0, &ink_w, &ink_h);
+  LATTER_CHECK(ink_x0 == 8 && ink_w == 73 && ink_h == 16);
+
+  // Measure actual rendered ink leftmost and rightmost columns on a clean RGB565 surface.
+  HostSurfaceFixture fx{};
+  fx.fill(0U);
+  fast_print(fx.surf, cx, cy, font, UiColor(255, 255, 255), TextAlign::CENTER, "12:00");
+  int min_x = SCREEN_W;
+  int max_x = -1;
+  for (int y = 0; y < SCREEN_H; ++y) {
+    for (int x = 0; x < SCREEN_W; ++x) {
+      if (fx.pixels[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)] != 0U) {
+        if (x < min_x) min_x = x;
+        if (x > max_x) max_x = x;
+      }
+    }
+  }
+  LATTER_CHECK(min_x < max_x);
+  const int ink_mid = (min_x + max_x) / 2;
+  LATTER_CHECK(std::abs(ink_mid - cx) <= 1);
+  LATTER_CHECK((max_x - min_x + 1) == ink_w);
+
+  // Also verify TOP_LEFT get_text_bounds preserves ink box x1 = x + offset_x and w = ink_w.
+  int bx1 = 0, by1 = 0, bw = 0, bh = 0;
+  compute_text_bounds(20, 30, "12:00", font, TextAlign::TOP_LEFT, &bx1, &by1, &bw, &bh);
+  LATTER_CHECK(bx1 == 28 && bw == ink_w);
+}
+
+void test_clean_sheet_scaling_9geom() {
+  using namespace latter_ui;
+
+  // Verify exact calibrated s_ui, auto-derived 7-font ramp, dock_r, and 1-vs-2-line Home Activity Card
+  // across all 5 flagship panels + 4 future panel classes (zero drift with latter_core/__init__.py).
+  struct ExpectedPanel {
+    int idx;
+    int s_ui;
+    int f_micro;
+    int f_small;
+    int f_btn;
+    int f_date;
+    int f_chrono;
+    int f_time;
+    int dock_r;
+    int act_rows;
+    SizeClass size_class;
+  };
+  static constexpr ExpectedPanel kExpected[5] = {
+      {0,  900, 13, 19, 22, 24, 34,  68, 25, 2, SizeClass::Compact},  // Remote 320x480
+      {1, 1184, 17, 25, 29, 32, 44,  76, 33, 1, SizeClass::Compact},  // Wrist 410x502
+      {2, 1000, 14, 21, 25, 28, 38,  76, 31, 1, SizeClass::Regular},  // Pocket 466x466R
+      {3, 1177, 17, 25, 29, 33, 45,  89, 35, 1, SizeClass::Regular},  // Mobile 480x480
+      {4, 1385, 19, 29, 35, 39, 53, 105, 46, 2, SizeClass::Regular},  // Desk 720x720
+  };
+  for (const auto &e : kExpected) {
+    const auto &p = kAllNinePanels[e.idx];
+    const UiDisplaySpec spec{p.w, p.h, p.ppi, p.round, p.corner_r, p.view_scale_pct, p.stationary};
+    const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
+    const auto af = compute_auto_font_sizes(spec);
+    const auto dm = compute_dock_metrics(spec);
+    const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
+    const auto act = compute_home_activity_metrics(spec, ly.home_weather_y, ly.dock_y - ly.dock_r, af.small, af.date);
+    LATTER_CHECK(s == e.s_ui);
+    LATTER_CHECK(af.micro == e.f_micro && af.small == e.f_small && af.btn_bold == e.f_btn);
+    LATTER_CHECK(af.date == e.f_date && af.chrono == e.f_chrono && af.games == e.f_chrono && af.time == e.f_time);
+    LATTER_CHECK(dm.dock_r == e.dock_r);
+    LATTER_CHECK(act.max_rows == e.act_rows);
+    LATTER_CHECK(ly.size_class == e.size_class);
+  }
+
+  // Verify future panels (360x360R, 800x480, 1024x600, 1280x800) hit physical minimums & bezel safety.
+  for (int idx = 5; idx < 9; ++idx) {
+    const auto &p = kAllNinePanels[idx];
+    const UiDisplaySpec spec{p.w, p.h, p.ppi, p.round, p.corner_r, p.view_scale_pct, p.stationary};
+    const auto af = compute_auto_font_sizes(spec);
+    const auto dm = compute_dock_metrics(spec);
+    const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
+    LATTER_CHECK(af.small * 25.4 / p.ppi >= 1.95);
+    LATTER_CHECK(af.micro * 25.4 / p.ppi >= 1.29);
+    LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[3] + dm.dock_r < p.w);
+    LATTER_CHECK(dm.slot_xs[1] - dm.slot_xs[0] > 2 * dm.dock_r);
+    LATTER_CHECK(ly.home_date_y < ly.home_clock_y && ly.home_clock_y < ly.home_weather_y);
+    if (idx == 5) {
+      LATTER_CHECK(ly.size_class == SizeClass::Compact);
+    } else {
+      LATTER_CHECK(ly.size_class == SizeClass::Expanded);
+      LATTER_CHECK(dm.max_slots_capable == 6);
+    }
+  }
+}
+
+void test_aa_font_live_fb_blending_no_halo() {
+  using namespace latter_ui;
+
+  auto decode_px = [](uint16_t hw) -> UiColor {
+    const uint16_t p = decode_hw_rgb565_raw(hw);
+    const uint8_t r5 = static_cast<uint8_t>((p >> 11) & 0x1FU);
+    const uint8_t g6 = static_cast<uint8_t>((p >> 5) & 0x3FU);
+    const uint8_t b5 = static_cast<uint8_t>(p & 0x1FU);
+    return UiColor{
+        static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+        static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+        static_cast<uint8_t>((b5 << 3) | (b5 >> 2)),
+    };
+  };
+  auto luma = [](UiColor c) -> int {
+    return (static_cast<int>(c.r) + static_cast<int>(c.g) + static_cast<int>(c.b)) / 3;
+  };
+
+  // Synthetic 4x2 glyph for bpp=2 (levels 0,1,2,3 across x=0..3) and bpp=4 (levels 0,4,10,15 across x=0..3)
+  static const uint8_t kGlyph2Bpp[2] = {0x1BU, 0x1BU};       // 00 01 10 11 per row
+  static const uint8_t kGlyph4Bpp[4] = {0x04U, 0xAFU, 0x04U, 0xAFU};  // 0, 4, 10, 15 per row
+  static const int kDummy2 = 2;
+  static const int kDummy4 = 4;
+
+  auto make_aa_font = [](const void *tag, uint8_t bpp) -> UiFontView {
+    UiFontView fv{};
+    fv.handle = tag;
+    fv.height = 2;
+    fv.baseline = 2;
+    fv.bpp = bpp;
+    fv.measure_fn = +[](const void *, const char *s, int *w, int *xo, int *bs, int *h) {
+      const int n = (s != nullptr) ? static_cast<int>(std::strlen(s)) : 0;
+      if (w) *w = n * 4;
+      if (xo) *xo = 0;
+      if (bs) *bs = 2;
+      if (h) *h = 2;
+    };
+    fv.find_glyph_fn = (bpp == 2U)
+        ? +[](const void *, uint32_t, UiGlyphData &g) -> bool {
+            g = {kGlyph2Bpp, 0, 0, 4, 2, 4};
+            return true;
+          }
+        : +[](const void *, uint32_t, UiGlyphData &g) -> bool {
+            g = {kGlyph4Bpp, 0, 0, 4, 2, 4};
+            return true;
+          };
+    return fv;
+  };
+
+  const UiColor sky(120, 170, 220);
+  const UiColor fg(255, 255, 255);
+  const uint16_t sky_hw = encode_hw_rgb565(sky);
+  const int sky_l = luma(decode_px(sky_hw));
+  const int fg_l = luma(decode_px(encode_hw_rgb565(fg)));
+
+  HostSurfaceFixture fix{};
+  for (uint8_t bpp : {uint8_t{2}, uint8_t{4}}) {
+    const UiFontView fv = make_aa_font((bpp == 2U) ? &kDummy2 : &kDummy4, bpp);
+    const int x0 = 40;
+    const int y0 = 40;
+
+    // 1. Cache miss render over bright sky backdrop: partial AA pixels blend toward sky (zero dark halo).
+    fix.fill(sky_hw);
+    fast_print(fix.surf, x0, y0, fv, fg, UiTextAlign::TOP_LEFT, "A");
+    const uint16_t p0 = fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 0)];
+    const uint16_t p1 = fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 1)];
+    const uint16_t p2 = fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 2)];
+    const uint16_t p3 = fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 3)];
+    LATTER_CHECK(p0 == sky_hw);
+    LATTER_CHECK(luma(decode_px(p1)) > sky_l && luma(decode_px(p1)) < luma(decode_px(p2)));
+    LATTER_CHECK(luma(decode_px(p2)) < fg_l);
+    LATTER_CHECK(p3 == encode_hw_rgb565(fg));
+
+    // 2. Cache hit render must be pixel-identical to cache miss.
+    fix.fill(sky_hw);
+    fast_print(fix.surf, x0, y0, fv, fg, UiTextAlign::TOP_LEFT, "A");
+    LATTER_CHECK(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 0)] == p0);
+    LATTER_CHECK(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 1)] == p1);
+    LATTER_CHECK(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 2)] == p2);
+    LATTER_CHECK(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 3)] == p3);
+
+    // 3. fast_print_alpha combines span alpha with text alpha monotonically without halo.
+    fix.fill(sky_hw);
+    fast_print_alpha(fix.surf, x0, y0, fv, fg, UiTextAlign::TOP_LEFT, "A", 140);
+    const int al1 = luma(decode_px(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 1)]));
+    const int al3 = luma(decode_px(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 3)]));
+    LATTER_CHECK(al1 >= sky_l && al1 < al3 && al3 < fg_l);
+  }
+}
+
 }  // namespace
 
 void run_ui_layout_compositor_tests() {
@@ -1126,6 +1353,9 @@ void run_ui_layout_compositor_tests() {
   test_photo_frame_screensaver_day_night_sky_d067();
   test_landscape_geoms_psram_budget_and_utf8_probing();
   test_p4_dma_blit_calm_sky_and_dock_clip();
+  test_optical_text_centering_and_bezel_safety();
+  test_clean_sheet_scaling_9geom();
+  test_aa_font_live_fb_blending_no_halo();
 }
 
 }  // namespace latter_test

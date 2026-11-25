@@ -88,10 +88,10 @@ UiColor render_glass_circle(Rgb565Surface &it, int cx_btn, int cy_btn, int r,
 
 void render_scroll_chevron(Rgb565Surface &it, int x, int y, bool is_up,
                            UiColor c, UiColor shadow_c, bool shadow) {
-  const int dx = scale_s(7);
-  const int dy_hi = scale_s(5);
-  const int dy_lo = scale_s(4);
-  const int thick = (SCREEN_MIN_DIM > 520) ? 3 : 2;
+  const int dx = std::max(5, dp_px(7));
+  const int dy_hi = std::max(4, dp_px(5));
+  const int dy_lo = std::max(3, dp_px(4));
+  const int thick = std::max(2, dp_px(2));
   if (shadow) {
     for (int t = 0; t < thick; t++) {
       if (is_up) {
@@ -116,13 +116,13 @@ void render_scroll_chevron(Rgb565Surface &it, int x, int y, bool is_up,
 
 void render_bezel_alert_border(Rgb565Surface &it, int cx, int cy, UiColor ring_c) {
 #if LATTER_ROUND_DISPLAY
-  for (int r = SCREEN_R - 10; r <= SCREEN_R - 7; r++) {
+  for (int r = SCREEN_MIN_R - 10; r <= SCREEN_MIN_R - 7; r++) {
     fast_circle(it, cx, cy, r, ring_c);
   }
 #else
   (void)cx;
   (void)cy;
-  const int pad = LATTER_IS_WEARABLE ? 5 : 3;
+  const int pad = (LATTER_CORNER_R >= 64) ? 5 : 3;
   const int thick = 5;
   const int cr_out = std::max(8, LATTER_CORNER_R - pad);
   stroke_round_rect_aa(it, pad, pad, SCREEN_W - 2 * pad, SCREEN_H - 2 * pad,
@@ -131,8 +131,8 @@ void render_bezel_alert_border(Rgb565Surface &it, int cx, int cy, UiColor ring_c
 }
 
 void render_home_indicator_bar(Rgb565Surface &it, int cx, int y_pos, UiColor bar_col) {
-  const int half_w = std::min(96, scale_s(54));
-  const int bar_h = (SCREEN_MIN_DIM > 520) ? 7 : 5;
+  const int half_w = std::min(SCREEN_W / 4, std::max(32, dp_px(54)));
+  const int bar_h = std::max(5, dp_px(5));
   const int cap_r = bar_h / 2;
   const float cap = 0.5f * static_cast<float>(bar_h);
   fill_round_rect_aa(it, cx - half_w, y_pos - cap_r + 1, 2 * half_w + 1, bar_h, cap, kChromeShadow);
@@ -150,10 +150,10 @@ void render_back_button(Rgb565Surface &it, int cx, UiFontView font,
   }
   fast_print(it, cx + 1, back_lbl_y + 1, font, kChromeShadow, UiTextAlign::CENTER, label);
   fast_print(it, cx, back_lbl_y, font, text_col, UiTextAlign::CENTER, label);
-  const int hit_y0 = std::clamp(back_lbl_y - scale_y(22), 0, ly.h - 1);
+  const int hit_y0 = std::clamp(back_lbl_y - dp_px(22), 0, ly.h - 1);
   const int hit_h = std::max(1, ly.h - hit_y0);
   const int max_span = std::max(ly.min_hit_px(), ly.safe_span(back_lbl_y, 8));
-  const int hit_w = std::min(max_span, std::max(scale_x(235), ly.min_hit_px() * 2));
+  const int hit_w = std::min(max_span, std::max(dp_px(220), ly.min_hit_px() * 2));
   const int hit_pad = std::max(0, (ly.min_hit_px() - hit_h + 1) / 2);
   frame_hits().add_rect(cx - hit_w / 2, hit_y0, hit_w, hit_h,
                         WidgetId::BACK_BUTTON, kHitTap | kHitFocusSlot, 0, hit_pad);
@@ -176,7 +176,7 @@ void render_offline_pill(Rgb565Surface &it, int cx, uint32_t now_ms,
   const int x0 = cx - pill_w / 2;
 #if LATTER_ROUND_DISPLAY
   const int margin = layout().mm_to_px(0.6f);
-  const int y0 = (SCREEN_R - chord_half_span_int(SCREEN_R, pill_w / 2 + margin)) + margin;
+  const int y0 = (SCREEN_MIN_R - chord_half_span_int(SCREEN_MIN_R, pill_w / 2 + margin)) + margin;
   const bool round_top = true;
 #else
   const int y0 = 0;
@@ -540,13 +540,24 @@ const HsvUnitRgb *hsv_unit_lut_72() {
   return lut;
 }
 
+float color_wheel_scale(const ColorWheelGeom &geom) noexcept {
+  const auto ly = layout();
+  const int top_lim = ly.sub_hdr_y + dp_px(14);
+  const int bot_lim = ly.back_y - dp_px(26);
+  const int max_h = std::max(44, std::min(geom.cy - top_lim, bot_lim - geom.cy) - dp_px(6));
+  const int max_w = std::max(44, ly.safe_span(geom.cy, dp_px(14)) / 2 - dp_px(6));
+  const int max_r = std::min(max_h, max_w);
+  const float fit_s = static_cast<float>(max_r) / std::max(1.0f, static_cast<float>(geom.outer_r_466));
+  return std::max(0.45f, std::min(dp_f(1.0f), fit_s));
+}
+
 }  // namespace
 
 // ==============================================================================
 // 1. Functional Action Pills, Toggles, Sliders, Lists, Grids & Keypads (D-070)
 // ==============================================================================
 void toggle_switch(Rgb565Surface &it, int cx_sw, int cy_sw, bool is_on, UiColor active_col) {
-  const int sw_h = std::max(18, scale_s(22));
+  const int sw_h = std::max(18, dp_px(22));
   const int sw_w = (sw_h * 40 + 11) / 22;
   const int x0 = cx_sw - sw_w / 2;
   const int y0 = cy_sw - sw_h / 2;
@@ -589,9 +600,9 @@ void action_pill(Rgb565Surface &it, int x0, int w, int y_mid, int h,
   const bool has_lbl = (label != nullptr && label[0] != '\0' && font != nullptr);
   const bool has_mdi = (leading_mdi != nullptr && leading_mdi[0] != '\0');
   if (has_mdi && has_lbl) {
-    const int icon_px = std::clamp(eff_h - scale_y(14), 14, scale_s(20));
-    const int icon_gap = scale_x(6);
-    const int max_txt_w = std::max(24, eff_w - icon_px - icon_gap - scale_x(18));
+    const int icon_px = std::clamp(eff_h - dp_px(14), 14, dp_px(20));
+    const int icon_gap = dp_px(6);
+    const int max_txt_w = std::max(24, eff_w - icon_px - icon_gap - dp_px(18));
     const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
     int tw = 0, x_off = 0, base = 0, th = 0;
     font->measure(fit.c_str(), &tw, &x_off, &base, &th);
@@ -600,10 +611,10 @@ void action_pill(Rgb565Surface &it, int x0, int w, int y_mid, int h,
     render_mdi_icon(it, leading_mdi, start_x + icon_px / 2, y_mid, icon_px, text_c, true);
     shadow_print(it, start_x + icon_px + icon_gap, y_mid, font, text_c, UiTextAlign::CENTER_LEFT, fit.c_str());
   } else if (has_mdi) {
-    const int icon_px = std::clamp(eff_h - scale_y(12), 14, scale_s(22));
+    const int icon_px = std::clamp(eff_h - dp_px(12), 14, dp_px(22));
     render_mdi_icon(it, leading_mdi, cx, y_mid, icon_px, text_c, true);
   } else if (has_lbl) {
-    const int max_txt_w = std::max(24, eff_w - scale_x(14));
+    const int max_txt_w = std::max(24, eff_w - dp_px(14));
     const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
     shadow_print(it, cx, y_mid, font, text_c, UiTextAlign::CENTER, fit.c_str());
   }
@@ -611,7 +622,7 @@ void action_pill(Rgb565Surface &it, int x0, int w, int y_mid, int h,
   if (widget_id != WidgetId::NONE) {
     const int min_h = (hit_h_min >= 0) ? hit_h_min : layout().min_hit_px();
     const int hit_h = std::max(eff_h, min_h);
-    const int hit_w = std::max(eff_w, std::min(min_h, eff_w + scale_x(12)));
+    const int hit_w = std::max(eff_w, std::min(min_h, eff_w + dp_px(12)));
     frame_hits().add_centered_rect(cx, y_mid, hit_w, hit_h, widget_id, flags, param);
   }
 }
@@ -635,7 +646,8 @@ void action_pill_row(Rgb565Surface &it, int cy, int h,
   const int gn = compute_action_pill_row(
       n, cy, h, max_row_w, max_btn_w, gap,
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0,
-      LATTER_PANEL_PPI, geoms, inset);
+      LATTER_PANEL_PPI, geoms, inset, LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT,
+      LATTER_IS_STATIONARY != 0);
   for (int i = 0; i < gn; ++i) {
     action_pill(it, geoms[i].cx - geoms[i].w / 2, geoms[i].w, geoms[i].cy, geoms[i].h,
                 items[i].border_c, items[i].bg_c, items[i].label, items[i].text_c, font,
@@ -649,10 +661,11 @@ void segmented_toggle(Rgb565Surface &it, int cx, int cy, int total_w, int h,
                       UiFontView font,
                       UiColor theme_primary, UiColor col_white, UiColor col_slate,
                       uint16_t left_wid, uint16_t right_wid) {
-  const int gap = std::max(4, scale_x(6));
-  const int eff_total = std::min(kMaxContentColW, total_w);
+  const auto ly = layout();
+  const int gap = std::max(4, dp_px(6));
+  const int eff_total = std::min(ly.max_content_w(), total_w);
   const int seg_w = std::max(56, (eff_total - gap) / 2);
-  const int hit_h = std::max(h, std::min(layout().min_hit_px(), h + scale_y(12)));
+  const int hit_h = std::max(h, std::min(ly.min_hit_px(), std::max(ly.slot5_h, h + dp_px(14))));
   action_pill_centered(it, cx - (seg_w + gap) / 2, seg_w, cy, h,
                        !right_active ? theme_primary : chrome_card_brd_off(),
                        !right_active ? chrome_card_bg_on() : chrome_card_bg_off(),
@@ -679,15 +692,15 @@ void setting_cycle_row(Rgb565Surface &it, int cx, int cy, int w, int h,
 
   render_card_box(it, x0, y0, eff_w, eff_h, bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, txt_c);
 
-  const int chv_inset = scale_x(16);
-  const int max_txt_w = std::max(40, eff_w - (enabled ? (2 * chv_inset + scale_x(24)) : scale_x(20)));
+  const int chv_inset = dp_px(16);
+  const int max_txt_w = std::max(40, eff_w - (enabled ? (2 * chv_inset + dp_px(24)) : dp_px(20)));
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
     const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
     shadow_print(it, cx, cy, font, txt_c, UiTextAlign::CENTER, fit.c_str());
   }
 
   if (enabled) {
-    const int chv_r = std::max(5, scale_s(7));
+    const int chv_r = std::max(5, dp_px(7));
     draw_icon_chevron(it, x0 + chv_inset, cy, chv_r, false, chevron_col, true);
     draw_icon_chevron(it, x0 + eff_w - chv_inset, cy, chv_r, true, chevron_col, true);
     if (widget_id != WidgetId::NONE) {
@@ -732,7 +745,7 @@ void slider_card_row(Rgb565Surface &it, int cx, int cy, int w, int h,
   }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
-    const std::string fit = fit_text_to_width_font(std::string(label), std::max(40, eff_w - scale_x(20)), font);
+    const std::string fit = fit_text_to_width_font(std::string(label), std::max(40, eff_w - dp_px(20)), font);
     shadow_print(it, cx, cy, font, text_c, UiTextAlign::CENTER, fit.c_str());
   }
 }
@@ -751,7 +764,7 @@ void list_row(Rgb565Surface &it, int cx, int cy, int w, int h,
 
   if (widget_id == WidgetId::NONE) {
     if (label != nullptr && label[0] != '\0' && font != nullptr) {
-      const std::string fit = fit_text_to_width_font(std::string(label), std::max(40, eff_w - scale_x(16)), font);
+      const std::string fit = fit_text_to_width_font(std::string(label), std::max(40, eff_w - dp_px(16)), font);
       shadow_print(it, cx, cy, font, text_c, UiTextAlign::CENTER, fit.c_str());
     }
     return;
@@ -762,19 +775,19 @@ void list_row(Rgb565Surface &it, int cx, int cy, int w, int h,
   const bool has_mdi = (leading_mdi != nullptr && leading_mdi[0] != '\0');
   const bool has_sub = (sub_label != nullptr && sub_label[0] != '\0');
   const bool has_badge = (right_badge != nullptr && right_badge[0] != '\0');
-  int pad_l = scale_x(14);
-  int pad_r = scale_x(14);
+  int pad_l = dp_px(14);
+  int pad_r = dp_px(14);
 
   if (has_mdi) {
-    const int icon_px = std::clamp(eff_h - scale_y(16), 16, scale_s(22));
+    const int icon_px = std::clamp(eff_h - dp_px(16), 16, dp_px(22));
     render_mdi_icon(it, leading_mdi, x0 + pad_l + icon_px / 2, cy, icon_px, text_c, true);
-    pad_l += icon_px + scale_x(10);
+    pad_l += icon_px + dp_px(10);
   }
   if (has_badge && font != nullptr) {
     int bw = 0, bx_off = 0, bbase = 0, bh = 0;
     font->measure(right_badge, &bw, &bx_off, &bbase, &bh);
     shadow_print(it, x0 + eff_w - pad_r, cy, font, right_badge_c, UiTextAlign::CENTER_RIGHT, right_badge);
-    pad_r += bw + scale_x(10);
+    pad_r += bw + dp_px(10);
   }
 
   if (label != nullptr && label[0] != '\0' && font != nullptr) {
@@ -782,7 +795,7 @@ void list_row(Rgb565Surface &it, int cx, int cy, int w, int h,
     if (has_sub) {
       int tw = 0, x_off = 0, base = 0, th = 0;
       font->measure("Ag", &tw, &x_off, &base, &th);
-      const int half_step = std::min(eff_h / 4, std::max(scale_y(10), (th + 2) / 2));
+      const int half_step = std::min(eff_h / 4, std::max(dp_px(10), (th + 2) / 2));
       const std::string fit1 = fit_text_to_width_font(std::string(label), max_txt_w, font);
       const std::string fit2 = fit_text_to_width_font(std::string(sub_label), max_txt_w, font);
       shadow_print(it, x0 + pad_l, cy - half_step, font, text_c, UiTextAlign::CENTER_LEFT, fit1.c_str());
@@ -818,15 +831,15 @@ void labeled_action_row(Rgb565Surface &it, int cx, int cy, int w, int h,
   const int eff_cta_w = std::clamp(cta_w, 64, std::max(64, (eff_w * 42) / 100));
   const int cta_x0 = x1 - eff_cta_w;
 
-  int txt_x0 = x0 + scale_x(4);
+  int txt_x0 = x0 + dp_px(4);
   if (draw_icon_fn != nullptr) {
-    const int ir = std::min(card_icon_r(eff_h), scale_s(20));
-    const int icon_cx = x0 + ir + scale_x(4);
+    const int ir = std::min(card_icon_r(eff_h), dp_px(20));
+    const int icon_cx = x0 + ir + dp_px(4);
     draw_icon_fn(it, icon_cx, cy, ir, icon_c, true, icon_ctx);
-    txt_x0 = icon_cx + ir + std::max(10, scale_x(12));
+    txt_x0 = icon_cx + ir + std::max(10, dp_px(12));
   }
 
-  const int gap = std::max(8, scale_x(12));
+  const int gap = std::max(8, dp_px(12));
   const int txt_max_w = std::max(44, cta_x0 - txt_x0 - gap);
   const bool has_status = (status != nullptr && status[0] != '\0' && status_font != nullptr);
 
@@ -878,7 +891,7 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
   auto draw_glyph_badge = [&](int ix, int iy, int icon_r, int max_disc_r) {
     if (inverted_badge) {
       const int clamped_max = std::max(icon_r, max_disc_r);
-      const int disc_r = std::clamp(icon_r + scale_s(4), icon_r, clamped_max);
+      const int disc_r = std::clamp(icon_r + dp_px(4), icon_r, clamped_max);
       const UiColor disc_c = disabled ? text_c : (has_accent ? accent_c : text_c);
       fast_filled_circle_aa(it, ix, iy, disc_r, disc_c);
       if (draw_icon_fn != nullptr) {
@@ -900,12 +913,12 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
 
   if (is_hero) {
     // Hero (2x2+): oversized icon + medium/bold title (falling back to font_small) + centered state subtitle
-    const int icon_r = std::clamp(std::min(eff_w, eff_h) / 5, std::max(16, scale_s(20)), scale_s(42));
+    const int icon_r = std::clamp(std::min(eff_w, eff_h) / 5, std::max(16, dp_px(20)), dp_px(42));
     const int icon_cy = y0 + (eff_h * 34) / 100;
-    const int max_disc_r = std::min((icon_cy - y0) - std::max(4, scale_s(6)), eff_w / 2 - scale_s(10));
+    const int max_disc_r = std::min((icon_cy - y0) - std::max(4, dp_px(6)), eff_w / 2 - dp_px(10));
     draw_glyph_badge(cx, icon_cy, icon_r, max_disc_r);
 
-    const int lbl_max_w = std::max(40, eff_w - scale_s(24));
+    const int lbl_max_w = std::max(40, eff_w - dp_px(24));
     const int lbl_cy = (state_caption != nullptr) ? (y0 + (eff_h * 66) / 100) : (y0 + (eff_h * 72) / 100);
     if (has_label) {
       bool use_hero_font = false;
@@ -938,25 +951,25 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
     }
   } else if (is_wide) {
     // Wide (2x1+): left-anchored icon + left-aligned 1-2 line label + right-edge state dot when stateful
-    const int pad_x = std::max(12, scale_s(14));
-    const int icon_r = std::clamp(std::min(card_icon_r(eff_h), (eff_h * 26) / 100), 10, scale_s(26));
-    const int disc_extra = inverted_badge ? scale_s(4) : 0;
+    const int pad_x = std::max(12, dp_px(14));
+    const int icon_r = std::clamp(std::min(card_icon_r(eff_h), (eff_h * 26) / 100), 10, dp_px(26));
+    const int disc_extra = inverted_badge ? dp_px(4) : 0;
     const int icon_cx = x0 + pad_x + icon_r + disc_extra;
-    const int max_disc_r = std::min((eff_h / 2) - std::max(4, scale_s(5)), icon_r + disc_extra);
+    const int max_disc_r = std::min((eff_h / 2) - std::max(4, dp_px(5)), icon_r + disc_extra);
     draw_glyph_badge(icon_cx, cy, icon_r, max_disc_r);
 
     int right_limit = x0 + eff_w - pad_x;
     if (entity_state == 0 || entity_state == 1) {
-      const int dot_r = std::max(3, scale_s(4));
+      const int dot_r = std::max(3, dp_px(4));
       const int dot_cx = right_limit - dot_r;
       const UiColor dot_c = active ? accent_c : kChromePipInactive;
       fast_filled_circle_aa(it, dot_cx + 1, cy + 1, dot_r, kChromeShadow);
       fast_filled_circle_aa(it, dot_cx, cy, dot_r, dot_c);
-      right_limit = dot_cx - dot_r - std::max(8, scale_s(10));
+      right_limit = dot_cx - dot_r - std::max(8, dp_px(10));
     }
 
     if (has_label) {
-      const int txt_x0 = icon_cx + icon_r + disc_extra + std::max(10, scale_s(12));
+      const int txt_x0 = icon_cx + icon_r + disc_extra + std::max(10, dp_px(12));
       const int max_txt_w = std::max(36, right_limit - txt_x0);
       const int line_h = measure_line_h(font);
       std::string lines[2];
@@ -974,12 +987,12 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
     }
   } else if (is_tall) {
     // Tall (1x2+): larger upper icon + wrapped 2-line label + optional On/Off/Unavailable caption
-    const int icon_r = std::clamp(std::min(eff_w / 4, eff_h / 6), 14, scale_s(34));
+    const int icon_r = std::clamp(std::min(eff_w / 4, eff_h / 6), 14, dp_px(34));
     const int icon_cy = y0 + (eff_h * 30) / 100;
-    const int max_disc_r = std::min((icon_cy - y0) - std::max(4, scale_s(5)), eff_w / 2 - scale_s(8));
+    const int max_disc_r = std::min((icon_cy - y0) - std::max(4, dp_px(5)), eff_w / 2 - dp_px(8));
     draw_glyph_badge(cx, icon_cy, icon_r, max_disc_r);
 
-    const int lbl_max_w = std::max(36, eff_w - scale_s(16));
+    const int lbl_max_w = std::max(36, eff_w - dp_px(16));
     const int lbl_cy = (state_caption != nullptr) ? (y0 + (eff_h * 64) / 100) : (y0 + (eff_h * 70) / 100);
     if (has_label) {
       std::string lines[2];
@@ -1002,7 +1015,7 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
     // 1x1 standard tile: centered icon above centered 1-2 line font_small label
     const int icon_r = std::min(card_icon_r(eff_h), std::max(10, eff_h / 4));
     const int line_h = measure_line_h(font);
-    const int lbl_max_w = std::max(32, eff_w - scale_s(14));
+    const int lbl_max_w = std::max(32, eff_w - dp_px(14));
     std::string lines[2];
     int line_cnt = 0;
     if (has_label) {
@@ -1015,9 +1028,9 @@ void grid_tile(Rgb565Surface &it, int cx, int cy, int w, int h,
     }
     const int icon_cy = (line_cnt >= 2) ? (y0 + (eff_h * 33) / 100) : (cy - eff_h / 6);
     const int lbl_y = (line_cnt >= 2) ? (y0 + (eff_h * 74) / 100) : (cy + (eff_h * 27) / 100);
-    const int max_top = (icon_cy - y0) - std::max(3, scale_s(4));
+    const int max_top = (icon_cy - y0) - std::max(3, dp_px(4));
     const int max_bot = (lbl_y - icon_cy) - std::max(11, eff_h / 7);
-    const int max_disc_r = std::min({max_top, max_bot, eff_w / 2 - scale_s(6)});
+    const int max_disc_r = std::min({max_top, max_bot, eff_w / 2 - dp_px(6)});
     draw_glyph_badge(cx, icon_cy, icon_r, max_disc_r);
 
     if (line_cnt == 1) {
@@ -1046,7 +1059,7 @@ void icon_circle_button(Rgb565Surface &it, int cx, int cy, int r,
   if (widget_id != WidgetId::NONE) {
     const int min_r = (layout().min_hit_px() + 1) / 2;
     const int req_pad = std::max(0, min_r - eff_r);
-    const int pad = (hit_pad >= 0) ? std::max(hit_pad, req_pad) : std::max(scale_s(6), req_pad);
+    const int pad = (hit_pad >= 0) ? std::max(hit_pad, req_pad) : std::max(dp_px(6), req_pad);
     frame_hits().add_circle(cx, cy, eff_r, widget_id, flags, param, pad);
   }
 }
@@ -1084,11 +1097,11 @@ void toggle_card_row(Rgb565Surface &it, int cx, int y_mid, int w, int h,
   render_card_box(it, cx - eff_w / 2, y_mid - eff_h / 2, eff_w, eff_h,
                   bg_c, brd_c, kRadiusCardPx(), GlassVariant::Clear, fg);
 
-  const int text_x = cx - eff_w / 2 + scale_s(14);
-  const int sw_h = std::max(18, scale_s(22));
+  const int text_x = cx - eff_w / 2 + dp_px(14);
+  const int sw_h = std::max(18, dp_px(22));
   const int sw_w = (sw_h * 40 + 11) / 22;
-  const int sw_cx = cx + eff_w / 2 - (sw_w / 2 + scale_s(10));
-  const int max_lbl_px = std::max(60, (sw_cx - sw_w / 2 - scale_s(8)) - text_x);
+  const int sw_cx = cx + eff_w / 2 - (sw_w / 2 + dp_px(10));
+  const int max_lbl_px = std::max(60, (sw_cx - sw_w / 2 - dp_px(8)) - text_x);
   const std::string fit_lbl = fit_text_to_width_font(
       label != nullptr ? std::string(label) : std::string(), max_lbl_px, font);
   shadow_print(it, text_x, y_mid, font, fg, UiTextAlign::CENTER_LEFT, fit_lbl.c_str());
@@ -1102,10 +1115,13 @@ void toggle_card_row(Rgb565Surface &it, int cx, int y_mid, int w, int h,
 void stepper_row(Rgb565Surface &it, int cx, int y_top, int h,
                  const char *const labels[4], UiFontView font,
                  UiColor col_text, uint16_t base_widget_id) {
-  const int btn_w = (SCREEN_W < 380) ? 50 : std::min(100, scale_s(60));
-  const int step = (SCREEN_W < 380) ? 66 : std::min(124, scale_s(80));
+  const auto ly = layout();
   const int eff_h = std::max(28, h);
   const int y_mid = y_top + eff_h / 2;
+  const int avail_w = std::min(ly.max_content_w(340), ly.band_safe_span(y_mid, eff_h, dp_px(14)));
+  const int gap = std::max(8, dp_px(12));
+  const int btn_w = std::clamp((avail_w - 3 * gap) / 4, 46, dp_px(76));
+  const int step = btn_w + gap;
   const int rad = kRadiusKeyPx();
   const UiColor bg_c = chrome_card_bg_on();
   const UiColor brd_c = chrome_card_brd_on();
@@ -1138,53 +1154,195 @@ UiColor hsv_wheel_sector_color(int sector_idx_72, float sat) {
   };
 }
 
-bool hsv_wheel_pick(int tx, int ty, int cx, int cy, int outer_r_466, int inner_r_466,
+bool hsv_wheel_pick(int tx, int ty, const ColorWheelGeom &geom,
                     float &out_hue_deg, float &out_sat) {
-  const float ws = (SCREEN_MIN_DIM > 520)
-                       ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f)
-                       : ((SCREEN_MIN_DIM < 380) ? (static_cast<float>(SCREEN_MIN_DIM) / 420.0f) : 1.0f);
-  const float dx = static_cast<float>(tx - cx);
-  const float dy = static_cast<float>(ty - cy);
+  const float ws = color_wheel_scale(geom);
+  const float dx = static_cast<float>(tx - geom.cx);
+  const float dy = static_cast<float>(ty - geom.cy);
   const float dist_466 = std::sqrt(dx * dx + dy * dy) / ws;
-  const float min_r = static_cast<float>(inner_r_466) - 12.0f;
-  const float max_r = static_cast<float>(outer_r_466) + 14.0f;
+  const float min_r = static_cast<float>(geom.inner_r_466) - 12.0f;
+  const float max_r = static_cast<float>(geom.outer_r_466) + 12.0f;
   if (dist_466 < min_r || dist_466 > max_r) return false;
 
   float hue = std::atan2(dy, dx) * (180.0f / PI_F);
   if (hue < 0.0f) hue += 360.0f;
-  const float span = std::max(1.0f, static_cast<float>(outer_r_466 - inner_r_466));
-  const float norm = (dist_466 - static_cast<float>(inner_r_466)) / span;
+  const float span = std::max(1.0f, static_cast<float>(geom.outer_r_466 - geom.inner_r_466));
+  const float norm = (dist_466 - static_cast<float>(geom.inner_r_466)) / span;
   out_hue_deg = hue;
   out_sat = std::max(0.35f, std::min(1.0f, 0.35f + norm * 0.65f));
   return true;
 }
 
-void hsv_color_wheel(Rgb565Surface &it, int cx, int cy, int outer_r_466, int inner_r_466,
+namespace {
+struct ColorWheelCache {
+  uint16_t *rgb{nullptr};
+  uint8_t *alpha{nullptr};
+  int r_in{-1};
+  int r_out{-1};
+  int endian{-1};
+  int side{0};
+};
+
+ColorWheelCache &color_wheel_cache() {
+  static ColorWheelCache s_cache{};
+  return s_cache;
+}
+
+void color_wheel_cache_drop() noexcept {
+  auto &c = color_wheel_cache();
+  if (c.rgb != nullptr) {
+    ui_psram_free(c.rgb);
+    c.rgb = nullptr;
+  }
+  if (c.alpha != nullptr) {
+    ui_psram_free(c.alpha);
+    c.alpha = nullptr;
+  }
+  c.r_in = -1;
+  c.r_out = -1;
+  c.endian = -1;
+  c.side = 0;
+}
+
+bool color_wheel_cache_ensure(int r_in, int r_out) noexcept {
+  static const bool s_wheel_evictor_reg = register_psram_cache_evictor(&color_wheel_cache_drop);
+  (void)s_wheel_evictor_reg;
+  auto &c = color_wheel_cache();
+  const int endian = active_frame_endian_mode();
+  const int half = r_out + 1;
+  const int side = 2 * half + 1;
+  if (side <= 2 || r_out <= r_in) return false;
+  if (c.rgb != nullptr && c.alpha != nullptr &&
+      c.r_in == r_in && c.r_out == r_out && c.endian == endian && c.side == side) {
+    return true;
+  }
+  color_wheel_cache_drop();
+  const size_t px_count = static_cast<size_t>(side) * static_cast<size_t>(side);
+  c.rgb = static_cast<uint16_t *>(ui_psram_malloc(px_count * sizeof(uint16_t)));
+  c.alpha = static_cast<uint8_t *>(ui_psram_malloc(px_count));
+  if (c.rgb == nullptr || c.alpha == nullptr) {
+    color_wheel_cache_drop();
+    return false;
+  }
+  const float f_in = static_cast<float>(r_in);
+  const float f_out = static_cast<float>(r_out);
+  const float inv_span = 1.0f / static_cast<float>(std::max(1, r_out - r_in));
+  constexpr float kInvTwoPi = 1.0f / (2.0f * PI_F);
+  for (int py = 0; py < side; ++py) {
+    const float dy = static_cast<float>(py - half);
+    const float dy2 = dy * dy;
+    uint16_t *const rgb_row = c.rgb + static_cast<size_t>(py) * static_cast<size_t>(side);
+    uint8_t *const alpha_row = c.alpha + static_cast<size_t>(py) * static_cast<size_t>(side);
+    for (int px = 0; px < side; ++px) {
+      const float dx = static_cast<float>(px - half);
+      const float d = std::sqrt(dx * dx + dy2);
+      const float cov_in = std::clamp(d - (f_in - 0.5f), 0.0f, 1.0f);
+      const float cov_out = std::clamp((f_out + 0.5f) - d, 0.0f, 1.0f);
+      const float cov = std::min(cov_in, cov_out);
+      if (cov <= 0.004f) {
+        rgb_row[px] = 0U;
+        alpha_row[px] = 0U;
+      } else {
+        float ang = std::atan2(dy, dx);
+        if (ang < 0.0f) ang += 2.0f * PI_F;
+        const float sat = std::clamp(0.35f + 0.65f * ((d - f_in) * inv_span), 0.35f, 1.0f);
+        const UiColor col = hsv_to_rgb(ang * kInvTwoPi, sat, 1.0f);
+        rgb_row[px] = encode_hw_rgb565(col);
+        alpha_row[px] = static_cast<uint8_t>(std::lround(cov * 255.0f));
+      }
+    }
+  }
+  c.r_in = r_in;
+  c.r_out = r_out;
+  c.endian = endian;
+  c.side = side;
+  return true;
+}
+}  // namespace
+
+void hsv_color_wheel(Rgb565Surface &it, const ColorWheelGeom &geom,
                      float cur_hue_deg, float cur_sat,
                      UiColor col_bg, UiColor col_white, uint16_t widget_id) {
-  const float ws = (SCREEN_MIN_DIM > 520)
-                       ? (static_cast<float>(SCREEN_MIN_DIM) / 466.0f)
-                       : ((SCREEN_MIN_DIM < 380) ? (static_cast<float>(SCREEN_MIN_DIM) / 420.0f) : 1.0f);
-  const int r_in = static_cast<int>(static_cast<float>(inner_r_466) * ws);
-  const int r_out = static_cast<int>(static_cast<float>(outer_r_466) * ws);
+  const int cx = geom.cx;
+  const int cy = geom.cy;
+  const float ws = color_wheel_scale(geom);
+  const int r_in = static_cast<int>(static_cast<float>(geom.inner_r_466) * ws);
+  const int r_out = static_cast<int>(static_cast<float>(geom.outer_r_466) * ws);
   const int r_span = std::max(1, r_out - r_in);
+  const int half = r_out + 1;
+  const int x0_box = cx - half;
+  const int y0_box = cy - half;
+  const int cy0 = std::max(0, clip_y0());
+  const int cy1 = std::min(SCREEN_H - 1, clip_y1());
 
-  for (int a_idx = 0; a_idx < 72; a_idx++) {
-    const float rad = static_cast<float>(a_idx * 5) * (PI_F / 180.0f);
-    float s_v = 0.0f, c_v = 1.0f;
-    fast_sincos(rad, s_v, c_v);
-    for (int band = 0; band < 4; band++) {
-      const int r0 = r_in + (band * r_span) / 4;
-      const int r1 = r_in + ((band + 1) * r_span) / 4;
-      const float sat_b = 0.40f + 0.20f * static_cast<float>(band);
-      const UiColor seg_c = hsv_wheel_sector_color(a_idx, sat_b);
-      const int x0 = cx + static_cast<int>(static_cast<float>(r0) * c_v);
-      const int y0 = cy + static_cast<int>(static_cast<float>(r0) * s_v);
-      const int x1 = cx + static_cast<int>(static_cast<float>(r1) * c_v);
-      const int y1 = cy + static_cast<int>(static_cast<float>(r1) * s_v);
-      fast_line(it, x0, y0, x1, y1, seg_c);
-      fast_line(it, x0 + 1, y0, x1 + 1, y1, seg_c);
-      fast_line(it, x0, y0 + 1, x1, y1 + 1, seg_c);
+  if (color_wheel_cache_ensure(r_in, r_out)) {
+    const auto &c = color_wheel_cache();
+    uint16_t *const fb = active_frame_buf16();
+    const int side = c.side;
+    const int y_lo = std::max(0, cy0 - y0_box);
+    const int y_hi = std::min(side - 1, cy1 - y0_box);
+    const int x_lo = std::max(0, -x0_box);
+    const int x_hi = std::min(side - 1, (SCREEN_W - 1) - x0_box);
+    for (int sy = y_lo; sy <= y_hi; ++sy) {
+      const int dy_scr = y0_box + sy;
+      const uint16_t *const rgb_row = c.rgb + static_cast<size_t>(sy) * static_cast<size_t>(side);
+      const uint8_t *const alpha_row = c.alpha + static_cast<size_t>(sy) * static_cast<size_t>(side);
+      uint16_t *const dst_row =
+          (fb != nullptr) ? (fb + static_cast<size_t>(dy_scr) * static_cast<size_t>(SCREEN_W)) : nullptr;
+      int sx = x_lo;
+      while (sx <= x_hi) {
+        const uint8_t a = alpha_row[sx];
+        if (a == 0U) {
+          ++sx;
+          continue;
+        }
+        if (a == 255U) {
+          int run = sx + 1;
+          while (run <= x_hi && alpha_row[run] == 255U) ++run;
+          const int len = run - sx;
+          if (dst_row != nullptr) {
+            std::memcpy(dst_row + x0_box + sx, rgb_row + sx, static_cast<size_t>(len) * sizeof(uint16_t));
+          } else {
+            blit_rgb565_scanline(it, x0_box + sx, dy_scr, len, rgb_row + sx);
+          }
+          sx = run;
+        } else {
+          const uint16_t raw = decode_hw_rgb565_raw(rgb_row[sx]);
+          const uint8_t r5 = static_cast<uint8_t>((raw >> 11) & 0x1FU);
+          const uint8_t g6 = static_cast<uint8_t>((raw >> 5) & 0x3FU);
+          const uint8_t b5 = static_cast<uint8_t>(raw & 0x1FU);
+          const UiColor col(static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+                            static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+                            static_cast<uint8_t>((b5 << 3) | (b5 >> 2)));
+          fast_pixel_blend(it, x0_box + sx, dy_scr, col, a);
+          ++sx;
+        }
+      }
+    }
+  } else {
+    // Transient PSRAM OOM fallback: direct scanline AA annulus without spoke gaps.
+    const float f_in = static_cast<float>(r_in);
+    const float f_out = static_cast<float>(r_out);
+    const float inv_span = 1.0f / static_cast<float>(r_span);
+    constexpr float kInvTwoPi = 1.0f / (2.0f * PI_F);
+    for (int dy = -half; dy <= half; ++dy) {
+      const int py = cy + dy;
+      if (py < cy0 || py > cy1) continue;
+      const float fdy = static_cast<float>(dy);
+      for (int dx = -half; dx <= half; ++dx) {
+        const int px = cx + dx;
+        if (px < 0 || px >= SCREEN_W) continue;
+        const float fdx = static_cast<float>(dx);
+        const float d = std::sqrt(fdx * fdx + fdy * fdy);
+        const float cov = std::min(std::clamp(d - (f_in - 0.5f), 0.0f, 1.0f),
+                                   std::clamp((f_out + 0.5f) - d, 0.0f, 1.0f));
+        if (cov <= 0.004f) continue;
+        float ang = std::atan2(fdy, fdx);
+        if (ang < 0.0f) ang += 2.0f * PI_F;
+        const float sat = std::clamp(0.35f + 0.65f * ((d - f_in) * inv_span), 0.35f, 1.0f);
+        fast_pixel_blend(it, px, py, hsv_to_rgb(ang * kInvTwoPi, sat, 1.0f),
+                         static_cast<uint8_t>(std::lround(cov * 255.0f)));
+      }
     }
   }
 
@@ -1207,7 +1365,8 @@ void hsv_color_wheel(Rgb565Surface &it, int cx, int cy, int outer_r_466, int inn
   fast_filled_circle_aa(it, sx, sy, std::max(3, thumb_r - 3), cur_rgb);
 
   if (widget_id != WidgetId::NONE) {
-    frame_hits().add_circle(cx, cy, r_out + 8, widget_id, kHitTap);
+    const int hit_r = r_out + std::max(8, static_cast<int>(12.0f * ws));
+    frame_hits().add_circle(cx, cy, hit_r, widget_id, kHitTap);
   }
 }
 
@@ -1219,25 +1378,28 @@ void confirm_modal(Rgb565Surface &it, int cx, const char *title,
                    UiColor theme_primary, UiColor col_white, UiColor col_slate,
                    uint16_t cancel_wid, uint16_t confirm_wid) {
   (void)theme_primary;
+  const auto ly = layout();
   render_page_header(it, cx, title, font_hdr, col_white, true);
+  const int y1 = ly.hdr_y + dp_px(56);
+  const int y2 = y1 + dp_px(34);
   if (line1 != nullptr && line1[0] != '\0') {
-    const int w1 = std::min(kMaxContentColW, layout().safe_span(scale_y(132), 18));
+    const int w1 = std::min(ly.max_content_w(), ly.safe_span(y1, dp_px(18)));
     const std::string f1 = fit_text_to_width_font(std::string(line1), w1, font_body);
-    shadow_print(it, cx, scale_y(132), font_body, col_white, UiTextAlign::CENTER, f1.c_str());
+    shadow_print(it, cx, y1, font_body, col_white, UiTextAlign::CENTER, f1.c_str());
   }
   if (line2 != nullptr && line2[0] != '\0') {
-    const int w2 = std::min(kMaxContentColW, layout().safe_span(scale_y(168), 18));
+    const int w2 = std::min(ly.max_content_w(), ly.safe_span(y2, dp_px(18)));
     const std::string f2 = fit_text_to_width_font(std::string(line2), w2, font_body);
-    shadow_print(it, cx, scale_y(168), font_body, col_slate, UiTextAlign::CENTER, f2.c_str());
+    shadow_print(it, cx, y2, font_body, col_slate, UiTextAlign::CENTER, f2.c_str());
   }
-  const int btn_y = scale_y(248);
-  const int btn_h = std::max(44, scale_y(50));
+  const int btn_y = std::min(ly.back_y - dp_px(52), y2 + dp_px(76));
+  const int btn_h = std::max(44, dp_px(50));
   const ActionPillSpec specs[2] = {
       {cancel_lbl, cancel_wid, chrome_card_brd_on(), chrome_card_bg_off(), col_white, 0, nullptr},
       {confirm_lbl, confirm_wid, confirm_border, confirm_bg, col_white, 1, nullptr},
   };
-  action_pill_row(it, btn_y, btn_h, std::min(kMaxContentColW, scale_x(300)),
-                  scale_x(138), scale_x(14), specs, 2, font_body, 16);
+  action_pill_row(it, btn_y, btn_h, std::min(ly.max_content_w(320), dp_px(300)),
+                  dp_px(138), dp_px(14), specs, 2, font_body, dp_px(16));
 }
 
 void game_over_sheet(Rgb565Surface &it, int cx, int cy,
@@ -1247,21 +1409,22 @@ void game_over_sheet(Rgb565Surface &it, int cx, int cy,
                      UiFontView font_hdr, UiFontView font_body,
                      UiColor theme_primary, UiColor col_white,
                      UiColor col_gold, UiColor col_slate, uint16_t cta_wid) {
-  const int scrim_w = std::min(kMaxContentColW, std::min(SCREEN_W - 24, scale_x(312)));
-  const int scrim_h = scale_y(206);
-  fill_round_rect_glass(it, cx - scrim_w / 2, cy - scale_y(102), scrim_w, scrim_h,
+  const auto ly = layout();
+  const int scrim_h = std::min(SCREEN_H - dp_px(64), dp_px(206));
+  const int scrim_w = std::min(ly.max_content_w(340), ly.band_safe_span(cy, scrim_h, dp_px(12)));
+  fill_round_rect_glass(it, cx - scrim_w / 2, cy - scrim_h / 2, scrim_w, scrim_h,
                         static_cast<float>(kRadiusCardPx()), kChromeShadow, 176, 176);
-  shadow_print(it, cx, cy - scale_y(60), font_hdr, title_col, UiTextAlign::CENTER, title, true);
+  shadow_print(it, cx, cy - (scrim_h * 29) / 100, font_hdr, title_col, UiTextAlign::CENTER, title, true);
   if (score_line != nullptr && score_line[0] != '\0') {
-    shadow_print(it, cx, cy - scale_y(18), font_body, col_white, UiTextAlign::CENTER, score_line);
+    shadow_print(it, cx, cy - (scrim_h * 9) / 100, font_body, col_white, UiTextAlign::CENTER, score_line);
   }
   if (best_line != nullptr && best_line[0] != '\0') {
-    shadow_print(it, cx, cy + scale_y(14), font_body, is_new_best ? col_gold : col_slate,
+    shadow_print(it, cx, cy + (scrim_h * 7) / 100, font_body, is_new_best ? col_gold : col_slate,
                  UiTextAlign::CENTER, best_line);
   }
-  const int pill_h = std::max(40, scale_y(44));
-  const int pill_w = std::min(scrim_w - scale_x(36), scale_x(204));
-  action_pill_centered(it, cx, pill_w, cy + scale_y(62), pill_h,
+  const int pill_h = std::max(40, dp_px(44));
+  const int pill_w = std::min(scrim_w - dp_px(32), dp_px(204));
+  action_pill_centered(it, cx, pill_w, cy + (scrim_h * 30) / 100, pill_h,
                        theme_primary, chrome_card_bg_on(), cta_lbl, col_white, font_body,
                        cta_wid, kHitTap | kHitFocusSlot, 0);
 }
@@ -1334,36 +1497,48 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                    UiColor theme_primary, UiColor col_white, UiColor col_slate, UiColor col_red) {
   (void)cy;
   (void)font_hdr;
+  const auto ly = layout();
   auto &st = pin_pad_state();
   const char *hdr = (st.prompt[0] != '\0') ? st.prompt : "ENTER SECURITY PIN";
   render_page_header(it, cx, hdr, font_small, col_white, true);
 
-  const int disp_y = scale_y(84);
-  const int disp_w = std::min(kMaxContentColW, std::min(SCREEN_W - 44, scale_s(236)));
+  const int disp_y = ly.hdr_y + dp_px(32);
+  const int disp_w = std::min(ly.max_content_w(260), ly.safe_span(disp_y, dp_px(22)));
   const bool show_err = (st.error_msg[0] != '\0' && (now_ms - st.error_ms) < 2200U);
   if (show_err) {
     shadow_print(it, cx, disp_y, font_small, col_white, UiTextAlign::CENTER, st.error_msg);
   } else if (st.len == 0) {
     shadow_print(it, cx, disp_y, font_small, col_slate, UiTextAlign::CENTER, "4-12 Digits");
   } else {
-    const int max_step = scale_s(18);
+    const int max_step = dp_px(18);
     const int dot_step = (st.len > 1)
-                             ? std::min(max_step, std::max(scale_s(12), (disp_w - scale_s(20)) / (static_cast<int>(st.len) - 1)))
+                             ? std::min(max_step, std::max(dp_px(12), (disp_w - dp_px(20)) / (static_cast<int>(st.len) - 1)))
                              : max_step;
-    const int dot_r = (st.len > 9) ? std::max(3, scale_s(4)) : scale_s(5);
+    const int dot_r = (st.len > 9) ? std::max(3, dp_px(4)) : std::max(4, dp_px(5));
     const int start_x = cx - ((static_cast<int>(st.len) - 1) * dot_step) / 2;
     for (uint8_t i = 0; i < st.len; i++) {
       fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step + 1, disp_y + 1, dot_r, kChromeShadow);
       fast_filled_circle_aa(it, start_x + static_cast<int>(i) * dot_step, disp_y, dot_r, col_white);
     }
   }
-  fast_hline(it, cx - disp_w / 2, disp_y + scale_y(16), disp_w, show_err ? col_red : chrome_card_brd_on());
+  fast_hline(it, cx - disp_w / 2, disp_y + dp_px(15), disp_w, show_err ? col_red : chrome_card_brd_on());
 
-  const int key_w = (SCREEN_W < 380) ? 68 : scale_s(78);
-  const int key_h = scale_y(48);
-  const int col_step = (SCREEN_W < 380) ? 78 : scale_s(90);
-  const int row_y0 = scale_y(136);
-  const int row_step = scale_y(56);
+  const int pad_top = disp_y + dp_px(24);
+  const int pad_bot = ly.back_y - dp_px(24);
+  const int avail_h = std::max(140, pad_bot - pad_top);
+  const int row_gap = std::max(5, dp_px(8));
+  const int key_h = std::clamp((avail_h - 3 * row_gap) / 4, 30, dp_px(48));
+  const int row_step = key_h + row_gap;
+  const int grid_h = 3 * row_step + key_h;
+  const int row_y0 = pad_top + (avail_h - grid_h) / 2 + key_h / 2;
+  const int bot_row_y = row_y0 + 3 * row_step;
+  const int safe_grid_w = std::min(
+      ly.max_content_w(300),
+      std::min(ly.band_safe_span(row_y0, key_h, dp_px(12)),
+               ly.band_safe_span(bot_row_y, key_h, dp_px(12))));
+  const int col_gap = std::max(6, dp_px(10));
+  const int key_w = std::clamp((safe_grid_w - 2 * col_gap) / 3, 54, dp_px(82));
+  const int col_step = key_w + col_gap;
 
   static constexpr const char *kLabels[12] = {
       "1", "2", "3",
@@ -1393,14 +1568,13 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
                   (is_ok || is_del) ? font_small : font_key, kWids[idx], static_cast<int16_t>(idx));
   }
 
-  const auto ly = layout();
   const int cancel_y = ly.back_y;
   fast_print(it, cx + 1, cancel_y + 1, font_small, kChromeShadow, UiTextAlign::CENTER, "< Cancel");
   fast_print(it, cx, cancel_y, font_small, kChromeBackLabel, UiTextAlign::CENTER, "< Cancel");
-  const int cancel_y0 = std::clamp(cancel_y - scale_y(22), 0, ly.h - 1);
+  const int cancel_y0 = std::clamp(cancel_y - dp_px(22), 0, ly.h - 1);
   const int cancel_h = std::max(1, ly.h - cancel_y0);
   const int cancel_max_w = std::max(ly.min_hit_px(), ly.safe_span(cancel_y, 8));
-  const int cancel_w = std::min(cancel_max_w, std::max(scale_x(200), ly.min_hit_px() * 2));
+  const int cancel_w = std::min(cancel_max_w, std::max(dp_px(200), ly.min_hit_px() * 2));
   const int cancel_pad = std::max(0, (ly.min_hit_px() - cancel_h + 1) / 2);
   frame_hits().add_rect(cx - cancel_w / 2, cancel_y0, cancel_w, cancel_h,
                         WidgetId::PIN_PAD_CANCEL, kHitTap | kHitFocusSlot, 0, cancel_pad);
@@ -1415,8 +1589,8 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
 void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_items,
                                float cur_start_idx, UiColor col_thumb, bool is_dim) {
   if (total_items <= 4) return;
-  const int track_w = (SCREEN_MIN_DIM < 380) ? 84 : ((SCREEN_MIN_DIM > 520) ? 168 : 112);
-  const int track_h = (SCREEN_MIN_DIM > 520) ? 6 : 4;
+  const int track_w = std::min(layout().safe_span(y_pos, dp_px(20)), std::max(84, dp_px(112)));
+  const int track_h = std::max(4, dp_px(4));
   const int r_cap = track_h / 2;
   const int track_x0 = cx - (track_w / 2);
   const int track_y0 = y_pos - r_cap;
@@ -1440,7 +1614,7 @@ void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_i
                           std::max(0.5f, cap - 1.0f), eff_tint, a_top, a_bot);
   }
 
-  const int min_thumb_w = (SCREEN_MIN_DIM > 520) ? 28 : 20;
+  const int min_thumb_w = std::max(20, dp_px(20));
   const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
   const float max_start = static_cast<float>(std::max(1, total_items - 4));
   const float clamped_start = std::max(0.0f, std::min(max_start, cur_start_idx));
@@ -1456,9 +1630,9 @@ void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_i
 void render_dock_page_pips(Rgb565Surface &it, int cx, int y_pos, int total_pages,
                            int active_page, UiColor col_active, UiColor col_inactive) {
   if (total_pages <= 1) return;
-  const int dot_r = (SCREEN_MIN_DIM > 520) ? 3 : 2;
-  const int max_span = std::max(40, layout().safe_span(y_pos, 24));
-  const int base_spacing = scale_s(14);
+  const int dot_r = std::max(2, dp_px(2));
+  const int max_span = std::max(40, layout().safe_span(y_pos, dp_px(24)));
+  const int base_spacing = std::max(10, dp_px(14));
   int vis_count = total_pages;
   int win_start = 0;
   int spacing = base_spacing;
@@ -1475,7 +1649,7 @@ void render_dock_page_pips(Rgb565Surface &it, int cx, int y_pos, int total_pages
     const int p = win_start + i;
     const int px = start_x + i * spacing;
     if (p == active_page) {
-      const int pw = std::min(scale_s(7), std::max(3, spacing - 2 * dot_r - 2));
+      const int pw = std::min(dp_px(7), std::max(3, spacing - 2 * dot_r - 2));
       const int ph = dot_r * 2 + 1;
       const int sx0 = px - pw / 2 - dot_r;
       const int sw = pw + 2 * dot_r + 1;
@@ -1494,24 +1668,29 @@ void render_vertical_page_pips(Rgb565Surface &it, bool show_up, bool show_down,
                                UiColor col_inactive, int bottom_limit_y) {
   (void)col_inactive;
   if (!show_up && !show_down) return;
+  const auto ly = layout();
   int mask_x = 0, chev_x = 0, hit_x0 = 0, hit_w = 0, min_hit_h = 0;
   compute_vertical_page_pips_x(SCREEN_W, LATTER_ROUND_DISPLAY != 0, LATTER_PANEL_PPI,
                                mask_x, chev_x, hit_x0, hit_w, min_hit_h);
-  const bool above_bar = (bottom_limit_y < SCREEN_H - scale_y(40));
-  const int up_y = above_bar ? scale_y(134) : scale_y(162);
-  const int dn_y = above_bar ? scale_y(236) : scale_y(278);
-  const int split_y = above_bar ? ((up_y + dn_y) / 2) : SCREEN_CY;
-  const int max_dn_y1 = std::min(above_bar ? bottom_limit_y : (SCREEN_H - scale_y(70)), bottom_limit_y);
+  const bool above_bar = (bottom_limit_y < SCREEN_H - dp_px(40));
+  const int vp_top = ly.hdr_y + dp_px(30);
+  const int vp_bot = std::min(bottom_limit_y, above_bar ? bottom_limit_y : (ly.back_y - dp_px(20)));
+  const int mid_y = (vp_top + vp_bot) / 2;
+  const int sep = std::min(dp_px(56), std::max(dp_px(32), (vp_bot - vp_top) / 4));
+  const int up_y = mid_y - sep;
+  const int dn_y = mid_y + sep;
+  const int split_y = mid_y;
+  const int max_dn_y1 = std::min(vp_bot, bottom_limit_y);
   if (!backdrop_active() && mask_x < SCREEN_W) {
-    const int mask_y0 = std::max(0, up_y - scale_y(22));
-    const int mask_y1 = std::min(bottom_limit_y, dn_y + scale_y(22));
+    const int mask_y0 = std::max(0, up_y - dp_px(22));
+    const int mask_y1 = std::min(bottom_limit_y, dn_y + dp_px(22));
     if (mask_y1 > mask_y0) {
       fill_rect_row_major(it, mask_x, mask_y0, SCREEN_W - mask_x, mask_y1 - mask_y0, col_bg);
     }
   }
   if (show_up) {
     render_scroll_chevron(it, chev_x, up_y, true, col_active, kChromeShadow, backdrop_active());
-    const int up_y0 = std::min(scale_y(70), std::max(0, split_y - min_hit_h));
+    const int up_y0 = std::min(vp_top, std::max(0, split_y - min_hit_h));
     const int up_h = std::max(min_hit_h, split_y - up_y0);
     frame_hits().add_rect(hit_x0, up_y0, hit_w, std::min(bottom_limit_y - up_y0, up_h),
                           WidgetId::CHEVRON_UP, kHitTap | kHitFocusSlot);
@@ -1542,7 +1721,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
 
   const int by = layout().app_dock_y;
   const int dr = layout().dock_r;
-  const int r_track = dr + scale_s(3);
+  const int r_track = dr + std::max(2, dp_px(3));
   const int left_cx = win_xs[0];
   const int right_cx = win_xs[vis_count - 1];
   const int stride = get_dock_slot_stride(win_xs, vis_count);
@@ -1555,7 +1734,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
   const float rel_active = anim_active - anim_start;
   if (rel_active >= -0.55f && rel_active <= static_cast<float>(vis_count - 1) + 0.55f) {
     const int abx = left_cx + static_cast<int>(std::round(rel_active * static_cast<float>(stride)));
-    if (abx >= left_cx - scale_x(16) && abx <= right_cx + scale_x(16)) {
+    if (abx >= left_cx - dp_px(16) && abx <= right_cx + dp_px(16)) {
       float ring_alpha = 1.0f;
       if (rel_active < 0.0f) {
         ring_alpha = std::max(0.20f, 1.0f + rel_active * 1.6f);
@@ -1574,7 +1753,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
     }
   }
 
-  const int mode_pad = std::max(scale_s(8), layout().dock_hit_r() - dr);
+  const int mode_pad = std::max(dp_px(8), layout().dock_hit_r() - dr);
   for (int i = 0; i < vis_count && i < 4; i++) {
     frame_hits().add_circle(win_xs[i], by, dr,
                             static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
@@ -1583,16 +1762,16 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
                             mode_pad);
   }
 
-  const int chev_off = dr + ((SCREEN_W < 380) ? 10 : scale_x(13));
-  const int ch_s = scale_s(5);
+  const int chev_off = dr + std::max(9, dp_px(12));
+  const int ch_s = std::max(4, dp_px(5));
   if (has_left_arrow) {
     const int lx = left_cx - chev_off;
     fast_line(it, lx + ch_s / 2, by - ch_s, lx - ch_s / 2, by, col_white);
     fast_line(it, lx - ch_s / 2, by, lx + ch_s / 2, by + ch_s, col_white);
     fast_line(it, lx + ch_s / 2 + 1, by - ch_s, lx - ch_s / 2 + 1, by, theme_primary);
     fast_line(it, lx - ch_s / 2 + 1, by, lx + ch_s / 2 + 1, by + ch_s, theme_primary);
-    frame_hits().add_rect(0, by - dr - scale_y(12), std::max(8, left_cx - dr),
-                          2 * (dr + scale_y(12)), WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
+    frame_hits().add_rect(0, by - dr - dp_px(12), std::max(8, left_cx - dr),
+                          2 * (dr + dp_px(12)), WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
   }
   if (has_right_arrow) {
     const int rx = right_cx + chev_off;
@@ -1600,9 +1779,9 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
     fast_line(it, rx + ch_s / 2, by, rx - ch_s / 2, by + ch_s, col_white);
     fast_line(it, rx - ch_s / 2 - 1, by - ch_s, rx + ch_s / 2 - 1, by, theme_primary);
     fast_line(it, rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
-    frame_hits().add_rect(right_cx + dr, by - dr - scale_y(12),
+    frame_hits().add_rect(right_cx + dr, by - dr - dp_px(12),
                           std::max(8, SCREEN_W - (right_cx + dr)),
-                          2 * (dr + scale_y(12)), WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
+                          2 * (dr + dp_px(12)), WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
   }
 
   if (total_count > 4) {
@@ -1617,22 +1796,23 @@ void render_progress_arc_r224(Rgb565Surface &it, int cx, int cy, float prog, UiC
   if (prog > 1.0f) prog = 1.0f;
   (void)cx;
   (void)cy;
-  const int bar_x0 = 36;
-  const int bar_w = SCREEN_W - 72;
+  const int bar_y = 6;
+  const int bar_x0 = std::max(36, bezel_x_inset_for(bar_y, SCREEN_W, SCREEN_H, LATTER_CORNER_R, false, 10));
+  const int bar_w = std::max(32, SCREEN_W - 2 * bar_x0);
   const int fill_w = static_cast<int>(prog * static_cast<float>(bar_w));
-  fill_rect_row_major(it, bar_x0, 6, bar_w, 4, kChromeTrack);
+  fill_rect_row_major(it, bar_x0, bar_y, bar_w, 4, kChromeTrack);
   if (fill_w > 0) {
-    fill_rect_row_major(it, bar_x0, 6, fill_w, 4, col);
+    fill_rect_row_major(it, bar_x0, bar_y, fill_w, 4, col);
   }
   return;
 #else
   if (prog <= 0.003f) return;
   if (prog > 1.0f) prog = 1.0f;
 
-  static constexpr int R_BORDER = scale_min(226);
-  static constexpr int R_IN = scale_min(227);
-  static constexpr int R_OUT = scale_min(232);
-  static constexpr int R_MID = scale_min(229);
+  static constexpr int R_BORDER = SCREEN_MIN_R - 7;
+  static constexpr int R_IN = SCREEN_MIN_R - 6;
+  static constexpr int R_OUT = SCREEN_MIN_R - 1;
+  static constexpr int R_MID = SCREEN_MIN_R - 4;
   static constexpr int R_BORDER_SQ = R_BORDER * R_BORDER;
   static constexpr int R_IN_SQ = R_IN * R_IN;
 
@@ -1789,7 +1969,7 @@ void mode_bar(Rgb565Surface &it, int cx,
     const float rel_slot = static_cast<float>(g_idx) - anim_start;
     if (rel_slot < -0.55f || rel_slot > static_cast<float>(vis_count - 1) + 0.55f) continue;
     const int bx = left_cx + static_cast<int>(std::lround(rel_slot * static_cast<float>(stride)));
-    if (bx < left_cx - scale_x(16) || bx > right_cx + scale_x(16)) continue;
+    if (bx < left_cx - dp_px(16) || bx > right_cx + dp_px(16)) continue;
 
     const bool is_act = (g_idx == active_global_idx);
     const UiColor raw_c = is_act ? theme_primary : col_white;
@@ -1814,22 +1994,22 @@ void header_pager_bar(Rgb565Surface &it, int cx, int cy,
   if (font == nullptr) return;
   const auto &ly = layout();
   if (!show_arrows) {
-    const int max_w = std::min(kMaxContentColW, std::max(80, ly.safe_span(cy, 16)));
+    const int max_w = std::min(ly.max_content_w(), std::max(80, ly.safe_span(cy, dp_px(16))));
     const std::string fit = fit_text_to_width_font(title, max_w, font);
     shadow_print(it, cx, cy, font, col_white, UiTextAlign::CENTER, fit.c_str());
     return;
   }
 
-  const int btn_r = (SCREEN_W < 380) ? 16 : scale_s(17);
-  const int safe_w = std::min(kMaxContentColW, ly.band_safe_span(cy, 2 * btn_r, 14));
-  const int span_w = std::min(safe_w, scale_x(300));
+  const int btn_r = std::max(14, dp_px(17));
+  const int safe_w = std::min(ly.max_content_w(), ly.band_safe_span(cy, 2 * btn_r, dp_px(14)));
+  const int span_w = std::min(safe_w, dp_px(300));
   const int lx = cx - span_w / 2 + btn_r;
   const int rx = cx + span_w / 2 - btn_r;
-  const int gap = scale_x(10);
+  const int gap = dp_px(10);
   const int title_max_w = std::max(48, (rx - btn_r) - (lx + btn_r) - 2 * gap);
 
   const int min_r = (ly.min_hit_px() + 1) / 2;
-  const int hit_pad = std::max(scale_s(6), min_r - btn_r);
+  const int hit_pad = std::max(dp_px(6), min_r - btn_r);
   const int ir = dock_icon_r(btn_r);
 
   render_glass_circle(it, lx, cy, btn_r, chrome_card_bg_off(),
@@ -1977,7 +2157,7 @@ void draw_aa_tapered_hand(Rgb565Surface &it, float cx, float cy, float angle_rad
   if (total_len <= 0.5f) return;
 
   if (draw_shadow) {
-    const float sh_off = static_cast<float>(std::max(1, scale_min(2)));
+    const float sh_off = std::max(1.0f, dp_f(2.0f));
     draw_aa_line(it, x0 + sh_off, y0 + sh_off + 0.5f, x1 + sh_off, y1 + sh_off + 0.5f,
                  0.55f * (root_w + tip_w), kChromeShadow, 92);
   }
@@ -2036,19 +2216,20 @@ void render_analog_chapter_ring(Rgb565Surface &it, int cx, int cy, int r_dial,
   const float fcx = static_cast<float>(cx) + 0.5f;
   const float fcy = static_cast<float>(cy) + 0.5f;
   const float r_out = static_cast<float>(r_dial);
-  const float w_card = std::max(2.6f, scale_min_f(3.6f));
-  const float w_maj = std::max(2.0f, scale_min_f(2.6f));
-  const float w_min = std::max(1.1f, scale_min_f(1.4f));
-  const float len_card = scale_min_f(22.0f);
-  const float len_maj = scale_min_f(16.0f);
-  const float len_min = scale_min_f(8.5f);
+  const float ds = r_out / 224.0f;
+  const float w_card = std::max(2.6f, 3.6f * ds);
+  const float w_maj = std::max(2.0f, 2.6f * ds);
+  const float w_min = std::max(1.1f, 1.4f * ds);
+  const float len_card = 22.0f * ds;
+  const float len_maj = 16.0f * ds;
+  const float len_min = 8.5f * ds;
 
   for (int i = 0; i < 60; ++i) {
     const float rad = (static_cast<float>(i) / 60.0f) * 2.0f * PI_F - HALF_PI_F;
     const float s = std::sin(rad);
     const float c = std::cos(rad);
     if (i == 0 && double_twelve) {
-      const float sep = scale_min_f(3.4f);
+      const float sep = 3.4f * ds;
       const float nx = -s;
       const float ny = c;
       const float r_in = r_out - len_card;
@@ -2076,9 +2257,10 @@ void render_analog_chapter_ring(Rgb565Surface &it, int cx, int cy, int r_dial,
 
 void render_center_arbor_aa(Rgb565Surface &it, int cx, int cy,
                             UiColor outer_col, UiColor cap_col, UiColor jewel_col) {
-  const int r_outer = std::max(6, scale_min(8));
-  const int r_cap = std::max(4, scale_min(5));
-  const int r_jewel = std::max(2, scale_min(2));
+  const float ds = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
+  const int r_outer = std::max(6, static_cast<int>(std::lround(8.0f * ds)));
+  const int r_cap = std::max(4, static_cast<int>(std::lround(5.0f * ds)));
+  const int r_jewel = std::max(2, static_cast<int>(std::lround(2.0f * ds)));
   fast_filled_circle_aa(it, cx + 1, cy + 1, r_outer + 1, kChromeShadow);
   fast_filled_circle_aa(it, cx, cy, r_outer, outer_col);
   fast_filled_circle_aa(it, cx, cy, r_cap, cap_col);
@@ -2104,7 +2286,9 @@ void render_page_header(Rgb565Surface &it, int cx, const char *title,
 void render_page_header(Rgb565Surface &it, int cx, const std::string &title,
                         UiFontView font, UiColor color, bool shadow) {
   if (title.empty() || font == nullptr) return;
-  const std::string fitted = fit_text_to_width_font(title, scale_x(280), font);
+  const auto ly = layout();
+  const int hdr_w = std::max(80, std::min(ly.max_content_w(300), ly.safe_span(ly.hdr_y, dp_px(18))));
+  const std::string fitted = fit_text_to_width_font(title, hdr_w, font);
   render_page_header(it, cx, fitted.c_str(), font, color, shadow);
 }
 
@@ -2126,7 +2310,8 @@ void render_empty_state(Rgb565Surface &it, int cx, int cy, const char *text,
                         UiFontView font, UiColor text_c) {
   // D-043 / D-048 / D-070: Zero frosted glass behind passive empty-state text.
   if (text == nullptr || text[0] == '\0' || font == nullptr) return;
-  const int max_w = std::min(kMaxContentColW, std::max(80, layout().band_safe_span(cy, scale_y(48), 18)));
+  const auto ly = layout();
+  const int max_w = std::min(ly.max_content_w(), std::max(80, ly.band_safe_span(cy, dp_px(48), dp_px(18))));
   std::string lines[2];
   const int n = ui::wrap_text_lines(std::string(text), max_w, font, lines, 2);
   if (n <= 1) {
@@ -2135,7 +2320,7 @@ void render_empty_state(Rgb565Surface &it, int cx, int cy, const char *text,
   } else {
     int tw = 0, x_off = 0, base = 0, th = 0;
     font->measure("Ag", &tw, &x_off, &base, &th);
-    const int half_step = std::max(scale_y(13), (th + 6) / 2);
+    const int half_step = std::max(dp_px(13), (th + 6) / 2);
     ui::shadow_print(it, cx, cy - half_step, font, text_c, UiTextAlign::CENTER, lines[0].c_str());
     ui::shadow_print(it, cx, cy + half_step, font, text_c, UiTextAlign::CENTER, lines[1].c_str());
   }
@@ -2242,17 +2427,19 @@ void split_action_card_row(Rgb565Surface &it, int cx, int cy, int w, int h,
   const int div_pad = std::max(6, h / 5);
   fast_vline(it, div_x, y0 + div_pad, h - 2 * div_pad, kChromeCardBorder);
 
-  const int text_x = x0 + scale_x(16);
-  const int max_text_w = std::max(scale_x(40), split_w - scale_x(24));
+  const int text_x = x0 + dp_px(16);
+  const int max_text_w = std::max(dp_px(40), split_w - dp_px(24));
   const char *safe_pri = (primary_txt != nullptr) ? primary_txt : "";
   const char *safe_sec = (secondary_txt != nullptr) ? secondary_txt : "";
   if (safe_sec[0] != '\0') {
+    const int dy_pri = std::min(h / 4, dp_px(9));
+    const int dy_sec = std::min(h / 4 + dp_px(2), dp_px(13));
     const std::string pri_clamped = fit_text_to_width_font(safe_pri, max_text_w, font_pri);
     const std::string sec_clamped = fit_text_to_width_font(safe_sec, max_text_w, font_sec);
-    fast_print(it, text_x + 1, cy - scale_y(9) + 1, font_pri, kChromeShadow, UiTextAlign::CENTER_LEFT, pri_clamped.c_str());
-    fast_print(it, text_x, cy - scale_y(9), font_pri, pri_col, UiTextAlign::CENTER_LEFT, pri_clamped.c_str());
-    fast_print(it, text_x + 1, cy + scale_y(13) + 1, font_sec, kChromeShadow, UiTextAlign::CENTER_LEFT, sec_clamped.c_str());
-    fast_print(it, text_x, cy + scale_y(13), font_sec, sec_col, UiTextAlign::CENTER_LEFT, sec_clamped.c_str());
+    fast_print(it, text_x + 1, cy - dy_pri + 1, font_pri, kChromeShadow, UiTextAlign::CENTER_LEFT, pri_clamped.c_str());
+    fast_print(it, text_x, cy - dy_pri, font_pri, pri_col, UiTextAlign::CENTER_LEFT, pri_clamped.c_str());
+    fast_print(it, text_x + 1, cy + dy_sec + 1, font_sec, kChromeShadow, UiTextAlign::CENTER_LEFT, sec_clamped.c_str());
+    fast_print(it, text_x, cy + dy_sec, font_sec, sec_col, UiTextAlign::CENTER_LEFT, sec_clamped.c_str());
   } else {
     const std::string pri_clamped = fit_text_to_width_font(safe_pri, max_text_w, font_pri);
     fast_print(it, text_x + 1, cy + 1, font_pri, kChromeShadow, UiTextAlign::CENTER_LEFT, pri_clamped.c_str());
@@ -2264,7 +2451,7 @@ void split_action_card_row(Rgb565Surface &it, int cx, int cy, int w, int h,
   if (action_is_toggle) {
     toggle_switch(it, right_cx, cy, action_on, accent_col);
   } else {
-    const int btn_r = std::max(12, std::min(h / 2 - 6, scale_s(17)));
+    const int btn_r = std::max(12, std::min(h / 2 - 6, dp_px(17)));
     fast_filled_circle_aa(it, right_cx, cy, btn_r, action_on ? accent_col : kChromeTrack);
     fast_circle_aa(it, right_cx, cy, static_cast<float>(btn_r),
                    action_on ? accent_col : kChromeTrackBorder, 1.5f);

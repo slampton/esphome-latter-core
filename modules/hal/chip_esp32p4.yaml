@@ -29,6 +29,7 @@ esp32:
       CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
       CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
+      CONFIG_ESP_TIMER_IN_IRAM: "y"  # IRAM-safe touch GPIO ISR wake timer on battery quiet-loop P4 boards
       CONFIG_ESP_TIMER_PROFILING: ${wake_profiling}
       CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS: ${wake_profiling}
     advanced:

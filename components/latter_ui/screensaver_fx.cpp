@@ -88,7 +88,7 @@ void render_screensaver_aurora(Rgb565Surface &it, int cy, uint32_t now_ms) {
   const float b3 = 0.92f + 0.10f * fast_sin(t * 0.8f + 2.5f);
   const int p3_r = static_cast<int>(20.0f * b3), p3_g = static_cast<int>(235.0f * b3), p3_b = static_cast<int>(82.0f * b3);
 
-  static constexpr int X_STEP = (SCREEN_W > 520) ? 4 : 3;
+  static constexpr int X_STEP = (SCREEN_W >= 640) ? 4 : 3;
   static constexpr int FILL_W = X_STEP;
   static constexpr int MAX_COLS = (SCREEN_W / X_STEP) + 2;
 
@@ -506,6 +506,7 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
   static constexpr uint32_t SHELL_STAGGER_MS = 1200U;
   static constexpr int NUM_SPARKS = 36;
 
+  const float fx_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
   for (int s = 0; s < 3; s++) {
     const uint32_t t_offset = now_ms + static_cast<uint32_t>(s) * SHELL_STAGGER_MS;
     const uint32_t cycle_idx = t_offset / SHELL_CYCLE_MS;
@@ -518,23 +519,23 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
     const float rtype = hash2d_01(seed_base, 47);
     const float rhue = hash2d_01(seed_base, 73);
 
-    int bx = cx + static_cast<int>((rx - 0.5f) * scale_min_f(220.0f));
-    int by = (cy - scale_min(32)) + static_cast<int>((ry - 0.5f) * scale_min_f(155.0f));
+    int bx = cx + static_cast<int>((rx - 0.5f) * 220.0f * fx_scale);
+    int by = (cy - static_cast<int>(32.0f * fx_scale)) + static_cast<int>((ry - 0.5f) * 155.0f * fx_scale);
     const int dx_b = bx - cx;
     const int dy_b = by - cy;
-    const int max_burst_r = scale_min(120);
+    const int max_burst_r = static_cast<int>(120.0f * fx_scale);
     if (dx_b * dx_b + dy_b * dy_b > max_burst_r * max_burst_r) {
       bx = cx + (dx_b * 105) / 155;
       by = cy + (dy_b * 105) / 155;
     }
 
-    const int launch_x = cx + static_cast<int>((hash2d_01(seed_base, 91) - 0.5f) * scale_min_f(120.0f));
+    const int launch_x = cx + static_cast<int>((hash2d_01(seed_base, 91) - 0.5f) * 120.0f * fx_scale);
 #if LATTER_ROUND_DISPLAY
     const int launch_h = circle_half_span(launch_x, 10);
 #else
     const int launch_h = (SCREEN_H / 2) - 10;
 #endif
-    const int launch_y = cy + (launch_h > 40 ? launch_h : scale_min(180));
+    const int launch_y = cy + (launch_h > 40 ? launch_h : static_cast<int>(180.0f * fx_scale));
 
     if (phase < 0.22f) {
       const float u = phase * (1.0f / 0.22f);
@@ -570,7 +571,7 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
 
     if (bp < 0.16f) {
       const float fl = 1.0f - (bp * 6.25f);
-      const int flash_r = static_cast<int>(scale_min_f(4.0f + bp * 90.0f));
+      const int flash_r = static_cast<int>((4.0f + bp * 90.0f) * fx_scale);
       fast_circle(it, bx, by, flash_r, UiColor(
           static_cast<uint8_t>(255.0f * fl),
           static_cast<uint8_t>(240.0f * fl),
@@ -686,11 +687,11 @@ void render_docked_screensaver(Rgb565Surface &it, const UiFrameContext &ctx,
         const UiFontView clk_font = (ctx.font_chrono_time != nullptr) ? ctx.font_chrono_time : ctx.font_date;
 #if LATTER_ROUND_DISPLAY
         const int clk_x = cx + drift_x;
-        const int clk_y = SCREEN_H - scale_y(58) + drift_y;
+        const int clk_y = SCREEN_H - dp_px(58) + drift_y;
         const UiTextAlign align = UiTextAlign::CENTER;
 #else
-        const int clk_y = SCREEN_H - (LATTER_IS_WEARABLE ? scale_y(44) : scale_y(30)) + drift_y;
-        const int safe_half = circle_half_span(clk_y, scale_x(16));
+        const int clk_y = SCREEN_H - ((LATTER_CORNER_R >= 64) ? dp_px(40) : dp_px(28)) + drift_y;
+        const int safe_half = circle_half_span(clk_y, dp_px(16));
         const int clk_x = cx + safe_half + drift_x;
         const UiTextAlign align = UiTextAlign::CENTER_RIGHT;
 #endif
@@ -704,17 +705,19 @@ void render_docked_screensaver(Rgb565Surface &it, const UiFrameContext &ctx,
   }
 
   if (ss_style == "Ambient Clock" || ss_style == "Photo Frame") {
+    const int amb_time_y = cy - dp_px(18) + drift_y;
     if (ctx.now.is_valid()) {
       char amb_time[16];
       format_time_hhmm(ctx.now.hour, ctx.now.minute, st.is_24h_format, amb_time, sizeof(amb_time));
-      fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, ctx.font_time, st.col_slate,
+      fast_print(it, cx + drift_x, amb_time_y, ctx.font_time, st.col_slate,
                  UiTextAlign::CENTER, amb_time);
       char date_buf[24];
       ctx.now.strftime(date_buf, sizeof(date_buf), "%a, %b %d");
-      fast_print(it, cx + drift_x, cy + scale_y(48) + drift_y, ctx.font_date, kChromePipInactive,
+      const int amb_date_y = amb_time_y + (kAutoFonts.time / 2) + (kAutoFonts.date / 2) + dp_px(12);
+      fast_print(it, cx + drift_x, amb_date_y, ctx.font_date, kChromePipInactive,
                  UiTextAlign::CENTER, date_buf);
     } else {
-      fast_print(it, cx + drift_x, cy - scale_y(20) + drift_y, ctx.font_time, st.col_slate,
+      fast_print(it, cx + drift_x, amb_time_y, ctx.font_time, st.col_slate,
                  UiTextAlign::CENTER, kUnknownGlyph);
     }
     return;

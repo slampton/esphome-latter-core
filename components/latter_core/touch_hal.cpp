@@ -19,8 +19,10 @@ using namespace ::esphome;
 
 namespace {
 constexpr const char *TAG = "latter";
+constexpr uint32_t kResetAssertTimeoutId = 0x4C540000U;
 constexpr uint32_t kResetReleaseTimeoutId = 0x4C540001U;
 constexpr uint32_t kPostResetSettleTimeoutId = 0x4C540002U;
+constexpr uint32_t kCstCmdSettleTimeoutId = 0x4C540003U;
 }  // namespace
 
 #ifdef USE_ESP32
@@ -30,6 +32,9 @@ void LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
 #endif
   store->irq_pending.store(true, std::memory_order_relaxed);
   store->edge_count.fetch_add(1U, std::memory_order_relaxed);
+  if (store->wake_isr_fn != nullptr) {
+    store->wake_isr_fn();
+  }
 }
 
 void LatterTouchscreen::set_protocol(TouchHalProtocol proto) {
@@ -54,6 +59,14 @@ void LatterTouchscreen::setup() {
   this->setup_complete_ = false;
   this->irq_active_high_ = false;
   this->detected_chip_id_ = 0U;
+  this->last_sleep_mode_ = -1;
+  this->focaltech_id_verified_ = false;
+
+  touch_control_bridge().bind(
+      this,
+      +[](void *ctx, bool sleep) { static_cast<LatterTouchscreen *>(ctx)->set_sleep_mode(sleep); },
+      +[](void *ctx, uint32_t now_ms) { static_cast<LatterTouchscreen *>(ctx)->recover_if_failed(now_ms); },
+      +[](void *ctx) { static_cast<LatterTouchscreen *>(ctx)->prepare_for_restart(); });
 
   if (this->reset_pin_ != nullptr) {
     this->reset_pin_->setup();
@@ -77,13 +90,14 @@ void LatterTouchscreen::setup() {
       return;
     }
 
-    // Hynitron CST9217/CST9220 & FocalTech: clean reset pulse without blocking setup() > 50 ms.
+    // Hynitron CST9217 & FocalTech: strictly non-blocking reset sequence (5 ms high -> 12 ms low -> 38 ms settle).
     this->reset_pin_->digital_write(true);
-    delay(5);
-    this->reset_pin_->digital_write(false);
-    this->set_timeout(kResetReleaseTimeoutId, 12, [this]() {
-      this->reset_pin_->digital_write(true);
-      this->set_timeout(kPostResetSettleTimeoutId, 38, [this]() { this->finish_setup_(); });
+    this->set_timeout(kResetAssertTimeoutId, 5, [this]() {
+      this->reset_pin_->digital_write(false);
+      this->set_timeout(kResetReleaseTimeoutId, 12, [this]() {
+        this->reset_pin_->digital_write(true);
+        this->set_timeout(kPostResetSettleTimeoutId, 38, [this]() { this->finish_setup_(); });
+      });
     });
     return;
   }
@@ -95,12 +109,73 @@ void LatterTouchscreen::setup() {
 void LatterTouchscreen::finish_setup_() {
   using P = TouchHalProtocol;
 
+  if (this->protocol_ == P::CST9217) {
+    if (this->write_register16(0xD101, nullptr, 0) != i2c::ERROR_OK) {
+      ESP_LOGE(TAG, "Touch HAL (cst9217 @ 0x%02X) failed cmd-mode enter; scheduled for HAL recovery",
+               this->address_);
+      this->mark_failed();
+      return;
+    }
+    this->set_timeout(kCstCmdSettleTimeoutId, 10, [this]() { this->finish_cst9217_setup_(); });
+    return;
+  }
+
   if (!this->init_controller_()) {
     ESP_LOGE(TAG, "Touch HAL (%s @ 0x%02X) failed I2C init; scheduled for HAL recovery",
              touch_hal_protocol_name(this->protocol_), this->address_);
     this->mark_failed();
     return;
   }
+
+  this->complete_setup_ready_();
+}
+
+void LatterTouchscreen::finish_cst9217_setup_() {
+  // Hynitron CST9217 / CST9220 post-cmd-mode verify:
+  //   2. Verify firmware check code at 0xD1FC == 0xCACA
+  //   3. Read native X/Y resolution at 0xD1F8 and chip ID at 0xD204 (0x9220 or 0x9217)
+  //   4. Do NOT write 0xD109 or ack 0xD000 (controller serves 7-byte reports at 0xD000 directly)
+  uint8_t chk[4]{};
+  if (this->read_register16(0xD1FC, chk, 4) != i2c::ERROR_OK) {
+    this->mark_failed();
+    return;
+  }
+  const uint16_t check_code =
+      static_cast<uint16_t>(chk[2]) | (static_cast<uint16_t>(chk[3]) << 8U);
+  if (check_code != 0xCACAU) {
+    ESP_LOGE(TAG, "CST92xx invalid firmware check code: 0x%04X", static_cast<unsigned>(check_code));
+    this->mark_failed();
+    return;
+  }
+
+  uint8_t res[4]{};
+  if (this->read_register16(0xD1F8, res, 4) == i2c::ERROR_OK) {
+    const int16_t rx = static_cast<int16_t>(static_cast<uint16_t>(res[0]) | (static_cast<uint16_t>(res[1]) << 8U));
+    const int16_t ry = static_cast<int16_t>(static_cast<uint16_t>(res[2]) | (static_cast<uint16_t>(res[3]) << 8U));
+    if (rx > 10 && ry > 10) {
+      if (this->x_raw_max_ == this->x_raw_min_) this->x_raw_max_ = rx;
+      if (this->y_raw_max_ == this->y_raw_min_) this->y_raw_max_ = ry;
+    }
+  }
+
+  uint8_t info[4]{};
+  if (this->read_register16(0xD204, info, 4) != i2c::ERROR_OK) {
+    this->mark_failed();
+    return;
+  }
+  const uint16_t chip_id =
+      static_cast<uint16_t>(info[2]) | (static_cast<uint16_t>(info[3]) << 8U);
+  if (chip_id != 0x9220U && chip_id != 0x9217U) {
+    ESP_LOGE(TAG, "CST92xx unexpected chip ID: 0x%04X", static_cast<unsigned>(chip_id));
+    this->mark_failed();
+    return;
+  }
+  this->detected_chip_id_ = chip_id;
+  this->complete_setup_ready_();
+}
+
+void LatterTouchscreen::complete_setup_ready_() {
+  using P = TouchHalProtocol;
 
   if (this->x_raw_max_ == this->x_raw_min_) {
     this->x_raw_max_ = static_cast<int16_t>(
@@ -111,6 +186,7 @@ void LatterTouchscreen::finish_setup_() {
         (this->display_ != nullptr) ? this->display_->get_native_height() : this->display_height_);
   }
 
+  this->irq_store_.wake_isr_fn = touch_wake_bridge().wake_isr_fn;
   if (this->interrupt_pin_ != nullptr) {
     if (!this->store_.init) {
       this->interrupt_pin_->setup();
@@ -145,9 +221,21 @@ void LatterTouchscreen::update() {
   }
 }
 
+void LatterTouchscreen::consume_edge_delta_(uint32_t now) {
+  const uint32_t edges = this->irq_store_.edge_count.load(std::memory_order_relaxed);
+  if (edges != this->last_edge_snapshot_) {
+    touch_hal_telemetry().irq_edges += (edges - this->last_edge_snapshot_);
+    this->last_edge_snapshot_ = edges;
+    if (touch_wake_bridge().is_standby()) {
+      touch_wake_bridge().arm_wake_grace(now);
+    }
+  }
+}
+
 void LatterTouchscreen::pump_from_host() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
   const uint32_t now = esphome::millis();
+  this->consume_edge_delta_(now);
   const bool has_irq = this->irq_store_.irq_pending.load(std::memory_order_relaxed);
   const bool poll_ready =
       (this->finger_down_ || this->interrupt_pin_ == nullptr) &&
@@ -160,15 +248,10 @@ void LatterTouchscreen::pump_from_host() {
 void LatterTouchscreen::loop() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
   const uint32_t now = esphome::millis();
-
-  const uint32_t edges = this->irq_store_.edge_count.load(std::memory_order_relaxed);
-  if (edges != this->last_edge_snapshot_) {
-    touch_hal_telemetry().irq_edges += (edges - this->last_edge_snapshot_);
-    this->last_edge_snapshot_ = edges;
-    if (touch_wake_bridge().is_standby()) {
-      touch_wake_bridge().arm_wake_grace(now);
-    }
+  if (this->irq_store_.wake_isr_fn == nullptr && touch_wake_bridge().wake_isr_fn != nullptr) {
+    this->irq_store_.wake_isr_fn = touch_wake_bridge().wake_isr_fn;
   }
+  this->consume_edge_delta_(now);
 
   const bool has_irq = this->irq_store_.irq_pending.load(std::memory_order_relaxed);
   const bool int_asserted =
@@ -181,6 +264,68 @@ void LatterTouchscreen::loop() {
   if (has_irq || active_due) {
     this->service_once_(now);
   }
+
+  if (profiler_enabled() && (now - this->last_prof_tel_ms_) >= 10000U) {
+    const auto &tel = touch_hal_telemetry();
+    if (tel.i2c_reads != this->last_prof_reads_) {
+      this->last_prof_reads_ = tel.i2c_reads;
+      this->last_prof_tel_ms_ = now;
+      LATTER_PROF_LOGI("[PROF:TOUCH_HAL] proto=%s edges=%lu reads=%lu err=%lu contacts=%lu wake=%lu max_gap=%lums",
+                       touch_hal_protocol_name(this->protocol_),
+                       static_cast<unsigned long>(tel.irq_edges),
+                       static_cast<unsigned long>(tel.i2c_reads),
+                       static_cast<unsigned long>(tel.i2c_errors),
+                       static_cast<unsigned long>(tel.contacts),
+                       static_cast<unsigned long>(tel.wake_pulses),
+                       static_cast<unsigned long>(tel.max_active_gap_ms));
+    }
+  }
+}
+
+void LatterTouchscreen::set_sleep_mode(bool sleep) {
+  using P = TouchHalProtocol;
+  if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
+  if (this->protocol_ != P::FT6336 && this->protocol_ != P::FT3168) return;
+  if (!this->focaltech_id_verified_) return;
+
+  const int8_t want = sleep ? 1 : 0;
+  // On wake (!sleep), always re-apply active scan registers so a prior touch hardware reset
+  // or transient NACK cannot leave FocalTech stuck in low-power monitor scan.
+  if (sleep && this->last_sleep_mode_ == want) return;
+
+  if (this->write_byte(0x86, sleep ? 0x01 : 0x00)) {
+    if (!sleep) {
+      (void) this->write_byte(0xA4, 0x01);
+      (void) this->write_byte(0x88, 0x06);
+    }
+    if (this->last_sleep_mode_ != want) {
+      LATTER_PROF_LOGI("[PROF:TOUCH] monitor_mode=%d", static_cast<int>(want));
+    }
+    this->last_sleep_mode_ = want;
+  } else {
+    this->last_sleep_mode_ = -1;
+  }
+}
+
+void LatterTouchscreen::recover_if_failed(uint32_t now_ms) {
+  if (!this->recovery_policy_.should_attempt(this->is_failed(), now_ms)) return;
+  ESP_LOGW(TAG, "Touch HAL (%s @ 0x%02X) failed at boot; re-running setup (attempt %u)",
+           touch_hal_protocol_name(this->protocol_), this->address_,
+           static_cast<unsigned>(this->recovery_policy_.attempts));
+  this->status_clear_error();
+  this->setup();
+}
+
+void LatterTouchscreen::prepare_for_restart() {
+  this->cancel_timeout(kResetAssertTimeoutId);
+  this->cancel_timeout(kResetReleaseTimeoutId);
+  this->cancel_timeout(kPostResetSettleTimeoutId);
+  this->cancel_timeout(kCstCmdSettleTimeoutId);
+  if (this->reset_pin_ != nullptr) {
+    this->reset_pin_->digital_write(false);
+    delay(20);
+    this->reset_pin_->digital_write(true);
+  }
 }
 
 bool LatterTouchscreen::init_controller_() {
@@ -189,15 +334,25 @@ bool LatterTouchscreen::init_controller_() {
     case P::FT6336:
     case P::FT3168: {
       (void) this->write_byte(0x00, 0x00);  // Normal operating mode (FT5X06_OP_MODE)
-      uint8_t id_byte = 0;
-      if (!this->read_byte(0xA8, &id_byte) && !this->read_byte(0xA3, &id_byte)) {
+      uint8_t cipher_id = 0;
+      uint8_t vendor_id = 0;
+      const bool got_cipher = this->read_byte(0xA3, &cipher_id);
+      const bool got_vendor = this->read_byte(0xA8, &vendor_id);
+      if (!got_cipher && !got_vendor) {
         return false;
       }
-      this->detected_chip_id_ = id_byte;
+      this->focaltech_id_verified_ = got_cipher && is_known_focaltech_chip_id(cipher_id);
+      if (got_cipher && !this->focaltech_id_verified_) {
+        ESP_LOGW(TAG, "Touch HAL (%s @ 0x%02X) unexpected CIPHER 0x%02X; disabling monitor-mode writes",
+                 touch_hal_protocol_name(this->protocol_), this->address_,
+                 static_cast<unsigned>(cipher_id));
+      }
+      this->detected_chip_id_ = got_vendor ? vendor_id : cipher_id;
       // Program Trigger Pulse mode (0xA4 = 0x01), active scan mode (0x86 = 0x00), and ~100 Hz active period (0x88 = 0x06).
       (void) this->write_byte(0xA4, 0x01);
       (void) this->write_byte(0x86, 0x00);
       (void) this->write_byte(0x88, 0x06);
+      this->last_sleep_mode_ = 0;
       return true;
     }
 
@@ -232,50 +387,9 @@ bool LatterTouchscreen::init_controller_() {
       return true;
     }
 
-    case P::CST9217: {
-      // Hynitron CST9217 / CST9220 init sequence (matches ESPHome cst9220 / cstxxx):
-      //   1. Enter command mode (0xD101), wait 10 ms
-      //   2. Verify firmware check code at 0xD1FC == 0xCACA
-      //   3. Read native X/Y resolution at 0xD1F8 and chip ID at 0xD204 (0x9220 or 0x9217)
-      //   4. Do NOT write 0xD109 or ack 0xD000 (controller serves 7-byte reports at 0xD000 directly)
-      if (this->write_register16(0xD101, nullptr, 0) != i2c::ERROR_OK) {
-        return false;
-      }
-      delay(10);
-      uint8_t chk[4]{};
-      if (this->read_register16(0xD1FC, chk, 4) != i2c::ERROR_OK) {
-        return false;
-      }
-      const uint16_t check_code =
-          static_cast<uint16_t>(chk[2]) | (static_cast<uint16_t>(chk[3]) << 8U);
-      if (check_code != 0xCACAU) {
-        ESP_LOGE(TAG, "CST92xx invalid firmware check code: 0x%04X", static_cast<unsigned>(check_code));
-        return false;
-      }
-
-      uint8_t res[4]{};
-      if (this->read_register16(0xD1F8, res, 4) == i2c::ERROR_OK) {
-        const int16_t rx = static_cast<int16_t>(static_cast<uint16_t>(res[0]) | (static_cast<uint16_t>(res[1]) << 8U));
-        const int16_t ry = static_cast<int16_t>(static_cast<uint16_t>(res[2]) | (static_cast<uint16_t>(res[3]) << 8U));
-        if (rx > 10 && ry > 10) {
-          if (this->x_raw_max_ == this->x_raw_min_) this->x_raw_max_ = rx;
-          if (this->y_raw_max_ == this->y_raw_min_) this->y_raw_max_ = ry;
-        }
-      }
-
-      uint8_t info[4]{};
-      if (this->read_register16(0xD204, info, 4) != i2c::ERROR_OK) {
-        return false;
-      }
-      const uint16_t chip_id =
-          static_cast<uint16_t>(info[2]) | (static_cast<uint16_t>(info[3]) << 8U);
-      if (chip_id != 0x9220U && chip_id != 0x9217U) {
-        ESP_LOGE(TAG, "CST92xx unexpected chip ID: 0x%04X", static_cast<unsigned>(chip_id));
-        return false;
-      }
-      this->detected_chip_id_ = chip_id;
+    case P::CST9217:
+      // Handled asynchronously in finish_setup_() -> finish_cst9217_setup_().
       return true;
-    }
 
     case P::CST816S: {
       uint8_t chip_id = 0;

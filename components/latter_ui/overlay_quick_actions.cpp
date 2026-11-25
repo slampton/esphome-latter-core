@@ -61,7 +61,7 @@ void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
 #else
   std::snprintf(sub_buf, sizeof(sub_buf), "Brightness: %s", bri_ctx_lbl);
 #endif
-  const int sub_max_w = std::min(kMaxContentColW, std::max(120, ly.safe_span(ly.sub_hdr_y, 16)));
+  const int sub_max_w = std::min(ly.max_content_w(), std::max(120, ly.safe_span(ly.sub_hdr_y, 16)));
   const std::string fit_sub = fit_text_to_width_font(std::string(sub_buf), sub_max_w, ctx.font_small);
   render_sub_header(it, cx, fit_sub, ctx.font_small, st.col_slate);
 
@@ -99,7 +99,7 @@ void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
   // Row 4: Power Action CTA (full stadium pill)
   const int cta_y = ly.slot5_y(4);
 #if LATTER_HAS_BATTERY
-  ui::action_pill_centered(it, cx, std::min(row_w, scale_x(220)), cta_y, row_h,
+  ui::action_pill_centered(it, cx, std::min(row_w, dp_px(220)), cta_y, row_h,
                            st.col_red, ui::chrome_danger_bg(), "Hibernate", st.col_white,
                            ctx.font_small, WidgetId::QUICK_HIBERNATE_BTN, kHitTap | kHitFocusSlot);
 #else
@@ -110,10 +110,10 @@ void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
         {"Screen Off", WidgetId::QUICK_SCREEN_OFF_BTN, st.theme_primary,
          ui::chrome_card_bg_on(), st.col_white, 0, nullptr},
     };
-    ui::action_pill_row(it, cta_y, row_h, row_w, row_w / 2, scale_x(10),
+    ui::action_pill_row(it, cta_y, row_h, row_w, row_w / 2, dp_px(10),
                         pwr_pills, 2, ctx.font_small, 14);
   } else {
-    ui::action_pill_centered(it, cx, std::min(row_w, scale_x(220)), cta_y, row_h,
+    ui::action_pill_centered(it, cx, std::min(row_w, dp_px(220)), cta_y, row_h,
                              st.theme_primary, ui::chrome_card_bg_on(), "Screen Off", st.col_white,
                              ctx.font_small, WidgetId::QUICK_SCREEN_OFF_BTN, kHitTap | kHitFocusSlot);
   }

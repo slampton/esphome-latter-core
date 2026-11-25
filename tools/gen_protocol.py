@@ -32,6 +32,7 @@ _PREF_DOMAIN_ENUM: Final[dict[str, str]] = {
 }
 _PREF_CAP_ENUM: Final[dict[str, str]] = {
     "display": "DISPLAY",
+    "touch": "TOUCH",
     "display_imu": "DISPLAY_IMU",
     "display_battery": "DISPLAY_BATTERY",
     "display_or_audio": "DISPLAY_OR_AUDIO",
@@ -291,6 +292,7 @@ def _append_pref_contracts_cpp(
             "  SPEAKER = 6,",
             "  BEACON = 7,",
             "  BEACON_BATTERY = 8,",
+            "  TOUCH = 9,",
             "};",
             "",
         ]

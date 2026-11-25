@@ -9,36 +9,43 @@ font:
   - file: "gfonts://Roboto"
     id: font_chrono_time
     size: ${font_chrono_size}
+    bpp: 4
     glyphs:
       - '0123456789:.- sAMP°%—'
   - file: "gfonts://Roboto"
     id: font_micro
     size: ${font_micro_size}
+    bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Roboto"
     id: font_time
     size: ${font_time_size}
+    bpp: 4
     glyphs:
       - '0123456789:.- °%—'
   - file: "gfonts://Roboto"
     id: font_date
     size: ${font_date_size}
+    bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Roboto"
     id: font_small
     size: ${font_small_size}
+    bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Roboto@700"
     id: font_btn_bold
     size: ${font_btn_bold_size}
+    bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Orbitron@700"
     id: font_games_title
     size: ${font_games_size}
+    bpp: 2
     glyphs:
       - ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-•!'
 
@@ -315,7 +322,7 @@ display:
       const uint32_t idle_state_sig = latter_ui::compute_idle_state_signature(ctx);
       const bool live_sec_active = latter_ui::compute_live_sec_active(ctx);
       const int home_clock_band_y1 =
-          (latter_ui::layout().home_clock_y + latter_ui::layout().home_weather_y) / 2 + latter_ui::scale_y(10);
+          (latter_ui::layout().home_clock_y + latter_ui::layout().home_weather_y) / 2 + latter_ui::dp_px(10);
       if (!latter_ui::dirty_band().begin_frame(
               rs.nav.gui_page, prof_sub, takeover_sig, anim_or_scroll,
               hhmm_key, idle_state_sig, home_clock_band_y1, live_sec_active)) {

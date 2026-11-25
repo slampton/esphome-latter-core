@@ -59,6 +59,16 @@
 
 namespace latter_core {
 
+#if LATTER_PM_AUTO_SLEEP || LATTER_PM_QUIET_LOOP_ONLY
+static void pm_wake_app_loop() {
+  [](auto &app) {
+    if constexpr (requires { app.wake_loop_threadsafe(); }) {
+      app.wake_loop_threadsafe();
+    }
+  }(esphome::App);
+}
+#endif
+
 #if LATTER_PM_AUTO_SLEEP
 constexpr esp_pm_lock_type_t kPmAwakeLockType = ESP_PM_CPU_FREQ_MAX;
 constexpr uint32_t kPmWakeCauseGpio = 1UL << 2;
@@ -114,14 +124,6 @@ struct PmWakeHist {
   volatile uint32_t req[5];
 };
 static PmWakeHist g_pm_wake_hist = {0U, 0U, 0U, {0U, 0U, 0U, 0U, 0U}};
-
-static void pm_wake_app_loop() {
-  [](auto &app) {
-    if constexpr (requires { app.wake_loop_threadsafe(); }) {
-      app.wake_loop_threadsafe();
-    }
-  }(esphome::App);
-}
 
 static void pm_grace_end_timer_cb(void *) {
   pm_wake_app_loop();
@@ -357,10 +359,17 @@ static inline void pm_keep_raw_outputs_driven() {
 
 #if LATTER_PM_QUIET_LOOP_ONLY
 static bool s_p4_quiet_inited = false;
-static bool s_p4_quiet_awake = true;
+static DRAM_ATTR std::atomic<bool> s_p4_quiet_awake{true};
 static uint32_t s_p4_loop_interval_awake = 16U;
 static uint32_t s_p4_wake_mask = 0U;
 static PmWakeGraceWindow s_p4_grace{};
+static DRAM_ATTR esp_timer_handle_t s_p4_wake_loop_timer = nullptr;
+static std::atomic<uint8_t> s_p4_wake_grace_req{0U};
+
+static void p4_wake_loop_timer_cb(void *) {
+  s_p4_wake_grace_req.store(1U, std::memory_order_relaxed);
+  pm_wake_app_loop();
+}
 #endif
 
 PmCrumb &pm_previous_crumb() {
@@ -445,8 +454,17 @@ void pm_init() {
            static_cast<unsigned long>(kPmQuietTouchLoopIntervalMs));
 #elif LATTER_PM_QUIET_LOOP_ONLY
   if (s_p4_quiet_inited) return;
+#if !defined(CONFIG_ESP_TIMER_IN_IRAM)
+#error "ESP32-P4 battery quiet-loop touch wake timer needs CONFIG_ESP_TIMER_IN_IRAM in chip_esp32p4.yaml"
+#endif
+  if (s_p4_wake_loop_timer == nullptr) {
+    esp_timer_create_args_t targs = {};
+    targs.callback = &p4_wake_loop_timer_cb;
+    targs.name = "latter_p4_wk";
+    (void) esp_timer_create(&targs, &s_p4_wake_loop_timer);
+  }
   s_p4_quiet_inited = true;
-  s_p4_quiet_awake = true;
+  s_p4_quiet_awake.store(true, std::memory_order_relaxed);
   s_p4_loop_interval_awake = esphome::App.get_loop_interval();
   ESP_LOGD("power",
            "ESP32-P4 battery quiet-loop pacing ready (fixed CPLL/200MHz PSRAM; quiet loop %lums, %lums with touch wake)",
@@ -497,18 +515,24 @@ void pm_apply(bool stay_awake, uint32_t wake_mask) {
 #elif LATTER_PM_QUIET_LOOP_ONLY
   if (!s_p4_quiet_inited) return;
   s_p4_wake_mask = stay_awake ? 0U : wake_mask;
-  if (stay_awake) s_p4_grace.clear();
   const uint32_t now_p4 = esphome::millis();
+  const bool was_awake = s_p4_quiet_awake.load(std::memory_order_relaxed);
+  if (stay_awake) {
+    s_p4_grace.clear();
+    s_p4_wake_grace_req.store(0U, std::memory_order_relaxed);
+  } else if (s_p4_wake_grace_req.exchange(0U, std::memory_order_relaxed) != 0U) {
+    s_p4_grace.arm(now_p4, kPmWakeGraceMs);
+  }
   const uint32_t target_loop =
       (stay_awake || s_p4_grace.active(now_p4)) ? s_p4_loop_interval_awake : pm_quiet_loop_interval(wake_mask);
-  if (stay_awake == s_p4_quiet_awake) {
+  if (stay_awake == was_awake) {
     if (esphome::App.get_loop_interval() != target_loop) {
       esphome::App.set_loop_interval(target_loop);
     }
     return;
   }
   esphome::App.set_loop_interval(target_loop);
-  s_p4_quiet_awake = stay_awake;
+  s_p4_quiet_awake.store(stay_awake, std::memory_order_relaxed);
   LATTER_PROF_LOGI("[PROF:PM] p4_quiet=%s loop=%lums", stay_awake ? "awake" : "standby",
                    static_cast<unsigned long>(esphome::App.get_loop_interval()));
 #else
@@ -528,7 +552,10 @@ void pm_poll_loop(uint32_t now_ms) {
     pm_sync_loop_and_lock(now_ms);
   }
 #elif LATTER_PM_QUIET_LOOP_ONLY
-  if (!s_p4_quiet_inited || s_p4_quiet_awake) return;
+  if (!s_p4_quiet_inited || s_p4_quiet_awake.load(std::memory_order_relaxed)) return;
+  if (s_p4_wake_grace_req.exchange(0U, std::memory_order_relaxed) != 0U) {
+    s_p4_grace.arm(now_ms, kPmWakeGraceMs);
+  }
   if (!s_p4_grace.active(now_ms)) {
     s_p4_grace.clear();
   }
@@ -553,13 +580,27 @@ void pm_wake_grace_arm(uint32_t now_ms) {
   }
   pm_sync_loop_and_lock(now_ms);
 #elif LATTER_PM_QUIET_LOOP_ONLY
-  if (!s_p4_quiet_inited || s_p4_quiet_awake) return;
+  if (!s_p4_quiet_inited || s_p4_quiet_awake.load(std::memory_order_relaxed)) return;
   s_p4_grace.arm(now_ms, kPmWakeGraceMs);
   if (esphome::App.get_loop_interval() != s_p4_loop_interval_awake) {
     esphome::App.set_loop_interval(s_p4_loop_interval_awake);
   }
 #else
   (void) now_ms;
+#endif
+}
+
+void IRAM_ATTR pm_wake_loop_from_isr() noexcept {
+#if LATTER_PM_AUTO_SLEEP
+  PmState &st = g_pm_state;
+  if (!st.awake && s_pm_wake_loop_timer != nullptr) {
+    st.wake_grace_isr = 1U;
+    (void) esp_timer_start_once(s_pm_wake_loop_timer, 50);
+  }
+#elif LATTER_PM_QUIET_LOOP_ONLY
+  if (!s_p4_quiet_awake.load(std::memory_order_relaxed) && s_p4_wake_loop_timer != nullptr) {
+    (void) esp_timer_start_once(s_p4_wake_loop_timer, 50);
+  }
 #endif
 }
 

@@ -104,12 +104,6 @@ using esphome::millis;
 struct AppStub { void feed_wdt() {} void safe_reboot() {} };
 inline AppStub App;
 
-#ifndef USE_I2C
-namespace latter_core {
-template <typename... Args> inline void hal_set_touch_sleep_mode(Args &&...) {}
-}  // namespace latter_core
-#endif
-
 namespace audio {
 struct AudioStreamInfo {
   constexpr AudioStreamInfo(int = 16, int = 1, uint32_t = 48000) {}

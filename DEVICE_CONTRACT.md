@@ -299,7 +299,7 @@ Pure wire and behavioral preference contracts compiled into `include/latter_prot
 | Key | Domain | Default | Options / Bounds | Capability |
 | :--- | :---: | :--- | :--- | :---: |
 | `wake_word_mode` | `select` | `Docked Only` | `Docked Only` \| `Always On` \| `Disabled` | `mic` |
-| `tap_to_wake` | `select` | `Docked Only` | `Single Tap` \| `Double Tap` \| `Docked Only` \| `Disabled` | `display` |
+| `tap_to_wake` | `select` | `Docked Only` | `Single Tap` \| `Double Tap` \| `Docked Only` \| `Disabled` | `touch` |
 | `pickup_to_wake` | `select` | `Docked Only` | `Always On` \| `Docked Only` \| `Disabled` | `display_imu` |
 | `battery_screen_timeout` | `select` | `30s` | `10s` \| `15s` \| `30s` \| `1 min` \| `2 min` \| `Never` | `display_battery` |
 | `docked_idle_timeout` | `select` | `1 min` | `10s` \| `15s` \| `30s` \| `1 min` \| `2 min` \| `5 min` \| `Never` | `display` |

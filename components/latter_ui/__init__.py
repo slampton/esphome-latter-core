@@ -21,6 +21,7 @@ CONFIG_SCHEMA = cv.Schema({}).extend(cv.COMPONENT_SCHEMA)
 STAGED_HEADERS: tuple[str, ...] = (
     # Pure C++20 UI Leaves (color, surface, geometry & hit-table contracts)
     "ui_panel_traits.h",
+    "ui_scale.h",
     "ui_color.h",
     "ui_surface.h",
     "ui_widget_ids.h",

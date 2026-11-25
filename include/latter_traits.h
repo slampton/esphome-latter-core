@@ -148,7 +148,14 @@
 #elif LATTER_IS_WEARABLE
 #define LATTER_CORNER_R 98
 #else
-#define LATTER_CORNER_R 20
+#define LATTER_CORNER_R 0
+#endif
+#endif
+#ifndef LATTER_VIEW_SCALE_PCT
+#if LATTER_IS_STATIONARY
+#define LATTER_VIEW_SCALE_PCT 145
+#else
+#define LATTER_VIEW_SCALE_PCT 100
 #endif
 #endif
 #ifndef LATTER_SLOT_COUNT
@@ -218,7 +225,4 @@
 #endif
 #ifndef LATTER_DRV_CODEC_ES8311
 #define LATTER_DRV_CODEC_ES8311 0
-#endif
-#ifndef LATTER_DRV_TOUCH_FT5X06
-#define LATTER_DRV_TOUCH_FT5X06 0
 #endif

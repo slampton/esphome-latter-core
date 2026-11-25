@@ -76,7 +76,7 @@ void render_empty_state(Rgb565Surface &it, int cx, int cy, const char *text,
 
 void render_time_readout(Rgb565Surface &it, int cx, const char *text,
                          UiFontView font_time, UiColor color,
-                         int y_pos = scale_y(202));
+                         int y_pos = dp_px(202));
 
 inline constexpr bool offline_pill_due(bool ha_connected, uint32_t ha_disconnect_ms,
                                        uint32_t now_ms) noexcept {
@@ -129,7 +129,7 @@ inline constexpr int card_icon_r(int card_h) {
   return card_icon_r_for(card_h);
 }
 inline constexpr int hero_icon_r(int hero_h) {
-  return hero_icon_r_for(hero_h, SCREEN_MIN_DIM);
+  return hero_icon_r_for(hero_h, kUiScaleMilli);
 }
 
 void draw_icon_power(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool shadow = false);
@@ -192,10 +192,10 @@ int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
                     std::string *out_lines, int max_lines);
 
 inline constexpr int compute_uniform_stack_w(int top_cy, int bot_cy, int row_h,
-                                             int max_w = kMaxContentColW, int inset = 14) {
+                                             int max_w = layout().max_content_w(), int inset = 14) {
   return compute_uniform_stack_w_for(
       top_cy, bot_cy, row_h, max_w, SCREEN_W, SCREEN_H,
-      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, inset);
+      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R, kUiScaleMilli);
 }
 
 using ModeBarDrawIconFn = void (*)(Rgb565Surface &it, int global_idx,
@@ -345,11 +345,32 @@ void stepper_row(Rgb565Surface &it, int cx, int y_top, int h,
                  const char *const labels[4], UiFontView font,
                  UiColor col_text, uint16_t base_widget_id = WidgetId::STEPPER_BASE);
 
+struct ColorWheelGeom {
+  int cx{SCREEN_CX};
+  int cy{SCREEN_CY};
+  int outer_r_466{132};
+  int inner_r_466{58};
+};
+
+inline constexpr ColorWheelGeom area_color_wheel_geom() noexcept {
+  const auto ly = layout();
+  const int top_y = ly.sub_hdr_y + dp_px(28);
+  const int bot_y = ly.back_y - dp_px(22);
+  return ColorWheelGeom{SCREEN_CX, (top_y + bot_y) / 2, 132, 58};
+}
+
+inline constexpr ColorWheelGeom system_color_wheel_geom() noexcept {
+  const auto ly = layout();
+  const int top_y = ly.hdr_y + dp_px(18);
+  const int bot_y = ly.back_y - dp_px(82);
+  return ColorWheelGeom{SCREEN_CX, (top_y + bot_y) / 2, 148, 54};
+}
+
 UiColor hsv_wheel_sector_color(int sector_idx_72, float sat);
-bool hsv_wheel_pick(int tx, int ty, int cx, int cy, int outer_r_466, int inner_r_466,
+bool hsv_wheel_pick(int tx, int ty, const ColorWheelGeom &geom,
                     float &out_hue_deg, float &out_sat);
 
-void hsv_color_wheel(Rgb565Surface &it, int cx, int cy, int outer_r_466, int inner_r_466,
+void hsv_color_wheel(Rgb565Surface &it, const ColorWheelGeom &geom,
                      float cur_hue_deg, float cur_sat,
                      UiColor col_bg, UiColor col_white,
                      uint16_t widget_id = WidgetId::COLOR_WHEEL_RING);

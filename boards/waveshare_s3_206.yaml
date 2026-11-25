@@ -17,13 +17,13 @@
 # ==============================================================================
 
 substitutions:
-  font_time_size: "77"
-  font_chrono_size: "38"
-  font_date_size: "27"
-  font_btn_bold_size: "26"
+  font_time_size: "76"
+  font_chrono_size: "44"
+  font_date_size: "32"
+  font_btn_bold_size: "29"
   font_small_size: "25"   # >= 2.0 mm at this panel's PPI (device-ui-design.md, accessibility)
   font_micro_size: "17"   # >= 1.3 mm
-  font_games_size: "38"
+  font_games_size: "44"
   art_resize: "410x502"
   # 4x fewer pixels decoded & ~345 KB less PSRAM per album art buffer (clean upscale in draw_album_art)
   sendspin_art_resize: "240x240"
@@ -70,6 +70,8 @@ latter_core:
     round: false
     ips: false
     dcs_sleep: true
+    corner_r: 98
+    view_scale: 1.00
     touch_int_pin: 38
     touch_rst_pin: 9
   power:
@@ -104,7 +106,6 @@ latter_core:
     rtc_pcf85063: true
     imu_qmi8658: true
     codec_es8311: true
-    touch_ft5x06: true
 
 esp32:
   flash_size: 32MB
@@ -135,15 +136,6 @@ packages:
   latter_imu: !include ../modules/hal/imu_qmi8658.yaml
   latter_pmu: !include ../modules/hal/pmu_axp2101.yaml
   latter_battery_service: !include ../modules/battery_service.yaml
-
-esphome:
-  on_boot:
-    - priority: 850
-      then:
-        - lambda: |-
-            latter_core::runtime_state().hw_set_touch_sleep_mode = +[](bool sleep) {
-              latter_core::hal_set_touch_sleep_mode(id(bus_internal), sleep);
-            };
 
 i2s_audio:
   - id: !extend i2s_shared_bus
@@ -233,6 +225,7 @@ touchscreen:
     interrupt_pin:
       number: GPIO38
       mode: INPUT_PULLUP
+    reset_pin: GPIO9
     active_poll_interval: 10ms
     update_interval: never
 
@@ -246,12 +239,6 @@ script:
           gpio_hold_dis(GPIO_NUM_9);
           gpio_hold_dis(GPIO_NUM_46);
           gpio_hold_dis(GPIO_NUM_12);
-
-          gpio_set_direction(GPIO_NUM_9, GPIO_MODE_OUTPUT);
-          gpio_set_level(GPIO_NUM_9, 0);
-          esp_rom_delay_us(10000);
-          gpio_set_level(GPIO_NUM_9, 1);
-          esp_rom_delay_us(50000);
 
   - id: hal_enter_hardware_hibernate
     mode: restart

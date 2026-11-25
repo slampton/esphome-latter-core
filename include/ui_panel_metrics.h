@@ -7,6 +7,7 @@
 // ==============================================================================
 
 #include "ui_panel_traits.h"
+#include "ui_scale.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -69,28 +70,23 @@ inline constexpr bool is_axis_dominant(int major_delta, int minor_delta) noexcep
   return (maj * 4) >= (min * 5);
 }
 
+inline constexpr int safe_clamp(int v, int lo, int hi) noexcept {
+  if (lo >= hi) return lo;
+  return (v < lo) ? lo : ((v > hi) ? hi : v);
+}
+
 inline constexpr int mm_to_px_for(float mm, int ppi) {
   return static_cast<int>((mm * static_cast<float>(ppi)) / 25.4f + 0.5f);
 }
 
-inline constexpr int scale_x_for(int v466, int screen_w) {
-  return (screen_w > 520) ? ((v466 * screen_w + 233) / 466) : v466;
-}
+// Honest two-tier ergonomic hit-target floors (D-019):
+//   - Primary/isolated buttons & full cards: 7.0 mm
+//   - Dense paged/scrollable single-line rows: 5.5 mm (guaranteed via stride + Pass-2 halo)
+inline constexpr float kHitFloorPrimaryMm = 7.0f;
+inline constexpr float kHitFloorDenseRowMm = 5.5f;
 
-inline constexpr int scale_y_for(int v466, int screen_h) {
-  return (screen_h > 520) ? ((v466 * screen_h + 233) / 466) : v466;
-}
-
-inline constexpr int scale_s_for(int v466, int screen_min_dim) {
-  return (screen_min_dim > 520) ? ((v466 * screen_min_dim + 233) / 466) : v466;
-}
-
-inline constexpr int scale_min_for(int v466, int screen_min_dim) {
-  return (v466 * screen_min_dim + 233) / 466;
-}
-
-inline constexpr int scale_w_for(int v466, int screen_w) {
-  return (v466 * screen_w + 233) / 466;
+inline constexpr int min_row_hit_px_for(int ppi) noexcept {
+  return mm_to_px_for(kHitFloorDenseRowMm, ppi);
 }
 
 // Canonical container-proportional custom icon half-size tiers (D-051):
@@ -104,26 +100,15 @@ inline constexpr int card_icon_r_for(int card_h) {
   return (r < 10) ? 10 : r;
 }
 
-inline constexpr int hero_icon_r_for(int hero_h, int screen_min_dim) {
-  const int lo = scale_s_for(13, screen_min_dim);
-  const int hi = scale_s_for(24, screen_min_dim);
+inline constexpr int hero_icon_r_for(int hero_h, int scale_milli = kUiScaleMilli) {
+  const int lo = dp_px_for(13, scale_milli);
+  const int hi = dp_px_for(24, scale_milli);
   const int raw = (hero_h * 20 + 50) / 100;
   return (raw < lo) ? lo : ((raw > hi) ? hi : raw);
 }
 
 inline constexpr int chord_half_span_constexpr(int r, int dy, bool round_nearest = false) {
-  if (dy < 0) dy = -dy;
-  if (dy == 0) return (r > 0) ? r : 0;
-  if (dy >= r) return 0;
-  const int n = r * r - dy * dy;
-  int x = r - (dy * dy) / (2 * r);
-  if (x <= 0) x = 1;
-  x = (x + n / x) >> 1;
-  x = (x + n / x) >> 1;
-  while (x * x > n) x--;
-  while ((x + 1) * (x + 1) <= n) x++;
-  if (round_nearest && ((x + 1) * x < n)) x++;
-  return x;
+  return scale_chord_half_span(r, dy, round_nearest);
 }
 
 inline constexpr int default_corner_r_for(int screen_w, bool is_round, bool is_wearable) noexcept {
@@ -133,33 +118,17 @@ inline constexpr int default_corner_r_for(int screen_w, bool is_round, bool is_w
     return LATTER_CORNER_R;
   }
 #endif
-  return is_round ? (screen_w / 2) : (is_wearable ? 98 : 20);
+  return is_round ? (screen_w / 2) : (is_wearable ? 98 : 0);
 }
 
 inline constexpr int safe_span_for(int y, int screen_w, int screen_h, bool is_round,
                                    bool is_wearable = false, int inset = 12,
                                    int corner_r = -1) {
   if (y < 0 || y >= screen_h || screen_w <= 0) return 0;
-  if (is_round) {
-    const int r = screen_w / 2;
-    const int cy = screen_h / 2;
-    const int dy = (y >= cy) ? (y - cy) : (cy - y);
-    const int hw = chord_half_span_constexpr(r, dy, false) - inset;
-    return (hw > 0) ? (2 * hw) : 0;
-  }
-  int half_w = (screen_w / 2) - inset;
   const int cr = (corner_r >= 0) ? corner_r : default_corner_r_for(screen_w, is_round, is_wearable);
-  if (cr > 8) {
-    int dy = 0;
-    if (y < cr) dy = cr - y;
-    else if (y >= screen_h - cr) dy = y - (screen_h - 1 - cr);
-    if (dy > 0 && dy < cr) {
-      const int dx_corner = chord_half_span_constexpr(cr, dy, false);
-      const int corner_half_w = (screen_w / 2) - (cr - dx_corner) - inset;
-      if (corner_half_w < half_w) half_w = corner_half_w;
-    }
-  }
-  return (half_w > 0) ? (2 * half_w) : 0;
+  const int x_in = bezel_x_inset_for(y, screen_w, screen_h, cr, is_round, inset);
+  const int span = screen_w - 2 * x_in;
+  return (span > 0) ? span : 0;
 }
 
 inline constexpr bool is_inside_bezel_for(int x, int y, int screen_w, int screen_h,
@@ -227,10 +196,12 @@ struct UiPanelLayout {
   int home_date_y{52};
   int home_clock_y{128};
   int home_weather_y{200};
-  int drag_start{6};
-  int swipe_min{24};
-  int tap_max{30};
-  int dock_hit_r{43};
+  int dock_hit_r{47};
+  int dock_stride{76};
+  int list_rows{5};
+  int scale_milli{1000};
+  int corner_r{233};
+  SizeClass size_class{SizeClass::Regular};
 
   constexpr int slot5_y(int idx_0_to_4) const {
     return slot5_cy + (idx_0_to_4 - 2) * slot5_stride;
@@ -248,71 +219,171 @@ struct UiPanelLayout {
 
 using PanelLayoutMetrics = UiPanelLayout;
 
-static constexpr int kMaxContentColW = 480;
+inline constexpr int resolve_view_scale_pct_for(int w, int h, int ppi, bool is_round,
+                                                int view_scale_pct, bool is_stationary) noexcept {
+  if (view_scale_pct > 0) return effective_view_scale_pct(view_scale_pct, is_stationary);
+#if defined(LATTER_VIEW_SCALE_PCT) && defined(LATTER_SCREEN_W) && defined(LATTER_SCREEN_H) && defined(LATTER_PANEL_PPI)
+  if (w == LATTER_SCREEN_W && h == LATTER_SCREEN_H && ppi == LATTER_PANEL_PPI) {
+    return LATTER_VIEW_SCALE_PCT;
+  }
+#endif
+  if (!is_round && (is_stationary || w >= 600 || h >= 600 || (ppi > 0 && ppi <= 190))) {
+    if (w >= 1200) return 150;
+    if (w >= 800 && h <= 500) return 135;
+    return 145;
+  }
+  return is_stationary ? 145 : 100;
+}
 
 inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
-                                                    bool is_wearable, int ppi) {
+                                                    bool is_wearable, int ppi,
+                                                    int corner_r = -1,
+                                                    int view_scale_pct = 0,
+                                                    bool is_stationary = false) {
   UiPanelLayout L{};
+  const int cr = (corner_r >= 0) ? corner_r : default_corner_r_for(w, is_round, is_wearable);
+  const int eff_vs = resolve_view_scale_pct_for(w, h, ppi, is_round, view_scale_pct, is_stationary);
+  const UiDisplaySpec spec{w, h, ppi, is_round, cr, eff_vs, is_stationary};
+  const SafeFrame sf = SafeFrame::for_spec(spec);
+  const int s = sf.scale_milli;
+  const AutoFontSizes fonts = compute_auto_font_sizes(spec);
+  const DockMetrics dm = compute_dock_metrics(spec);
+
   L.w = w;
   L.h = h;
   L.cx = w / 2;
   L.cy = h / 2;
   L.is_round = is_round;
-  const int min_dim = (w < h) ? w : h;
-  L.hdr_y = is_round ? scale_min_for(48, h) : (is_wearable ? 36 : ((h > 520) ? 48 : 28));
-  L.sub_hdr_y = is_round ? scale_min_for(76, h) : (is_wearable ? 64 : ((h > 520) ? 88 : 56));
-  L.back_y = is_round ? scale_min_for(426, h) : (h - scale_y_for(28, h));
-  L.home_bar_y = is_round ? scale_min_for(434, h) : (h - scale_y_for(11, h));
-  L.dock_y = is_round ? scale_min_for(359, h) : (h - scale_y_for(66, h));
-  L.app_dock_y = is_round ? scale_min_for(369, h) : (h - scale_y_for(66, h));
-  L.dock_pips_y = is_round ? scale_min_for(404, h) : (h - scale_y_for(27, h));
-  L.app_dock_pips_y = is_round ? scale_min_for(408, h) : (h - scale_y_for(27, h));
-  L.dock_r = (min_dim < 360) ? 24 : ((min_dim > 520) ? std::min(44, scale_s_for(26, min_dim)) : 27);
-  L.celestial_x = is_round ? scale_min_for(100, w) : ((w < 380) ? 44 : (is_wearable ? 68 : ((w > 520) ? 118 : 78)));
-  L.celestial_y = is_round ? scale_min_for(92, h) : ((w < 380) ? 72 : ((h > 520) ? 118 : 78));
-  L.battery_cx = is_round ? L.cx : (is_wearable ? (w - 68) : ((w < 380) ? (w - 36) : ((w > 520) ? (w - 86) : (w - 58))));
-  L.battery_y = is_round ? scale_min_for(435, h) : (is_wearable ? 43 : ((w < 380) ? 24 : ((h > 520) ? 42 : 28)));
-  L.list_card_w = (w < 380) ? (w - 88) : ((w > 520) ? std::min(kMaxContentColW, (w * 276) / 466) : 276);
+  L.scale_milli = s;
+  L.corner_r = cr;
+  L.size_class = sf.size_class;
+
+  // Header & sub-header: derived from corner geometry + real auto font_small height
+  if (is_round) {
+    L.hdr_y = std::max(28, (h * 103) / 1000);
+  } else if (cr >= 84) {
+    L.hdr_y = std::max(30, dp_px_for(30, s));
+  } else {
+    const int by_h = (h * 66) / 1000;
+    L.hdr_y = std::clamp(by_h, dp_px_for(26, s), dp_px_for(35, s));
+  }
+  L.sub_hdr_y = L.hdr_y + std::max(fonts.small + dp_px_for(5, s), dp_px_for(25, s));
+
+  // Dock & bottom chrome (Remote-proportioned solver taking extra radius downward)
+  L.back_y = dm.back_y;
+  L.home_bar_y = dm.home_bar_y;
+  L.dock_y = dm.dock_y;
+  L.app_dock_y = dm.app_dock_y;
+  L.dock_pips_y = dm.dock_pips_y;
+  L.app_dock_pips_y = dm.app_dock_pips_y;
+  L.dock_r = dm.dock_r;
+  L.dock_hit_r = dm.dock_hit_r;
+  L.dock_stride = dm.slot_stride;
+
+  // Celestial orb & Battery indicator (consistent ~2.0 mm readout; clear of large corner_r and Date)
+  if (is_round) {
+    L.celestial_x = (w * 215) / 1000;
+    L.celestial_y = (h * 197) / 1000;
+    L.battery_cx = L.cx;
+    L.battery_y = std::min(h - std::max(20, dp_px_for(24, s)),
+                           std::max(L.dock_pips_y + dp_px_for(22, s), (h * 935) / 1000));
+  } else {
+    const int top_y = std::max(dp_px_for(24, s), L.hdr_y);
+    const int top_in = bezel_x_inset_for(top_y, w, h, cr, false, dp_px_for(10, s));
+    L.celestial_x = std::max(top_in + dp_px_for(34, s), (w * 155) / 1000);
+    L.celestial_y = std::max(dp_px_for(68, s), (h * 162) / 1000);
+    if (cr >= 84 && sf.w_dp < 400) {
+      // High-corner-radius narrow portrait (e.g. Wrist r98): place battery above Date so 32px Date never collides.
+      L.battery_y = std::max(28, dp_px_for(27, s));
+      const int b_in = bezel_x_inset_for(L.battery_y, w, h, cr, false, dp_px_for(8, s));
+      L.battery_cx = w - b_in - dp_px_for(38, s);
+    } else {
+      L.battery_y = std::max(22, dp_px_for(26, s));
+      const int b_in = bezel_x_inset_for(L.battery_y, w, h, cr, false, dp_px_for(8, s));
+      L.battery_cx = w - b_in - dp_px_for(38, s);
+    }
+  }
+
+  // Home Dashboard hero typography vertical positions (coupled to real auto font sizes)
+  if (is_round) {
+    L.home_date_y = std::max(38, (h * 112) / 1000);
+    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(22, s);
+    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(20, s);
+  } else if (cr >= 84 && sf.w_dp < 400) {
+    // Below top-right battery readout so wide Date never crowds Battery.
+    L.home_date_y = L.battery_y + dp_px_for(29, s);
+    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(14, s);
+    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(14, s);
+  } else {
+    L.home_date_y = std::max(36, (h * 104) / 1000);
+    L.home_clock_y = L.home_date_y + (fonts.date / 2) + (fonts.time / 2) + dp_px_for(18, s);
+    L.home_weather_y = L.home_clock_y + (fonts.time / 2) + (fonts.date / 2) + dp_px_for(16, s);
+  }
+
+  // 5-slot list geometry (safe between hdr_y and back_y, bezel-safe on all 4 corners)
+  const int list_top = L.hdr_y + dp_px_for(28, s);
+  const int list_bot = L.back_y - dp_px_for(18, s);
+  const int list_avail_h = std::max(160, list_bot - list_top);
+  L.list_rows = compute_viewport_list_rows(spec, list_avail_h, fonts.small);
+  const int target_stride = std::max(dp_px_for(58, s), fonts.small + dp_px_for(30, s));
+  L.slot5_stride = std::min(target_stride, list_avail_h / 5);
+  if (L.slot5_stride < 36) L.slot5_stride = 36;
+  const int target_slot_h = std::max(dp_px_for(44, s), fonts.small + dp_px_for(18, s));
+  L.slot5_h = std::clamp(target_slot_h, 30, std::max(30, L.slot5_stride - std::max(6, dp_px_for(8, s))));
+  L.slot5_cy = list_top + list_avail_h / 2;
+
+  const int stack_span_w = sf.band_safe_span(L.slot5_cy, 4 * L.slot5_stride + L.slot5_h, dp_px_for(12, s));
+  const int chev_reserve = dp_px_for(44, s);
+  const int chev_safe_w = (w > 2 * chev_reserve + 120) ? (w - 2 * chev_reserve) : (w - 24);
+  const int target_list_w = dp_px_for(is_round ? 304 : 380, s);
+  L.list_card_w = std::min({target_list_w, stack_span_w, chev_safe_w, sf.max_content_w(460)});
+  if (L.list_card_w < 160) L.list_card_w = std::min(w - 16, 160);
   L.list_card_left = L.cx - (L.list_card_w / 2);
-  L.slot5_stride = (h > 520) ? ((h * 63) / 466) : 63;
-  L.slot5_h = (h > 520) ? ((h * 44) / 466) : 44;
-  L.slot5_cy = (h > 520) ? L.cy : 236;
-  const bool hi_ppi_compact_rect = (!is_round && h >= 480 && h <= 520 && ppi >= 280);
-  L.area_card3_stride = (h > 520) ? ((h * 76) / 466) : (hi_ppi_compact_rect ? (is_wearable ? 92 : 90) : 76);
-  L.area_card3_h = (h > 520) ? ((h * 64) / 466) : (hi_ppi_compact_rect ? 76 : 64);
-  L.area_card3_w = (w < 380) ? (w - 68) : ((w > 520) ? std::min(480, (w * 316) / 466) : 316);
-  L.area_card3_cy = (h > 520) ? ((h * 208) / 466) : (hi_ppi_compact_rect ? (is_wearable ? 230 : 222) : 208);
-  L.tool_card3_stride = (h > 520) ? ((h * 100) / 466) : 100;
-  L.tool_card3_h = (h > 520) ? ((h * 74) / 466) : 74;
-  L.tool_card3_w = (w < 380) ? (w - 36) : ((w > 520) ? std::min(480, (w * 316) / 466) : 316);
-  L.tool_card3_cy = (h > 520) ? ((h * 222) / 466) : 222;
-  L.tools_col_off = (w < 380) ? 61 : ((w > 520) ? ((w * 74) / 466) : 68);
-  L.tools_row_stride = (h > 520) ? ((h * 105) / 466) : 105;
-  L.tools_grid_cy = (h > 520) ? L.cy : 236;
-  L.home_date_y = (h > 520) ? ((h * 52) / 466) : 52;
-  L.home_clock_y = (h > 520) ? ((h * 128) / 466) : 128;
-  L.home_weather_y = (h > 520) ? ((h * 200) / 466) : 200;
-  const auto km = KinematicMetrics::for_ppi(ppi);
-  L.drag_start = km.slider_start_px;
-  L.tap_max = km.tap_slop_px;
-  L.swipe_min = km.swipe_live_px;
-  const int min_dock_hit = mm_to_px_for(3.6f, ppi);
-  L.dock_hit_r = ((L.dock_r + 16) > min_dock_hit) ? (L.dock_r + 16) : min_dock_hit;
+
+  // 3-card Area & Tool stack geometry (strictly >= 7.0 mm hit height when space permits)
+  const int min_7mm = mm_to_px_for(kHitFloorPrimaryMm, ppi);
+  const int area_top = L.sub_hdr_y + dp_px_for(14, s);
+  const int area_bot = (L.app_dock_y - L.dock_r) - dp_px_for(14, s);
+  const int area_avail_h = std::max(120, area_bot - area_top);
+  L.area_card3_stride = std::min(std::max(dp_px_for(76, s), min_7mm + dp_px_for(8, s)), area_avail_h / 3);
+  if (L.area_card3_stride < 44) L.area_card3_stride = 44;
+  const int max_area_h = std::max(34, L.area_card3_stride - std::max(6, dp_px_for(10, s)));
+  L.area_card3_h = std::clamp(std::max(dp_px_for(62, s), min_7mm), 34, max_area_h);
+  L.area_card3_cy = area_top + area_avail_h / 2;
+  const int area_safe_w = sf.band_safe_span(L.area_card3_cy, 2 * L.area_card3_stride + L.area_card3_h, dp_px_for(12, s));
+  L.area_card3_w = std::min({dp_px_for(is_round ? 326 : 400, s), area_safe_w, chev_safe_w, sf.max_content_w(460)});
+  if (L.area_card3_w < 160) L.area_card3_w = std::min(w - 16, 160);
+
+  const int tool_avail_h = std::max(140, (L.back_y - dp_px_for(20, s)) - (L.hdr_y + dp_px_for(26, s)));
+  L.tool_card3_stride = std::min(std::max(dp_px_for(96, s), min_7mm + dp_px_for(14, s)), tool_avail_h / 3);
+  if (L.tool_card3_stride < 48) L.tool_card3_stride = 48;
+  const int max_tool_h = std::max(38, L.tool_card3_stride - std::max(8, dp_px_for(12, s)));
+  L.tool_card3_h = std::clamp(std::max(dp_px_for(72, s), min_7mm), 38, max_tool_h);
+  L.tool_card3_cy = (L.hdr_y + dp_px_for(26, s)) + tool_avail_h / 2;
+  const int tool_safe_w = sf.band_safe_span(L.tool_card3_cy, 2 * L.tool_card3_stride + L.tool_card3_h, dp_px_for(12, s));
+  L.tool_card3_w = std::min({dp_px_for(is_round ? 326 : 400, s), tool_safe_w, sf.max_content_w(460)});
+  if (L.tool_card3_w < 160) L.tool_card3_w = std::min(w - 16, 160);
+
+  L.tools_col_off = std::min(dp_px_for(72, s), w / 5);
+  L.tools_row_stride = std::min(dp_px_for(102, s), list_avail_h / 3);
+  L.tools_grid_cy = L.cy;
   return L;
 }
 
 inline constexpr int compute_top_edge_zone_y(int w, int h, bool is_round,
-                                             bool is_wearable, int ppi) noexcept {
-  const int min_d = (w < h) ? w : h;
-  if (is_round) return scale_min_for(54, min_d);
-  const auto L = compute_panel_layout(w, h, is_round, is_wearable, ppi);
+                                             bool is_wearable, int ppi,
+                                             int corner_r = -1) noexcept {
+  const auto L = compute_panel_layout(w, h, is_round, is_wearable, ppi, corner_r);
+  if (is_round) return std::max(dp_px_for(44, L.scale_milli), (h * 116) / 1000);
   return std::min(mm_to_px_for(5.2f, ppi), std::max(16, L.sub_hdr_y - 8));
 }
 
 inline constexpr int compute_area_card_div_offset(int w, int h, int ppi) noexcept {
-  const int min_d = (w < h) ? w : h;
-  const int min_hit = std::max(scale_s_for(36, min_d), mm_to_px_for(7.0f, ppi));
-  return std::max(scale_x_for(64, w), min_hit);
+  (void)w;
+  (void)h;
+  const int s = compute_ui_scale_milli(ppi);
+  const int min_hit = std::max(dp_px_for(36, s), mm_to_px_for(kHitFloorPrimaryMm, ppi));
+  return std::max(dp_px_for(64, s), min_hit);
 }
 
 inline constexpr int tools_launcher_item_count_for(bool round_display, bool has_imu) noexcept {
@@ -325,16 +396,20 @@ inline constexpr int tools_launcher_page_count(int item_count) noexcept {
 
 inline constexpr void compute_vertical_page_pips_x(
     int screen_w, bool is_round, int ppi,
-    int &out_mask_x, int &out_chev_x, int &out_hit_x0, int &out_hit_w, int &out_min_hit_h) noexcept {
+    int &out_mask_x, int &out_chev_x, int &out_hit_x0, int &out_hit_w, int &out_min_hit_h,
+    int view_scale_pct = 0, bool is_stationary = false) noexcept {
+  const int s = compute_ui_scale_milli(ppi, view_scale_pct, is_stationary);
   if (is_round) {
-    out_mask_x = scale_w_for(395, screen_w);
-    out_chev_x = scale_w_for(415, screen_w);
+    out_mask_x = (screen_w * 848) / 1000;
+    out_chev_x = (screen_w * 891) / 1000;
   } else {
-    out_mask_x = (screen_w < 380) ? (screen_w - 30) : ((screen_w > 520) ? (screen_w - 88) : (screen_w - 42));
-    out_chev_x = (screen_w < 380) ? (screen_w - 15) : ((screen_w > 520) ? (screen_w - 48) : (screen_w - 21));
+    const int mask_in = std::clamp(dp_px_for(42, s), 28, std::max(28, screen_w / 6));
+    const int chev_in = std::max(14, mask_in / 2);
+    out_mask_x = screen_w - mask_in;
+    out_chev_x = screen_w - chev_in;
   }
-  const int min_hit = mm_to_px_for(7.0f, ppi);
-  const int raw_x0 = out_mask_x - scale_x_for(12, screen_w);
+  const int min_hit = mm_to_px_for(kHitFloorPrimaryMm, ppi);
+  const int raw_x0 = out_mask_x - dp_px_for(12, s);
   const int raw_w = screen_w - raw_x0;
   out_hit_w = (raw_w >= min_hit) ? raw_w : ((min_hit <= screen_w) ? min_hit : screen_w);
   out_hit_x0 = screen_w - out_hit_w;
@@ -343,38 +418,49 @@ inline constexpr void compute_vertical_page_pips_x(
 }
 
 inline constexpr int radius_card_for(int min_dim) noexcept {
-  return scale_s_for(12, min_dim);
+  (void)min_dim;
+  const int r = dp_px(12);
+  return (r > 6) ? r : 6;
 }
 
 inline constexpr int radius_key_for(int min_dim) noexcept {
-  return scale_s_for(10, min_dim);
+  (void)min_dim;
+  const int r = dp_px(10);
+  return (r > 5) ? r : 5;
 }
 
 inline constexpr void compute_mode_bar_slot_xs(int vis_count, int w, bool is_round,
-                                               int out_xs[4]) noexcept {
+                                               int out_xs[4],
+                                               int h = -1, int ppi = LATTER_PANEL_PPI,
+                                               int corner_r = -1,
+                                               int view_scale_pct = 0,
+                                               bool is_stationary = false) noexcept {
   const int cx = w / 2;
-  const int eff_w = (w > 720) ? 720 : w;
   if (vis_count <= 0) return;
+  const int eff_h = (h > 0) ? h : ((w == LATTER_SCREEN_W) ? LATTER_SCREEN_H : w);
+  const int eff_cr = (corner_r >= 0)
+                         ? corner_r
+                         : ((w == LATTER_SCREEN_W && eff_h == LATTER_SCREEN_H)
+                                ? LATTER_CORNER_R
+                                : (is_round ? (w / 2) : 0));
+  const int eff_vs = resolve_view_scale_pct_for(w, eff_h, ppi, is_round, view_scale_pct, is_stationary);
+  const DockMetrics dm = compute_dock_metrics(
+      UiDisplaySpec{w, eff_h, ppi, is_round, eff_cr, eff_vs, is_stationary});
+  const int stride = dm.slot_stride;
   if (vis_count == 1) {
     out_xs[0] = cx;
   } else if (vis_count == 2) {
-    out_xs[0] = cx - scale_x_for(44, eff_w);
-    out_xs[1] = cx + scale_x_for(44, eff_w);
+    out_xs[0] = cx - stride / 2;
+    out_xs[1] = cx + stride / 2;
   } else if (vis_count == 3) {
-    out_xs[0] = cx - scale_x_for(84, eff_w);
+    out_xs[0] = cx - stride;
     out_xs[1] = cx;
-    out_xs[2] = cx + scale_x_for(84, eff_w);
-  } else if (is_round) {
-    out_xs[0] = scale_w_for(112, w);
-    out_xs[1] = scale_w_for(193, w);
-    out_xs[2] = scale_w_for(274, w);
-    out_xs[3] = scale_w_for(355, w);
+    out_xs[2] = cx + stride;
   } else {
-    const int stride = (eff_w < 380) ? 74 : scale_x_for(98, eff_w);
-    out_xs[0] = cx - (stride * 3) / 2;
-    out_xs[1] = cx - (stride / 2);
-    out_xs[2] = cx + (stride / 2);
-    out_xs[3] = cx + (stride * 3) / 2;
+    out_xs[0] = dm.slot_xs[0];
+    out_xs[1] = dm.slot_xs[1];
+    out_xs[2] = dm.slot_xs[2];
+    out_xs[3] = dm.slot_xs[3];
   }
 }
 
@@ -396,14 +482,15 @@ inline constexpr int band_safe_span_for(
 inline constexpr int compute_uniform_stack_w_for(
     int top_cy, int bot_cy, int row_h, int max_w,
     int screen_w, int screen_h, bool is_round, bool is_wearable = false,
-    int inset = 14) noexcept {
-  const int s_top = band_safe_span_for(top_cy, row_h, screen_w, screen_h, is_round, is_wearable, inset);
-  const int s_bot = band_safe_span_for(bot_cy, row_h, screen_w, screen_h, is_round, is_wearable, inset);
+    int inset = 14, int corner_r = -1, int scale_milli = kUiScaleMilli) noexcept {
+  const int s_top = band_safe_span_for(top_cy, row_h, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
+  const int s_bot = band_safe_span_for(bot_cy, row_h, screen_w, screen_h, is_round, is_wearable, inset, corner_r);
   const int safe_w = (s_top < s_bot) ? s_top : s_bot;
-  const int desk_cap = (screen_w > 520 && max_w > kMaxContentColW) ? kMaxContentColW : max_w;
+  const int col_cap = dp_px_for(460, scale_milli);
+  const int eff_max = (max_w > col_cap && screen_w > col_cap) ? col_cap : max_w;
   const int screen_cap = (screen_w > 2 * inset) ? (screen_w - 2 * inset) : screen_w;
   int w = safe_w;
-  if (desk_cap < w) w = desk_cap;
+  if (eff_max < w) w = eff_max;
   if (screen_cap < w) w = screen_cap;
   return (w > 64) ? w : 64;
 }

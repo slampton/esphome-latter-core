@@ -1101,6 +1101,126 @@ void test_home_screen_customizability_and_settings() {
   LATTER_CHECK(rs.nav.home_settings_page == 3);
 }
 
+void test_phase1_touch_unification_and_bugfixes() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  reset_runtime_state();
+  reset_all_v3_rev_guards();
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  prefs = PersistedDevicePrefs{};
+  auto &eng = touch_engine();
+
+  static int s_wake_calls = 0;
+  s_wake_calls = 0;
+  eng.runtime().panel_is_on = true;
+  eng.runtime().usb_connected = false;
+  eng.runtime().exec_cmd = +[](UiHostCmd cmd, int, int) {
+    if (cmd == UiHostCmd::WAKE_TO_ACTIVE) s_wake_calls++;
+  };
+
+  // 1. B4: Visible Screensaver (display_power_state == 1) ALWAYS wakes on a single tap,
+  //    even when tap_to_wake == Disabled or Double Tap; Screen Off (== 2) stays gated!
+  prefs.tap_to_wake = 3U;  // Disabled
+  rs.nav.display_power_state = 1;
+  eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 1000U);
+  eng.on_touch_up(1040U);
+  LATTER_CHECK(s_wake_calls == 1);
+
+  s_wake_calls = 0;
+  rs.nav.display_power_state = 2;
+  eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 1500U);
+  eng.on_touch_up(1540U);
+  LATTER_CHECK(s_wake_calls == 0);
+
+  // 2. Calculator Pass-2 halo hit dispatches cleanly via wid - CALC_KEY_BASE.
+  reset_calculator_state();
+  rs.nav.display_power_state = 0;
+  rs.nav.gui_page = PageId::TOOLS;
+  rs.nav.tools_subpage = ToolsSubpage::CALCULATOR;
+  frame_hits().clear();
+  HostSurfaceFixture fix{};
+  fix.ctx.now_ms = 2000U;
+  dirty_band() = DirtyBandTracker{};
+  reset_clip_y_band();
+  fix.fill(0U);
+  render_active_page(fix.surf, fix.ctx);
+  const HitRegion *calc_k7 = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::CALC_KEY_BASE + 4));  // '7'
+  LATTER_CHECK(calc_k7 != nullptr);
+  const int halo_x = (calc_k7->hit_pad >= 2 && calc_k7->x0 >= 2)
+                         ? (static_cast<int>(calc_k7->x0) - 2)
+                         : calc_k7->cx();
+  eng.on_touch_down(halo_x, calc_k7->cy(), 2100U);
+  eng.on_touch_up(2140U);
+  LATTER_CHECK(std::string_view(calculator_display_text()) == "7");
+
+  // 3. Home Activity Overlay two-zone hit regions (body opens app; right pill fires action).
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = HomeSubpage::ACTIVITY_OVERLAY;
+  home_activity_overlay_page() = 0;
+  media_state().playing = true;
+  media_state().state = "playing";
+  media_state().title = "Blue in Green";
+  media_state().artist = "Miles Davis";
+  media_state().active_speaker = "media_player.living_room";
+  media_state().is_local = false;
+  fix.ctx.local_media_playing = true;
+  frame_hits().clear();
+  fix.fill(0U);
+  render_active_page(fix.surf, fix.ctx);
+  const HitRegion *act_body = frame_hits().find_by_id(WidgetId::LIST_SLOT_BASE);
+  const HitRegion *act_btn = frame_hits().find_by_id(WidgetId::HOME_ACT_OVERLAY_ACTION_BASE);
+  LATTER_CHECK(act_body != nullptr && act_btn != nullptr);
+  LATTER_CHECK(act_body->x1 <= act_btn->x0);
+  eng.on_touch_down(act_body->cx(), act_body->cy(), 2600U);
+  eng.on_touch_up(2640U);
+  LATTER_CHECK(rs.nav.gui_page == PageId::MUSIC);
+
+  // 4. Blocks & Snake kinematic swipes through eval_kinematic_*_swipe.
+  rs.nav.gui_page = PageId::GAMES;
+  rs.nav.active_game = 5;  // Blocks
+  frame_hits().clear();
+  game_input().clear();
+  const int sw_px = layout().swipe_min() + 14;
+  GameInputEvent gev{};
+  eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 3000U);
+  eng.on_touch_move(SCREEN_CX + sw_px, SCREEN_H / 2, 3040U);
+  eng.on_touch_up(3080U);
+  LATTER_CHECK(game_input().pop(gev) && gev.cmd == GameInputCmd::RIGHT);
+
+  eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 3300U);
+  eng.on_touch_move(SCREEN_CX, SCREEN_H / 2 + sw_px, 3340U);
+  eng.on_touch_up(3380U);
+  LATTER_CHECK(game_input().pop(gev) && gev.cmd == GameInputCmd::HARD_DROP);
+
+  // Snake release-flick fallback (quick flick commits on release via eval_kinematic_horiz_swipe).
+  rs.nav.active_game = 6;
+  game_input().clear();
+  const int flick_px = std::max(layout().flick_min(), layout().swipe_min() - 2);
+  eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 3900U);
+  touch_gesture().record_move(SCREEN_CX - flick_px, SCREEN_H / 2, 3915U, LATTER_PANEL_PPI);
+  eng.on_touch_up(3920U);
+  LATTER_CHECK(game_input().pop(gev) && gev.cmd == GameInputCmd::LEFT);
+
+  // 5. System Mode 9 (Settings -> Music) vertical swipe paging 1 -> 2 -> 1.
+  rs.nav.gui_page = PageId::SYSTEM;
+  rs.nav.system_menu_mode = 9;
+  rs.music.settings_page = 1;
+  frame_hits().clear();
+  eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 4200U);
+  eng.on_touch_move(SCREEN_CX, SCREEN_H / 2 - sw_px, 4240U);
+  eng.on_touch_up(4280U);
+  LATTER_CHECK(rs.music.settings_page == 2);
+
+  // 6. on_input_event logs WakeReason::CROWN (not TOUCH) on dark wake.
+  rs.nav.display_power_state = 2;
+  eng.on_input_event("select", 0, 4600U);
+  LATTER_CHECK(wake_stats().pending == WakeReason::CROWN);
+
+  eng.runtime().exec_cmd = nullptr;
+}
+
 }  // namespace
 
 void run_touch_engine_tests() {
@@ -1111,6 +1231,7 @@ void run_touch_engine_tests() {
   test_rotary_navigation_and_glass_style_display_setting();
   test_area_media_player_switches_active_speaker();
   test_home_screen_customizability_and_settings();
+  test_phase1_touch_unification_and_bugfixes();
 }
 
 }  // namespace latter_test

@@ -115,11 +115,14 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
   }
 
   const float va_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
+  const auto va_px = [va_scale](int v466) noexcept -> int {
+    return static_cast<int>(static_cast<float>(v466) * va_scale + 0.5f);
+  };
 
   // Profile 2: "Dot Wave"
   if (is_dot_wave) {
     const UiColor c_halo_outer(32, 58, 108), c_halo_inner(110, 168, 255);
-    const int cap_r = scale_min(12);
+    const int cap_r = va_px(12);
     static float g_phase = 0.0f;
     if (gap_reset) g_phase = 0.0f;
     if (is_thinking) think_hold_until_ms = now_ms + 950U;
@@ -156,7 +159,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
             float ts = 0.0f, tc = 1.0f;
             fast_sincos(ang - static_cast<float>(tail) * 0.18f, ts, tc);
             fast_filled_circle(it, cx + static_cast<int>(orbit_r * tc), cy + static_cast<int>(orbit_r * ts),
-                               std::max(2, scale_min(11 - tail * 2)),
+                               std::max(2, va_px(11 - tail * 2)),
                                scale_color(c_halo_inner, static_cast<float>(4 - tail) * 0.22f * spin_blend));
           }
         }
@@ -168,7 +171,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
       return;
     }
 
-    const int dot_off_x[3] = {-scale_min(50), 0, scale_min(50)};
+    const int dot_off_x[3] = {-va_px(50), 0, va_px(50)};
     if (is_speaking) {
       g_phase = std::fmod(g_phase + dt_sec * 5.6f, 200.0f * PI_F);
       const float syl_env = (0.50f + 0.30f * fast_sin(g_phase * 0.9f) + 0.20f * fast_cos(g_phase * 1.5f)) * smooth_speak;
@@ -244,8 +247,8 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
     }
 
     const float a_ccw2 = -ring_angle * 1.15f;
-    fast_circle(it, cx, cy, scale_min(160), c_cyan_dim);
-    fast_circle(it, cx, cy, scale_min(134), c_cyan_dim);
+    fast_circle(it, cx, cy, va_px(160), c_cyan_dim);
+    fast_circle(it, cx, cy, va_px(134), c_cyan_dim);
     draw_hud_arc(155.0f, 160.0f, a_ccw2 - 0.35f, 0.55f, c_cyan_bright);
     draw_hud_arc(146.0f, 148.0f, a_ccw2 - 0.65f, 2.25f, c_cyan_mid);
 
@@ -283,7 +286,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
     }
 
     const float a_cw3 = ring_angle * 0.85f;
-    fast_circle(it, cx, cy, scale_min(102), c_cyan_mid);
+    fast_circle(it, cx, cy, va_px(102), c_cyan_mid);
     for (int i = 0; i < 60; i++) {
       float ts = 0.0f, tc = 1.0f;
       fast_sincos(a_cw3 + static_cast<float>(i) * (2.0f * PI_F / 60.0f), ts, tc);
@@ -294,17 +297,17 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
     draw_hud_arc(97.0f, 101.0f, a_cw3 + 0.85f, 1.10f, c_cyan_bright);
     draw_hud_arc(97.0f, 101.0f, a_cw3 + 3.90f, 0.95f, c_cyan_bright);
 
-    fast_circle(it, cx, cy, scale_min(82), c_cyan_mid);
-    fast_circle(it, cx, cy, scale_min(74), c_cyan_bright);
-    fast_circle(it, cx, cy, scale_min(73), c_cyan_mid);
+    fast_circle(it, cx, cy, va_px(82), c_cyan_mid);
+    fast_circle(it, cx, cy, va_px(74), c_cyan_bright);
+    fast_circle(it, cx, cy, va_px(73), c_cyan_mid);
     if (energy > 0.08f || is_thinking) {
-      fast_circle(it, cx, cy, scale_min(64 - static_cast<int>(energy * 5.0f)), scale_color(c_cyan_bright, 0.45f + 0.55f * energy));
+      fast_circle(it, cx, cy, va_px(64 - static_cast<int>(energy * 5.0f)), scale_color(c_cyan_bright, 0.45f + 0.55f * energy));
     }
     draw_hud_arc(74.0f, 79.0f, 0.35f, 1.35f, (energy > 0.3f) ? c_cyan_ice : c_cyan_bright);
     draw_hud_arc(74.0f, 79.0f, 2.35f, 1.15f, (energy > 0.3f) ? c_cyan_ice : c_cyan_bright);
     draw_hud_arc(74.0f, 79.0f, 4.25f, 1.25f, c_cyan_bright);
 
-    const int r_ret_out = scale_min(88), r_ret_mid = scale_min(82), r_ret_in = scale_min(68), ret_tick = scale_min(4);
+    const int r_ret_out = va_px(88), r_ret_mid = va_px(82), r_ret_in = va_px(68), ret_tick = va_px(4);
     fast_line(it, cx, cy - r_ret_out, cx, cy - r_ret_in, c_cyan_ice);
     fast_line(it, cx - ret_tick, cy - r_ret_mid, cx + ret_tick, cy - r_ret_mid, c_cyan_bright);
     fast_line(it, cx, cy + r_ret_in, cx, cy + r_ret_out, c_cyan_ice);
@@ -414,22 +417,22 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
         const float radial_env = (1.0f - progress * 0.62f) * smooth_speak, inv_half = 1.0f / static_cast<float>(half_w + 1);
         for (int d = -half_w; d <= half_w; d += 2) {
           const int r_curr = r_center + d;
-          if (r_curr < scale_min(34) || r_curr > scale_min(226)) continue;
+          if (r_curr < va_px(34) || r_curr > va_px(226)) continue;
           const float edge_u = static_cast<float>(d < 0 ? -d : d) * inv_half, bell = 1.0f - edge_u * edge_u;
           const float pix_fade = radial_env * (0.22f + 0.78f * ((progress > 0.35f) ? (bell * bell) : bell));
           const UiColor base_col = scale_color(get_va_radiation_color(false, wave_color_phase + static_cast<float>(d) * 0.016f), pix_fade);
           fast_circle(it, cx, cy, r_curr, (edge_u < 0.28f) ? lerp_color(base_col, scale_color(c_pink_hi, pix_fade), 0.32f * (1.0f - progress * 0.5f)) : base_col);
         }
       }
-      render_nebula_purple_orb(scale_min(25 + static_cast<int>(5.0f * syl_env)), syl_env);
+      render_nebula_purple_orb(va_px(25 + static_cast<int>(5.0f * syl_env)), syl_env);
       return;
     }
 
     if (is_thinking) {
       const int tick = static_cast<int>(now_ms / 22U);
       const float pulse = fast_sin(static_cast<float>(now_ms % 650U) * (2.0f * PI_F / 650.0f)), vortex_r = 68.0f + 3.0f * pulse;
-      fast_circle(it, cx, cy, scale_min(74), UiColor(28, 18, 46));
-      fast_circle(it, cx, cy, scale_min(118), UiColor(24, 16, 40));
+      fast_circle(it, cx, cy, va_px(74), UiColor(28, 18, 46));
+      fast_circle(it, cx, cy, va_px(118), UiColor(24, 16, 40));
       draw_silk_ribbon_3d(vortex_r + 3.0f, 6.0f, 5.0f, 3.5f, (tick * 2) % 60, (tick * 3) % 60, tick % 60,
                           0.68f * fast_sin(t_sec * 1.3f), 0.55f * fast_cos(t_sec * 1.1f), t_sec * 0.8f, c_amethyst, c_royal_purple, true);
       draw_silk_ribbon_3d(vortex_r, -5.0f, 6.0f, -3.0f, (tick * 2 + 30) % 60, (tick + 15) % 60, (tick * 2) % 60,
@@ -460,7 +463,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
         draw_orbit_comet(spin_cw + static_cast<float>(i) * (PI_F * 0.5f), -0.12f, 74.0f, rot_cw, c_elec_cyan, c_elec_cyan, c_pink_spec, 5, 3, 1);
         draw_orbit_comet(-spin_cw + (PI_F * 0.25f) + static_cast<float>(i) * (PI_F * 0.5f), 0.12f, 118.0f, rot_ccw, c_amethyst, c_neon_magenta, c_pink_hi, 6, 4, 2);
       }
-      render_nebula_purple_orb(scale_min(25 + static_cast<int>(4.0f * pulse)), 0.75f);
+      render_nebula_purple_orb(va_px(25 + static_cast<int>(4.0f * pulse)), 0.75f);
       return;
     }
 
@@ -476,7 +479,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
                         0.38f * fast_cos(t_sec * 0.80f), -0.42f * fast_sin(t_sec * 0.62f), t_sec * 0.32f, c_elec_cyan, c_deep_azure, true);
     draw_silk_ribbon_3d(base_r - 8.0f, a2 * 0.45f, a3 * 0.45f, a5 * 0.5f, (tick + 50) % 60, (tick + 30) % 60, tick % 60,
                         0.24f * fast_sin(t_sec * 0.95f), 0.24f * fast_cos(t_sec * 0.95f), -t_sec * 0.18f, c_pink_spec, c_neon_magenta, false);
-    render_nebula_purple_orb(scale_min(25 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad)), smooth_vad);
+    render_nebula_purple_orb(va_px(25 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad)), smooth_vad);
     return;
   }
 
@@ -512,7 +515,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
       if (speak_elapsed < launch_offset) continue;
       const float prog = static_cast<float>((speak_elapsed - launch_offset) % 1800U) * (1.0f / 1800.0f);
       const float fade = fast_sin(prog * PI_F) * (0.45f + 0.45f * syl_env) * smooth_speak;
-      const int r_wave = scale_min(82 + static_cast<int>(prog * 132.0f));
+      const int r_wave = va_px(82 + static_cast<int>(prog * 132.0f));
       const UiColor ring_c = scale_color(get_va_radiation_color(true, prog + static_cast<float>(w) * 0.33f), fade);
       const UiColor glow_c = scale_color(ring_c, 0.45f);
       fast_circle(it, cx, cy, r_wave - 1, glow_c);
@@ -520,7 +523,7 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
       fast_circle(it, cx, cy, r_wave + 1, glow_c);
     }
     draw_solaris_corona((42.0f + 3.0f * breath) * va_scale, 16.0f + 22.0f * syl_env, 6.0f + 10.0f * syl_env, static_cast<int>(now_ms / 35U), true);
-    draw_solaris_core(scale_min(27 + static_cast<int>(4.0f * breath + 5.0f * syl_env)));
+    draw_solaris_core(va_px(27 + static_cast<int>(4.0f * breath + 5.0f * syl_env)));
     return;
   }
 
@@ -559,14 +562,14 @@ void render_voice_assistant_overlay(Rgb565Surface &it, const SystemTakeoverState
       draw_meridian_beads((head_2 + n * 20 + 10) % 60, 1, 5, 94.0f, rot2, c_warm_white, c_emerald, 0.16f, 4, 1);
       draw_meridian_beads((head_3 + n * 20 + 5) % 60, -1, 4, 122.0f, rot3, c_gold, c_amber, 0.18f, 3, 2);
     }
-    draw_solaris_core(scale_min(25 + static_cast<int>(4.0f * fast_sin(static_cast<float>(now_ms % 600U) * (2.0f * PI_F / 600.0f)))));
+    draw_solaris_core(va_px(25 + static_cast<int>(4.0f * fast_sin(static_cast<float>(now_ms % 600U) * (2.0f * PI_F / 600.0f)))));
     return;
   }
 
   const float breath = fast_sin(static_cast<float>(now_ms % 1800U) * (2.0f * PI_F / 1800.0f));
   draw_solaris_corona((42.0f + 3.0f * breath) * va_scale, 16.0f + 6.0f * breath + 24.0f * smooth_vad,
                       6.0f + 10.0f * smooth_vad, static_cast<int>(now_ms / 45U), smooth_vad > 0.25f);
-  draw_solaris_core(scale_min(27 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad)));
+  draw_solaris_core(va_px(27 + static_cast<int>(4.0f * breath + 7.0f * smooth_vad)));
 }
 
 }  // namespace latter_ui

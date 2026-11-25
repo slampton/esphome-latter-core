@@ -62,7 +62,7 @@ void test_music_app_v3_d059() {
     const int min_hit = mm_to_px_for(7.0f, p.ppi);
     const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi);
     const auto np = compute_music_now_playing_geom(p.w, p.h, p.round, p.wearable, p.ppi);
-    LATTER_CHECK(np.prog_h == ((p.w >= 640) ? 6 : 4));
+    LATTER_CHECK(np.prog_h == std::max(4, dp_px_for(4, ly.scale_milli)));
 
     for (int win_start = 0; win_start <= 5; ++win_start) {
       FrameHitTable ht{};
@@ -104,7 +104,7 @@ void test_music_app_v3_d059() {
       const int anchor_y = (p.h * 38) / 100;
       LATTER_CHECK(anchor_y <= lg.vp_bot - 28);
       if (p.w > 520) {
-        LATTER_CHECK((lg.next_cx + lg.side_r) - (lg.prev_cx - lg.side_r) <= kMaxContentColW);
+        LATTER_CHECK((lg.next_cx + lg.side_r) - (lg.prev_cx - lg.side_r) <= dp_px_for(460, ly.scale_milli));
       }
     }
 
@@ -149,8 +149,8 @@ void test_music_app_v3_d059() {
 
     {
       FrameHitTable ht{};
-      const int c_top = ly.hdr_y + scale_y_for(24, p.h);
-      const int c_bot = (p.round ? scale_min_for(404, p.h) : (p.h - scale_y_for(64, p.h))) - scale_y_for(6, p.h);
+      const int c_top = ly.hdr_y + dp_px_for(24, ly.scale_milli);
+      const int c_bot = ly.back_y - dp_px_for(26, ly.scale_milli);
       for (int r = 0; r < kMusicFullListPageSize; ++r) {
         const auto rg = compute_music_list_row_geom(
             r, kMusicFullListPageSize, c_top, c_bot, true, false,
@@ -323,7 +323,7 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(art_s != std::string::npos && art_e != std::string::npos);
     const std::string art_fn = gfx_art_src.substr(art_s, art_e - art_s);
     LATTER_CHECK(art_fn.find("return 140;") != std::string::npos);
-    LATTER_CHECK(art_fn.find("ramp(y, scale_y(104), 140, scale_y(148), 256)") != std::string::npos);
+    LATTER_CHECK(art_fn.find("ramp(y, dp_px(104), 140, dp_px(148), 256)") != std::string::npos);
 
     LATTER_CHECK(comp_src.find("if (!show_metadata && !show_controls)") != std::string::npos);
     LATTER_CHECK(comp_src.find("mark_music_progress_dirty_band(") != std::string::npos);

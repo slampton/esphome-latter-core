@@ -155,51 +155,53 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
   g.cx = w / 2;
   g.min_hit = mm_to_px_for(7.0f, ppi);
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
-  const int min_s = (w < h) ? w : h;
+  const int s = ly.scale_milli;
+  const int eff_vs = resolve_view_scale_pct_for(w, h, ppi, round, 0, false);
+  const AutoFontSizes fonts = compute_auto_font_sizes(UiDisplaySpec{w, h, ppi, round, ly.corner_r, eff_vs, false});
 
-  g.title_y = round ? ly.hdr_y : (ly.hdr_y + scale_y_for(6, h));
-  g.sub_y = g.title_y + scale_y_for(24, h);
-  g.prog_y = g.sub_y + scale_y_for(18, h);
-  g.prog_h = (w >= 640 && h >= 640) ? 6 : 4;
-  g.time_y = g.prog_y + g.prog_h + scale_y_for(14, h);
+  g.title_y = round ? ly.hdr_y : (ly.hdr_y + dp_px_for(6, s));
+  g.sub_y = g.title_y + std::max(fonts.small + dp_px_for(3, s), dp_px_for(24, s));
+  g.prog_y = g.sub_y + std::max((fonts.small / 2) + dp_px_for(10, s), dp_px_for(18, s));
+  g.prog_h = std::max(4, dp_px_for(4, s));
+  g.time_y = g.prog_y + g.prog_h + std::max((fonts.small / 2) + dp_px_for(6, s), dp_px_for(14, s));
 
-  const int prog_safe = safe_span_for(g.prog_y, w, h, round, wearable, 20);
-  const int max_prog_w = (w > 520) ? 420 : 284;
+  const int prog_safe = safe_span_for(g.prog_y, w, h, round, wearable, 20, ly.corner_r);
+  const int max_prog_w = dp_px_for(296, s);
   g.prog_w = std::clamp(std::min(max_prog_w, prog_safe), 96, std::max(96, w - 32));
   g.prog_x0 = g.cx - g.prog_w / 2;
 
-  g.scrub_open_y0 = std::max(8, g.title_y - scale_y_for(12, h));
-  const int meta_band_max_y1 = scale_y_for(136, h) - 2;
-  const int raw_y1 = std::max(g.scrub_open_y0 + g.min_hit, g.time_y + scale_y_for(13, h));
+  g.scrub_open_y0 = std::max(8, g.title_y - dp_px_for(12, s));
+  const int raw_y1 = std::max(g.scrub_open_y0 + g.min_hit, g.time_y + dp_px_for(14, s));
+  const int meta_band_max_y1 = std::max(raw_y1, dp_px_for(136, s) - 2);
   const int clamped_y1 = std::max(g.scrub_open_y0 + g.min_hit, std::min(meta_band_max_y1, raw_y1));
   g.scrub_open_h = clamped_y1 - g.scrub_open_y0;
   const int scrub_safe = band_safe_span_for(
-      g.scrub_open_y0 + g.scrub_open_h / 2, g.scrub_open_h, w, h, round, wearable, 14);
-  g.scrub_open_w = std::max(g.min_hit, std::min((w > 520) ? 480 : (w - 8), scrub_safe));
+      g.scrub_open_y0 + g.scrub_open_h / 2, g.scrub_open_h, w, h, round, wearable, 14, ly.corner_r);
+  g.scrub_open_w = std::max(g.min_hit, std::min(dp_px_for(460, s), scrub_safe));
   if (g.scrub_open_w > w - 8) g.scrub_open_w = w - 8;
   g.scrub_open_x0 = g.cx - g.scrub_open_w / 2;
 
   g.mode_bar_cy = ly.app_dock_y;
   g.mode_bar_r = ly.dock_r;
   const int min_r = (g.min_hit + 1) / 2;
-  g.mode_bar_pad = std::max(scale_s_for(8, min_s), min_r - g.mode_bar_r);
+  g.mode_bar_pad = std::max(dp_px_for(8, s), min_r - g.mode_bar_r);
   const int mode_bar_top = ly.app_dock_y - ly.dock_r;
-  g.spk_caption_y = mode_bar_top - scale_y_for(22, h);
+  g.spk_caption_y = mode_bar_top - dp_px_for(22, s);
 
-  g.play_r = std::clamp(scale_min_for(38, min_s), 28, 62);
-  g.side_r = std::clamp(scale_min_for(28, min_s), 22, 46);
+  g.play_r = std::clamp(dp_px_for(38, s), 28, 62);
+  g.side_r = std::clamp(dp_px_for(28, s), 22, 46);
   g.play_hit_r = std::max(g.play_r, min_r);
   g.side_hit_r = std::max(g.side_r, min_r);
 
-  g.transport_cy = (g.scrub_open_y0 + g.scrub_open_h + (g.spk_caption_y - scale_y_for(16, h))) / 2;
-  const int min_dx = g.play_hit_r + g.side_hit_r + std::max(6, scale_x_for(10, w));
+  g.transport_cy = (g.scrub_open_y0 + g.scrub_open_h + (g.spk_caption_y - dp_px_for(16, s))) / 2;
+  const int min_dx = g.play_hit_r + g.side_hit_r + std::max(6, dp_px_for(10, s));
   const int max_dx = std::max(min_dx, (w / 2) - g.side_hit_r - 6);
   g.play_cx = g.cx;
-  const int dx = std::clamp(std::max(min_dx, scale_min_for(100, min_s)), min_dx, max_dx);
+  const int dx = std::clamp(std::max(min_dx, dp_px_for(100, s)), min_dx, max_dx);
   g.prev_cx = g.cx - dx;
   g.next_cx = g.cx + dx;
 
-  compute_mode_bar_slot_xs(4, w, round, g.mode_slot_xs);
+  compute_mode_bar_slot_xs(4, w, round, g.mode_slot_xs, h, ppi, ly.corner_r);
   return g;
 }
 
@@ -233,19 +235,20 @@ inline void register_music_now_playing_hits(
                       kHitTap | kHitFocusSlot | kHitFocusCircle,
                       static_cast<int16_t>(ws + i), g.mode_bar_pad);
       }
+      const int arrow_pad = std::max(10, g.mode_bar_pad);
       if (ws > 0) {
         const int lw = g.mode_slot_xs[0] - g.mode_bar_r;
         if (lw >= 8) {
-          ht.add_rect(0, g.mode_bar_cy - g.mode_bar_r - scale_y_for(12, g.h), lw,
-                      2 * (g.mode_bar_r + scale_y_for(12, g.h)),
+          ht.add_rect(0, g.mode_bar_cy - g.mode_bar_r - arrow_pad, lw,
+                      2 * (g.mode_bar_r + arrow_pad),
                       WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
         }
       }
       if (ws + 4 < latter_core::kMusicPeerTabCount) {
         const int rx0 = g.mode_slot_xs[3] + g.mode_bar_r + 1;
         if (g.w - rx0 >= 8) {
-          ht.add_rect(rx0, g.mode_bar_cy - g.mode_bar_r - scale_y_for(12, g.h), g.w - rx0,
-                      2 * (g.mode_bar_r + scale_y_for(12, g.h)),
+          ht.add_rect(rx0, g.mode_bar_cy - g.mode_bar_r - arrow_pad, g.w - rx0,
+                      2 * (g.mode_bar_r + arrow_pad),
                       WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
         }
       }
@@ -315,7 +318,7 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
   g.card_y0 = g.cy_row - g.card_h / 2;
 
   if (has_leading_play) {
-    g.play_vis_w = std::clamp(scale_x_for(44, w), 36, g.card_w / 3);
+    g.play_vis_w = std::clamp(dp_px_for(44, ly.scale_milli), 34, g.card_w / 3);
     g.play_hit_w = std::clamp(std::max(g.play_vis_w, g.min_hit), g.play_vis_w, g.card_w / 2);
   }
   return g;
@@ -349,11 +352,11 @@ inline constexpr MusicInfoGeom compute_music_info_geom(
     int w, int h, bool round, bool wearable, int ppi) noexcept {
   MusicInfoGeom g{};
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
-  const int min_s = (w < h) ? w : h;
-  g.vp_top = ly.hdr_y + scale_y_for(24, h);
-  const int mode_bar_top = ly.app_dock_y - ly.dock_r - scale_s_for(14, min_s);
-  g.vp_bot_hud = std::max(g.vp_top + 60, mode_bar_top - scale_y_for(8, h));
-  g.vp_bot_ambient = std::max(g.vp_top + 80, h - (round ? scale_y_for(28, h) : scale_y_for(20, h)));
+  const int s = ly.scale_milli;
+  g.vp_top = ly.hdr_y + dp_px_for(24, s);
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - dp_px_for(14, s);
+  g.vp_bot_hud = std::max(g.vp_top + 60, mode_bar_top - dp_px_for(8, s));
+  g.vp_bot_ambient = std::max(g.vp_top + 80, h - (round ? dp_px_for(28, s) : dp_px_for(20, s)));
   return g;
 }
 
@@ -377,41 +380,41 @@ inline constexpr MusicLyricsTransportGeom compute_music_lyrics_transport_geom(
     int w, int h, bool round, bool wearable, int ppi) noexcept {
   MusicLyricsTransportGeom g{};
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
-  const int min_s = (w < h) ? w : h;
+  const int s = ly.scale_milli;
   g.cx = ly.cx;
   g.min_hit = mm_to_px_for(7.0f, ppi);
 
-  g.play_r = std::clamp(scale_min_for(28, min_s), 22, 42);
-  g.side_r = std::clamp(scale_min_for(22, min_s), 18, 34);
+  g.play_r = std::clamp(dp_px_for(28, s), 22, 42);
+  g.side_r = std::clamp(dp_px_for(22, s), 18, 34);
   g.play_hit_pad = std::max(0, (g.min_hit - (2 * g.play_r + 1) + 1) / 2);
   g.side_hit_pad = std::max(0, (g.min_hit - (2 * g.side_r + 1) + 1) / 2);
   g.play_hit_r = g.play_r + g.play_hit_pad;
   g.side_hit_r = g.side_r + g.side_hit_pad;
 
   const int max_hit_r = std::max(g.play_hit_r, g.side_hit_r);
-  const int r_track = ly.dock_r + scale_s_for(3, min_s);
+  const int r_track = ly.dock_r + dp_px_for(3, s);
   const int mode_bar_vis_top = ly.app_dock_y - r_track;
   const int mode_bar_hit_top = std::min(
       ly.app_dock_y - ly.dock_hit_r,
-      ly.app_dock_y - ly.dock_r - scale_y_for(12, h));
-  const int vis_gap = std::max(10, scale_y_for(14, h));
+      ly.app_dock_y - ly.dock_r - dp_px_for(12, s));
+  const int vis_gap = std::max(10, dp_px_for(14, s));
   const int cy_from_vis = mode_bar_vis_top - vis_gap - g.play_r;
   const int cy_from_hit = mode_bar_hit_top - 2 - max_hit_r;
   g.transport_cy = std::min(cy_from_vis, cy_from_hit);
 
-  const int min_dx = g.play_hit_r + g.side_hit_r + std::max(6, scale_x_for(8, w));
+  const int min_dx = g.play_hit_r + g.side_hit_r + std::max(6, dp_px_for(8, s));
   const int safe_half = band_safe_span_for(
-                            g.transport_cy, 2 * g.side_r, w, h, round, wearable, 14) /
+                            g.transport_cy, 2 * g.side_r, w, h, round, wearable, 14, ly.corner_r) /
                         2;
-  const int desk_half = (w > 520) ? (kMaxContentColW / 2) : safe_half;
-  const int max_half = std::min(safe_half, desk_half);
+  const int col_half = dp_px_for(230, s);
+  const int max_half = std::min(safe_half, col_half);
   const int max_dx = std::max(min_dx, max_half - g.side_r);
-  const int dx = std::clamp(std::max(min_dx, scale_min_for(96, min_s)), min_dx, max_dx);
+  const int dx = std::clamp(std::max(min_dx, dp_px_for(96, s)), min_dx, max_dx);
   g.play_cx = g.cx;
   g.prev_cx = g.cx - dx;
   g.next_cx = g.cx + dx;
 
-  g.vp_bot = (g.transport_cy - max_hit_r) - std::max(4, scale_y_for(4, h));
+  g.vp_bot = (g.transport_cy - max_hit_r) - std::max(4, dp_px_for(4, s));
   return g;
 }
 
@@ -726,9 +729,6 @@ class TouchGestureEngine {
   void on_touch_move(int tx, int ty, uint32_t now_ms);
   void on_touch_up(uint32_t now_ms);
   void tick(uint32_t now_ms);
-  void on_touch(int tx, int ty, uint32_t now_ms) { on_touch_down(tx, ty, now_ms); }
-  void on_update(int tx, int ty, uint32_t now_ms) { on_touch_move(tx, ty, now_ms); }
-  void on_release(uint32_t now_ms) { on_touch_up(now_ms); }
   void on_input_event(const std::string &action, int delta, uint32_t now_ms);
   void navigate_home(uint32_t now_ms);
   void navigate_to_start_screen(uint32_t now_ms);
@@ -866,13 +866,8 @@ class TouchGestureEngine {
   UiTouchRuntime rt_{};
   uint32_t last_touch_activity_ms_{0};
   uint32_t last_drag_sleep_rst_ms_{0};
-  uint32_t last_rapid_chev_ms_{0};
   uint32_t hud_just_woken_ms_{0};
-  uint32_t last_area_slider_ms_{0};
   uint32_t last_music_vol_drag_ms_{0};
-  bool music_vol_dragging_{false};
-  bool music_scrub_dragging_{false};
-  bool music_scroll_dragging_{false};
   bool wheel_drag_dirty_{false};
   bool pending_doorbell_unlock_{false};
   int music_scroll_last_y_{0};

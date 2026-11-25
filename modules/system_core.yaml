@@ -34,7 +34,8 @@ esphome:
             id(hal_release_deep_sleep_holds).execute();
             latter_core::touch_wake_bridge().bind(
                 +[]() -> bool { return latter_core::runtime_state().nav.display_power_state != 0; },
-                +[](uint32_t now_ms) { latter_core::pm_wake_grace_arm(now_ms); });
+                +[](uint32_t now_ms) { latter_core::pm_wake_grace_arm(now_ms); },
+                &latter_core::pm_wake_loop_from_isr);
             latter_core::hal_release_pwr_key_wake_pad();
             rs.nav.sleep_start_time = millis();
             rs.nav.standby_entered_ms = 0;
@@ -51,7 +52,7 @@ esphome:
         # (verify_core.py enforces). It lives in this lambda, not in build_flags, so bumping it recompiles
         # only main.cpp instead of invalidating the CMake cache and every object in the build.
         - lambda: |-
-            constexpr long LATTER_YAML_REV = 2026112404L;
+            constexpr long LATTER_YAML_REV = 2026112501L;
             static_assert(LATTER_YAML_REV == LATTER_CORE_REV,
                           "Latter YAML packages and latter_core C++ headers are from different revisions. "
                           "ESPHome caches github:// packages for a day: set refresh: 0s on the Latter package "
@@ -475,7 +476,7 @@ button:
       - light.turn_off: display_brightness
       - component.update: disp1
       - delay: 150ms
-      - lambda: 'latter_core::hal_prepare_touch_for_restart();'
+      - lambda: 'latter_core::hal_touch_prepare_for_restart();'
       - delay: 20ms
       - button.press: internal_restart
 

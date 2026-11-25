@@ -297,6 +297,12 @@ void test_cameras_app_and_live_video_d066() {
     uint16_t rw = 0, rh = 0;
     resolve_camera_stream_dims(466, 466, true, false, false, false, rw, rh);
     LATTER_CHECK(rw == 384U && rh == 224U);
+    resolve_camera_stream_dims(466, 466, true, true, false, false, rw, rh);
+    LATTER_CHECK(rw == 320U && rh == 256U);
+    resolve_camera_stream_dims(360, 360, true, false, false, false, rw, rh);
+    LATTER_CHECK(rw == 288U && rh == 160U);
+    resolve_camera_stream_dims(360, 360, true, true, false, false, rw, rh);
+    LATTER_CHECK(rw == 240U && rh == 192U);
     resolve_camera_stream_dims(320, 480, false, false, false, false, rw, rh, true);
     LATTER_CHECK(rw == 256U && rh == 480U);
     LATTER_CHECK(resolve_camera_stream_fps(false, false, false, true) == 2U);

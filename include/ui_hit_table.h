@@ -249,22 +249,6 @@ struct TouchRouter {
     touch_last_tap_ms() = 0U;
     touch_last_target_key() = 0U;
   }
-
-  template <typename TouchT, typename TouchesT, typename HandlerFn>
-  inline void dispatch_press(const TouchT &touch, const TouchesT & /*touches*/, HandlerFn &&handler) {
-    handler(static_cast<int>(touch.x), static_cast<int>(touch.y));
-  }
-
-  template <typename TouchesT, typename HandlerFn>
-  inline void dispatch_move(const TouchesT &touches, HandlerFn &&handler) {
-    if (touches.empty()) return;
-    handler(static_cast<int>(touches[0].x), static_cast<int>(touches[0].y));
-  }
-
-  template <typename HandlerFn>
-  inline void dispatch_release(HandlerFn &&handler) {
-    handler();
-  }
 };
 
 inline TouchRouter &touch_router() {

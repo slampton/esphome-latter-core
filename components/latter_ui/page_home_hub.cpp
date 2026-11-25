@@ -131,12 +131,13 @@ void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const int act_cnt = resolve_alarm_actions(alarm_state, caps, specs);
   const bool use_two_rows = home_hub_uses_two_rows(
       act_cnt, content_top, content_bot, SCREEN_W, SCREEN_H,
-      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI,
+      LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
 
   const int avail_h = std::max(140, content_bot - content_top);
   const int hero_h = use_two_rows
-      ? std::clamp((avail_h * 44) / 100, 66, scale_y(104))
-      : std::clamp((avail_h * 56) / 100, 82, scale_y(132));
+      ? std::clamp((avail_h * 44) / 100, 66, dp_px(104))
+      : std::clamp((avail_h * 56) / 100, 82, dp_px(132));
   const int hero_y0 = content_top;
 
   // D-048: Status readout rendered directly over wallpaper with 1px kChromeShadow (never inside a glass card).
@@ -158,12 +159,12 @@ void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     ui::shadow_print(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   }
 
-  const int deck_top = hero_y0 + hero_h + std::max(6, scale_y(10));
+  const int deck_top = hero_y0 + hero_h + std::max(6, dp_px(10));
   HomeHubPillGeom geoms[4]{};
   const int geom_cnt = compute_home_hub_pill_deck(
       act_cnt, deck_top, content_bot, SCREEN_W, SCREEN_H,
       LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI,
-      use_two_rows, geoms);
+      use_two_rows, geoms, LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
 
   auto color_for_alarm_code = [&](int code) -> Color {
     switch (code) {
@@ -181,7 +182,7 @@ void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     codes[i] = specs[i].code;
     const Color acc = color_for_alarm_code(specs[i].code);
     const bool is_disarm_cta = (specs[i].code == 0);
-    const bool use_short = (!use_two_rows && geom_cnt >= 3 && geoms[i].w < scale_x(92));
+    const bool use_short = (!use_two_rows && geom_cnt >= 3 && geoms[i].w < dp_px(92));
     ui::action_pill_centered(
         it, geoms[i].cx, geoms[i].w, geoms[i].cy, geoms[i].h,
         acc, is_disarm_cta ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
@@ -236,7 +237,7 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const int total_cnt = parse_broadcast_phrases(ac.broadcast_phrases, phrases);
 
   const bool has_mic = (LATTER_HAS_MIC != 0);
-  const int speak_h = (SCREEN_H < 400) ? 36 : scale_y(44);
+  const int speak_h = (SCREEN_H < 400) ? 36 : dp_px(44);
   const int speak_hit_h = std::max(speak_h, min_hit);
   const char *speak_lbl = dictating
                               ? (rs.voice.vad_active ? "Listening..." : "Cancel")
@@ -263,13 +264,13 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
 
   int rows_top = content_top;
   if (has_mic) {
-    const int speak_cy = content_top + speak_h / 2 + std::max(2, scale_y(4));
+    const int speak_cy = content_top + speak_h / 2 + std::max(2, dp_px(4));
     const int speak_w = std::min({ly.list_card_w, band_safe_w(speak_cy, speak_h, 14)});
     ui::action_pill_centered(it, cx, speak_w, speak_cy, speak_h,
                              speak_brd, speak_bg, speak_lbl, ctx.col_white,
                              ctx.font_small, WidgetId::INTERCOM_SPEAK_BTN,
                              kHitTap | kHitFocusSlot, 0, speak_hit_h, speak_mdi);
-    rows_top = speak_cy + speak_h / 2 + std::max(6, scale_y(10));
+    rows_top = speak_cy + speak_h / 2 + std::max(6, dp_px(10));
   }
 
   const int rows_avail = std::max(90, content_bot - rows_top);
@@ -326,12 +327,12 @@ void render_thermostat_tab(Rgb565Surface &it, const UiFrameContext &ctx,
 
   const int idx = std::clamp(hub.thermostat_idx, 0, hub.thermostat_count - 1);
   const auto &z = hub.thermostats[idx];
-  const int hdr_cy = layout().hdr_y + ((SCREEN_H < 400) ? 4 : scale_y(4));
+  const int hdr_cy = layout().hdr_y + dp_px(4);
   render_hub_selector_pill(it, ctx, "Zone", idx, hub.thermostat_count, z.name,
                            "THERMOSTAT", hdr_cy,
                            WidgetId::THERMOSTAT_PREV_BTN, WidgetId::THERMOSTAT_NEXT_BTN);
   const int top_y = (hub.thermostat_count > 1)
-      ? (hdr_cy + ((SCREEN_H < 400) ? 20 : scale_y(24)))
+      ? (hdr_cy + dp_px(24))
       : content_top;
   render_climate_controls_deck(it, ctx, rs, z, top_y, content_bot);
 }
@@ -364,9 +365,12 @@ void render_entry_card(Rgb565Surface &it, const UiFrameContext &ctx,
       is_lock,
       is_lock ? (std::strcmp(state_txt, "Unlocked") != 0) : (std::strcmp(state_txt, "Open") == 0),
   };
-  const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int cta_w = std::clamp(card_w / 3, std::max(84, min_hit), scale_x(122));
-  const int cta_h = std::clamp(card_h - scale_y(16), std::max(36, min_hit), scale_y(48));
+  const int min_hit = UiLayout::mm_to_px(kHitFloorPrimaryMm);
+  const int min_cta_w = std::max(84, min_hit);
+  const int cta_w = safe_clamp(card_w / 3, min_cta_w, std::max(min_cta_w, dp_px(122)));
+  const int min_cta_h = std::max(36, min_row_hit_px_for(LATTER_PANEL_PPI));
+  const int max_cta_h = std::max(min_cta_h, std::min(card_h - dp_px(8), dp_px(64)));
+  const int cta_h = safe_clamp(card_h - dp_px(16), min_cta_h, max_cta_h);
   const UiFontView pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
   const UiFontView sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
 
@@ -442,11 +446,11 @@ void render_entry_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     }
   };
 
-  const int max_entry_w = (SCREEN_W > 520) ? layout().area_card3_w : scale_x(324);
+  const int max_entry_w = std::min(layout().max_content_w(360), layout().area_card3_w);
   const int pips_inset = (total_pages > 1) ? 24 : 14;
   if (vis_cnt >= 2) {
     const int stride = avail_h / 2;
-    const int card_h = std::clamp(stride - 10, 56, scale_y(84));
+    const int card_h = std::clamp(stride - 10, 56, dp_px(84));
     const int hit_h = std::max(card_h, std::min(min_hit, stride));
     const int cy0 = content_top + stride / 2 + bounce_y;
     const int cy1 = content_top + stride + stride / 2 + bounce_y;
@@ -457,7 +461,7 @@ void render_entry_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     draw_item_slot(1, cy1, stack_w, card_h, hit_h);
   } else {
     const int cy_only = content_top + avail_h / 2 + bounce_y;
-    const int card_h = std::clamp((avail_h * 56) / 100, 68, scale_y(104));
+    const int card_h = std::clamp((avail_h * 56) / 100, 68, dp_px(104));
     const int hit_h = std::max(card_h, min_hit);
     const int w_only = std::min(max_entry_w, band_safe_w(cy_only, card_h, pips_inset));
     draw_item_slot(0, cy_only, w_only, card_h, hit_h);
@@ -485,12 +489,12 @@ void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
 
   const int idx = std::clamp(hub.vacuum_idx, 0, hub.vacuum_count - 1);
   const auto &v = hub.vacuums[idx];
-  const int hdr_cy = layout().hdr_y + ((SCREEN_H < 400) ? 4 : scale_y(4));
+  const int hdr_cy = layout().hdr_y + dp_px(4);
   render_hub_selector_pill(it, ctx, "Vac", idx, hub.vacuum_count, v.name,
                            "ROBOT VACUUM", hdr_cy,
                            WidgetId::VACUUM_PREV_BTN, WidgetId::VACUUM_NEXT_BTN);
   const int top_y = (hub.vacuum_count > 1)
-      ? (hdr_cy + ((SCREEN_H < 400) ? 20 : scale_y(24)))
+      ? (hdr_cy + dp_px(24))
       : content_top;
 
   const std::string &vst = v.state;
@@ -516,7 +520,7 @@ void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
 
   const int avail_h = std::max(120, content_bot - top_y);
-  const int hero_h = std::clamp((avail_h * 56) / 100, 74, scale_y(132));
+  const int hero_h = std::clamp((avail_h * 56) / 100, 74, dp_px(132));
   const int hero_y0 = top_y;
 
   // D-048: Robot vacuum icon + status text rendered directly over wallpaper with kChromeShadow
@@ -540,12 +544,12 @@ void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   HomeHubActionSpec specs[4]{};
   const uint16_t eff_vcaps = (v.caps != 0U) ? v.caps : kVacuumCapDefault;
   const int act_cnt = resolve_vacuum_actions(vst, eff_vcaps, specs);
-  const int deck_top = hero_y0 + hero_h + std::max(6, scale_y(10));
+  const int deck_top = hero_y0 + hero_h + std::max(6, dp_px(10));
   HomeHubPillGeom geoms[4]{};
   const int geom_cnt = compute_home_hub_pill_deck(
       act_cnt, deck_top, content_bot, SCREEN_W, SCREEN_H,
       LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI,
-      false, geoms);
+      false, geoms, LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
 
   auto color_for_vac_code = [&](int code) -> Color {
     switch (code) {
@@ -602,8 +606,8 @@ void render_home_hub_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
   const int tab = tabs[active_slot];
 
-  const int content_top = layout().hdr_y + ((SCREEN_H < 400) ? 20 : scale_y(28));
-  const int content_bot = layout().mode_bar_zone_top() - ((SCREEN_H < 400) ? 4 : scale_y(6));
+  const int content_top = layout().hdr_y + dp_px(24);
+  const int content_bot = layout().mode_bar_zone_top() - dp_px(6);
 
   switch (tab) {
     case HomeHubTab::ALARM:
@@ -661,22 +665,23 @@ void render_climate_controls_deck(Rgb565Surface &it,
   const int mode_cnt = resolve_thermostat_modes(m, eff_caps, mode_specs);
   const bool use_two_rows = home_hub_uses_two_rows(
       mode_cnt, content_top, content_bot, SCREEN_W, SCREEN_H,
-      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+      LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI,
+      LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
 
   const int avail_h = std::max(120, content_bot - content_top);
   const int hero_h = use_two_rows
-      ? std::clamp((avail_h * 46) / 100, 64, scale_y(108))
-      : std::clamp((avail_h * 58) / 100, 78, scale_y(136));
-  const int hero_cy = content_top + hero_h / 2 + std::max(2, scale_y(4));
-  const int hero_w = std::min({kMaxContentColW, scale_x(328), band_safe_w(hero_cy, hero_h, 14)});
+      ? std::clamp((avail_h * 46) / 100, 64, dp_px(108))
+      : std::clamp((avail_h * 58) / 100, 78, dp_px(136));
+  const int hero_cy = content_top + hero_h / 2 + std::max(2, dp_px(4));
+  const int hero_w = std::min({layout().max_content_w(340), dp_px(328), band_safe_w(hero_cy, hero_h, 14)});
   const int hero_x0 = cx - hero_w / 2;
   const int hero_y0 = hero_cy - hero_h / 2;
 
   const int min_hit = UiLayout::mm_to_px(7.0f);
-  const int btn_r = std::clamp(hero_h / 3, 18, scale_s(26));
+  const int btn_r = std::clamp(hero_h / 3, 18, dp_px(26));
   const int btn_hit_r = std::max(btn_r, std::min(min_hit / 2, hero_h / 2));
-  const int minus_cx = hero_x0 + btn_r + std::max(8, scale_x(12));
-  const int plus_cx = hero_x0 + hero_w - btn_r - std::max(8, scale_x(12));
+  const int minus_cx = hero_x0 + btn_r + std::max(8, dp_px(12));
+  const int plus_cx = hero_x0 + hero_w - btn_r - std::max(8, dp_px(12));
 
   // D-048: Glass reserved strictly for interactive -/+ circles and HVAC mode pills;
   // temperature and current-reading text render directly over wallpaper with kChromeShadow.
@@ -732,12 +737,12 @@ void render_climate_controls_deck(Rgb565Surface &it,
                      TextAlign::CENTER, fit_sub.c_str());
   }
 
-  const int mode_top = hero_y0 + hero_h + std::max(6, scale_y(10));
+  const int mode_top = hero_y0 + hero_h + std::max(6, dp_px(10));
   HomeHubPillGeom geoms[6]{};
   const int geom_cnt = compute_home_hub_pill_deck(
       mode_cnt, mode_top, content_bot, SCREEN_W, SCREEN_H,
       LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI,
-      use_two_rows, geoms);
+      use_two_rows, geoms, LATTER_CORNER_R, LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0);
 
   auto color_for_clim_code = [&](int code) -> Color {
     switch (code) {
