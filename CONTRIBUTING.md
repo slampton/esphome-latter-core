@@ -20,7 +20,7 @@ git commit -s -m "Short summary of your change"
 
 ## Architectural Ground Rules
 
-1. **Zero-Cycle DAG & Coarse Component Boundaries**: Every header and `.cpp` translation unit sits inside an acyclic `#include` graph enforced by Tarjan SCC plus coarse component/header boundaries in `tools/verify_core/` (see [`AGENTS.md`](AGENTS.md) and [`docs/architecture.md`](docs/architecture.md)). `latter_core` (`namespace latter_core`) and `latter_beacon` never include `ui_*.h` or call `latter_ui::mark_dirty_*`; inside `include/ui_*.h` (`namespace latter_ui`, partitioned into Toolkit vs Universal Apps), only `ui_esphome_display.h` may include `esphome/*` or `hal_*.h`, keeping all 14 `latter_ui` page renderers pure C++20 over `Rgb565Surface` for native 6-geometry host testing.
+1. **Zero-Cycle DAG & Coarse Component Boundaries**: Every header and `.cpp` translation unit sits inside an acyclic `#include` graph enforced by Tarjan SCC plus coarse component/header boundaries in `tools/verify_core/` (see [`AGENTS.md`](AGENTS.md) and [`docs/architecture.md`](docs/architecture.md)). `latter_core` (`namespace latter_core`) and `latter_beacon` never include `ui_*.h` or call `latter_ui::mark_dirty_*`; inside `include/ui_*.h` (`namespace latter_ui`, partitioned into Toolkit vs Universal Apps), only `ui_esphome_display.h` may include `esphome/*` or `hal_*.h`, keeping all 14 `latter_ui` page renderers pure C++20 over `Rgb565Surface` for native 9-geometry host testing.
 2. **Typed `latter_core:` Board Schema, Never Product Names**: Core C++ and YAML modules branch strictly on `LATTER_*` hardware capability traits, `LATTER_DRV_*` driver-identity guards, and screen geometry (`UiLayout`), configured via typed `latter_core:` YAML in `boards/*.yaml` (never raw `-DLATTER_*` `build_flags` or board names), with zero legacy shims.
 3. **Standard Terminology**: Use Home Assistant and standard systems terminology (`System`, `Sites`, `Areas`, `Devices`, `Roles`, `Policies`, `Bridges`).
 4. **Hardware Onboarding**: Adding a new board follows the 12-point onboarding gates in [`docs/porting-hardware.md`](docs/porting-hardware.md), backed by schematic-sourced `boards/facts/<board_id>.json` and `python tools/check_boards.py --release --check-docs` (or `--external <board.yaml>` for community boards).
@@ -29,7 +29,7 @@ git commit -s -m "Short summary of your change"
 
 ## Local Pre-Flight Checks
 
-Before opening a pull request, run the repository verification suite from `esphome-latter-core/` (including the 6-geometry C++20 RGB565 framebuffer & `FrameHitTable` host binaries, compiled with ASan + UBSan on Linux):
+Before opening a pull request, run the repository verification suite from `esphome-latter-core/` (including the 9-geometry C++20 RGB565 framebuffer & `FrameHitTable` host binaries, compiled with ASan + UBSan on Linux):
 
 ```bash
 python tools/verify_core.py
