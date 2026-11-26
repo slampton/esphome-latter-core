@@ -111,8 +111,10 @@ static RTC_NOINIT_ATTR PmCrumb s_pm_crumb;
 static DRAM_ATTR esp_timer_handle_t s_pm_wake_loop_timer = nullptr;
 static DRAM_ATTR esp_timer_handle_t s_pm_grace_end_timer = nullptr;
 static std::atomic<uint8_t> s_pm_wake_grace_req{0U};
-static_assert(std::atomic<uint8_t>::is_always_lock_free,
-              "PM wake-grace atomic<uint8_t> must be lock-free across timer/main threads");
+// ESP-IDF sets -mdisable-hardware-atomics when SPIRAM + S32C1I are active (is_always_lock_free == false);
+// 1/2/4-byte atomics stay IRAM-safe via noflash stdatomic helpers.
+static_assert(sizeof(s_pm_wake_grace_req) <= 4U,
+              "PM wake-grace atomic must stay <=4 B for IRAM stdatomic fast path");
 
 static PmState g_pm_state = {nullptr, true, false, false, 16U, {}, 0U, 0U,
                              {{-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}, {-1, 0, 0, 0}},
@@ -368,10 +370,8 @@ static uint32_t s_p4_wake_mask = 0U;
 static PmWakeGraceWindow s_p4_grace{};
 static DRAM_ATTR esp_timer_handle_t s_p4_wake_loop_timer = nullptr;
 static std::atomic<uint8_t> s_p4_wake_grace_req{0U};
-static_assert(std::atomic<bool>::is_always_lock_free,
-              "PM P4 quiet-awake atomic<bool> must be lock-free across ISR/main threads");
-static_assert(std::atomic<uint8_t>::is_always_lock_free,
-              "PM P4 wake-grace atomic<uint8_t> must be lock-free across timer/main threads");
+static_assert(sizeof(s_p4_quiet_awake) <= 4U && sizeof(s_p4_wake_grace_req) <= 4U,
+              "PM P4 quiet-awake / wake-grace atomics must stay <=4 B for IRAM ISR/timer access");
 
 static void p4_wake_loop_timer_cb(void *) {
   s_p4_wake_grace_req.store(1U, std::memory_order_relaxed);

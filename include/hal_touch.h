@@ -342,10 +342,10 @@ struct LatterTouchIrqStore {
 #endif
 };
 
-static_assert(std::atomic<bool>::is_always_lock_free,
-              "LatterTouchIrqStore::irq_pending must be lock-free for IRAM ISR access");
-static_assert(std::atomic<uint32_t>::is_always_lock_free,
-              "LatterTouchIrqStore::edge_count must be lock-free for IRAM ISR access");
+// Keep <=4 B so ESP-IDF IRAM noflash stdatomic helpers handle ISR/main-loop access under -mdisable-hardware-atomics.
+static_assert(sizeof(LatterTouchIrqStore::irq_pending) <= 4U &&
+                  sizeof(LatterTouchIrqStore::edge_count) <= 4U,
+              "LatterTouchIrqStore atomics must stay <=4 B for IRAM ISR stdatomic access");
 
 class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::esphome::i2c::I2CDevice {
  public:

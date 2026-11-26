@@ -166,6 +166,12 @@ def _check_cpp_hygiene_file(rel: str, txt: str, failures: list[str]) -> None:
             f"[ESP32 UINT32 DEDUCTION] {rel} passes unsigned int literal to untyped {m_u32_minmax.group(0).strip()!r} "
             "(fails on 32-bit ESP-IDF where uint32_t is unsigned long; use std::min<uint32_t>/std::max<uint32_t>/std::clamp<uint32_t>)"
         )
+    if re.search(r"\bis_always_lock_free\b", clean_cpp):
+        failures.append(
+            f"[ESP32 ATOMIC LOCK-FREE] {rel} uses is_always_lock_free "
+            "(false on ESP32-S3 + PSRAM under ESP-IDF -mdisable-hardware-atomics; "
+            "assert sizeof(...) <= 4 instead)"
+        )
 
 
 def _check_yaml_hygiene_file(rel: str, txt: str, failures: list[str]) -> None:

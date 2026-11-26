@@ -230,12 +230,10 @@ class LatterVideoClient {
   std::atomic<bool> stop_requested_{true};
   std::atomic<uint32_t> generation_{0U};
 
-  static_assert(std::atomic<uint8_t>::is_always_lock_free,
-                "LatterVideoClient::state_ must be lock-free across worker/main threads");
-  static_assert(std::atomic<uint32_t>::is_always_lock_free,
-                "LatterVideoClient counters must be lock-free across worker/main threads");
-  static_assert(std::atomic<bool>::is_always_lock_free,
-                "LatterVideoClient flags must be lock-free across worker/main threads");
+  static_assert(sizeof(state_) <= 4U && sizeof(frame_seq_) <= 4U && sizeof(has_frame_) <= 4U &&
+                    sizeof(frame_dirty_) <= 4U && sizeof(stop_requested_) <= 4U &&
+                    sizeof(generation_) <= 4U,
+                "LatterVideoClient cross-thread atomics must stay <=4 B for ESP-IDF stdatomic fast path");
 
 #if !defined(USE_ESP32) || defined(LATTER_HOST_TEST)
   const uint16_t *host_frame_data_{nullptr};

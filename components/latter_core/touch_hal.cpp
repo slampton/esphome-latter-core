@@ -25,11 +25,6 @@ constexpr uint32_t kPostResetSettleTimeoutId = 0x4C540002U;
 constexpr uint32_t kCstCmdSettleTimeoutId = 0x4C540003U;
 }  // namespace
 
-static_assert(std::atomic<bool>::is_always_lock_free,
-              "Touch ISR atomic<bool> must be lock-free");
-static_assert(std::atomic<uint32_t>::is_always_lock_free,
-              "Touch ISR atomic<uint32_t> must be lock-free");
-
 #ifdef USE_ESP32
 void IRAM_ATTR LatterTouchIrqStore::gpio_intr(LatterTouchIrqStore *store) {
 #else
