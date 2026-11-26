@@ -93,46 +93,6 @@ def detect_drivers(facts: dict[str, Any]) -> dict[str, bool]:
     }
 
 
-def compute_font_sizes(
-    w_px: int,
-    h_px: int,
-    ppi: int,
-    *,
-    view_scale_pct: int = 0,
-    is_stationary: bool = False,
-) -> dict[str, int]:
-    """Compute isotropic dp-scaled font pixel sizes matching include/ui_scale.h & latter_core."""
-    del h_px
-    eff_w = max(int(w_px), 120)
-    eff_ppi = max(int(ppi), 50)
-    eff_vs = max(75, min(200, int(view_scale_pct))) if view_scale_pct > 0 else (145 if is_stationary else 100)
-    s_min = 900 if (is_stationary or eff_vs >= 120) else 760
-    s = max(s_min, (eff_ppi * eff_vs * 10 + 133) // 266)
-
-    def _dp(v: int) -> int:
-        return (v * s + 500) // 1000
-
-    def _mm_ceil(mm_x10: int) -> int:
-        return (mm_x10 * eff_ppi + 253) // 254
-
-    micro = max(12, (165 * eff_ppi + 2539) // 2540, _dp(14))
-    small = max(15, _mm_ceil(20), _dp(21))
-    btn_bold = max(small + 1, min(_dp(25), (eff_w * 71) // 1000))
-    date = max(btn_bold + 1, min(_dp(28), (eff_w * 78 + 20) // 1000))
-    chrono = max(date + 4, min(_dp(38), (eff_w * 108) // 1000))
-    clock_pm = 215 if eff_vs >= 120 else 185
-    time_px = max(chrono + 10, min(_dp(76), (eff_w * clock_pm + 200) // 1000))
-    return {
-        "font_time_size": time_px,
-        "font_chrono_size": chrono,
-        "font_date_size": date,
-        "font_btn_bold_size": btn_bold,
-        "font_small_size": small,
-        "font_micro_size": micro,
-        "font_games_size": chrono,
-    }
-
-
 def beacon_lines(facts: dict[str, Any], minor: int | str) -> list[str]:
     """Area presence iBeacon (VHCI on on-chip BT, esp_hosted on co-processor)."""
     del facts
@@ -652,15 +612,11 @@ def render_board(facts: dict[str, Any]) -> str:
     has_audio = _flag_bool(flags, "LATTER_HAS_AUDIO", True)
     w_px = int(flags.get("LATTER_SCREEN_W", 466))
     h_px = int(flags.get("LATTER_SCREEN_H", 466))
-    ppi = int(flags.get("LATTER_PANEL_PPI", 266))
-    vs_pct = int(flags.get("LATTER_VIEW_SCALE_PCT", 0))
-    fonts = compute_font_sizes(w_px, h_px, ppi, view_scale_pct=vs_pct, is_stationary=stationary)
     art_sq = f"{max(w_px, h_px)}x{max(w_px, h_px)}"
     body = [
         "",
         "substitutions:",
         *p4_substitutions(facts),
-        *(f'  {k}: "{v}"' for k, v in fonts.items()),
         f'  art_resize: "{w_px}x{h_px}"',
         f'  sendspin_art_resize: "{art_sq}"',
         f'  api_reboot_timeout: "{"15min" if stationary else "0s"}"',

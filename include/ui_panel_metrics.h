@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Multi-Geometry Scaling, Physical Kinematics & Safe-Canvas Metrics
 // (include/ui_panel_metrics.h)
-// Pure C++20 UI leaf (320x480 .. 720x720) — zero ESPHome, HAL, or state includes.
+// Pure C++20 UI leaf (320x480 .. 1280x800, 9-geometry) — zero ESPHome, HAL, or state includes.
 // ==============================================================================
 
 #include "ui_panel_traits.h"
@@ -187,12 +187,6 @@ struct UiPanelLayout {
   int area_card3_w{316};
   int area_card3_cy{208};
   int tool_card3_stride{100};
-  int tool_card3_h{74};
-  int tool_card3_w{316};
-  int tool_card3_cy{222};
-  int tools_col_off{68};
-  int tools_row_stride{105};
-  int tools_grid_cy{236};
   int home_date_y{52};
   int home_clock_y{128};
   int home_weather_y{200};
@@ -222,12 +216,6 @@ struct UiPanelLayout {
   }
   constexpr int area_card3_y(int idx_0_to_2) const {
     return area_card3_cy + (idx_0_to_2 - 1) * area_card3_stride;
-  }
-  constexpr int tool_card3_y(int idx_0_to_2) const {
-    return tool_card3_cy + (idx_0_to_2 - 1) * tool_card3_stride;
-  }
-  constexpr int tools_row_y(int row_0_to_2) const {
-    return tools_grid_cy + (row_0_to_2 - 1) * tools_row_stride;
   }
 };
 
@@ -431,16 +419,6 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   const int tool_avail_h = std::max(140, (L.back_y - dp_px_for(20, s)) - (L.hdr_y + dp_px_for(26, s)));
   L.tool_card3_stride = std::min(std::max(dp_px_for(96, s), min_7mm + dp_px_for(14, s)), tool_avail_h / 3);
   if (L.tool_card3_stride < 48) L.tool_card3_stride = 48;
-  const int max_tool_h = std::max(38, L.tool_card3_stride - std::max(8, dp_px_for(12, s)));
-  L.tool_card3_h = std::clamp(std::max(dp_px_for(72, s), min_7mm), 38, max_tool_h);
-  L.tool_card3_cy = (L.hdr_y + dp_px_for(26, s)) + tool_avail_h / 2;
-  const int tool_safe_w = sf.band_safe_span(L.tool_card3_cy, 2 * L.tool_card3_stride + L.tool_card3_h, dp_px_for(12, s));
-  L.tool_card3_w = std::min({dp_px_for(is_round ? 326 : 400, s), tool_safe_w, sf.max_content_w(460)});
-  if (L.tool_card3_w < 160) L.tool_card3_w = std::min(w - 16, 160);
-
-  L.tools_col_off = std::min(dp_px_for(72, s), w / 5);
-  L.tools_row_stride = std::min(dp_px_for(102, s), list_avail_h / 3);
-  L.tools_grid_cy = L.cy;
   return L;
 }
 
@@ -452,20 +430,11 @@ inline constexpr int compute_top_edge_zone_y(int w, int h, bool is_round,
   return std::min(mm_to_px_for(5.2f, ppi), std::max(16, L.sub_hdr_y - 8));
 }
 
-inline constexpr int compute_area_card_div_offset(int w, int h, int ppi) noexcept {
-  (void)w;
-  (void)h;
-  const int s = compute_ui_scale_milli(ppi);
+inline constexpr int compute_area_card_div_offset(int ppi, int view_scale_pct = 0,
+                                                  bool is_stationary = false) noexcept {
+  const int s = compute_ui_scale_milli(ppi, view_scale_pct, is_stationary);
   const int min_hit = std::max(dp_px_for(36, s), mm_to_px_for(kHitFloorPrimaryMm, ppi));
   return std::max(dp_px_for(64, s), min_hit);
-}
-
-inline constexpr int tools_launcher_item_count_for(bool round_display, bool has_imu) noexcept {
-  return 4 + (round_display ? 1 : 0) + (has_imu ? 1 : 0);
-}
-
-inline constexpr int tools_launcher_page_count(int item_count) noexcept {
-  return (item_count <= 6) ? 1 : ((item_count + 5) / 6);
 }
 
 inline constexpr void compute_vertical_page_pips_x(
@@ -491,14 +460,12 @@ inline constexpr void compute_vertical_page_pips_x(
   out_min_hit_h = min_hit;
 }
 
-inline constexpr int radius_card_for(int min_dim) noexcept {
-  (void)min_dim;
+inline constexpr int radius_card_for() noexcept {
   const int r = dp_px(12);
   return (r > 6) ? r : 6;
 }
 
-inline constexpr int radius_key_for(int min_dim) noexcept {
-  (void)min_dim;
+inline constexpr int radius_key_for() noexcept {
   const int r = dp_px(10);
   return (r > 5) ? r : 5;
 }

@@ -423,7 +423,7 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const auto ly = layout();
     const std::string cond = (!sim_override_on && !sun_ready) ? std::string{} : sky_cond;
 
-    render_page_header(it, cx, "CURRENT", font_small, col_white);
+    render_page_header(it, cx, "CURRENT", font_small);
 
     const int content_top = ly.hdr_y + dp_px(24);
     const int content_bot = ly.mode_bar_zone_top() - dp_px(14);
@@ -519,7 +519,7 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   } else if (sky_weather_subpage == 1) {
     // SUBPAGE 1: 5-DAY FORECAST
-    render_page_header(it, cx, "FORECAST", font_small, col_white);
+    render_page_header(it, cx, "FORECAST", font_small);
 
     struct DayForecast {
       std::string day, high, low, cond;
@@ -571,12 +571,12 @@ void render_weather_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   } else if (sky_weather_subpage == 2) {
     // SUBPAGE 2: SUN
-    render_page_header(it, cx, "SUN", font_small, col_white);
+    render_page_header(it, cx, "SUN", font_small);
     render_weather_sun_subpage(it, ctx, col_warm_gold);
 
   } else if (sky_weather_subpage == 3) {
     // SUBPAGE 3: MOON
-    render_page_header(it, cx, "MOON", font_small, col_white);
+    render_page_header(it, cx, "MOON", font_small);
     render_weather_moon_subpage(it, ctx);
   }
 

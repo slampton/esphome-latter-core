@@ -18,7 +18,7 @@ void render_tile_grid_page(Rgb565Surface &it, const UiFrameContext &ctx,
                           : "";
 
   if (spec.entries == nullptr || spec.entry_count <= 0) {
-    render_page_header(it, ctx.cx, title, ctx.font_small, ctx.col_white);
+    render_page_header(it, ctx.cx, title, ctx.font_small);
     if (spec.empty_message != nullptr && spec.empty_message[0] != '\0') {
       render_empty_state(it, ctx.cx, ctx.cy, spec.empty_message, ctx.font_small, ctx.col_slate);
     }
@@ -84,7 +84,7 @@ void render_tile_grid_page(Rgb565Surface &it, const UiFrameContext &ctx,
                          true, WidgetId::CHEVRON_LEFT, WidgetId::CHEVRON_RIGHT, -1, 1,
                          active_pg > 0, (active_pg + 1) < total_pages);
   } else {
-    render_page_header(it, ctx.cx, title, ctx.font_small, ctx.col_white);
+    render_page_header(it, ctx.cx, title, ctx.font_small);
   }
 
   // Sub-header at ly.sub_hdr_y: transient feedback takes priority, else horizontal page pips.

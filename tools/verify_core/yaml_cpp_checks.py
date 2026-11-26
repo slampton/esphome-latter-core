@@ -683,9 +683,7 @@ def _sanitize_full_lambda_cpp(code: str) -> str:
         "track_artist",
         "track_album",
         "latter_ip_address",
-        "fw_release_summary",
         "batt_charge_state",
-        "sys_link_report",
     }
     flt_ids = {
         "latter_wifi_signal",

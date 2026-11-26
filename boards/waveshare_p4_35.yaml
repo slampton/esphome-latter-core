@@ -15,16 +15,8 @@
 
 substitutions:
   # SKU 33360 ships with ESP32-P4 v3.x production silicon (400 MHz, engineering_sample: false).
-  p4_silicon: "rev3"
   p4_engineering_sample: "false"
   p4_cpu_frequency: "400MHz"
-  font_time_size: "68"
-  font_chrono_size: "34"
-  font_date_size: "24"
-  font_btn_bold_size: "22"
-  font_small_size: "19"
-  font_micro_size: "13"
-  font_games_size: "34"
   art_resize: "320x480"
   # 4x fewer pixels decoded on track changes (exact 2x height upscale in draw_album_art)
   sendspin_art_resize: "240x240"
@@ -107,7 +99,7 @@ esp32:
 # ESP32-P4 has no intermediate PLL CPU frequency below 360/400 MHz (only 40 MHz XTAL).
 # Never enable esp32_power_management here: 40 MHz <-> CPLL transitions retune 200 MHz PSRAM
 # speed modes across esp_hosted SDIO DMA and trigger Interrupt WDT / MSPI panics. Battery standby
-# stretches the main loop to 250 ms / 1,000 ms in power_pm.cpp so both RISC-V cores idle in wfi.
+# stretches the main loop to 250 ms / 1,000 ms in pm_light_sleep.cpp so both RISC-V cores idle in wfi.
 
 i2c:
   - id: bus_internal

@@ -678,7 +678,7 @@ struct TextCacheEntry {
 
 std::string sanitize_utf8_for_font(const std::string &str, UiFontView font);
 std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFontView font);
-int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *text);
+int text_ink_right_edge_impl(UiFontView font, const char *text);
 void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
                      UiColor color, UiTextAlign align, const char *text,
                      UiColor background = kColorOff);
@@ -686,10 +686,9 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
                            UiColor color, UiTextAlign align, const char *text,
                            int alpha_q8);
 
-template <typename DisplayT, typename FontT>
-inline int text_ink_right_edge(DisplayT &it, FontT font, const char *text) {
-  Rgb565Surface surf(it);
-  return text_ink_right_edge_impl(surf, UiFontView(font), text);
+template <typename FontT>
+inline int text_ink_right_edge(FontT font, const char *text) {
+  return text_ink_right_edge_impl(UiFontView(font), text);
 }
 
 template <typename DisplayT, typename FontT, typename AlignT>

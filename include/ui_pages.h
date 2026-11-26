@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter Concrete Compiled Page & Camera Video Declarations (include/ui_pages.h)
 // Pure C++20 UI page declarations — zero ESPHome includes; compiles cleanly on host via
-// Rgb565Surface across all 6 canonical panel geometries.
+// Rgb565Surface across all 9 canonical panel geometries.
 // ==============================================================================
 
 #include "audio_router.h"

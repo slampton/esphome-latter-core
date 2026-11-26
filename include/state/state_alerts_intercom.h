@@ -102,14 +102,14 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
   const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
   int idx = 0;
   for (size_t r = 0; r < n && idx < cap; ++r) {
-    std::string_view f[5];
-    const size_t fc = v3_split_fields(recs[r], f, 5, '|');
-    if (fc < 2 || f[0].empty()) continue;
+    std::string_view f[6]{};
+    const size_t fc = v3_split_fields(recs[r], f, 6, '|');
+    if (fc != 5U || f[0].empty()) continue;
     out[idx].entity_id = v3_unescape_subfield(f[0]);
     out[idx].name = f[1].empty() ? out[idx].entity_id : v3_unescape_subfield(f[1]);
-    out[idx].area_id = (fc >= 3) ? v3_unescape_subfield(f[2]) : "";
+    out[idx].area_id = v3_unescape_subfield(f[2]);
     uint8_t parsed_caps = 0;
-    if (fc >= 4 && !f[3].empty()) {
+    if (!f[3].empty()) {
       const std::string_view cv = f[3];
       if (cv.rfind("0x", 0) == 0 || cv.rfind("0X", 0) == 0) {
         uint32_t acc = 0;
@@ -126,7 +126,7 @@ inline int parse_cameras_records(std::string_view raw, CameraRecord *out, int ma
       }
     }
     out[idx].caps = parsed_caps;
-    out[idx].unlock_entity = (fc >= 5) ? v3_unescape_subfield(f[4]) : "";
+    out[idx].unlock_entity = v3_unescape_subfield(f[4]);
     ++idx;
   }
   return idx;
@@ -143,9 +143,9 @@ inline int count_configured_cameras(const AreaContextState &ac = area_ctx_state(
     const size_t n = v3_split_fields(ac.cameras_summary, recs, static_cast<size_t>(MAX_CAMERA_SLOTS), kProtocolRecordSep);
     int valid = 0;
     for (size_t r = 0; r < n; ++r) {
-      std::string_view f[2];
-      const size_t fc = v3_split_fields(recs[r], f, 2, '|');
-      if (fc >= 2 && !f[0].empty()) ++valid;
+      std::string_view f[6]{};
+      const size_t fc = v3_split_fields(recs[r], f, 6, '|');
+      if (fc == 5U && !f[0].empty()) ++valid;
     }
     if (valid > 0) return valid;
   }

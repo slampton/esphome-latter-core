@@ -486,16 +486,6 @@ bool begin_dictation_session_state(bool is_broadcast, bool va_ready, uint32_t no
 #ifdef USE_I2C
 void hal_set_es8311_es7210_standby(esphome::i2c::I2CBus *bus, bool standby, bool has_es7210 = true);
 void hal_power_down_audio_and_imu_for_hibernate(esphome::i2c::I2CBus *bus, bool has_imu, bool has_es7210 = true);
-
-template <typename I2cBusT>
-inline void hal_set_es8311_es7210_standby(I2cBusT *const *bus_pp, bool standby, bool has_es7210 = true) {
-  if (bus_pp != nullptr) hal_set_es8311_es7210_standby(*bus_pp, standby, has_es7210);
-}
-
-template <typename I2cBusT>
-inline void hal_power_down_audio_and_imu_for_hibernate(I2cBusT *const *bus_pp, bool has_imu, bool has_es7210 = true) {
-  if (bus_pp != nullptr) hal_power_down_audio_and_imu_for_hibernate(*bus_pp, has_imu, has_es7210);
-}
 #endif  // USE_I2C
 
 }  // namespace latter_core

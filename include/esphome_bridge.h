@@ -119,42 +119,6 @@ inline std::string fw_update_release_summary(UpdT *const *upd_ptr) {
   return (upd_ptr != nullptr) ? fw_update_release_summary(*upd_ptr) : std::string{};
 }
 
-inline bool is_newer_semver(const std::string &lat_str, const std::string &cur_str) {
-  if (lat_str.empty() || lat_str == "unavailable" || lat_str == "unknown") return false;
-  auto parse_ver = [](const std::string &raw, int &maj, int &min_v, int &pat) -> bool {
-    const char *p = raw.c_str();
-    if (*p == 'v' || *p == 'V') ++p;
-    char *endp = nullptr;
-    maj = static_cast<int>(std::strtol(p, &endp, 10));
-    if (endp == p || *endp != '.') return false;
-    p = endp + 1;
-    min_v = static_cast<int>(std::strtol(p, &endp, 10));
-    if (endp == p) return false;
-    pat = 0;
-    if (*endp == '.') {
-      p = endp + 1;
-      pat = static_cast<int>(std::strtol(p, &endp, 10));
-    }
-    return true;
-  };
-  const char *lp = lat_str.c_str();
-  if (*lp == 'v' || *lp == 'V') ++lp;
-  if (std::strncmp(lp, "202", 3) == 0) return false;
-  int l_maj = 0, l_min = 0, l_pat = 0;
-  int c_maj = 0, c_min = 0, c_pat = 0;
-  if (!parse_ver(lat_str, l_maj, l_min, l_pat)) return false;
-  if (!parse_ver(cur_str, c_maj, c_min, c_pat)) return false;
-  if (l_maj > c_maj) return true;
-  if (l_maj < c_maj) return false;
-  if (l_min > c_min) return true;
-  if (l_min < c_min) return false;
-  return l_pat > c_pat;
-}
-
-inline bool is_newer_semver(const std::string &lat_str, const char *cur_str) {
-  return is_newer_semver(lat_str, std::string(cur_str != nullptr ? cur_str : ""));
-}
-
 inline bool &speaker_volume_boot_synced() {
   static bool synced = false;
   return synced;

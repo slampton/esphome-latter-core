@@ -386,7 +386,6 @@ void test_beacon_boot_gate_and_touch_reboot_safety() {
   LATTER_CHECK(gui_touch_yaml.find("on_touch_down(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("emit_device_telemetry(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("/*hibernating=*/true") != std::string::npos);
-  LATTER_CHECK(sys_yaml.find("area_changed") != std::string::npos);
 
   // Explicit driver-identity I2C guards, FocalTech 0x38 chip-ID filter, ImuPowerMode,
   // backlight en_inverted / custom callback, and #ifdef USE_WIFI guards.
@@ -700,7 +699,7 @@ void test_phase1_boot_wake_hibernate_and_ble_roaming() {
       &ble, &wifi, false, true, 1, false, true, false, 2, false, 12000U, false, 4000U, false);
   LATTER_CHECK(!ble.is_active() && !ble.is_paused() && !ble.is_transport_up());
 
-  auto &r2w = latter_core::raise_wake_detector();
+  auto &r2w = latter_core::raise_to_wake();
   r2w.reset();
   const float thresh = latter_core::get_pickup_motion_threshold(false);
   LATTER_CHECK(!r2w.update(0.0f, thresh, 0.0f, 0.25f, 0.95f, 10000U));
@@ -1012,7 +1011,7 @@ void test_audio_path_and_intercom_arbitrator() {
 
   auto &ic = intercom_session();
   ic.reset();
-  area_ctx_state().cameras_summary = "camera.front_door|Front Door|porch|/api/latter/cam?entity_id=camera.front_door";
+  area_ctx_state().cameras_summary = "camera.front_door|Front Door|porch|0|";
   cam_carousel_idx() = 0;
   ic.start_call(20000U);
   LATTER_CHECK(ic.phase() == IntercomPhase::TwoWayListening && cam_call_active());

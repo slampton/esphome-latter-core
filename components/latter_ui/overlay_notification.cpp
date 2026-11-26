@@ -81,7 +81,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     render_bezel_alert_border(it, cx, cy, ring_c);
 
     // Top title over live video (D-060 / D-070 canonical font_small col_white header)
-    render_page_header(it, cx, fit_title, ctx.font_small, st.col_white);
+    render_page_header(it, cx, fit_title, ctx.font_small);
 
     // Live PTT talk banner keeps video 100% visible during talk!
     if (rs.voice.intercom_turn) {
@@ -182,7 +182,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     }
 
     render_bezel_alert_border(it, cx, cy, ring_c);
-    render_page_header(it, cx, fit_title, ctx.font_small, st.col_white);
+    render_page_header(it, cx, fit_title, ctx.font_small);
 
     if (!line1.empty()) {
       const int msg_y = snap_bot + dp_px(14);
@@ -221,7 +221,7 @@ void render_notification_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
   // Regular non-camera push notification
   render_bezel_alert_border(it, cx, cy, ring_c);
   const char *hdr_lbl = is_crit ? "CRITICAL ALERT" : (is_warn ? "WARNING" : "NOTIFICATION");
-  render_page_header(it, cx, hdr_lbl, ctx.font_small, st.col_white);
+  render_page_header(it, cx, hdr_lbl, ctx.font_small);
   const int dis_h = std::max(44, dp_px(48));
   const int dis_y = std::min(ly.back_y - dp_px(32), (SCREEN_H * 72) / 100);
   const int bell_y = ly.hdr_y + std::max(dp_px(48), (dis_y - ly.hdr_y) * 24 / 100);

@@ -70,7 +70,7 @@ inline void blend_sky_pixel_q8(Rgb565Surface &it, uint16_t *fb, int x, int y,
 inline void draw_tapered_streak_q8(Rgb565Surface &it, uint16_t *fb,
                                    int tx, int ty, int hx, int hy,
                                    UiColor col_tail, UiColor col_head,
-                                   int a_tail_q8, int a_head_q8, int cy) {
+                                   int a_tail_q8, int a_head_q8) {
   const int steps = std::max(std::abs(hx - tx), std::abs(hy - ty));
   if (steps <= 0 || (a_tail_q8 <= 0 && a_head_q8 <= 0)) return;
   const int y_lo = clip_y0(), y_hi = clip_y1();
@@ -91,7 +91,7 @@ inline void draw_tapered_streak_q8(Rgb565Surface &it, uint16_t *fb,
 
   for (int s = 0; s <= steps; s++) {
     const int py = y_fp >> 16, px = x_fp >> 16, a_q8 = a_fp >> 16;
-    if (a_q8 > 0 && py >= y_lo && py <= y_hi && is_inside_bezel(px, py, cy, kSkyInset)) {
+    if (a_q8 > 0 && py >= y_lo && py <= y_hi && is_inside_bezel(px, py, kSkyInset)) {
       const UiColor c = same_col ? col_head
                                  : UiColor(static_cast<uint8_t>(r_fp >> 16),
                                            static_cast<uint8_t>(g_fp >> 16),
@@ -109,22 +109,22 @@ bool compute_night_star_pos(int idx, int cx, int cy, int cel_cx, int cel_cy, boo
                             int &out_sx, int &out_sy) noexcept;
 void render_night_starfield_dome(Rgb565Surface &it, int cx, int cy, int cel_cx, int cel_cy, bool show_celestial);
 void render_solar_orb_disc(Rgb565Surface &it, int cel_cx, int cel_cy, bool is_fog_mist);
-void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy);
+void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms);
 bool is_night_meteor_active(uint32_t now_ms);
 
 RainTier classify_rain_tier(std::string_view cond, bool is_storm) noexcept;
 void init_rain_streaks(WeatherParticleEngine &eng, RainTier tier);
-void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night, RainTier tier,
+void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, bool is_night, RainTier tier,
                            float dt_s, float precip_alpha, float par_x, float par_y,
                            WeatherParticleEngine &eng);
 bool step_storm_lightning_envelope(uint32_t now_ms, float precip_alpha, LightningFlashState &lt,
                                    float &out_env, int &out_sheet_q8) noexcept;
-void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
+void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb,
                                   uint32_t now_ms, float env, const LightningFlashState &lt);
 void render_wind_gusts_and_leaves(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night,
                                   float dt_s, float precip_alpha, float par_x, float par_y,
                                   WeatherParticleEngine &eng);
-void render_snowfall_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night,
+void render_snowfall_fx(Rgb565Surface &it, uint16_t *fb, bool is_night,
                         float dt_s, float precip_alpha, float par_x, float par_y,
                         WeatherParticleEngine &eng);
 
@@ -561,7 +561,7 @@ bool compute_night_star_pos(int idx, int cx, int cy, int cel_cx, int cel_cy, boo
   fast_sincos(ang, sa, ca);
   const int sx = cx + static_cast<int>(ca * r_px);
   const int sy = cy + static_cast<int>(sa * r_px);
-  if (!is_inside_bezel(sx, sy, cy, 6)) return false;
+  if (!is_inside_bezel(sx, sy, 6)) return false;
   const int excl_r = LATTER_ROUND_DISPLAY ? 30 : std::max(24, (SCREEN_MIN_DIM * 36 + 233) / 466);
   if (show_celestial && cel_cx > 0 && cel_cy > 0 &&
       (sx - cel_cx) * (sx - cel_cx) + (sy - cel_cy) * (sy - cel_cy) <= excl_r * excl_r) {
@@ -668,7 +668,7 @@ NightMeteorSlot compute_night_meteor_slot(uint32_t now_ms) noexcept {
   return {slot_ms, launch_ms, seed};
 }
 
-void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy) {
+void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms) {
   if (!night_meteor_epoch_initialized() || (now_ms - night_meteor_last_seen_ms() > 2500U)) {
     night_meteor_epoch_ms() = now_ms;
     night_meteor_epoch_initialized() = true;
@@ -724,13 +724,13 @@ void render_night_shooting_star(Rgb565Surface &it, uint32_t now_ms, int cy) {
   const UiColor col_mid  = scale_color(UiColor(135, 205, 255), fade);
   const UiColor col_head = scale_color(UiColor(255, 255, 255), fade);
 
-  if (is_inside_bezel(tx, ty, cy, 6) && is_inside_bezel(m1x, m1y, cy, 6)) {
+  if (is_inside_bezel(tx, ty, 6) && is_inside_bezel(m1x, m1y, 6)) {
     fast_line(it, tx, ty, m1x, m1y, col_wake);
   }
-  if (is_inside_bezel(m1x, m1y, cy, 6) && is_inside_bezel(m2x, m2y, cy, 6)) {
+  if (is_inside_bezel(m1x, m1y, 6) && is_inside_bezel(m2x, m2y, 6)) {
     fast_line(it, m1x, m1y, m2x, m2y, col_mid);
   }
-  if (is_inside_bezel(m2x, m2y, cy, 6) && is_inside_bezel(hx, hy, cy, 6)) {
+  if (is_inside_bezel(m2x, m2y, 6) && is_inside_bezel(hx, hy, 6)) {
     fast_line(it, m2x, m2y, hx, hy, col_head);
     if (u > 0.10f && u < 0.80f) {
       fast_pixel(it, hx, hy - 1, col_mid);
@@ -1709,7 +1709,7 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
       if (!compute_night_star_pos(idx, cx, cy, cel_cx, cel_cy, show_celestial, sx, sy)) continue;
       blend_sky_pixel_q8(it, fb, sx, sy, UiColor(255, 255, 255), static_cast<int>((tw - 0.5f) * 220.0f * precip_alpha));
     }
-    if (precip_alpha > 0.35f) render_night_shooting_star(it, now_ms, cy);
+    if (precip_alpha > 0.35f) render_night_shooting_star(it, now_ms);
   }
 
   if (!is_rain && !is_snow && !is_windy) {
@@ -1735,19 +1735,19 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
           if (row_a <= 1) continue;
           const int x_lo = std::max(8, center_x - hw), x_hi = std::min(SCREEN_W - 9, center_x + hw);
           for (int px = x_lo; px <= x_hi; px += 2) {
-            if (is_inside_bezel(px, py, cy, 8)) blend_sky_pixel_q8(it, fb, px, py, haze_c, row_a);
+            if (is_inside_bezel(px, py, 8)) blend_sky_pixel_q8(it, fb, px, py, haze_c, row_a);
           }
         }
       }
     }
   }
 
-  if (storm_flash_active) render_storm_lightning_bolts(it, fb, cy, now_ms, storm_env, eng.lightning);
+  if (storm_flash_active) render_storm_lightning_bolts(it, fb, now_ms, storm_env, eng.lightning);
   lap.mark(ProfSect::BG_CLOUDS);
 
   if (is_windy) render_wind_gusts_and_leaves(it, fb, cy, is_night, dt_s, precip_alpha, par_x, par_y, eng);
-  if (is_rain) render_rain_layers_fx(it, fb, cy, is_night, rain_tier, dt_s, precip_alpha, par_x, par_y, eng);
-  if (is_snow) render_snowfall_fx(it, fb, cy, is_night, dt_s, precip_alpha, par_x, par_y, eng);
+  if (is_rain) render_rain_layers_fx(it, fb, is_night, rain_tier, dt_s, precip_alpha, par_x, par_y, eng);
+  if (is_snow) render_snowfall_fx(it, fb, is_night, dt_s, precip_alpha, par_x, par_y, eng);
   lap.mark(ProfSect::BG_PRECIP);
 }
 
@@ -1757,7 +1757,7 @@ void draw_lightning_seg_q8(Rgb565Surface &it, uint16_t *fb,
                            int tx, int ty, int hx, int hy,
                            UiColor c_core, UiColor c_glow,
                            int a0_q8, int a1_q8,
-                           int core_hw, int glow_r, int cy) {
+                           int core_hw, int glow_r) {
   if (a0_q8 <= 0 && a1_q8 <= 0) return;
   const int span = std::max(1, glow_r - core_hw + 1);
   const float inv_span = 1.0f / static_cast<float>(span);
@@ -1768,21 +1768,21 @@ void draw_lightning_seg_q8(Rgb565Surface &it, uint16_t *fb,
     const float k = 0.54f * u * u;
     draw_tapered_streak_q8(it, fb, tx + ox, ty, hx + ox, hy, c_glow, c_glow,
                            static_cast<int>(static_cast<float>(a0_q8) * k),
-                           static_cast<int>(static_cast<float>(a1_q8) * k), cy);
+                           static_cast<int>(static_cast<float>(a1_q8) * k));
   }
   for (int ox = -core_hw; ox <= core_hw; ox++) {
     const float k = (ox == 0) ? 1.0f : 0.90f;
     const UiColor c_end = (ox == 0 || a1_q8 > 0) ? c_core : c_glow;
     draw_tapered_streak_q8(it, fb, tx + ox, ty, hx + ox, hy, c_core, c_end,
                            static_cast<int>(static_cast<float>(a0_q8) * k),
-                           static_cast<int>(static_cast<float>(a1_q8) * k), cy);
+                           static_cast<int>(static_cast<float>(a1_q8) * k));
   }
 }
 
 void draw_soft_snowflake_q8(Rgb565Surface &it, uint16_t *fb,
                             int sx, int sy, float r_px, int peak_q8,
                             bool is_crystal, bool day_contrast,
-                            UiColor c_core, UiColor c_arm, int cy) {
+                            UiColor c_core, UiColor c_arm) {
   if (peak_q8 <= 1 || r_px <= 0.4f) return;
   const float r_bound = is_crystal ? (r_px * 1.28f) : r_px;
   const int r_i = static_cast<int>(std::ceil(r_bound));
@@ -1800,7 +1800,7 @@ void draw_soft_snowflake_q8(Rgb565Surface &it, uint16_t *fb,
     const int x_lo = std::max(0, sx - r_i);
     const int x_hi = std::min(SCREEN_W - 1, sx + r_i);
     for (int px = x_lo; px <= x_hi; px++) {
-      if (!is_inside_bezel(px, py, cy, kSkyInset)) continue;
+      if (!is_inside_bezel(px, py, kSkyInset)) continue;
       const int dx = px - sx;
       const int d2_i = dx * dx + dy2;
       const float d2 = static_cast<float>(d2_i) * inv_r2;
@@ -1968,7 +1968,7 @@ void init_rain_streaks(WeatherParticleEngine &eng, RainTier tier) {
   }
 }
 
-void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night, RainTier tier,
+void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, bool is_night, RainTier tier,
                            float dt_s, float precip_alpha, float par_x, float par_y,
                            WeatherParticleEngine &eng) {
   const auto &ts = kRainTiers[static_cast<uint8_t>(tier)];
@@ -1988,7 +1988,7 @@ void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_nigh
     draw_tapered_streak_q8(it, fb, hx + static_cast<int>(st.len * rain_slant), hy - static_cast<int>(st.len),
                            hx, hy, far_col, far_col,
                            static_cast<int>(static_cast<float>(st.alpha_peak) * 0.34f * precip_alpha),
-                           static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha), cy);
+                           static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha));
   }
   for (int i = 0; i < ts.near_cnt; i++) {
     RainStreak &st = eng.near_hero[i];
@@ -2002,7 +2002,7 @@ void render_rain_layers_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_nigh
     draw_tapered_streak_q8(it, fb, hx + static_cast<int>(st.len * rain_slant), hy - static_cast<int>(st.len),
                            hx, hy, near_tail, near_head,
                            static_cast<int>(ts.hero_tail * precip_alpha),
-                           static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha), cy);
+                           static_cast<int>(static_cast<float>(st.alpha_peak) * precip_alpha));
   }
 }
 
@@ -2042,7 +2042,7 @@ bool step_storm_lightning_envelope(uint32_t now_ms, float precip_alpha, Lightnin
   return true;
 }
 
-void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
+void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb,
                                   uint32_t now_ms, float env, const LightningFlashState &lt) {
   const uint32_t el_ms = now_ms - lt.flash_start_ms;
   if (el_ms < 430U) {
@@ -2068,24 +2068,24 @@ void render_storm_lightning_bolts(Rgb565Surface &it, uint16_t *fb, int cy,
     const int glow_tip = std::max(2, static_cast<int>(2.0f * m_scale));
     const UiColor c_core(255, 255, 255), c_fork(150, 212, 255);
 
-    draw_lightning_seg_q8(it, fb, x0, y0, x1, y1, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi, cy);
-    draw_lightning_seg_q8(it, fb, x1, y1, x2, y2, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi, cy);
-    draw_lightning_seg_q8(it, fb, x2, y2, x3, y3, c_core, c_fork, core_q8, core_q8, 1, glow_mid, cy);
-    draw_lightning_seg_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, mid_q8,  1, glow_mid, cy);
-    draw_lightning_seg_q8(it, fb, x4, y4, x5, y5, c_core, c_fork, mid_q8,  0,       0, glow_tip, cy);
+    draw_lightning_seg_q8(it, fb, x0, y0, x1, y1, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi);
+    draw_lightning_seg_q8(it, fb, x1, y1, x2, y2, c_core, c_fork, core_q8, core_q8, trunk_hw, glow_hi);
+    draw_lightning_seg_q8(it, fb, x2, y2, x3, y3, c_core, c_fork, core_q8, core_q8, 1, glow_mid);
+    draw_lightning_seg_q8(it, fb, x3, y3, x4, y4, c_core, c_fork, core_q8, mid_q8,  1, glow_mid);
+    draw_lightning_seg_q8(it, fb, x4, y4, x5, y5, c_core, c_fork, mid_q8,  0,       0, glow_tip);
 
     const int f1_dir = (x2 >= x1) ? 1 : -1;
     const int fx1 = x1 + f1_dir * sx(30), fy1 = y1 + sy(30);
     const int fx2 = fx1 + f1_dir * sx(22), fy2 = fy1 + sy(32);
-    draw_lightning_seg_q8(it, fb, x1, y1, fx1, fy1, c_core, c_fork, fork_q8, (fork_q8 * 3) / 5, 0, glow_tip, cy);
-    draw_lightning_seg_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, (fork_q8 * 3) / 5, 0,     0, glow_tip, cy);
+    draw_lightning_seg_q8(it, fb, x1, y1, fx1, fy1, c_core, c_fork, fork_q8, (fork_q8 * 3) / 5, 0, glow_tip);
+    draw_lightning_seg_q8(it, fb, fx1, fy1, fx2, fy2, c_fork, c_fork, (fork_q8 * 3) / 5, 0,     0, glow_tip);
 
     const int f2_dir = -f1_dir;
     const int gx1 = x3 + f2_dir * sx(26), gy1 = y3 + sy(28);
     const int gx2 = gx1 + f2_dir * sx(18), gy2 = gy1 + sy(26);
     const int f2_q8 = (fork_q8 * 4) / 5;
-    draw_lightning_seg_q8(it, fb, x3, y3, gx1, gy1, c_core, c_fork, f2_q8, f2_q8 / 2, 0, glow_tip, cy);
-    draw_lightning_seg_q8(it, fb, gx1, gy1, gx2, gy2, c_fork, c_fork, f2_q8 / 2, 0,   0, glow_tip, cy);
+    draw_lightning_seg_q8(it, fb, x3, y3, gx1, gy1, c_core, c_fork, f2_q8, f2_q8 / 2, 0, glow_tip);
+    draw_lightning_seg_q8(it, fb, gx1, gy1, gx2, gy2, c_fork, c_fork, f2_q8 / 2, 0,   0, glow_tip);
   }
 }
 
@@ -2109,7 +2109,7 @@ void render_wind_gusts_and_leaves(Rgb565Surface &it, uint16_t *fb, int cy, bool 
       const int sy = gy_base + static_cast<int>(fast_sin(static_cast<float>(sx) * 0.025f + static_cast<float>(g) * 1.7f) * 7.0f);
       if (s > 0) {
         const int seg_a = (s >= 2 && s <= 4) ? gust_a : (gust_a / 2);
-        draw_tapered_streak_q8(it, fb, sx, sy, prev_x, prev_y, gust_c, gust_c, seg_a, seg_a, cy);
+        draw_tapered_streak_q8(it, fb, sx, sy, prev_x, prev_y, gust_c, gust_c, seg_a, seg_a);
       }
       prev_x = sx;
       prev_y = sy;
@@ -2152,7 +2152,7 @@ void render_wind_gusts_and_leaves(Rgb565Surface &it, uint16_t *fb, int cy, bool 
   }
 }
 
-void render_snowfall_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night,
+void render_snowfall_fx(Rgb565Surface &it, uint16_t *fb, bool is_night,
                         float dt_s, float precip_alpha, float par_x, float par_y,
                         WeatherParticleEngine &eng) {
   const UiColor c_core(255, 255, 255);
@@ -2195,13 +2195,13 @@ void render_snowfall_fx(Rgb565Surface &it, uint16_t *fb, int cy, bool is_night,
 
     if (tier_mod >= 7) {
       draw_soft_snowflake_q8(it, fb, sx, sy, (3.15f + r_jit * 0.55f) * flake_scale,
-                             static_cast<int>(255.0f * precip_alpha), true, day_contrast, c_core, c_arm, cy);
+                             static_cast<int>(255.0f * precip_alpha), true, day_contrast, c_core, c_arm);
     } else if (tier_mod >= 3) {
       draw_soft_snowflake_q8(it, fb, sx, sy, (2.25f + r_jit * 0.45f) * flake_scale,
-                             static_cast<int>(242.0f * precip_alpha), false, day_contrast, c_core, c_arm, cy);
+                             static_cast<int>(242.0f * precip_alpha), false, day_contrast, c_core, c_arm);
     } else {
       draw_soft_snowflake_q8(it, fb, sx, sy, (1.55f + r_jit * 0.30f) * flake_scale,
-                             static_cast<int>(212.0f * precip_alpha), false, false, c_core, c_arm, cy);
+                             static_cast<int>(212.0f * precip_alpha), false, false, c_core, c_arm);
     }
   }
 }

@@ -267,7 +267,11 @@ script:
               hw.sendspin_playing = (id(sendspin_group_media_player).state == media_player::MEDIA_PLAYER_STATE_PLAYING);
               hw.media_mix_running = id(media_mixing_input).is_running();
               hw.ann_mix_running = id(announcement_mixing_input).is_running();
+              #ifdef USE_WIFI
               hw.wifi_connected = id(wifi_ctrl).is_connected();
+              #else
+              hw.wifi_connected = latter_core::link_state().ha_connected;
+              #endif
               return latter_core::should_wake_word_run(millis(), hw);
           then:
             - if:

@@ -15,7 +15,6 @@
 namespace latter_ui::touch_detail {
 
 // System & Tools helpers (touch_dispatch_system_tools.cpp)
-bool is_newer_semver(const std::string &lat_str, const char *cur_cstr) noexcept;
 int step_brightness_tap_10pct(int cur_pct) noexcept;
 
 // Time & Calendar helpers (touch_dispatch_time_cal.cpp)

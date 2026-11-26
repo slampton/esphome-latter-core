@@ -494,11 +494,6 @@ inline void hal_panel_dcs_flush(DispT *disp) {
 #endif
 }
 
-template <typename DispT>
-inline void hal_panel_dcs_flush(DispT *const *disp_pp) {
-  if (disp_pp != nullptr) hal_panel_dcs_flush(*disp_pp);
-}
-
 // Non-blocking self-healing poll: completes any settled pending DCS transition (e.g. WAKING -> DISPON)
 // without stalling the main loop, guarding against dropped or cancelled Component timeouts.
 template <typename DispT>

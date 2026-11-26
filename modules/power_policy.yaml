@@ -18,13 +18,23 @@ interval:
           if (rs.hw_poll_pmu_1s != nullptr) {
             rs.hw_poll_pmu_1s();
           }
+          #ifdef USE_LATTER_BEACON
+          const bool ble_active_1s = id(ble_ctrl).is_active();
+          #else
+          const bool ble_active_1s = false;
+          #endif
           latter_core::watch_internal_low_water(
-              id(ble_ctrl).is_active(), rs.audio.mww_running(), rs.audio.va_running(),
+              ble_active_1s, rs.audio.mww_running(), rs.audio.va_running(),
               rs.audio.local_mp_not_idle(), rs.nav.gui_page);
 
           // 2-3. Audio / Wake-Word / Voice Assistant 1s supervisor (bound by audio_scripts.yaml; no-op when audio-less)
           const uint32_t now_1s_ms = millis();
-          rs.audio.tick_1s(now_1s_ms, id(wifi_ctrl).is_connected());
+          #ifdef USE_WIFI
+          const bool wifi_conn_1s = id(wifi_ctrl).is_connected();
+          #else
+          const bool wifi_conn_1s = latter_core::link_state().ha_connected;
+          #endif
+          rs.audio.tick_1s(now_1s_ms, wifi_conn_1s);
 
           // 4. Touch recovery (owned by LatterTouchscreen; no-op when touch-less), Flight Recorder & Telemetry
           if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress) {
@@ -33,7 +43,9 @@ interval:
           if (latter_core::profiler_enabled() && latter_core::profiler_is_expired(now_1s_ms)) {
             LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler auto-disabled after 24h");
             latter_core::profiler_stop();
+            #ifdef USE_LATTER_BEACON
             id(ble_ctrl).set_profile_logging(false);
+            #endif
             id(publish_device_telemetry).execute();
           }
           static uint32_t last_prof_10s_ms = 0;
@@ -48,7 +60,7 @@ interval:
                 rs.hw_batt_level, rs.hw_batt_voltage, rs.audio.speaker_enabled(),
                 rs.audio.mww_running(), rs.voice.active,
                 rs.audio.local_mp_playing(),
-                id(ble_ctrl).is_active(), rs.nav.active_game, rs.nav.sleep_start_time);
+                ble_active_1s, rs.nav.active_game, rs.nav.sleep_start_time);
           }
 
           // 6-7. Single power-policy owner: radio (BLE beacon / Wi-Fi modem sleep), IMU mode,
@@ -58,7 +70,7 @@ interval:
 
           // 8. Safe Docked-Idle Background Firmware Update Check (after 3 min uptime, every 6h while on USB & idle)
           static uint32_t last_fw_check_ms = 0;
-          if (now_1s_ms > 180000U && rs.hw_usb_connected && id(wifi_ctrl).is_connected() &&
+          if (now_1s_ms > 180000U && rs.hw_usb_connected && wifi_conn_1s &&
               (rs.nav.display_power_state != 0) &&
               !rs.voice.active && !rs.voice.tts_received && !rs.nav.ota_in_progress &&
               !rs.audio.local_mp_playing() &&
@@ -172,13 +184,37 @@ script:
               latter_core::cam_call_active() || latter_core::cam_listen_active() ||
               (rs.nav.display_power_state == 0 && (now_p - last_interact_ms < 8000U));
           const auto &prefs = latter_core::persisted_prefs();
+          #ifdef USE_LATTER_BEACON
+          auto *const ble_ptr = id(ble_ctrl);
+          const bool ble_sw = prefs.ble_beacon_enabled;
+          #else
+          struct NoBleCtrl {
+            bool is_active() const { return false; }
+            bool is_failed() const { return false; }
+            void enable() {}
+            void disable() {}
+          };
+          NoBleCtrl no_ble{};
+          auto *const ble_ptr = &no_ble;
+          const bool ble_sw = false;
+          #endif
+          #ifdef USE_WIFI
+          auto *const wifi_ptr = id(wifi_ctrl);
+          const bool wifi_up_p = id(wifi_ctrl).is_connected();
+          #else
+          struct NoWifiCtrl {};
+          NoWifiCtrl no_wifi{};
+          auto *const wifi_ptr = &no_wifi;
+          const bool wifi_up_p = false;
+          #endif
           latter_core::evaluate_radio_policy(
-              id(ble_ctrl), id(wifi_ctrl), id(wifi_ctrl).is_connected(), prefs.ble_beacon_enabled,
+              ble_ptr, wifi_ptr, wifi_up_p, ble_sw,
               latter_core::beacon_mode_index(latter_core::pref_ble_beacon_mode_cstr(prefs)), rs.hw_usb_connected,
               rs.nav.is_hibernating, rs.nav.ota_in_progress, rs.nav.display_power_state,
               high_tput_needed, now_p,
               latter_core::link_state().ha_connected, latter_core::link_state().last_ha_connect_ms,
               va_radio_priority);
+          #ifdef USE_LATTER_BEACON
           static int8_t s_prev_ble_active = -1;
           const int8_t cur_ble_active = id(ble_ctrl).is_active() ? 1 : 0;
           if (s_prev_ble_active != cur_ble_active) {
@@ -187,6 +223,7 @@ script:
               id(publish_device_telemetry).execute();
             }
           }
+          #endif
 
           // IMU: polled modes with the screen on, hardware Wake-on-Motion with the screen off.
           #if LATTER_HAS_IMU
@@ -280,7 +317,11 @@ script:
           const bool audio_busy = rs.audio.busy_for_pm();
           // Home Assistant link: awake only while Wi-Fi is up and HA API is connecting (<=30 s) or settling (<=20 s),
           // so off-site battery carry never stays pinned awake waiting for an unreachable AP.
+          #ifdef USE_WIFI
           const bool wifi_up = id(wifi_ctrl).is_connected();
+          #else
+          const bool wifi_up = false;
+          #endif
           if (wifi_up != latter_core::link_state().wifi_connected) {
             latter_core::link_state().wifi_connected = wifi_up;
             if (wifi_up) {

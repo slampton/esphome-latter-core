@@ -757,3 +757,15 @@ inline constexpr int32_t clamp_pref_number(const PrefContractSpec &spec, int32_t
 }
 
 }  // namespace latter_core
+
+namespace latter_rpc {
+
+enum class SlotChannel : uint8_t {
+  MUSIC = 0,
+  AREA_LIST = 1,
+  AREA_ENTITIES = 2,
+  CALENDAR = 3,
+  COUNT = 4,
+};
+
+}  // namespace latter_rpc

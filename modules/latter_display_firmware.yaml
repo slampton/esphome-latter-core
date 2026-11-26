@@ -8,7 +8,7 @@
 # full-duplex audio, Voice Assistant, and capacitive touch input.
 # ==============================================================================
 
-# Board-specific substitutions (font_*_size, art_resize, sendspin_art_resize,
+# Board-specific substitutions (art_resize, sendspin_art_resize,
 # sendspin_buffer_size, announcement_buffer_size, mww_internal_ram, audio_*,
 # api_reboot_timeout) and typed `latter_core:` hardware traits live strictly in boards/*.yaml.
 

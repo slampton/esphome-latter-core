@@ -177,10 +177,12 @@ void test_protocol_v3_14col_titles_and_hibernate_v3() {
     LATTER_CHECK(partial.page == -1 && partial.col == -1 && partial.row == -1);
     LATTER_CHECK(partial.col_span == 2 && partial.row_span == 1);
 
-    // Legacy 9-column record -> auto-flow 1x1
+    // Strict 14-col enforcement rejects 9-col records; 14-col empty grid cols auto-flow 1x1
     ShortcutItem legacy{};
-    LATTER_CHECK(parse_shortcut_record(
+    LATTER_CHECK(!parse_shortcut_record(
         "route|app:music||Music||0|-1|glass|primary", legacy));
+    LATTER_CHECK(parse_shortcut_record(
+        "route|app:music||Music||0|-1|glass|primary|||||", legacy));
     LATTER_CHECK(legacy.page == -1 && legacy.col == -1 && legacy.row == -1 &&
                  legacy.col_span == 1 && legacy.row_span == 1);
   }
@@ -203,7 +205,7 @@ void test_protocol_v3_14col_titles_and_hibernate_v3() {
       std::vector<std::string> tok(static_cast<size_t>(ShortcutsField::COUNT), "");
       tok[static_cast<size_t>(ShortcutsField::CHUNK_INDEX)] = std::to_string(idx);
       tok[static_cast<size_t>(ShortcutsField::CHUNK_COUNT)] = std::to_string(cnt);
-      tok[static_cast<size_t>(ShortcutsField::DOCK_ITEMS)] = (idx == 0) ? "route|app:pinned||Pinned||0|-1" : "";
+      tok[static_cast<size_t>(ShortcutsField::DOCK_ITEMS)] = (idx == 0) ? "route|app:pinned||Pinned||0|-1|||||||" : "";
       tok[static_cast<size_t>(ShortcutsField::PINNED_TOTAL)] = "3";
       tok[static_cast<size_t>(ShortcutsField::PINNED_ITEMS)] = pin_blob;
       tok[static_cast<size_t>(ShortcutsField::PINNED_PAGE_TITLES)] = titles_blob;

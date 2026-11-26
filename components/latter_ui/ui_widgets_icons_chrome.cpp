@@ -232,8 +232,7 @@ const char *route_icon_slug(RouteId route) noexcept {
 }
 
 void draw_route_icon(Rgb565Surface &it, RouteId route, int cx, int cy, int r,
-                     UiColor col, UiColor cut_c, bool shadow) {
-  (void)cut_c;
+                     UiColor col, bool shadow) {
   const int mdi_px = std::max(14, 2 * r);
   if (route == RouteId::APP_AREA) {
     render_mdi_icon(it, resolve_area_dock_icon(area_ctx_state()), cx, cy, mdi_px, col, shadow, "mdi:sofa");
@@ -395,8 +394,7 @@ void render_dock_page_pips(Rgb565Surface &it, int cx, int y_pos, int total_pages
 
 void render_vertical_page_pips(Rgb565Surface &it, bool show_up, bool show_down,
                                UiColor col_bg, UiColor col_active,
-                               UiColor col_inactive, int bottom_limit_y) {
-  (void)col_inactive;
+                               int bottom_limit_y) {
   if (!show_up && !show_down) return;
   const auto ly = layout();
   int mask_x = 0, chev_x = 0, hit_x0 = 0, hit_w = 0, min_hit_h = 0;
@@ -500,8 +498,11 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
     fast_line(it, lx - ch_s / 2, by, lx + ch_s / 2, by + ch_s, col_white);
     fast_line(it, lx + ch_s / 2 + 1, by - ch_s, lx - ch_s / 2 + 1, by, theme_primary);
     fast_line(it, lx - ch_s / 2 + 1, by, lx + ch_s / 2 + 1, by + ch_s, theme_primary);
-    frame_hits().add_rect(0, by - dr - dp_px(12), std::max(8, left_cx - dr),
-                          2 * (dr + dp_px(12)), WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
+    const int lw = left_cx - dr;
+    if (lw >= 8) {
+      frame_hits().add_rect(0, by - dr - dp_px(12), lw,
+                            2 * (dr + dp_px(12)), WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
+    }
   }
   if (has_right_arrow) {
     const int rx = right_cx + chev_off;
@@ -509,9 +510,11 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
     fast_line(it, rx + ch_s / 2, by, rx - ch_s / 2, by + ch_s, col_white);
     fast_line(it, rx - ch_s / 2 - 1, by - ch_s, rx + ch_s / 2 - 1, by, theme_primary);
     fast_line(it, rx + ch_s / 2 - 1, by, rx - ch_s / 2 - 1, by + ch_s, theme_primary);
-    frame_hits().add_rect(right_cx + dr, by - dr - dp_px(12),
-                          std::max(8, SCREEN_W - (right_cx + dr)),
-                          2 * (dr + dp_px(12)), WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
+    const int rx0 = right_cx + dr + 1;
+    if (SCREEN_W - rx0 >= 8) {
+      frame_hits().add_rect(rx0, by - dr - dp_px(12), SCREEN_W - rx0,
+                            2 * (dr + dp_px(12)), WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
+    }
   }
 
   if (total_count > std::clamp(layout().dock_slot_count, 1, kMaxDockSlots)) {

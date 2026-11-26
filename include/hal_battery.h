@@ -642,38 +642,6 @@ void hal_axp2101_thermal_charge_foldback(esphome::i2c::I2CBus *bus, bool is_char
 int hal_axp2101_read_gauge_pct(esphome::i2c::I2CBus *bus);
 bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus *bus);
 bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus *bus);
-
-inline bool hal_rtc_restore_system_clock(esphome::i2c::I2CBus &bus) { return hal_rtc_restore_system_clock(&bus); }
-inline bool hal_rtc_sync_from_system_clock(esphome::i2c::I2CBus &bus) { return hal_rtc_sync_from_system_clock(&bus); }
-
-template <typename I2cBusT>
-inline void hal_axp2101_boot_battery_check(I2cBusT *const *bus_pp) {
-  if (bus_pp != nullptr) hal_axp2101_boot_battery_check(*bus_pp);
-}
-template <typename I2cBusT>
-inline void hal_init_axp2101(I2cBusT *const *bus_pp) {
-  if (bus_pp != nullptr) hal_init_axp2101(*bus_pp);
-}
-template <typename I2cBusT>
-inline void enter_axp2101_hibernate_or_alarm_sleep(I2cBusT *const *bus_pp, int32_t sec_until_alarm) {
-  if (bus_pp != nullptr) enter_axp2101_hibernate_or_alarm_sleep(*bus_pp, sec_until_alarm);
-}
-template <typename I2cBusT>
-inline void hal_axp2101_thermal_charge_foldback(I2cBusT *const *bus_pp, bool is_charging) {
-  if (bus_pp != nullptr) hal_axp2101_thermal_charge_foldback(*bus_pp, is_charging);
-}
-template <typename I2cBusT>
-inline int hal_axp2101_read_gauge_pct(I2cBusT *const *bus_pp) {
-  return (bus_pp != nullptr) ? hal_axp2101_read_gauge_pct(*bus_pp) : -1;
-}
-template <typename I2cBusT>
-inline bool hal_rtc_restore_system_clock(I2cBusT *const *bus_pp) {
-  return bus_pp != nullptr && hal_rtc_restore_system_clock(*bus_pp);
-}
-template <typename I2cBusT>
-inline bool hal_rtc_sync_from_system_clock(I2cBusT *const *bus_pp) {
-  return bus_pp != nullptr && hal_rtc_sync_from_system_clock(*bus_pp);
-}
 #else
 template <typename BusT>
 inline bool hal_rtc_restore_system_clock(BusT &&) {

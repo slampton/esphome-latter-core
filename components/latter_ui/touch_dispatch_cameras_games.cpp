@@ -256,7 +256,7 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
       } else if ((wid == WidgetId::GAMES_PLAY_BTN || wid == WidgetId::GAMES_HERO_CARD) &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         int enabled_ids[kMaxGamesLauncherItems]{};
-        const int game_cnt = collect_enabled_games(enabled_ids, device_prefs());
+        const int game_cnt = collect_enabled_games(enabled_ids, persisted_prefs());
         if (game_cnt > 0) {
           const int slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
           rs.nav.game_carousel_idx = slot;
@@ -277,7 +277,7 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
         }
       } else if ((wid == WidgetId::GAMES_PREV_BTN || wid == WidgetId::GAMES_NEXT_BTN) &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int game_cnt = active_games_launcher_count(device_prefs());
+        const int game_cnt = active_games_launcher_count(persisted_prefs());
         if (game_cnt > 1) {
           const int cur_slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
           rs.nav.game_carousel_idx = cur_slot;

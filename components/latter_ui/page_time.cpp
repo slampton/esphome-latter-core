@@ -66,7 +66,7 @@ void render_time_clock_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ly = layout();
   const int cx = ctx.cx;
 
-  render_page_header(it, cx, "TIME", ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, "TIME", ctx.font_small);
 
   WorldClockEntry entries[kMaxWorldClocks + 1]{};
   const int total_wc = collect_active_world_clocks(prefs, ac, entries);
@@ -144,8 +144,8 @@ void render_time_clock_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       const int ss_y = time_y - dp_px(14);
       const int ap_y = time_y + dp_px(16);
-      const int ss_ink_w = text_ink_right_edge(it, sec_font, ":00");
-      const int ap_ink_w = text_ink_right_edge(it, ctx.font_small, ap_buf);
+      const int ss_ink_w = text_ink_right_edge(sec_font, ":00");
+      const int ap_ink_w = text_ink_right_edge(ctx.font_small, ap_buf);
       const int ap_x = stack_x + std::max(0, ss_ink_w - ap_ink_w);
       if (has_bd_shadow) {
         fast_print(it, stack_x + 1, ss_y + 1, sec_font, kChromeShadow, TextAlign::CENTER_LEFT, ss_buf);
@@ -273,7 +273,7 @@ void render_time_clock_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, cur_pg > 0, cur_pg + 1 < total_pages,
-                              ctx.col_bg, ctx.col_white, kChromePipInactive,
+                              ctx.col_bg, ctx.col_white,
                               ly.mode_bar_zone_top());
   }
 }
@@ -284,7 +284,7 @@ void render_time_timers_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int v_slot = timer_view_slot();
 
   if (v_slot == 0) {
-    render_page_header(it, cx, "TIMERS", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "TIMERS", ctx.font_small);
 
     int arc_slot = -1;
     int arc_rem = 999999;
@@ -349,7 +349,7 @@ void render_time_timers_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   // Single-Timer Detail View (time rests on horizontal center line, generous stepper spacing)
   const int s_idx = std::clamp(v_slot - 1, 0, 2);
   const auto &s = ts[s_idx];
-  render_page_header(it, cx, format_timer_header_upper(s_idx), ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, format_timer_header_upper(s_idx), ctx.font_small);
 
   if ((s.running || s.paused) && s.duration_sec > 0) {
     float prog = 0.0f;
@@ -428,7 +428,7 @@ void render_time_alarms_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   const auto &ly = layout();
   if (edit_idx == 0) {
-    render_page_header(it, cx, "ALARMS", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "ALARMS", ctx.font_small);
 
     int y_shift = 0;
     if (is_snoozed) {
@@ -482,7 +482,7 @@ void render_time_alarms_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ap = prefs.alarms[a_idx];
   char hdr_buf[24];
   std::snprintf(hdr_buf, sizeof(hdr_buf), "EDIT ALARM %d", a_idx + 1);
-  render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, hdr_buf, ctx.font_small);
 
   const bool hh_focused = (rs.nav.alarm_edit_field == 0);
   char hh_buf[8];
@@ -594,7 +594,7 @@ void render_time_stopwatch_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int cx = ctx.cx;
   const bool has_bd_shadow = backdrop_active();
 
-  render_page_header(it, cx, "STOPWATCH", ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, "STOPWATCH", ctx.font_small);
 
   const uint32_t cur_sw_ms = rs.stopwatch.running
       ? (ctx.now_ms - rs.stopwatch.start_time_ms)

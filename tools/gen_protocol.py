@@ -556,7 +556,24 @@ def build_cpp_header(schema: dict[str, Any]) -> str:
     }
     _append_pref_contracts_cpp(lines, schema["device_pref_specs"], device_prefs_fields)
 
-    lines.extend(["}  // namespace latter_core", ""])
+    lines.extend(
+        [
+            "}  // namespace latter_core",
+            "",
+            "namespace latter_rpc {",
+            "",
+            "enum class SlotChannel : uint8_t {",
+            "  MUSIC = 0,",
+            "  AREA_LIST = 1,",
+            "  AREA_ENTITIES = 2,",
+            "  CALENDAR = 3,",
+            "  COUNT = 4,",
+            "};",
+            "",
+            "}  // namespace latter_rpc",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

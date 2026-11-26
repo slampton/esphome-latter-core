@@ -2,49 +2,49 @@
 # Latter Universal Multi-Geometry GUI Shell (guis/universal/gui.yaml)
 # Thin declarative font/palette shell + compositor dispatch to compiled page_*.cpp
 # and touch_engine.cpp translation units in components/latter_ui/.
-# Font pixel sizes (${font_*_size}) are declared by each board HAL (boards/*.yaml).
+# Font pixel sizes are auto-derived from latter_core: display traits via size: 1 (D-087).
 # ==============================================================================
 
 font:
   - file: "gfonts://Roboto"
     id: font_chrono_time
-    size: ${font_chrono_size}
+    size: 1
     bpp: 4
     glyphs:
       - '0123456789:.- sAMP°%—'
   - file: "gfonts://Roboto"
     id: font_micro
-    size: ${font_micro_size}
+    size: 1
     bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Roboto"
     id: font_time
-    size: ${font_time_size}
+    size: 1
     bpp: 4
     glyphs:
       - '0123456789:.- °%—'
   - file: "gfonts://Roboto"
     id: font_date
-    size: ${font_date_size}
+    size: 1
     bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Roboto"
     id: font_small
-    size: ${font_small_size}
+    size: 1
     bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Roboto@700"
     id: font_btn_bold
-    size: ${font_btn_bold_size}
+    size: 1
     bpp: 2
     glyphs:
       - ' !"#$%&''()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghijklmnopqrstuvwxyz{|}~¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŪūŮůŰűŲųŸŹźŻżŽž•—–…‘’“”€™'
   - file: "gfonts://Orbitron@700"
     id: font_games_title
-    size: ${font_games_size}
+    size: 1
     bpp: 2
     glyphs:
       - ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:.-•!'
@@ -137,9 +137,18 @@ display:
       ctx.panel_is_on = id(display_brightness).current_values.is_on();
       latter_ui::sync_ctx_link_health(ctx);
       ctx.free_heap_kb = static_cast<int>(esp_get_free_heap_size() / 1024U);
+      #ifdef USE_WIFI
       ctx.wifi_rssi = id(latter_wifi_signal).state;
       ctx.ip_addr = id(latter_ip_address).state;
+      #else
+      ctx.wifi_rssi = NAN;
+      ctx.ip_addr = {};
+      #endif
+      #ifdef USE_LATTER_BEACON
       ctx.ble_active = id(ble_ctrl).is_active();
+      #else
+      ctx.ble_active = false;
+      #endif
       std::string sys_fw_ver, sys_fw_sum, sys_wake_word;
       if (rs.nav.gui_page == 4) {
         sys_fw_ver = latter_core::fw_update_latest_version(&id(latter_firmware_update));

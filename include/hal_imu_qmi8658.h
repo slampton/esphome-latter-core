@@ -65,23 +65,6 @@ bool hal_imu_wom_enter(esphome::i2c::I2CBus *bus, uint8_t threshold_mg);
 void hal_imu_wom_exit(esphome::i2c::I2CBus *bus);
 bool hal_imu_wom_event(esphome::i2c::I2CBus *bus);
 void hal_imu_qmi8658_hibernate(esphome::i2c::I2CBus *bus);
-
-template <typename I2cBusT>
-inline bool hal_imu_wom_enter(I2cBusT *const *bus_pp, uint8_t threshold_mg) {
-  return bus_pp != nullptr && hal_imu_wom_enter(*bus_pp, threshold_mg);
-}
-template <typename I2cBusT>
-inline void hal_imu_wom_exit(I2cBusT *const *bus_pp) {
-  if (bus_pp != nullptr) hal_imu_wom_exit(*bus_pp);
-}
-template <typename I2cBusT>
-inline bool hal_imu_wom_event(I2cBusT *const *bus_pp) {
-  return bus_pp != nullptr && hal_imu_wom_event(*bus_pp);
-}
-template <typename I2cBusT>
-inline void hal_imu_qmi8658_hibernate(I2cBusT *const *bus_pp) {
-  if (bus_pp != nullptr) hal_imu_qmi8658_hibernate(*bus_pp);
-}
 #endif  // USE_I2C
 
 }  // namespace latter_core

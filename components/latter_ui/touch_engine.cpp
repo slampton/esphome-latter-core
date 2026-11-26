@@ -410,7 +410,7 @@ int compute_touch_context(const DeviceRuntimeState &rs) noexcept {
       break;
     case 6:
       sub = rs.nav.area_subpage;
-      drill = (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") ? 1 : 0;
+      drill = (rs.area.browse_mode == "areas") ? 1 : 0;
       break;
     case 7:
       sub = rs.nav.remote_subpage;
@@ -551,14 +551,14 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
         }
         return;
       }
-      if ((wid == WidgetId::HOME_ACTIVITY_PREV || wid == WidgetId::CHEVRON_UP) &&
+      if (wid == WidgetId::CHEVRON_UP &&
           touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL, tkey)) {
         gest.active = false;
         home_activity_overlay_page() = std::max(0, home_activity_overlay_page() - 1);
         rt_.schedule_disp();
         return;
       }
-      if ((wid == WidgetId::HOME_ACTIVITY_NEXT || wid == WidgetId::CHEVRON_DOWN) &&
+      if (wid == WidgetId::CHEVRON_DOWN &&
           touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL, tkey)) {
         gest.active = false;
         const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
@@ -608,21 +608,20 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
 
   if (rs.nav.gui_page == PageId::AREA) {
     const bool in_area_picker = (rs.nav.area_subpage == AreaSubpage::PICKER ||
-                                 rs.area.browse_mode == "areas" ||
-                                 rs.area.browse_mode == "area_areas");
+                                 rs.area.browse_mode == "areas");
     if ((rs.nav.area_subpage > 0 || in_area_picker) && wid == WidgetId::BACK_BUTTON) {
       if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         if (in_area_picker && rs.area.active_area_id.empty()) {
           if (!prefs.home_screen_enabled && is_on_anchor_root(rs, prefs)) return;
           rs.nav.area_subpage = AreaSubpage::OVERVIEW;
-          if (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") {
+          if (rs.area.browse_mode == "areas") {
             rs.area.browse_mode = "entities";
           }
           navigate_home(now_touch);
           return;
         }
         rs.nav.area_subpage = AreaSubpage::OVERVIEW;
-        if (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") {
+        if (rs.area.browse_mode == "areas") {
           rs.area.browse_mode = "entities";
         }
         if (in_area_picker && TouchGestureEngine::return_from_shortcut_origin_(rs, rt_, now_touch)) return;
@@ -1135,7 +1134,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
   if (rs.nav.gui_page == PageId::GAMES) {
     if (rs.nav.active_game == 0 && !rs.nav.menu_scroll_active && h_dir != 0) {
       commit_swipe();
-      const int game_cnt = active_games_launcher_count(device_prefs());
+      const int game_cnt = active_games_launcher_count(persisted_prefs());
       if (game_cnt > 1) {
         const int cur_slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
         rs.nav.game_carousel_idx = cur_slot;
@@ -1282,7 +1281,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
   // 9. Page 8: Tools Launcher Tile-Grid Horizontal Paging (D-086)
   if (rs.nav.gui_page == PageId::TOOLS) {
     if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active && h_dir != 0) {
-      const int total_pages = std::max(1, active_tools_launcher_page_count(device_prefs()));
+      const int total_pages = std::max(1, active_tools_launcher_page_count(persisted_prefs()));
       rs.nav.tools_menu_page = std::clamp(rs.nav.tools_menu_page, 0, total_pages - 1);
       return step_anim_h_pager(rs.nav.tools_menu_page, 0, total_pages - 1, PageId::TOOLS);
     }
@@ -1319,7 +1318,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         for (int i = 0; i < hh_cnt; ++i) {
           if (hh_tabs[i] == home_hub_tab()) { cur_slot = i; break; }
         }
-        TouchGestureEngine::enter_home_hub_tab_(hh_tabs[step_wrap(cur_slot, h_dir, hh_cnt)], false, rs, rt_, now_ms);
+        TouchGestureEngine::enter_home_hub_tab_(hh_tabs[step_wrap(cur_slot, h_dir, hh_cnt)], rs, rt_, now_ms);
         mark_dirty_full();
         rt_.schedule_disp();
       }
@@ -1547,7 +1546,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
 
   if (compute_touch_context(rs) != gest.start_context) return;
 
-  if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 13) {
+  if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == SystemMenuMode::COLOR_WHEEL) {
     const auto wg = ui::system_color_wheel_geom();
     float hue = 0.0f, sat = 1.0f;
     const bool started_on_wheel =
@@ -1980,12 +1979,12 @@ void TouchGestureEngine::on_input_event(const std::string &action, int delta, ui
         } else {
           ap.minute = static_cast<uint8_t>((static_cast<int>(ap.minute) + 60 + (step % 60)) % 60);
         }
-        latter_core::sync_local_alarms_edit(now_in);
+        latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
         rt_.schedule_disp();
         return;
       }
       if (rs.nav.gui_page == PageId::GAMES && rs.nav.active_game == 0 && !rs.nav.menu_scroll_active) {
-        const int game_cnt = active_games_launcher_count(device_prefs());
+        const int game_cnt = active_games_launcher_count(persisted_prefs());
         if (game_cnt > 1) {
           const int cur_slot = std::clamp(rs.nav.game_carousel_idx, 0, game_cnt - 1);
           rs.nav.game_carousel_idx = cur_slot;
@@ -2162,7 +2161,6 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
   const auto &p = persisted_prefs();
   switch (sid) {
     case S::TAP_WAKE_MODE: return pref_tap_to_wake_cstr(p);
-    case S::WEATHER_SIM_CONDITION: return pref_weather_sim_cstr();
     case S::MUSIC_OVERLAY_STYLE: return pref_music_overlay_style_cstr(p);
     case S::MUSIC_AUTO_OPEN: return pref_music_auto_open_cstr(p);
     case S::MUSIC_FULLSCREEN_ART_MODE: return pref_album_art_style_cstr(p);
@@ -2204,31 +2202,9 @@ std::string_view UiTouchRuntime::select_opt(UiSelectId sid) const noexcept {
 void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /*pub*/) const {
   using S = UiSelectId;
   using K = PrefKey;
-  const uint32_t now_ms = TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms());
-  if (sid == S::WEATHER_SIM_CONDITION) {
-    const int idx = find_pref_option_index(kPrefOptsWeatherSimCondition, opt);
-    if (idx >= 0) {
-      device_prefs_state().weather_sim_condition = static_cast<uint8_t>(idx);
-      if (opt != "Live (Home Assistant)" && !persisted_prefs().weather_background) {
-        uint32_t bg_eff = 0U;
-        latter_core::record_local_pref_edit(K::WEATHER_BACKGROUND, "1", now_ms, bg_eff);
-      }
-      if (link_state().ha_connected) {
-        std::string chg = "weather_sim_condition=";
-        chg.append(opt.data(), opt.size());
-        latter_core::emit_set_device_prefs(persisted_prefs().prefs_seq, chg);
-      }
-      night_meteor_epoch_initialized() = false;
-      weather_sim_dirty() = true;
-      record_ambient_frame_ms(0U);
-      cmd(UiHostCmd::NOTIFY_WEATHER_SIM_CHANGED);
-    }
-    return;
-  }
   K pk = K::COUNT;
   switch (sid) {
     case S::TAP_WAKE_MODE: pk = K::TAP_TO_WAKE; break;
-    case S::WEATHER_SIM_CONDITION: break;
     case S::MUSIC_OVERLAY_STYLE: pk = K::MUSIC_OVERLAY_STYLE; break;
     case S::MUSIC_AUTO_OPEN: pk = K::MUSIC_AUTO_OPEN; break;
     case S::MUSIC_FULLSCREEN_ART_MODE: pk = K::ALBUM_ART_STYLE; break;
@@ -2265,6 +2241,7 @@ void UiTouchRuntime::set_select_opt(UiSelectId sid, std::string_view opt, bool /
     case S::CAMERA_DOORBELL_POPUP: pk = K::CAMERA_DOORBELL_POPUP; break;
   }
   if (pk == K::COUNT) return;
+  const uint32_t now_ms = TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms());
   uint32_t eff = 0U;
   if (latter_core::record_local_pref_edit(pk, opt, now_ms, eff)) {
     device_prefs_state().last_effects |= eff;

@@ -50,33 +50,6 @@ inline uint32_t next_rng_u32() {
 
 namespace touch_detail {
 
-bool is_newer_semver(const std::string &lat_str, const char *cur_cstr) noexcept {
-  if (lat_str.empty() || lat_str == "unavailable" || lat_str == "unknown") return false;
-  auto parse_ver = [](const char *raw, int &maj, int &min_v, int &pat) noexcept -> bool {
-    if (raw == nullptr || *raw == '\0') return false;
-    const char *p = (*raw == 'v' || *raw == 'V') ? (raw + 1) : raw;
-    char *endp = nullptr;
-    maj = static_cast<int>(std::strtol(p, &endp, 10));
-    if (endp == p || *endp != '.') return false;
-    p = endp + 1;
-    min_v = static_cast<int>(std::strtol(p, &endp, 10));
-    if (endp == p) return false;
-    pat = (*endp == '.') ? static_cast<int>(std::strtol(endp + 1, &endp, 10)) : 0;
-    return true;
-  };
-  const char *lp = lat_str.c_str();
-  if (*lp == 'v' || *lp == 'V') ++lp;
-  if (std::strncmp(lp, "202", 3) == 0) return false;
-  int l_maj = 0, l_min = 0, l_pat = 0, c_maj = 0, c_min = 0, c_pat = 0;
-  if (!parse_ver(lat_str.c_str(), l_maj, l_min, l_pat) ||
-      !parse_ver(cur_cstr != nullptr ? cur_cstr : "", c_maj, c_min, c_pat)) {
-    return false;
-  }
-  if (l_maj != c_maj) return l_maj > c_maj;
-  if (l_min != c_min) return l_min > c_min;
-  return l_pat > c_pat;
-}
-
 int step_brightness_tap_10pct(int cur_pct) noexcept {
   if (cur_pct < 10 || cur_pct >= 100) return 10;
   return std::min(100, ((cur_pct / 10) + 1) * 10);
@@ -152,20 +125,21 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
 
   if (rs.nav.gui_page == PageId::SYSTEM) {
     const int mode = rs.nav.system_menu_mode;
-    if (mode == 1 || mode == 2 || mode == 8) {
+    if (mode == SystemMenuMode::SLEEP_WAKE || mode == SystemMenuMode::DISPLAY ||
+        mode == SystemMenuMode::SYSTEM_INFO) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
       }
       return true;
     }
-    if (mode == 3) {
+    if (mode == SystemMenuMode::ACTIONS) {
       if (wid == WidgetId::BACK_BUTTON) {
         if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) back_to_sys_root();
         return true;
       }
       if (wid == WidgetId::SYS_SECONDARY_BTN) {
         if (touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-          rs.nav.system_menu_mode = 4;
+          rs.nav.system_menu_mode = SystemMenuMode::CONFIRM_RESTART;
           mark_dirty_full();
           rt.schedule_disp();
         }
@@ -183,7 +157,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
           rt.cmd(UiHostCmd::TURN_SCREEN_OFF);
 #endif
         } else if (slot == 2) {
-          rs.nav.system_menu_mode = 5;
+          rs.nav.system_menu_mode = SystemMenuMode::UPDATE;
           mark_dirty_full();
           rt.schedule_disp();
         } else if (slot == 3) {
@@ -193,10 +167,10 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       return true;
     }
-    if (mode == 4 || mode == 6) {
+    if (mode == SystemMenuMode::CONFIRM_RESTART || mode == SystemMenuMode::CONFIRM_UPDATE) {
       return true;
     }
-    if (mode == 5) {
+    if (mode == SystemMenuMode::UPDATE) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.update_check_state = 0;
         back_to_sys_root();
@@ -206,7 +180,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
         const bool has_update = is_newer_semver(
             rt.fw_latest_version, (rt.fw_version != nullptr) ? rt.fw_version : "0.0.0");
         if (has_update) {
-          rs.nav.system_menu_mode = 6;
+          rs.nav.system_menu_mode = SystemMenuMode::CONFIRM_UPDATE;
           mark_dirty_full();
           rt.schedule_disp();
         } else if (rs.nav.update_check_state == 0) {
@@ -218,7 +192,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       return true;
     }
-    if (mode == 7) {
+    if (mode == SystemMenuMode::SOUND) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
         return true;
@@ -244,7 +218,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       return true;
     }
-    if (mode == 9) {
+    if (mode == SystemMenuMode::MUSIC) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
         return true;
@@ -266,7 +240,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       return true;
     }
-    if (mode == 11) {
+    if (mode == SystemMenuMode::VOICE) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         back_to_sys_root();
         return true;
@@ -286,7 +260,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
           }
         } else if (slot == 2) {
           if (rt.select_opt(UiSelectId::VA_WAKE_WORD_MODE) != "Disabled") {
-            rs.nav.system_menu_mode = 12;
+            rs.nav.system_menu_mode = SystemMenuMode::WW_SENSITIVITY;
             mark_dirty_full();
             rt.schedule_disp();
           }
@@ -302,9 +276,9 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       return true;
     }
-    if (mode == 12) {
+    if (mode == SystemMenuMode::WW_SENSITIVITY) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        rs.nav.system_menu_mode = 11;
+        rs.nav.system_menu_mode = SystemMenuMode::VOICE;
         mark_dirty_full();
         rt.schedule_disp();
         return true;
@@ -323,9 +297,9 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
       }
       return true;
     }
-    if (mode == 13) {
+    if (mode == SystemMenuMode::COLOR_WHEEL) {
       if (wid == WidgetId::BACK_BUTTON && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        rs.nav.system_menu_mode = 2;
+        rs.nav.system_menu_mode = SystemMenuMode::DISPLAY;
         rt.cmd(UiHostCmd::APPLY_THEME_PRESET);
         mark_dirty_full();
         rt.schedule_disp();
@@ -335,7 +309,7 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
         save_persisted_prefs();
         rt.set_select_opt(UiSelectId::THEME_PALETTE, "Custom");
         do_save_custom_color_to_latter();
-        rs.nav.system_menu_mode = 2;
+        rs.nav.system_menu_mode = SystemMenuMode::DISPLAY;
         mark_dirty_full();
         rt.schedule_disp();
         return true;
@@ -564,28 +538,29 @@ bool TouchGestureEngine::handle_tap_system_tools_(
       } else if (wid >= WidgetId::SYSTEM_CARD_BASE && wid < WidgetId::SYSTEM_CARD_BASE + 16 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int item_idx = hit->param;
-        if (item_idx == 0) { rs.nav.system_menu_mode = 2; rs.nav.display_menu_page = 1; }
-        else if (item_idx == 1) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
-        else if (item_idx == 2) { rs.nav.system_menu_mode = 7; }
-        else if (item_idx == 3) { rs.nav.system_menu_mode = 11; }
-        else if (item_idx == 4) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; }
+        if (item_idx == 0) { rs.nav.system_menu_mode = SystemMenuMode::DISPLAY; rs.nav.display_menu_page = 1; }
+        else if (item_idx == 1) { rs.nav.system_menu_mode = SystemMenuMode::SLEEP_WAKE; rs.nav.sleep_menu_page = 1; }
+        else if (item_idx == 2) { rs.nav.system_menu_mode = SystemMenuMode::SOUND; }
+        else if (item_idx == 3) { rs.nav.system_menu_mode = SystemMenuMode::VOICE; }
+        else if (item_idx == 4) { rs.nav.system_menu_mode = SystemMenuMode::MUSIC; rs.music.settings_page = 1; }
         else if (item_idx == 5 && prefs.home_screen_enabled) {
           rs.nav.gui_page = PageId::HOME;
           rs.nav.home_subpage = 1;
           rs.nav.home_settings_page = 1;
         }
-        else if (item_idx == 6) { rs.nav.system_menu_mode = 3; }
-        else if (item_idx == 7) { rs.nav.system_menu_mode = 8; }
+        else if (item_idx == 6) { rs.nav.system_menu_mode = SystemMenuMode::ACTIONS; }
+        else if (item_idx == 7) { rs.nav.system_menu_mode = SystemMenuMode::SYSTEM_INFO; }
         mark_dirty_full();
         rt_.schedule_disp();
       }
-    } else if (!rs.nav.menu_scroll_active && (mode == 1 || mode == 2)) {
+    } else if (!rs.nav.menu_scroll_active &&
+               (mode == SystemMenuMode::SLEEP_WAKE || mode == SystemMenuMode::DISPLAY)) {
       const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
-      const int cur_pg = (mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page;
+      const int cur_pg = (mode == SystemMenuMode::SLEEP_WAKE) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page;
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int max_pg = (mode == 1) ? std::max(1, (10 + per_pg - 1) / per_pg)
-                                       : std::max(1, (11 + per_pg - 1) / per_pg);
+        const int max_pg = (mode == SystemMenuMode::SLEEP_WAKE) ? std::max(1, (10 + per_pg - 1) / per_pg)
+                                                                : std::max(1, (11 + per_pg - 1) / per_pg);
         const int target_pg = (wid == WidgetId::CHEVRON_DOWN)
                                   ? std::min(max_pg, cur_pg + 1)
                                   : std::max(1, cur_pg - 1);
@@ -595,7 +570,8 @@ bool TouchGestureEngine::handle_tap_system_tools_(
           rs.nav.menu_scroll_target_page = target_pg;
           rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
         }
-      } else if (mode == 1 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
+      } else if (mode == SystemMenuMode::SLEEP_WAKE &&
+                 wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int idx = hit->param;
         if (idx == 0) {
@@ -644,9 +620,9 @@ bool TouchGestureEngine::handle_tap_system_tools_(
           rt_.sw_toggle(UiSwitchId::DO_NOT_DISTURB);
         }
         rt_.schedule_disp();
-      } else if (mode == 2 && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      } else if (mode == SystemMenuMode::DISPLAY && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         if (wid >= WidgetId::COLOR_SWATCH_BASE && wid < WidgetId::COLOR_SWATCH_BASE + 10) {
-          rs.nav.system_menu_mode = 13;
+          rs.nav.system_menu_mode = SystemMenuMode::COLOR_WHEEL;
           mark_dirty_full();
           rt_.schedule_disp();
         } else if (wid == WidgetId::SYS_BRI_SLIDER) {
@@ -695,7 +671,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
                 {"Steel Blue", "Pink", "Blue", "Green", "Custom"});
             rt_.set_select_opt(UiSelectId::THEME_PALETTE, next_pal);
             if (next_pal == "Custom") {
-              rs.nav.system_menu_mode = 13;
+              rs.nav.system_menu_mode = SystemMenuMode::COLOR_WHEEL;
               mark_dirty_full();
             }
           } else if (item_idx == 4) {
@@ -777,7 +753,7 @@ bool TouchGestureEngine::handle_tap_system_tools_(
   if (rs.nav.gui_page != PageId::TOOLS) return false;
 
   if (rs.nav.tools_subpage == ToolsSubpage::LAUNCHER && !rs.nav.menu_scroll_active) {
-    const int total_pages = active_tools_launcher_page_count(device_prefs());
+    const int total_pages = active_tools_launcher_page_count(persisted_prefs());
     if ((wid == WidgetId::CHEVRON_LEFT || wid == WidgetId::CHEVRON_RIGHT) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       if (total_pages > 1) {

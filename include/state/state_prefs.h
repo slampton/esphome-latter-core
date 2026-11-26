@@ -404,10 +404,6 @@ inline PersistedDevicePrefs &persisted_prefs() noexcept {
   return g_persisted_prefs;
 }
 
-inline PersistedDevicePrefs &device_prefs() noexcept {
-  return g_persisted_prefs;
-}
-
 inline constexpr uint8_t kStartScreenTimeAppIdx =
     static_cast<uint8_t>(find_pref_option_index(std::span<const std::string_view>{kPrefOptsStartScreen}, "Time App"));
 static_assert(kStartScreenTimeAppIdx == 2U, "Start screen Time App option index mismatch");
@@ -1013,7 +1009,6 @@ std::string get_pref_value_str(PrefKey key, const PersistedDevicePrefs &p = pers
 bool set_pref_by_key_str(PersistedDevicePrefs &p, PrefKey key, std::string_view sv,
                          PrefMask &changed_mask, uint32_t &effects_mask);
 std::string encode_prefs_mask(PrefMask mask, const PersistedDevicePrefs &p = persisted_prefs());
-std::string format_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs());
 std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p = persisted_prefs());
 bool parse_v3_device_prefs_payload(std::string_view payload,
                                    uint32_t &out_effects,

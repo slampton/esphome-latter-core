@@ -135,22 +135,27 @@ void test_shortcut_record_parsing_and_ui_sig() {
   using namespace latter_ui;
   using namespace latter_core;
 
-  // Legacy 7-column route & entity records default cleanly to GLASS + DEFAULT
+  // Strict v3.0.0 14-column enforcement: reject legacy 7/9-column records; 14-col empty tails default to GLASS + DEFAULT
   {
-    ShortcutItem r7{};
-    LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1", r7));
-    LATTER_CHECK(r7.kind == ShortcutKind::ROUTE && r7.route_id == RouteId::APP_MUSIC);
-    LATTER_CHECK(r7.badge_style == ShortcutBadgeStyle::GLASS);
-    LATTER_CHECK(r7.accent == ShortcutAccent::DEFAULT);
+    ShortcutItem bad{};
+    LATTER_CHECK(!parse_shortcut_record("route|app:music||Music||0|-1", bad));
+    LATTER_CHECK(!parse_shortcut_record("entity|light.desk|toggle|Desk Lamp|mdi:lightbulb|1|1", bad));
+    LATTER_CHECK(!parse_shortcut_record("route|app:music||Music||0|-1|glass|default", bad));
 
-    ShortcutItem e7{};
-    LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk Lamp|mdi:lightbulb|1|1", e7));
-    LATTER_CHECK(e7.kind == ShortcutKind::ENTITY && e7.confirm && e7.state == 1);
-    LATTER_CHECK(e7.badge_style == ShortcutBadgeStyle::GLASS);
-    LATTER_CHECK(e7.accent == ShortcutAccent::DEFAULT);
+    ShortcutItem r14{};
+    LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1|||||||", r14));
+    LATTER_CHECK(r14.kind == ShortcutKind::ROUTE && r14.route_id == RouteId::APP_MUSIC);
+    LATTER_CHECK(r14.badge_style == ShortcutBadgeStyle::GLASS);
+    LATTER_CHECK(r14.accent == ShortcutAccent::DEFAULT);
+
+    ShortcutItem e14{};
+    LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk Lamp|mdi:lightbulb|1|1|||||||", e14));
+    LATTER_CHECK(e14.kind == ShortcutKind::ENTITY && e14.confirm && e14.state == 1);
+    LATTER_CHECK(e14.badge_style == ShortcutBadgeStyle::GLASS);
+    LATTER_CHECK(e14.accent == ShortcutAccent::DEFAULT);
   }
 
-  // 9-column route records across all badge_style & accent combinations
+  // 14-column route records across all badge_style & accent combinations
   struct AccentCase {
     const char *token;
     ShortcutAccent expected;
@@ -168,7 +173,7 @@ void test_shortcut_record_parsing_and_ui_sig() {
   };
   for (const auto &tc : kAccents) {
     ShortcutItem r9{};
-    const std::string rec = std::string("route|weather:moon||Moon||0|-1|inverted|") + tc.token;
+    const std::string rec = std::string("route|weather:moon||Moon||0|-1|inverted|") + tc.token + "|||||";
     LATTER_CHECK(parse_shortcut_record(rec, r9));
     LATTER_CHECK(r9.kind == ShortcutKind::ROUTE && r9.route_id == RouteId::WEATHER_MOON);
     LATTER_CHECK(r9.badge_style == ShortcutBadgeStyle::INVERTED);
@@ -176,7 +181,7 @@ void test_shortcut_record_parsing_and_ui_sig() {
 
     ShortcutItem e9{};
     const std::string erec =
-        std::string("entity|script.sos|turn_on|Emergency|mdi:bell-ring|1|0|glass|") + tc.token;
+        std::string("entity|script.sos|turn_on|Emergency|mdi:bell-ring|1|0|glass|") + tc.token + "|||||";
     LATTER_CHECK(parse_shortcut_record(erec, e9));
     LATTER_CHECK(e9.kind == ShortcutKind::ENTITY && e9.confirm && e9.state == 0);
     LATTER_CHECK(e9.badge_style == ShortcutBadgeStyle::GLASS);
@@ -187,7 +192,7 @@ void test_shortcut_record_parsing_and_ui_sig() {
   {
     ShortcutItem e_inv{};
     LATTER_CHECK(parse_shortcut_record(
-        "entity|light.porch|toggle|Porch|mdi:lightbulb|0|2|INVERTED|orange", e_inv));
+        "entity|light.porch|toggle|Porch|mdi:lightbulb|0|2|INVERTED|orange|||||", e_inv));
     LATTER_CHECK(e_inv.state == 2);
     LATTER_CHECK(e_inv.badge_style == ShortcutBadgeStyle::INVERTED);
     LATTER_CHECK(e_inv.accent == ShortcutAccent::ORANGE);
@@ -330,19 +335,19 @@ void test_outline_solid_helpers_and_5geom_shortcut_rendering() {
     sc.live_received = true;
 
     ShortcutItem d0{};
-    LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1|glass|default", d0));
+    LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1|glass|default|||||", d0));
     ShortcutItem d1{};
-    LATTER_CHECK(parse_shortcut_record("route|app:tools||Tools||0|-1|glass|gold", d1));
+    LATTER_CHECK(parse_shortcut_record("route|app:tools||Tools||0|-1|glass|gold|||||", d1));
     ShortcutItem d2{};
-    LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk|mdi:lightbulb-outline|0|1|inverted|primary", d2));
+    LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk|mdi:lightbulb-outline|0|1|inverted|primary|||||", d2));
     ShortcutItem d3{};
-    LATTER_CHECK(parse_shortcut_record("entity|script.sos|turn_on|Alert|mdi:bell-ring|1|0|inverted|red", d3));
+    LATTER_CHECK(parse_shortcut_record("entity|script.sos|turn_on|Alert|mdi:bell-ring|1|0|inverted|red|||||", d3));
     ShortcutItem d4{};
-    LATTER_CHECK(parse_shortcut_record("entity|light.porch|toggle|Porch|mdi:lightbulb|0|2|inverted|green", d4));
+    LATTER_CHECK(parse_shortcut_record("entity|light.porch|toggle|Porch|mdi:lightbulb|0|2|inverted|green|||||", d4));
     ShortcutItem d5{};
-    LATTER_CHECK(parse_shortcut_record("route|app:weather||Weather||0|-1|glass|default", d5));
+    LATTER_CHECK(parse_shortcut_record("route|app:weather||Weather||0|-1|glass|default|||||", d5));
     ShortcutItem d6{};
-    LATTER_CHECK(parse_shortcut_record("route|app:tools||Tools||0|-1|glass|default", d6));
+    LATTER_CHECK(parse_shortcut_record("route|app:tools||Tools||0|-1|glass|default|||||", d6));
     sc.dock_items = {d0, d1, d2, d3, d4, d5, d6};
 
     fix.ctx.home_weather_bg = false;
@@ -398,12 +403,12 @@ void test_outline_solid_helpers_and_5geom_shortcut_rendering() {
     sc = ShortcutsState{};
     sc.live_received = true;
     const char *const kPinRecs[6] = {
-        "route|app:music||Music||0|-1|glass|default",
-        "route|weather:sun||Sun||0|-1|glass|gold",
-        "entity|light.lamp|toggle|Lamp On|mdi:lightbulb-outline|0|1|inverted|default",
-        "entity|light.hall|toggle|Hall Off|mdi:lightbulb|0|0|inverted|primary",
-        "entity|script.sos|turn_on|Emergency|mdi:bell-ring|1|-1|inverted|red",
-        "entity|switch.shed|toggle|Shed|mdi:power|0|2|inverted|orange",
+        "route|app:music||Music||0|-1|glass|default|||||",
+        "route|weather:sun||Sun||0|-1|glass|gold|||||",
+        "entity|light.lamp|toggle|Lamp On|mdi:lightbulb-outline|0|1|inverted|default|||||",
+        "entity|light.hall|toggle|Hall Off|mdi:lightbulb|0|0|inverted|primary|||||",
+        "entity|script.sos|turn_on|Emergency|mdi:bell-ring|1|-1|inverted|red|||||",
+        "entity|switch.shed|toggle|Shed|mdi:power|0|2|inverted|orange|||||",
     };
     for (const char *rec : kPinRecs) {
       ShortcutItem item{};
@@ -512,13 +517,13 @@ void test_home_dock_custom_shortcut_adaptive_glass() {
   sc.live_received = true;
 
   ShortcutItem d0{};
-  LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1|glass|default", d0));
+  LATTER_CHECK(parse_shortcut_record("route|app:music||Music||0|-1|glass|default|||||", d0));
   ShortcutItem d1{};
-  LATTER_CHECK(parse_shortcut_record("entity|automation.bear|trigger|Bear|mdi:teddy-bear|1|1|glass|default", d1));
+  LATTER_CHECK(parse_shortcut_record("entity|automation.bear|trigger|Bear|mdi:teddy-bear|1|1|glass|default|||||", d1));
   ShortcutItem d2{};
-  LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk|mdi:lightbulb|0|1|glass|primary", d2));
+  LATTER_CHECK(parse_shortcut_record("entity|light.desk|toggle|Desk|mdi:lightbulb|0|1|glass|primary|||||", d2));
   ShortcutItem d3{};
-  LATTER_CHECK(parse_shortcut_record("entity|automation.bear|trigger|Bear|mdi:teddy-bear|1|-1|glass|default", d3));
+  LATTER_CHECK(parse_shortcut_record("entity|automation.bear|trigger|Bear|mdi:teddy-bear|1|-1|glass|default|||||", d3));
   sc.dock_items = {d0, d1, d2, d3};
 
   fix.ctx.home_weather_bg = false;

@@ -108,9 +108,9 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     if (insp_dom == "climate") {
       std::string hdr_name = light_insp_name();
       if (hdr_name.empty()) hdr_name = "THERMOSTAT";
-      for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      else hdr_name = to_ascii_upper(hdr_name);
       std::string fit_ln = fit_text_to_width_font(hdr_name, std::min(dp_px(260), ly.safe_span(ly.hdr_y, dp_px(18))), font_small);
-      render_page_header(it, cx, fit_ln.c_str(), font_small, col_white);
+      render_page_header(it, cx, fit_ln.c_str(), font_small);
 
       ThermostatZoneItem fallback_clim{};
       const ThermostatZoneItem *clim_ptr = find_climate_item_by_id_const(light_insp_entity_id());
@@ -131,10 +131,9 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     if (insp_dom == "cover" || insp_dom == "fan") {
       const bool is_cov = (insp_dom == "cover");
-      std::string hdr_name = light_insp_name();
-      for (char &c : hdr_name) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+      const std::string hdr_name = to_ascii_upper(light_insp_name());
       std::string fit_ln = fit_text_to_width_font(hdr_name, std::min(dp_px(260), ly.safe_span(ly.hdr_y, dp_px(18))), font_small);
-      render_page_header(it, cx, fit_ln.c_str(), font_small, col_white);
+      render_page_header(it, cx, fit_ln.c_str(), font_small);
 
       const int cur_pct = std::clamp(light_insp_bri_pct(), 0, 100);
       const bool is_on_st = light_insp_active() && (cur_pct > 0);
@@ -195,9 +194,9 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const bool is_kelvin_mode = (light_insp_mode() == 1);
     std::string light_hdr = light_insp_name();
     if (light_hdr.empty()) light_hdr = "LIGHT";
-    for (char &c : light_hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    else light_hdr = to_ascii_upper(light_hdr);
     std::string fit_lh = fit_text_to_width_font(light_hdr, safe_span(ly.hdr_y, 20), font_small);
-    render_page_header(it, cx, fit_lh.c_str(), font_small, col_white);
+    render_page_header(it, cx, fit_lh.c_str(), font_small);
 
     const int seg_h = std::max(28, dp_px(30));
     const int seg_cy = ly.sub_hdr_y + dp_px(8);
@@ -262,8 +261,8 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   // ===========================================================================
   // SUBPAGE 1 / AREAS MODE: 5-SLOT AREA SWITCHER
   // ===========================================================================
-  if (area_subpage == 1 || area_browse_mode == "areas" || area_browse_mode == "area_areas") {
-    render_page_header(it, cx, "SELECT AREA", font_small, col_white);
+  if (area_subpage == 1 || area_browse_mode == "areas") {
+    render_page_header(it, cx, "SELECT AREA", font_small);
 
     const auto *list_slots = rs.slots_for(latter_rpc::SlotChannel::AREA_LIST);
     const int list_page = rs.slot_page[static_cast<size_t>(latter_rpc::SlotChannel::AREA_LIST)];
@@ -298,7 +297,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
 
     if (list_total_pages > 1) {
-      render_vertical_page_pips(it, list_page > 1, list_page < list_total_pages, col_bg, col_white, col_slate);
+      render_vertical_page_pips(it, list_page > 1, list_page < list_total_pages, col_bg, col_white);
     }
 
     const bool hide_picker_back = rs.area.active_area_id.empty() &&
@@ -314,10 +313,9 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   // SUBPAGE 0: MAIN AREA CONTROL (HEADER + CLIMATE + 3 TALL SLIDER CARDS + DOCK)
   // ===========================================================================
   const auto ly = layout();
-  std::string hdr = active_area_name.empty() ? "AREA CONTROL" : active_area_name;
-  for (char &c : hdr) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  const std::string hdr = active_area_name.empty() ? std::string("AREA CONTROL") : to_ascii_upper(active_area_name);
   std::string fit_hdr = fit_text_to_width_font(hdr, std::min(dp_px(250), ly.safe_span(ly.hdr_y, dp_px(18))), font_small);
-  render_page_header(it, cx, fit_hdr.c_str(), font_small, col_white);
+  render_page_header(it, cx, fit_hdr.c_str(), font_small);
   const int hdr_hit_w = std::min(ly.safe_span(ly.hdr_y, dp_px(12)),
                                  std::max(dp_px(240), ly.min_hit_px() * 2));
   const int hdr_hit_h = dp_px(36);
@@ -398,7 +396,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else if (dtype == "fan") {
       const Color fan_c = is_on ? kChromeFanAccent : fg_c;
       ui::draw_icon_ceiling_fan(it, gx, gy, card_ir, fan_c, true);
-    } else if (dtype == "scene" || dtype == "script") {
+    } else if (dtype == "scene") {
       ui::draw_icon_sparkle(it, gx, gy, card_ir, col_gold, true);
     } else if (dtype == "climate") {
       ui::draw_icon_thermometer(it, gx, gy, card_ir, is_on ? col_gold : fg_c, true);
@@ -510,7 +508,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       } else {
         std::snprintf(sub_buf, sizeof(sub_buf), is_act ? "Active" : "Off");
       }
-    } else if (dtype == "scene" || dtype == "script") {
+    } else if (dtype == "scene") {
       std::snprintf(sub_buf, sizeof(sub_buf), "Tap to Activate");
     } else if (dtype == "media_player") {
       std::snprintf(sub_buf, sizeof(sub_buf), is_act ? "Playing  •  Open Music" : "Idle  •  Open Music");
@@ -561,7 +559,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   if (browse_total_pages > 1) {
     render_vertical_page_pips(it, browse_page > 1, browse_page < browse_total_pages,
-                              col_bg, col_white, col_slate, layout().mode_bar_zone_top());
+                              col_bg, col_white, layout().mode_bar_zone_top());
   }
 
   render_area_bottom_dock(area_domain_filter);

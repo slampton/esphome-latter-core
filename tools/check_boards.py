@@ -87,8 +87,6 @@ REQUIRED_TOP = (
 )
 
 PIN_RE = re.compile(r"\bGPIO(?:_NUM_)?(\d+)\b")
-FLAG_PIN_RE = re.compile(r"-DLATTER_[A-Z0-9_]*_PIN=(\d+)")
-FLAG_RE = re.compile(r"-D(LATTER_[A-Z0-9_]+)=([^\"'\s]+)")
 ADDR_RE = re.compile(r"^\s*address:\s*(0x[0-9A-Fa-f]+)", re.MULTILINE)
 MINOR_RE = re.compile(r"^\s*minor:\s*(\d+)", re.MULTILINE)
 BOARD_INCLUDE_RE = re.compile(r"!include\s+\.\./boards/([a-z0-9_]+)\.yaml")
@@ -351,14 +349,8 @@ def scan_board_yaml(board_id: str, board_path: Path | None = None) -> dict[str, 
     expanded = _expand_board_hal_includes(text)
     code = strip_comments(expanded)
     core_flags, core_pins = _parse_latter_core_block(code)
-    pins = (
-        {int(m) for m in PIN_RE.findall(code)}
-        | {int(m) for m in FLAG_PIN_RE.findall(code)}
-        | core_pins
-    )
+    pins = {int(m) for m in PIN_RE.findall(code)} | core_pins
     flags: dict[str, str] = dict(core_flags)
-    for name, value in FLAG_RE.findall(code):
-        flags[name] = value.strip('"').strip("\\").strip('"')
     addrs = {a.lower() for a in ADDR_RE.findall(code)}
     return {
         "path": path,

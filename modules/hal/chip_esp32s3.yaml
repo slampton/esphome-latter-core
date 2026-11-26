@@ -38,7 +38,7 @@ esp32:
       CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
       CONFIG_MBEDTLS_SSL_PROTO_TLS1_3: "y"
-      # Light-sleep wake pins arm inside ESP-IDF's light-sleep callbacks (include/hal_power_pm.h).
+      # Light-sleep wake pins arm inside ESP-IDF's light-sleep callbacks (include/hal_sleep_pm.h).
       # Keep the CPU + 32KB/64KB cache-tagmem domain clock-gated rather than rail-powered-down in light
       # sleep: avoids dual-core Octal PSRAM XIP I-cache refill wedges post-ls-out (ESP-IDF #19355) and
       # reclaims ~8.6 KB of internal SRAM otherwise reserved for CPU/tagmem retention DMA buffers.
@@ -71,7 +71,7 @@ psram:
   ignore_not_found: false
 
 # Automatic light sleep whenever no task runs and no power-management lock is held. Latter's awake lock
-# (script apply_power_policy, include/hal_power_pm.h) keeps the chip awake except in screen-off quiet on
+# (script apply_power_policy, include/hal_sleep_pm.h, include/hal_radio_policy.h) keeps the chip awake except in screen-off quiet on
 # battery. Keeping min_frequency at 80MHz avoids BBPLL/XTAL speed-mode retuning of 80MHz Octal PSRAM
 # during sub-millisecond awake slices while hardware light sleep still gates PLL/clocks in idle.
 power_management:

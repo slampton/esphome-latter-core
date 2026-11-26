@@ -590,11 +590,6 @@ const HomeActivityItem *collect_home_activities_cached(
   return s_memo_items;
 }
 
-int get_activity_overlay_card_y(int vis_count, int row_idx) {
-  (void)vis_count;
-  return layout().list_row_y(row_idx);
-}
-
 #if LATTER_HAS_BATTERY
 void render_battery_indicator(
     Rgb565Surface &it, int cx, int by, float batt, bool is_charging,
@@ -884,7 +879,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       render_page_wallpaper_base(it, ctx.home_wallpaper_art, bd_mode == BackdropMode::CustomWallpaper, cx, ctx.col_bg);
     }
-    render_page_header(it, cx, "HOME SETTINGS", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "HOME SETTINGS", ctx.font_small);
 
     HomeSettingsItemId items[12]{};
     const int item_count = collect_home_settings_items(prefs, items);
@@ -964,7 +959,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       }
     }
     if (total_pages > 1) {
-      render_vertical_page_pips(it, hs_pg > 1, hs_pg < total_pages, ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
+      render_vertical_page_pips(it, hs_pg > 1, hs_pg < total_pages, ctx.col_bg, ctx.theme_secondary);
     }
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
     return;
@@ -1059,7 +1054,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       format_time_hhmm(ctx.now.hour, ctx.now.minute, is_24h_format, t_sub, sizeof(t_sub));
       std::snprintf(hdr_buf, sizeof(hdr_buf), "ACTIVE  •  %s", t_sub);
     }
-    render_page_header(it, cx, hdr_buf, ctx.font_small, ctx.col_white, true);
+    render_page_header(it, cx, hdr_buf, ctx.font_small);
 
     if (act_count <= 0) {
       render_empty_state(it, cx, cy, "No active activities", ctx.font_small, ctx.col_slate);
@@ -1076,7 +1071,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       const int act_col_w = std::min(card_w / 2, std::max(dp_px(44), layout().min_hit_px()));
       const int open_w = std::max(24, card_w - act_col_w);
       for (int row = 0; row < vis_cnt; row++) {
-        const int y_mid = get_activity_overlay_card_y(vis_cnt, row) + act_bounce_y;
+        const int y_mid = layout().list_row_y(row) + act_bounce_y;
         render_home_activity_list_row(it, cx, y_mid, act_items[start_i + row], ctx.font_small,
                                       ctx.theme_secondary, ctx.col_white,
                                       kChromeGlassTint, kChromeCardBorder, kChromeGlassTint);
@@ -1090,7 +1085,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       }
       if (total_pages > 1) {
         render_vertical_page_pips(it, home_activity_overlay_page() > 0, home_activity_overlay_page() + 1 < total_pages,
-                                  ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
+                                  ctx.col_bg, ctx.theme_secondary);
       }
     }
     render_back_button(it, cx, ctx.font_small, layout().back_y, "< Back");
@@ -1406,7 +1401,6 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         const int d = 2 * dock_r + 1;
 
         UiColor slot_fg_c = ctx.col_white;
-        UiColor cut_c = kChromeGlassTint;
         bool icon_shadow = (alpha > 0.55f);
 
         if (is_inverted) {
@@ -1426,7 +1420,6 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                   static_cast<float>(dock_r) + 0.5f, kChromeGlassSheen, rim_top, rim_bot, 1);
           }
           slot_fg_c = (alpha >= 0.99f) ? kChromeShadow : lerp_color(base_orb, kChromeShadow, alpha);
-          cut_c = base_orb;
           icon_shadow = false;
         } else {
           const bool show_tint = !item_unavail && (item_active || (has_accent && !item_off));
@@ -1453,11 +1446,10 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                                              ? (has_accent ? ctx.col_slate : ctx.col_white)
                                              : (has_accent ? accent_col : ctx.col_white));
           slot_fg_c = scale_color(base_fg, alpha);
-          cut_c = eff_tint;
         }
 
         if (item.kind == ShortcutKind::ROUTE && item.icon.empty()) {
-          ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, cut_c, icon_shadow);
+          ui::draw_route_icon(it, item.route_id, bx, dock_y, icon_r, slot_fg_c, icon_shadow);
         } else {
           char state_slug_buf[96];
           const std::string_view eff_slug =

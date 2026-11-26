@@ -433,8 +433,7 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
   return result;
 }
 
-int text_ink_right_edge_impl(Rgb565Surface &it, UiFontView font, const char *text) {
-  (void)it;
+int text_ink_right_edge_impl(UiFontView font, const char *text) {
   if (font == nullptr || text == nullptr || *text == '\0') return 0;
   int ink_x0 = 0, ink_x1 = 0, text_h = 0, baseline = 0;
   measure_text_ink_span(font, text, ink_x0, ink_x1, text_h, baseline);

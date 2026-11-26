@@ -3,7 +3,7 @@
 // ==============================================================================
 // Latter UI Hit Flags & Canonical Widget IDs (include/ui_widget_ids.h)
 // Pure C++20 UI leaf — zero ESPHome, HAL, or runtime-state includes.
-// Every WidgetId enumerator below has verified live render and touch callers.
+// Canonical UI hit-target IDs shared by page/overlay renderers and TouchGestureEngine.
 // ==============================================================================
 
 #include <cstdint>
@@ -28,18 +28,14 @@ namespace WidgetId {
   static constexpr uint16_t CHEVRON_DOWN       = 16;
   static constexpr uint16_t MODE_BAR_LEFT      = 17;
   static constexpr uint16_t MODE_BAR_RIGHT     = 18;
-  static constexpr int kMaxDockSlotWidgets = 6;
-  static constexpr int kMaxListSlotWidgets = 8;
 
   static constexpr uint16_t LIST_SLOT_BASE     = 20;   // 20..27 (param = item index; up to 8 dynamic rows)
-  static constexpr uint16_t GRID_CARD_BASE     = 30;   // 30..35 (param = card index)
   static constexpr uint16_t DOCK_SLOT_BASE     = 40;   // 40..45 (param = dock index; up to 6 dynamic slots)
   static constexpr uint16_t MODE_BAR_SLOT_BASE = 80;   // 80..85 (param = mode global index; up to 6 dynamic slots)
 
   // System takeover & modal buttons
   static constexpr uint16_t ALERT_SNOOZE_BTN    = 50;
   static constexpr uint16_t ALERT_DISMISS_BTN   = 51;
-  static constexpr uint16_t NOTIF_OPEN_CAM_BTN  = 52;
   static constexpr uint16_t NOTIF_DISMISS_BTN   = 53;
   static constexpr uint16_t VA_CANCEL_BTN       = 54;
   static constexpr uint16_t NOTIF_ANSWER_BTN    = 56;
@@ -118,8 +114,6 @@ namespace WidgetId {
   // Clock & Home Dashboard (Page 0 / Page 1)
   static constexpr uint16_t HOME_WEATHER_HERO  = 500;
   static constexpr uint16_t HOME_TIME_READOUT  = 501;
-  static constexpr uint16_t HOME_ACTIVITY_PREV = 503;
-  static constexpr uint16_t HOME_ACTIVITY_NEXT = 504;
   static constexpr uint16_t HOME_QUICK_BTN     = 505;
   static constexpr uint16_t HOME_DATE_HERO     = 507;
   static constexpr uint16_t HOME_ACT_ROW_0     = 530;  // param = rendered act_items slot index

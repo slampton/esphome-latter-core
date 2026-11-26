@@ -231,7 +231,6 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     const bool was_unassigned = r.area.active_area_id.empty();
     const bool area_changed = !st.area_id.empty() && st.area_id != r.area.active_area_id;
-    eff.area_changed = area_changed;
 
     if (area_changed) {
       r.area.active_area_id = st.area_id;
@@ -338,7 +337,6 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       eff.fetch_on_demand_camera = true;
     }
 
-    r.area.alarm_entity = st.alarm_entity;
     r.area.alarm_state = st.alarm_state;
     if (!st.site_id.empty()) {
       latter_site_id() = st.site_id;
@@ -865,7 +863,7 @@ AlarmTickEffects TimerAlarmController::tick_alarms_1s(bool time_valid, uint32_t 
 
     if (trig_idx > 0) {
       if (need_save) {
-        latter_core::sync_local_alarms_edit(now_ms);
+        latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
         eff.prefs_saved = true;
       }
       if (rs.nav.home_subpage == 2) {

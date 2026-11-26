@@ -490,7 +490,7 @@ void render_music_info_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   int vp_bot = g.vp_bot_ambient;
 
   if (show_hud) {
-    render_page_header(it, ctx.cx, "TRACK INFO", ctx.font_small, ctx.col_white, true);
+    render_page_header(it, ctx.cx, "TRACK INFO", ctx.font_small);
     vp_top = g.vp_top;
     vp_bot = g.vp_bot_hud;
   }
@@ -710,7 +710,7 @@ void render_music_settings_view(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
                                      /*has_metadata_scrim=*/true, kArtDimMenu);
-  render_page_header(it, ctx.cx, "MUSIC SETTINGS", ctx.font_small, ctx.col_white, true);
+  render_page_header(it, ctx.cx, "MUSIC SETTINGS", ctx.font_small);
 
   struct SettingItem {
     const char *prefix;
@@ -746,7 +746,7 @@ void render_music_settings_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   if (total_pages > 1) {
-    render_vertical_page_pips(it, pg > 1, pg < total_pages, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+    render_vertical_page_pips(it, pg > 1, pg < total_pages, ctx.col_bg, ctx.theme_primary,
                               ly.mode_bar_zone_top());
   }
   render_music_stadium_mode_bar(it, ctx, trk.is_speech);
@@ -768,7 +768,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   if (m.view == MusicView::SPEAKERS) {
     if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS && !m.target_speaker_id.empty()) {
       render_page_header(it, ctx.cx, m.target_speaker_name.empty() ? "SPEAKER" : m.target_speaker_name,
-                         ctx.font_small, ctx.col_white, true);
+                         ctx.font_small);
       const char *labels[3] = {
           "Control Speaker",
           "Transfer Queue Here",
@@ -792,7 +792,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
       return;
     }
 
-    render_page_header(it, ctx.cx, "SPEAKERS", ctx.font_small, ctx.col_white, true);
+    render_page_header(it, ctx.cx, "SPEAKERS", ctx.font_small);
     const int content_top = ly.hdr_y + dp_px(24);
     const int vis_rows = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
@@ -815,14 +815,14 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
       render_empty_state(it, ctx.cx, (content_top + mode_bar_bot_limit) / 2, "No speakers found",
                          ctx.font_small, ctx.col_slate);
     }
-    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary,
                               ly.mode_bar_zone_top());
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
     return;
   }
 
   if (m.view == MusicView::QUEUE) {
-    render_page_header(it, ctx.cx, "PLAYBACK QUEUE", ctx.font_small, ctx.col_white, true);
+    render_page_header(it, ctx.cx, "PLAYBACK QUEUE", ctx.font_small);
 
     const int strip_h = std::clamp(dp_px(32), 28, 46);
     const int sy0 = ly.hdr_y + dp_px(22);
@@ -887,14 +887,14 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
       render_empty_state(it, ctx.cx, (content_top + mode_bar_bot_limit) / 2, "Queue is empty",
                          ctx.font_small, ctx.col_slate);
     }
-    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary,
                               ly.mode_bar_zone_top());
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
     return;
   }
 
   if (m.view == MusicView::LIBRARY && m.drilldown == MusicDrilldown::NONE) {
-    render_page_header(it, ctx.cx, "LIBRARY", ctx.font_small, ctx.col_white, true);
+    render_page_header(it, ctx.cx, "LIBRARY", ctx.font_small);
 
     static constexpr const char *kCatLabels[7] = {
         "Favorites", "Playlists", "Artists", "Albums", "Podcasts", "Radio", "Audiobooks"};
@@ -921,7 +921,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
 
     if (total_pages > 1) {
-      render_vertical_page_pips(it, cat_pg > 1, cat_pg < total_pages, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+      render_vertical_page_pips(it, cat_pg > 1, cat_pg < total_pages, ctx.col_bg, ctx.theme_primary,
                                 ly.mode_bar_zone_top());
     }
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
@@ -939,7 +939,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   } else if (hdr_title.empty()) {
     hdr_title = "LIBRARY";
   }
-  render_page_header(it, ctx.cx, hdr_title, ctx.font_small, ctx.col_white, true);
+  render_page_header(it, ctx.cx, hdr_title, ctx.font_small);
 
   const int content_top = ly.hdr_y + dp_px(24);
   const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
@@ -964,11 +964,11 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   if (is_peer_album_tab) {
-    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary,
                               ly.mode_bar_zone_top());
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
   } else {
-    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray);
+    render_vertical_page_pips(it, pg > 1, pg < tot, ctx.col_bg, ctx.theme_primary);
     render_back_button(it, ctx.cx, ctx.font_small, ly.back_y);
   }
 }
@@ -1160,12 +1160,12 @@ void render_now_playing_view(Rgb565Surface &it, const UiFrameContext &ctx) {
 
     rs.music.sync_carousel_for_view(layout().dock_slot_count);
     register_music_now_playing_hits(frame_hits(), g, show_metadata, show_controls,
-                                    rs.music.takeover, rs.music.mode_bar_win_start, false);
+                                    rs.music.takeover);
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
     return;
   }
 
-  register_music_now_playing_hits(frame_hits(), g, show_metadata, false, rs.music.takeover, 0, false);
+  register_music_now_playing_hits(frame_hits(), g, show_metadata, false, rs.music.takeover);
 }
 
 void render_volume_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {

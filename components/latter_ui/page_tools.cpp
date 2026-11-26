@@ -14,13 +14,6 @@ using namespace latter_core;
 
 namespace {
 
-inline constexpr float tool_art_f(float v466) noexcept {
-  return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
-}
-inline constexpr int tool_art_px(int v466) noexcept {
-  return (v466 * SCREEN_MIN_DIM + 233) / 466;
-}
-
 struct CalculatorState {
   double prev_val = 0.0;
   int op = 0;  // 0 = none, 1 = +, 2 = -, 3 = *, 4 = /
@@ -335,23 +328,23 @@ void render_dice_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       anim_p = static_cast<float>(elapsed) / static_cast<float>(kRollDurMs);
       const float damp = 1.0f - anim_p;
-      hop_y1 = -static_cast<int>(std::fabs(fast_sin(anim_p * PI_F * 2.2f)) * tool_art_f(34.0f) * damp);
-      hop_y2 = -static_cast<int>(std::fabs(fast_sin(anim_p * PI_F * 2.2f + 0.7f)) * tool_art_f(32.0f) * damp);
-      jostle_x1 = static_cast<int>(fast_sin(anim_p * PI_F * 6.0f) * tool_art_f(8.0f) * damp);
-      jostle_x2 = -static_cast<int>(fast_cos(anim_p * PI_F * 6.0f) * tool_art_f(8.0f) * damp);
-      shadow_extra = static_cast<int>(tool_art_f(6.0f) * damp);
+      hop_y1 = -static_cast<int>(std::fabs(fast_sin(anim_p * PI_F * 2.2f)) * canvas_f(34.0f) * damp);
+      hop_y2 = -static_cast<int>(std::fabs(fast_sin(anim_p * PI_F * 2.2f + 0.7f)) * canvas_f(32.0f) * damp);
+      jostle_x1 = static_cast<int>(fast_sin(anim_p * PI_F * 6.0f) * canvas_f(8.0f) * damp);
+      jostle_x2 = -static_cast<int>(fast_cos(anim_p * PI_F * 6.0f) * canvas_f(8.0f) * damp);
+      shadow_extra = static_cast<int>(canvas_f(6.0f) * damp);
       const uint32_t step = elapsed / 55U;
       cur_val_1 = 1 + (static_cast<int>(hash2d_01(static_cast<int>(step), 17) * 60.0f) % 6);
       cur_val_2 = 1 + (static_cast<int>(hash2d_01(static_cast<int>(step) + 31, 53) * 60.0f) % 6);
     }
   }
 
-  render_page_header(it, ctx.cx, "DICE ROLL", ctx.font_small, ctx.col_white);
+  render_page_header(it, ctx.cx, "DICE ROLL", ctx.font_small);
   const int dice_base_y = ly.hdr_y + ((ly.back_y - ly.hdr_y) * 42) / 100;
-  const int die_off = tool_art_px(75);
+  const int die_off = canvas_px(75);
   const int d1_cx = ctx.cx - die_off + jostle_x1, d2_cx = ctx.cx + die_off + jostle_x2;
   const int d1_cy = dice_base_y + hop_y1, d2_cy = dice_base_y + hop_y2;
-  const int d_size = tool_art_px(132), cr = std::max(6, tool_art_px(16));
+  const int d_size = canvas_px(132), cr = std::max(6, canvas_px(16));
 
   auto draw_tumbling_cube_3d = [&](int center_x, int center_y, int hop_y, float rx, float ry, float rz) {
     static constexpr float kCubeV[8][3] = {
@@ -359,16 +352,16 @@ void render_dice_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
         {-1.0f, -1.0f,  1.0f}, {1.0f, -1.0f,  1.0f}, {1.0f, 1.0f,  1.0f}, {-1.0f, 1.0f,  1.0f}};
     static constexpr uint8_t kCubeF[6][4] = {
         {0, 1, 2, 3}, {5, 4, 7, 6}, {4, 5, 1, 0}, {3, 2, 6, 7}, {4, 0, 3, 7}, {1, 5, 6, 2}};
-    const float half_s = tool_art_f(46.0f), fov = tool_art_f(260.0f), z_dist = tool_art_f(280.0f);
+    const float half_s = canvas_f(46.0f), fov = canvas_f(260.0f), z_dist = canvas_f(280.0f);
     ProjectedPoint pts[8];
     Vec3 rv[8];
     for (int i = 0; i < 8; i++) {
       rv[i] = rotate_3d_xyz({kCubeV[i][0] * half_s, kCubeV[i][1] * half_s, kCubeV[i][2] * half_s}, rx, ry, rz);
       pts[i] = project_3d(rv[i], center_x, center_y, fov, z_dist);
     }
-    fast_filled_circle(it, center_x + tool_art_px(6), center_y + tool_art_px(18) - hop_y / 2, tool_art_px(40), kChromeModalBg);
+    fast_filled_circle(it, center_x + canvas_px(6), center_y + canvas_px(18) - hop_y / 2, canvas_px(40), kChromeModalBg);
     const UiColor c_border(158, 150, 138), c_pip(25, 28, 35);
-    const int pip_r3d = std::max(2, tool_art_px(3));
+    const int pip_r3d = std::max(2, canvas_px(3));
     for (int f = 0; f < 6; f++) {
       const uint8_t idx[4] = {kCubeF[f][0], kCubeF[f][1], kCubeF[f][2], kCubeF[f][3]};
       const uint8_t i0 = idx[0], i1 = idx[1], i2 = idx[2], i3 = idx[3];
@@ -412,14 +405,14 @@ void render_dice_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
         fast_filled_circle(it, rx + d_size - cr, cy_c, cr, col);
       }
     };
-    fill_rbox(x0 + tool_art_px(6) + shadow_extra, y0 + tool_art_px(8) + shadow_extra, kChromeModalBg);
+    fill_rbox(x0 + canvas_px(6) + shadow_extra, y0 + canvas_px(8) + shadow_extra, kChromeModalBg);
     fill_rbox(x0, y0, UiColor(248, 246, 240));
     const UiColor border_col(182, 176, 164), pip_c(25, 28, 35), pip_rim(85, 92, 105);
     fast_line(it, x0 + cr, y0 + 1, x0 + d_size - cr, y0 + 1, ctx.col_white);
     fast_line(it, x0 + 1, y0 + cr, x0 + 1, y0 + d_size - cr, ctx.col_white);
     fast_line(it, x0 + cr, y0 + d_size - 1, x0 + d_size - cr, y0 + d_size - 1, border_col);
     fast_line(it, x0 + d_size - 1, y0 + cr, x0 + d_size - 1, y0 + d_size - cr, border_col);
-    const int pr = std::max(5, tool_art_px(9)), p_dist = tool_art_px(34);
+    const int pr = std::max(5, canvas_px(9)), p_dist = canvas_px(34);
     auto draw_pip = [&](int px, int py) {
       fast_filled_circle(it, px, py, pr, pip_c);
       fast_pixel(it, px + pr / 2, py + pr / 2 + 1, pip_rim);
@@ -465,7 +458,7 @@ void render_coin_flip_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       const float p = static_cast<float>(el_ms) / static_cast<float>(kTossDurationMs);
       const float arc = 4.0f * p * (1.0f - p);
-      y_hop = -tool_art_f(74.0f) * arc;
+      y_hop = -canvas_f(74.0f) * arc;
       z_zoom = 1.0f + 0.18f * arc;
       float raw_cos = 1.0f;
       fast_sincos((p * (1.18f - 0.18f * p)) * 5.0f * PI_F, raw_sin, raw_cos);
@@ -475,17 +468,17 @@ void render_coin_flip_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
   }
 
-  render_page_header(it, ctx.cx, "COIN FLIP", ctx.font_small, ctx.col_white);
+  render_page_header(it, ctx.cx, "COIN FLIP", ctx.font_small);
   const int cx = ctx.cx;
   const int coin_base_y = ly.hdr_y + ((ly.back_y - ly.hdr_y) * 48) / 100;
   const int coin_cy = coin_base_y + static_cast<int>(y_hop);
-  const float s_zoom = tool_art_f(z_zoom);
+  const float s_zoom = canvas_f(z_zoom);
   const int r_outer = std::max(16, static_cast<int>(108.0f * s_zoom));
 
-  const int sh_base_y = std::min(ly.back_y - dp_px(32), coin_base_y + tool_art_px(96));
-  const float shadow_scale = std::max(0.32f, 1.0f - (-y_hop / std::max(1.0f, tool_art_f(95.0f))));
-  const int sh_rx = static_cast<int>(tool_art_f(88.0f) * shadow_scale);
-  const int sh_ry = std::max(3, static_cast<int>(tool_art_f(16.0f + 10.0f * coin_sy) * shadow_scale));
+  const int sh_base_y = std::min(ly.back_y - dp_px(32), coin_base_y + canvas_px(96));
+  const float shadow_scale = std::max(0.32f, 1.0f - (-y_hop / std::max(1.0f, canvas_f(95.0f))));
+  const int sh_rx = static_cast<int>(canvas_f(88.0f) * shadow_scale);
+  const int sh_ry = std::max(3, static_cast<int>(canvas_f(16.0f + 10.0f * coin_sy) * shadow_scale));
   for (int sdy = -sh_ry; sdy <= sh_ry; sdy++) {
     const int sdx = (sh_rx * chord_half_span_int(sh_ry, sdy)) / sh_ry;
     fast_hline(it, cx - sdx, sh_base_y + sdy, 2 * sdx + 1, kChromePauseGlyph);
@@ -498,7 +491,7 @@ void render_coin_flip_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int b_outer = std::max(4, static_cast<int>(static_cast<float>(r_outer) * coin_sy));
   const float edge_signed = cs.anim_active ? (16.0f * raw_sin) : 4.0f;
   const bool edge_on_top = (edge_signed < 0.0f);
-  const int edge_h = cs.anim_active ? tool_art_px(static_cast<int>(std::lround(std::fabs(edge_signed)))) : std::max(3, tool_art_px(4));
+  const int edge_h = cs.anim_active ? canvas_px(static_cast<int>(std::lround(std::fabs(edge_signed)))) : std::max(3, canvas_px(4));
 
   for (int dy = 1; edge_h > 0 && dy <= b_outer + edge_h; dy++) {
     const int src_dy = (dy > edge_h) ? (dy - edge_h) : 0;
@@ -507,7 +500,7 @@ void render_coin_flip_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
     fast_hline(it, cx - dx_outer, edge_on_top ? (coin_cy - dy) : (coin_cy + dy), 2 * dx_outer + 1, ec);
   }
 
-  const int dish_in = std::max(5, tool_art_px(8));
+  const int dish_in = std::max(5, canvas_px(8));
   for (int dy = -b_outer; dy <= b_outer; dy++) {
     const int dx_outer = (r_outer * chord_half_span_int(b_outer, dy)) / b_outer;
     const float u_y = static_cast<float>(dy) / static_cast<float>(b_outer);
@@ -535,7 +528,7 @@ void render_coin_flip_subpage(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   if (edge_h >= 2) {
-    const int reed_step = std::max(4, tool_art_px(is_edge_flash ? 5 : 6));
+    const int reed_step = std::max(4, canvas_px(is_edge_flash ? 5 : 6));
     for (int rx_off = -r_outer + 6; rx_off <= r_outer - 6; rx_off += reed_step) {
       const int y_off = (b_outer * chord_half_span_int(r_outer, rx_off)) / r_outer;
       const UiColor reed_c = ((rx_off / reed_step) & 1) ? col_bevel_hi : col_rim_dark;
@@ -661,13 +654,13 @@ RouteId tool_subpage_to_route(int app_id) {
 void draw_tool_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
                          UiColor col, bool shadow, void *user_ctx) {
   const int app_id = static_cast<int>(reinterpret_cast<intptr_t>(user_ctx));
-  ui::draw_route_icon(it, tool_subpage_to_route(app_id), ix, iy, ir, col, kChromeGlassTint, shadow);
+  ui::draw_route_icon(it, tool_subpage_to_route(app_id), ix, iy, ir, col, shadow);
 }
 
 void render_tools_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
                            const DeviceRuntimeState &rs) {
   ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
-  const int total_items = collect_tools_launcher_items(items, device_prefs());
+  const int total_items = collect_tools_launcher_items(items, persisted_prefs());
 
   if (total_items <= 0) {
     runtime_state().nav.tools_menu_page = 0;
@@ -741,18 +734,18 @@ void render_stopwatch_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
   const float cx_f = static_cast<float>(cx) + 0.5f;
   const float cy_f = static_cast<float>(cy) + 0.5f;
 
-  fast_circle(it, cx, cy, tool_art_px(230), ctx.col_white);
-  fast_circle(it, cx, cy, tool_art_px(228), ctx.theme_secondary);
-  ui::render_analog_chapter_ring(it, cx, cy, tool_art_px(227),
+  fast_circle(it, cx, cy, canvas_px(230), ctx.col_white);
+  fast_circle(it, cx, cy, canvas_px(228), ctx.theme_secondary);
+  ui::render_analog_chapter_ring(it, cx, cy, canvas_px(227),
                                  ctx.theme_secondary, ctx.col_white, ctx.col_slate, false);
-  fast_circle(it, cx, cy, tool_art_px(196), ctx.col_dark_gray);
+  fast_circle(it, cx, cy, canvas_px(196), ctx.col_dark_gray);
 
   static constexpr int kChronoTicks[11] = {0, 5, 10, 15, 20, 25, 35, 40, 45, 50, 55};
   static constexpr const char *kChronoStrs[11] = {"0", "5", "10", "15", "20", "25", "35", "40", "45", "50", "55"};
   for (int i = 0; i < 11; i++) {
     const int t_idx = kChronoTicks[i];
-    const int nx = cx + static_cast<int>(tool_art_f(172.0f) * DIAL_SIN[t_idx]);
-    const int ny = cy - static_cast<int>(tool_art_f(172.0f) * DIAL_COS[t_idx]);
+    const int nx = cx + static_cast<int>(canvas_f(172.0f) * DIAL_SIN[t_idx]);
+    const int ny = cy - static_cast<int>(canvas_f(172.0f) * DIAL_COS[t_idx]);
     if (backdrop_active()) {
       fast_print(it, nx + 1, ny + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, kChronoStrs[i]);
     }
@@ -761,10 +754,11 @@ void render_stopwatch_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
 
   char main_buf[32];
   std::snprintf(main_buf, sizeof(main_buf), "%02d:%02d.%d", mins, secs, tenths);
+  const int main_y = cy + canvas_px(5);
   if (backdrop_active()) {
-    fast_print(it, cx + 1, tool_art_px(238) + 1, ctx.font_date, kChromeShadow, TextAlign::CENTER, main_buf);
+    fast_print(it, cx + 1, main_y + 1, ctx.font_date, kChromeShadow, TextAlign::CENTER, main_buf);
   }
-  fast_print(it, cx, tool_art_px(238), ctx.font_date, ctx.col_white, TextAlign::CENTER, main_buf);
+  fast_print(it, cx, main_y, ctx.font_date, ctx.col_white, TextAlign::CENTER, main_buf);
 
   if (sw.lap_ms > 0) {
     const int l_mins   = static_cast<int>((sw.lap_ms / 60000U) % 60U);
@@ -772,16 +766,17 @@ void render_stopwatch_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
     const int l_tenths = static_cast<int>((sw.lap_ms / 100U) % 10U);
     char lap_buf[32];
     std::snprintf(lap_buf, sizeof(lap_buf), "SPLIT  %02d:%02d.%d", l_mins, l_secs, l_tenths);
+    const int lap_y = cy + canvas_px(41);
     if (backdrop_active()) {
-      fast_print(it, cx + 1, tool_art_px(274) + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, lap_buf);
+      fast_print(it, cx + 1, lap_y + 1, ctx.font_small, kChromeShadow, TextAlign::CENTER, lap_buf);
     }
-    fast_print(it, cx, tool_art_px(274), ctx.font_small, ctx.theme_primary, TextAlign::CENTER, lap_buf);
+    fast_print(it, cx, lap_y, ctx.font_small, ctx.theme_primary, TextAlign::CENTER, lap_buf);
   }
 
-  const int btn_y     = cy + tool_art_px(99);
-  const int btn_lap_x = cx - tool_art_px(57);
-  const int btn_rst_x = cx + tool_art_px(57);
-  const int btn_r     = tool_art_px(36);
+  const int btn_y     = cy + canvas_px(99);
+  const int btn_lap_x = cx - canvas_px(57);
+  const int btn_rst_x = cx + canvas_px(57);
+  const int btn_r     = canvas_px(36);
 
   render_glass_circle(it, btn_lap_x, btn_y, btn_r, kChromeGlassTint,
                       (sw.lap_ms > 0) ? ctx.col_red : ctx.theme_secondary);
@@ -797,28 +792,28 @@ void render_stopwatch_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
     const float l_sin = std::sin(lap_angle);
     const float l_cos = std::cos(lap_angle);
     ui::draw_aa_line(it, cx_f, cy_f,
-                     cx_f + tool_art_f(154.0f) * l_sin,
-                     cy_f - tool_art_f(154.0f) * l_cos,
-                     std::max(1.8f, tool_art_f(2.0f)), ctx.col_red);
+                     cx_f + canvas_f(154.0f) * l_sin,
+                     cy_f - canvas_f(154.0f) * l_cos,
+                     std::max(1.8f, canvas_f(2.0f)), ctx.col_red);
     ui::draw_aa_ring(it,
-                     cx_f + tool_art_f(158.0f) * l_sin,
-                     cy_f - tool_art_f(158.0f) * l_cos,
-                     tool_art_f(4.0f), std::max(1.4f, tool_art_f(1.6f)), ctx.col_red);
+                     cx_f + canvas_f(158.0f) * l_sin,
+                     cy_f - canvas_f(158.0f) * l_cos,
+                     canvas_f(4.0f), std::max(1.4f, canvas_f(1.6f)), ctx.col_red);
   }
 
   const float chrono_angle = (static_cast<float>(total_ms % 60000U) / 60000.0f) * (2.0f * PI_F);
   const float s_sin = std::sin(chrono_angle);
   const float s_cos = std::cos(chrono_angle);
-  const float tail_len = tool_art_f(36.0f);
-  const float tip_len  = tool_art_f(178.0f);
+  const float tail_len = canvas_f(36.0f);
+  const float tip_len  = canvas_f(178.0f);
   const float tail_xf  = cx_f - tail_len * s_sin;
   const float tail_yf  = cy_f + tail_len * s_cos;
   const float tip_xf   = cx_f + tip_len * s_sin;
   const float tip_yf   = cy_f - tip_len * s_cos;
-  const float needle_w = std::max(2.0f, tool_art_f(2.2f));
-  const float cw_outer = tool_art_f(7.0f);
-  const float cw_inner = tool_art_f(5.6f);
-  const float cw_pip   = tool_art_f(3.0f);
+  const float needle_w = std::max(2.0f, canvas_f(2.2f));
+  const float cw_outer = canvas_f(7.0f);
+  const float cw_inner = canvas_f(5.6f);
+  const float cw_pip   = canvas_f(3.0f);
 
   ui::draw_aa_line(it, tail_xf + 1.0f, tail_yf + 1.2f, tip_xf + 1.0f, tip_yf + 1.2f,
                    needle_w, kChromeShadow, 96);
@@ -832,8 +827,8 @@ void render_stopwatch_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
 
   const int sw_min_r = (layout().min_hit_px() + 1) / 2;
   const int sw_pad = std::max(8, sw_min_r - btn_r);
-  frame_hits().add_rect(tool_art_px(40), tool_art_px(69),
-                        SCREEN_W - 2 * tool_art_px(40), tool_art_px(210),
+  frame_hits().add_rect(cx - canvas_px(193), cy - canvas_px(164),
+                        2 * canvas_px(193), canvas_px(210),
                         WidgetId::SW_PRIMARY_BTN, kHitTap | kHitFocusSlot);
   frame_hits().add_circle(btn_lap_x, btn_y, btn_r,
                           WidgetId::SW_LAP_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle, 0, sw_pad);
@@ -846,7 +841,7 @@ void render_stopwatch_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
 
 void render_level_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
                           const DeviceRuntimeState &rs) {
-  render_page_header(it, ctx.cx, "LEVEL", ctx.font_small, ctx.col_white);
+  render_page_header(it, ctx.cx, "LEVEL", ctx.font_small);
 
   const float roll_deg = rs.hw_imu_roll;
   const float pitch_deg = rs.hw_imu_pitch;
@@ -900,17 +895,17 @@ void render_level_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
   const int level_top = ly.sub_hdr_y + dp_px(18);
   const int level_bot = ly.back_y - dp_px(24);
   const int level_cy  = (level_top + level_bot) / 2;
-  const int outer_r   = std::max(dp_px(48), std::min(tool_art_px(136), (level_bot - level_top) / 2 - dp_px(6)));
+  const int outer_r   = std::max(dp_px(48), std::min(canvas_px(136), (level_bot - level_top) / 2 - dp_px(6)));
   const int mid_r     = (outer_r * 70) / 136;
   const int inner_r   = (outer_r * 27) / 136;
-  const int cross_out = outer_r + std::max(3, tool_art_px(5));
-  const int cross_in  = inner_r + std::max(3, tool_art_px(6));
-  const float max_bub = static_cast<float>(outer_r - std::max(12, tool_art_px(22)));
-  const int bub_r     = std::max(12, tool_art_px(20));
+  const int cross_out = outer_r + std::max(3, canvas_px(5));
+  const int cross_in  = inner_r + std::max(3, canvas_px(6));
+  const float max_bub = static_cast<float>(outer_r - std::max(12, canvas_px(22)));
+  const int bub_r     = std::max(12, canvas_px(20));
 
   for (int i = 0; i < 60; i += 5) {
-    const int x1 = ctx.cx + static_cast<int>(DIAL_SIN[i] * static_cast<float>(outer_r - tool_art_px(8)));
-    const int y1 = level_cy - static_cast<int>(DIAL_COS[i] * static_cast<float>(outer_r - tool_art_px(8)));
+    const int x1 = ctx.cx + static_cast<int>(DIAL_SIN[i] * static_cast<float>(outer_r - canvas_px(8)));
+    const int y1 = level_cy - static_cast<int>(DIAL_COS[i] * static_cast<float>(outer_r - canvas_px(8)));
     const int x2 = ctx.cx + static_cast<int>(DIAL_SIN[i] * static_cast<float>(outer_r));
     const int y2 = level_cy - static_cast<int>(DIAL_COS[i] * static_cast<float>(outer_r));
     fast_line(it, x1, y1, x2, y2, ctx.col_gray);
@@ -928,7 +923,7 @@ void render_level_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
   fast_line(it, ctx.cx, level_cy + cross_in, ctx.cx, level_cy + cross_out, ring_c);
   fast_filled_circle(it, ctx.cx, level_cy, 2, ring_c);
 
-  const float deg_px = tool_art_f(7.6f);
+  const float deg_px = canvas_f(7.6f);
   float fbx = static_cast<float>(ctx.cx) + smooth_x_deg * deg_px;
   float fby = static_cast<float>(level_cy) - smooth_y_deg * deg_px;
   const float bdx = fbx - static_cast<float>(ctx.cx);
@@ -947,8 +942,8 @@ void render_level_subpage(Rgb565Surface &it, const UiFrameContext &ctx,
   fast_filled_circle(it, bx, by, bub_r, bub_fill);
   fast_circle(it, bx, by, bub_r, ctx.col_white);
   fast_circle(it, bx, by, bub_r - 2, ctx.col_white);
-  fast_filled_circle(it, bx - bub_r / 3, by - bub_r / 3, std::max(2, tool_art_px(4)), ctx.col_white);
-  fast_filled_circle(it, bx + bub_r / 3, by + bub_r / 3, std::max(1, tool_art_px(2)), ctx.col_white);
+  fast_filled_circle(it, bx - bub_r / 3, by - bub_r / 3, std::max(2, canvas_px(4)), ctx.col_white);
+  fast_filled_circle(it, bx + bub_r / 3, by + bub_r / 3, std::max(1, canvas_px(2)), ctx.col_white);
 
   render_back_button(it, ctx.cx, ctx.font_small, ly.back_y, "< Back");
 }

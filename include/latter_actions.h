@@ -251,17 +251,6 @@ inline void emit_media_play_item(std::string_view entity_id,
   detail::emit_media_play_item_impl(entity_id, media_id, media_type, enqueue, radio_mode);
 }
 
-template <typename OutboxT>
-  requires (!std::is_same_v<std::decay_t<OutboxT>, bool> &&
-            !std::is_same_v<std::decay_t<OutboxT>, std::nullptr_t>)
-inline void emit_media_play_item(std::string_view entity_id,
-                                 std::string_view media_id,
-                                 std::string_view media_type,
-                                 std::string_view enqueue,
-                                 OutboxT outbox) {
-  emit_media_play_item(entity_id, media_id, media_type, enqueue, false, outbox);
-}
-
 template <typename OutboxT = std::nullptr_t>
 inline void emit_media_queue_play(std::string_view queue_item_id,
                                   std::string_view entity_id = "",
@@ -511,16 +500,6 @@ inline void emit_timer_alarm_state(bool timer_running, bool timer_paused,
       stopwatch_running, stopwatch_paused, stopwatch_elapsed_sec);
 }
 
-template <typename OutboxT>
-  requires (!std::is_same_v<std::decay_t<OutboxT>, bool> &&
-            !std::is_same_v<std::decay_t<OutboxT>, std::nullptr_t>)
-inline void emit_timer_alarm_state(bool timer_running, bool timer_paused,
-                                   int remaining_sec, bool ringing,
-                                   OutboxT outbox) {
-  emit_timer_alarm_state(timer_running, timer_paused, remaining_sec, ringing,
-                         false, false, 0, outbox);
-}
-
 template <typename OutboxT = std::nullptr_t>
 inline bool check_and_emit_timer_alarm_state(uint32_t now_ms, bool force_if_active = false,
                                              OutboxT outbox = nullptr, bool force_emit = false) {
@@ -534,12 +513,6 @@ template <typename OutboxT = std::nullptr_t>
 inline void sync_local_pref_key_edit(PrefKey key, OutboxT outbox = nullptr) {
   detail::bind_outbox_if_present(outbox);
   detail::sync_local_pref_key_edit_impl(key);
-}
-
-template <typename OutboxT = std::nullptr_t>
-inline void sync_local_alarms_edit(uint32_t now_ms = 0, OutboxT outbox = nullptr) {
-  (void)now_ms;
-  sync_local_pref_key_edit(PrefKey::ALARMS_SUMMARY, outbox);
 }
 
 template <typename OutboxT = std::nullptr_t>

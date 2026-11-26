@@ -27,8 +27,8 @@
 namespace latter_ui {
 
 inline constexpr int mm_to_px(float mm) { return mm_to_px_for(mm, LATTER_PANEL_PPI); }
-inline constexpr int kRadiusCardPx() { return radius_card_for(SCREEN_MIN_DIM); }
-inline constexpr int kRadiusKeyPx() { return radius_key_for(SCREEN_MIN_DIM); }
+inline constexpr int kRadiusCardPx() { return radius_card_for(); }
+inline constexpr int kRadiusKeyPx() { return radius_key_for(); }
 
 static constexpr int STD_ART_SIZE = (SCREEN_MIN_DIM * 566) / 1000;
 static constexpr int kBackLabelY = compute_dock_metrics(current_display_spec()).back_y;
@@ -51,9 +51,9 @@ namespace SystemMenuMode {
   static constexpr int SOUND           = 7;
   static constexpr int SYSTEM_INFO     = 8;
   static constexpr int MUSIC           = 9;
-  static constexpr int VOICE           = 11;
-  static constexpr int WW_SENSITIVITY  = 12;
-  static constexpr int COLOR_WHEEL     = 13;
+  static constexpr int VOICE           = 10;
+  static constexpr int WW_SENSITIVITY  = 11;
+  static constexpr int COLOR_WHEEL     = 12;
 }  // namespace SystemMenuMode
 
 namespace TimeSubpage {
@@ -116,8 +116,7 @@ inline int safe_span(int y, int inset = 12) {
                        LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R);
 }
 
-inline bool is_inside_bezel(int x, int y, int cy = SCREEN_CY, int inset = 5) {
-  (void)cy;
+inline bool is_inside_bezel(int x, int y, int inset = 5) {
   return is_inside_bezel_for(
       x, y, SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, inset, LATTER_CORNER_R);
 }
@@ -195,7 +194,7 @@ inline ProjectedPoint project_3d(Vec3 v, int cx, int cy, float fov = 240.0f, flo
   const float k = dp_f(fov) / depth;
   const int sx = cx + static_cast<int>(v.x * k);
   const int sy = cy + static_cast<int>(v.y * k);
-  return {sx, sy, k, is_inside_bezel(sx, sy, cy, 4)};
+  return {sx, sy, k, is_inside_bezel(sx, sy, 4)};
 }
 
 inline float hash2d_01(int x, int y) {
@@ -381,6 +380,44 @@ inline std::string strip_trailing_paren_state(const std::string &s) {
     }
   }
   return s;
+}
+
+inline bool is_newer_semver(std::string_view lat_sv, const char *cur_cstr) noexcept {
+  if (lat_sv.empty() || lat_sv == "unavailable" || lat_sv == "unknown") return false;
+  auto parse_ver = [](std::string_view sv, int &maj, int &min_v, int &pat) noexcept -> bool {
+    if (sv.empty()) return false;
+    if (sv.front() == 'v' || sv.front() == 'V') sv.remove_prefix(1);
+    auto read_num = [&](int &out) noexcept -> bool {
+      if (sv.empty() || sv.front() < '0' || sv.front() > '9') return false;
+      int v = 0;
+      while (!sv.empty() && sv.front() >= '0' && sv.front() <= '9') {
+        v = v * 10 + (sv.front() - '0');
+        sv.remove_prefix(1);
+      }
+      out = v;
+      return true;
+    };
+    if (!read_num(maj) || sv.empty() || sv.front() != '.') return false;
+    sv.remove_prefix(1);
+    if (!read_num(min_v)) return false;
+    pat = 0;
+    if (!sv.empty() && sv.front() == '.') {
+      sv.remove_prefix(1);
+      (void)read_num(pat);
+    }
+    return true;
+  };
+  std::string_view chk = lat_sv;
+  if (!chk.empty() && (chk.front() == 'v' || chk.front() == 'V')) chk.remove_prefix(1);
+  if (chk.starts_with("202")) return false;
+  int l_maj = 0, l_min = 0, l_pat = 0, c_maj = 0, c_min = 0, c_pat = 0;
+  if (!parse_ver(lat_sv, l_maj, l_min, l_pat) ||
+      !parse_ver(cur_cstr != nullptr ? std::string_view(cur_cstr) : std::string_view{}, c_maj, c_min, c_pat)) {
+    return false;
+  }
+  if (l_maj != c_maj) return l_maj > c_maj;
+  if (l_min != c_min) return l_min > c_min;
+  return l_pat > c_pat;
 }
 
 }  // namespace latter_ui

@@ -4,7 +4,7 @@
 // Latter Compiled On-Device Touch, Rotary & Hit-Table Input Engine
 // (include/ui_touch_engine.h)
 // Pure C++20 UI touch engine header — zero ESPHome or HAL includes; compiles standalone on
-// both ESP32 and 5-geometry host tests. Absorbs compute_touch_context().
+// both ESP32 and 9-geometry host tests. Absorbs compute_touch_context().
 // ==============================================================================
 
 #include "state/device_runtime_state.h"
@@ -129,8 +129,7 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
 inline void register_music_now_playing_hits(
     FrameHitTable &ht, const MusicNowPlayingGeom &g,
     bool show_metadata, bool show_controls,
-    latter_core::MusicTakeover takeover, int mode_win_start = 0,
-    bool include_mode_bar = true) {
+    latter_core::MusicTakeover takeover) {
   if (takeover != latter_core::MusicTakeover::NONE) return;
   if (!show_metadata && !show_controls) {
     ht.add_rect(0, 0, g.w, g.h, WidgetId::MUSIC_ART_TAP, kHitTap);
@@ -147,34 +146,6 @@ inline void register_music_now_playing_hits(
                   WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle);
     ht.add_circle(g.next_cx, g.transport_cy, g.side_hit_r,
                   WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
-    if (include_mode_bar) {
-      const int vis_cap = std::clamp(g.mode_slot_count, 1, kMaxDockSlots);
-      const int max_ws = std::max(0, latter_core::kMusicPeerTabCount - vis_cap);
-      const int ws = std::clamp(mode_win_start, 0, max_ws);
-      for (int i = 0; i < vis_cap; ++i) {
-        ht.add_circle(g.mode_slot_xs[i], g.mode_bar_cy, g.mode_bar_r,
-                      static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
-                      kHitTap | kHitFocusSlot | kHitFocusCircle,
-                      static_cast<int16_t>(ws + i), g.mode_bar_pad);
-      }
-      const int arrow_pad = std::max(10, g.mode_bar_pad);
-      if (ws > 0) {
-        const int lw = g.mode_slot_xs[0] - g.mode_bar_r;
-        if (lw >= 8) {
-          ht.add_rect(0, g.mode_bar_cy - g.mode_bar_r - arrow_pad, lw,
-                      2 * (g.mode_bar_r + arrow_pad),
-                      WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
-        }
-      }
-      if (ws + vis_cap < latter_core::kMusicPeerTabCount) {
-        const int rx0 = g.mode_slot_xs[vis_cap - 1] + g.mode_bar_r + 1;
-        if (g.w - rx0 >= 8) {
-          ht.add_rect(rx0, g.mode_bar_cy - g.mode_bar_r - arrow_pad, g.w - rx0,
-                      2 * (g.mode_bar_r + arrow_pad),
-                      WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
-        }
-      }
-    }
   }
 }
 
@@ -458,14 +429,12 @@ enum class UiHostCmd : uint8_t {
   START_CALENDAR_DICTATION,
   START_BROADCAST_DICTATION,
   APPLY_DEVICE_PREFS_EFFECTS,
-  NOTIFY_WEATHER_SIM_CHANGED,
   SET_LOCAL_SPEAKER_VOL_PCT,
   ENSURE_UI_ANIM_POLLER,
 };
 
 enum class UiSelectId : uint8_t {
   TAP_WAKE_MODE = 0,
-  WEATHER_SIM_CONDITION,
   MUSIC_OVERLAY_STYLE,
   MUSIC_AUTO_OPEN,
   MUSIC_FULLSCREEN_ART_MODE,
@@ -777,7 +746,7 @@ class TouchGestureEngine {
                                       uint32_t now_ms);
   static void do_fetch_area_browse_();
   static void do_fetch_area_list_browse_();
-  static void enter_home_hub_tab_(int target_tab, bool expand_cam, latter_core::DeviceRuntimeState &rs,
+  static void enter_home_hub_tab_(int target_tab, latter_core::DeviceRuntimeState &rs,
                                   const UiTouchRuntime &rt, uint32_t now_ms);
   static const HomeActivityItem *resolve_home_activities_(uint32_t now_ms,
                                                           const latter_core::DeviceRuntimeState &rs,

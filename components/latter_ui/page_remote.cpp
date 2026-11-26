@@ -2,7 +2,6 @@
 #include "ui_touch_recognizer.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstdio>
 #include <string>
 
@@ -83,9 +82,9 @@ void render_tv_remote_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     if (total_pages > 1) {
       char hdr_buf[32];
       std::snprintf(hdr_buf, sizeof(hdr_buf), "CONTROL  %d/%d", cur_page + 1, total_pages);
-      render_page_header(it, cx, hdr_buf, font_small, col_white);
+      render_page_header(it, cx, hdr_buf, font_small);
     } else {
-      render_page_header(it, cx, "CONTROL", font_small, col_white);
+      render_page_header(it, cx, "CONTROL", font_small);
     }
     if (is_fb) {
       std::string fit_fb = fit_text_to_width_font(remote_action_feedback, safe_span(layout().sub_hdr_y, 18), font_small);
@@ -154,7 +153,7 @@ void render_tv_remote_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
     if (total_pages > 1) {
       render_vertical_page_pips(it, cur_page > 0, cur_page + 1 < total_pages,
-                                ctx.col_bg, col_white, col_slate);
+                                ctx.col_bg, col_white);
     }
 
     render_back_button(it, cx, font_small, layout().back_y, "< Back");
@@ -165,10 +164,9 @@ void render_tv_remote_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   // SUBPAGE 0: MAIN REMOTE CONTROL INTERFACE
   // ---------------------------------------------------------------------------
   const auto ly = layout();
-  std::string upper_title = rem_name;
-  for (char &c : upper_title) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  const std::string upper_title = to_ascii_upper(rem_name);
   std::string disp_title = fit_text_to_width_font(upper_title, safe_span(ly.hdr_y, 20), font_small);
-  render_page_header(it, cx, disp_title.c_str(), font_small, col_white);
+  render_page_header(it, cx, disp_title.c_str(), font_small);
   const int slot_hit_w = std::min(ly.safe_span(ly.hdr_y, dp_px(12)),
                                   std::max(dp_px(240), ly.min_hit_px() * 2));
   const int slot_hit_h = dp_px(36);

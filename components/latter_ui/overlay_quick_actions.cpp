@@ -35,7 +35,7 @@ void render_quick_actions_overlay(Rgb565Surface &it, const UiFrameContext &ctx,
     render_page_wallpaper_base(it, ctx.home_wallpaper_art, has_wall, cx, st.col_bg);
   }
 
-  render_page_header(it, cx, "QUICK ACTIONS", ctx.font_small, st.col_white);
+  render_page_header(it, cx, "QUICK ACTIONS", ctx.font_small);
 
   const auto bri = resolve_active_brightness_target(
       prefs, weather_state().sun_state, ctx.now.is_valid(),

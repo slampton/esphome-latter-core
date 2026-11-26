@@ -243,7 +243,6 @@ void test_v3_domain_reducer_and_timer_alarm() {
   rctx.now_ms = 5000U;
   rctx.friendly_name = "Kitchen Display";
   auto eff = v3_domain_reducer().reduce("area_context", rctx);
-  LATTER_CHECK(eff.area_changed);
   LATTER_CHECK(eff.mark_dirty_full);
   LATTER_CHECK(eff.fetch_area_browse);
   LATTER_CHECK(!eff.apply_theme_preset);
@@ -371,7 +370,7 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
     std::string dock24;
     for (int i = 0; i < 24; ++i) {
       if (i > 0) dock24.push_back(kProtocolRecordSep);
-      dock24 += "entity|light.item_" + std::to_string(i) + "|toggle|Light " + std::to_string(i) + "|mdi:lightbulb|0|0";
+      dock24 += "entity|light.item_" + std::to_string(i) + "|toggle|Light " + std::to_string(i) + "|mdi:lightbulb|0|0|||||||";
     }
     std::vector<std::string> sc_tok(static_cast<size_t>(ShortcutsField::COUNT), "");
     sc_tok[static_cast<size_t>(ShortcutsField::CHUNK_INDEX)] = "0";
@@ -469,7 +468,7 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
 
       const int min_hit = std::max(dp_px_for(36, compute_ui_scale_milli(g.ppi, g.view_scale_pct, g.stationary)),
                                    mm_to_px_for(7.0f, g.ppi));
-      const int div_off = compute_area_card_div_offset(g.w, g.h, g.ppi);
+      const int div_off = compute_area_card_div_offset(g.ppi, g.view_scale_pct, g.stationary);
       LATTER_CHECK(div_off >= min_hit);
 
       const auto ly = compute_panel_layout(g.w, g.h, g.round, g.wearable, g.ppi, g.corner_r, g.view_scale_pct,

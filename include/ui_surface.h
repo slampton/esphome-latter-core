@@ -134,10 +134,6 @@ inline const uint8_t *host_glyph_rows_5x7(uint32_t cp) noexcept {
   return kBox;
 }
 
-struct HostFontSpec {
-  int px_height{20};
-};
-
 }  // namespace detail
 
 struct UiFontView {
@@ -197,7 +193,7 @@ struct UiFontView {
              requires(FontT &f, const char *s, int *p) { f.measure(s, p, p, p, p); })
   UiFontView(FontT &f) noexcept : UiFontView(&f) {}
 
-  // Built-in scalable 1-bpp host bitmap font for headless 5-geometry RGB565 verification.
+  // Built-in scalable 1-bpp host bitmap font for headless 9-geometry RGB565 verification.
   static UiFontView make_host_font(int px_height) noexcept {
     struct HostGlyphSlot {
       int px_h{0};

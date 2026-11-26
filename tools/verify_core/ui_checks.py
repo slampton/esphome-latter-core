@@ -18,7 +18,7 @@ from .common import (
     strip_cpp_strings_and_comments,
     strip_yaml_comments,
 )
-from .subprocess_gates import FIVE_GEOM_CONFIGS
+from .subprocess_gates import HOST_GEOM_CONFIGS
 
 MIN_LATCH_CALLS: Final[int] = 2
 MAX_LATCH_CALLS: Final[int] = 5  # 2..4 DMA band latch calls + 1 probe_frame_buffer_endian call
@@ -65,6 +65,9 @@ RETIRED_UI_TOKENS: Final[tuple[str, ...]] = (
     "resolve_doorbell_quick_unlock_target",
     "kMaxContentColW",
     "SCREEN_R",
+    "game_2048_pending_dir",
+    "MusicDrilldown::SETTINGS",
+    "MUSIC_ROW_MORE_BASE",
 )
 RETIRED_SCALE_CALL_RE: Final[re.Pattern[str]] = re.compile(
     r"(?<!\.)\bscale_(?:x|y|s|w|min|min_f)(?:_for)?\s*\("
@@ -242,8 +245,6 @@ def _read_opt(path: Path) -> str:
 
 def _check_header_standard(rel: str, pclean: str, failures: list[str]) -> None:
     for _fn, arg_str in _iter_balanced_calls(pclean, r"\b(render_page_header)"):
-        if "col_white" not in arg_str and "Color::WHITE" not in arg_str and "UiColor::WHITE" not in arg_str:
-            failures.append(f"[UI HEADER STANDARD] {rel} calls render_page_header() without col_white/WHITE (D-070)")
         if "font_small" not in arg_str:
             failures.append(f"[UI HEADER STANDARD] {rel} calls render_page_header() without font_small (D-070)")
 
@@ -270,7 +271,7 @@ def _check_single_page_file(page_cpp: Path, family: str, failures: list[str]) ->
     for _fn, arg_str in _iter_balanced_calls(pclean, r"\b(render_card_box)"):
         parts = _split_top_level_args(arg_str)
         if len(parts) > CARD_BOX_RAD_ARG_IDX and re.fullmatch(
-            r"(?:(?:scale_s|dp_px)\s*\(\s*)?(?:10|12|14|15|16)\s*\)?", parts[CARD_BOX_RAD_ARG_IDX]
+            r"(?:dp_px\s*\(\s*)?(?:10|12|14|15|16)\s*\)?", parts[CARD_BOX_RAD_ARG_IDX]
         ):
             failures.append(
                 f"[UI RADIUS TOKENS] {rel} passes magic radius '{parts[CARD_BOX_RAD_ARG_IDX]}' to render_card_box()"
@@ -337,11 +338,11 @@ def _device_yaml_for_board(board_stem: str) -> Path | None:
 
 def _collect_board_font_metrics(failures: list[str]) -> dict[str, dict[str, int]]:
     board_metrics: dict[str, dict[str, int]] = {}
+    auto_font_fn = _load_python_auto_font_fn(failures)
+    if auto_font_fn is None:
+        return board_metrics
     for bf in sorted((ROOT / "boards").glob("*.yaml")):
         btxt = bf.read_text(encoding="utf-8")
-        dev = _device_yaml_for_board(bf.stem)
-        # Resolve effective font sizes through ESPHome's real package merge chain (hal -> latter_firmware -> device).
-        bsubs = extract_substitutions(collect_yaml_include_chain(dev) if dev else [bf])
         bflags = parse_latter_core_flags(btxt)
         if not all(k in bflags for k in ("LATTER_PANEL_PPI", "LATTER_SCREEN_W", "LATTER_SCREEN_H")):
             continue
@@ -352,15 +353,19 @@ def _collect_board_font_metrics(failures: list[str]) -> dict[str, dict[str, int]
         is_wear = int(bflags.get("LATTER_IS_WEARABLE", "0")) != 0
         default_rect_cr = WEARABLE_DEFAULT_CORNER_R if is_wear else RECT_DEFAULT_CORNER_R
         eff_cr = int(bflags["LATTER_CORNER_R"]) if "LATTER_CORNER_R" in bflags else (w_px // 2 if is_rnd else default_rect_cr)
-        if "font_small_size" not in bsubs or "font_micro_size" not in bsubs:
-            failures.append(f"[FONT MM] {bf.name}: missing effective font_small_size/font_micro_size substitution")
-            continue
-        f_small = int(bsubs["font_small_size"])
-        f_micro = int(bsubs["font_micro_size"])
+        sizes = auto_font_fn(
+            w_px,
+            h_px,
+            ppi,
+            view_scale_pct=int(bflags.get("LATTER_VIEW_SCALE_PCT", "0")),
+            is_stationary=int(bflags.get("LATTER_IS_STATIONARY", "0")) != 0,
+        )
+        f_small = int(sizes["font_small"])
+        f_micro = int(sizes["font_micro"])
         if f_small * 25.4 / ppi < MIN_SMALL_FONT_MM:
-            failures.append(f"[FONT MM] {bf.name}: font_small_size={f_small}px at {ppi} PPI < 2.0 mm")
+            failures.append(f"[FONT MM] {bf.name}: font_small={f_small}px at {ppi} PPI < 2.0 mm")
         if f_micro * 25.4 / ppi < MIN_MICRO_FONT_MM:
-            failures.append(f"[FONT MM] {bf.name}: font_micro_size={f_micro}px at {ppi} PPI < 1.65 mm")
+            failures.append(f"[FONT MM] {bf.name}: font_micro={f_micro}px at {ppi} PPI < 1.65 mm")
         board_metrics[bf.stem] = {"w": w_px, "h": h_px, "ppi": ppi, "cr": eff_cr, "small": f_small, "micro": f_micro}
     return board_metrics
 
@@ -504,12 +509,25 @@ def _check_board_auto_font_parity(
     auto_font_fn: Callable[..., dict[str, int]],
     failures: list[str],
 ) -> None:
+    gui_yaml_path = ROOT / "guis" / "universal" / "gui.yaml"
+    gui_uncommented = strip_yaml_comments(gui_yaml_path.read_text(encoding="utf-8")) if gui_yaml_path.is_file() else ""
+    for sub_key, fn_key in FONT_SUB_MAP:
+        if f"${{{sub_key}}}" in gui_uncommented:
+            failures.append(f"[FONT PARITY] guis/universal/gui.yaml still references legacy '${{{sub_key}}}'")
+        m_font = re.search(rf"-\s+file:[^\n]*\n\s+id:\s*{re.escape(fn_key)}\s*\n\s+size:\s*(\S+)", gui_uncommented)
+        if not m_font:
+            failures.append(f"[FONT PARITY] guis/universal/gui.yaml missing font block or size for '{fn_key}'")
+        elif m_font.group(1) != "1":
+            failures.append(f"[FONT PARITY] guis/universal/gui.yaml font '{fn_key}' must use size: 1 (got '{m_font.group(1)}')")
     for bf in sorted((ROOT / "boards").glob("*.yaml")):
         bflags = parse_latter_core_flags(bf.read_text(encoding="utf-8"))
         if not all(k in bflags for k in ("LATTER_PANEL_PPI", "LATTER_SCREEN_W", "LATTER_SCREEN_H")):
             continue
         dev = _device_yaml_for_board(bf.stem)
         bsubs = extract_substitutions(collect_yaml_include_chain(dev) if dev else [bf])
+        for sub_key, _fn_key in FONT_SUB_MAP:
+            if sub_key in bsubs:
+                failures.append(f"[FONT PARITY] {bf.name}: remove manual '{sub_key}' substitution (use size: 1 auto-fonts)")
         want = auto_font_fn(
             int(bflags["LATTER_SCREEN_W"]),
             int(bflags["LATTER_SCREEN_H"]),
@@ -517,13 +535,9 @@ def _check_board_auto_font_parity(
             view_scale_pct=int(bflags.get("LATTER_VIEW_SCALE_PCT", "0")),
             is_stationary=int(bflags.get("LATTER_IS_STATIONARY", "0")) != 0,
         )
-        for sub_key, fn_key in FONT_SUB_MAP:
-            if sub_key not in bsubs:
-                failures.append(f"[FONT PARITY] {bf.name}: missing '{sub_key}' substitution")
-            elif int(bsubs[sub_key]) != want[fn_key]:
-                failures.append(
-                    f"[FONT PARITY] {bf.name}: {sub_key}={bsubs[sub_key]} != Python compute_auto_font_sizes()['{fn_key}']={want[fn_key]}"
-                )
+        for _sub_key, fn_key in FONT_SUB_MAP:
+            if fn_key not in want or want[fn_key] <= 0:
+                failures.append(f"[FONT PARITY] {bf.name}: compute_auto_font_sizes() invalid '{fn_key}'")
 
 
 def _check_geom_auto_font_parity(
@@ -531,7 +545,7 @@ def _check_geom_auto_font_parity(
     cpp_consts: dict[str, int],
     failures: list[str],
 ) -> None:
-    for geom_lbl, defs in FIVE_GEOM_CONFIGS:
+    for geom_lbl, defs in HOST_GEOM_CONFIGS:
         kv = dict(d.split("=", 1) for d in defs if "=" in d)
         w = int(kv["LATTER_SCREEN_W"])
         h = int(kv["LATTER_SCREEN_H"])

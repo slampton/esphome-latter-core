@@ -257,7 +257,6 @@ struct MusicRuntimeState {
   MusicDrilldown drilldown{MusicDrilldown::NONE};
   MusicTakeover takeover{MusicTakeover::NONE};
   uint32_t takeover_interacted_ms = 0;
-  uint8_t carousel_page = 0;     // 0..5 sliding 4-slot window start across 9 peer tabs (0..8)
   int mode_bar_win_start = 0;    // 0..5 window start for render_in_app_mode_bar_track
   int8_t action_sheet_slot = -1; // 0..4 when opened from a slot row; -1 for header container
   bool action_sheet_is_queue = false;
@@ -325,7 +324,6 @@ struct MusicRuntimeState {
       mode_bar_win_start = idx - (cap - 1);
     }
     mode_bar_win_start = std::clamp(mode_bar_win_start, 0, max_start);
-    carousel_page = static_cast<uint8_t>(mode_bar_win_start);
   }
 
   void clear_lyrics_auto_state() noexcept {

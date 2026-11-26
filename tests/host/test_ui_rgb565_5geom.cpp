@@ -208,7 +208,6 @@ bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
          wid == WidgetId::MUSIC_TAKEOVER_BACKDROP ||
          wid == WidgetId::MUSIC_ART_TAP ||
          wid == WidgetId::CAM_VIDEO_TAP ||
-         (wid >= WidgetId::GRID_CARD_BASE && wid < WidgetId::GRID_CARD_BASE + 6) ||
          wid == WidgetId::GAMES_PREV_BTN ||
          wid == WidgetId::GAMES_NEXT_BTN ||
          wid == WidgetId::GAMES_HERO_CARD ||

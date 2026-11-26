@@ -159,7 +159,6 @@ struct AreaRuntimeState {
   std::string ble_proxy = "";
   std::string available_domains_csv = "";
   int cat_dock_page = 0;
-  std::string alarm_entity = "";
   std::string alarm_state = "";
   std::string alarm_service = "alarm_control_panel.alarm_disarm";
   std::string target_entity_id = "";

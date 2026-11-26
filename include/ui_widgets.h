@@ -53,18 +53,16 @@ void render_dock_page_pips(Rgb565Surface &it, int cx, int y_pos, int total_pages
 
 void render_vertical_page_pips(Rgb565Surface &it, bool show_up, bool show_down,
                                UiColor col_bg, UiColor col_active,
-                               UiColor col_inactive, int bottom_limit_y = SCREEN_H);
+                               int bottom_limit_y = SCREEN_H);
 
 void render_back_button(Rgb565Surface &it, int cx, UiFontView font,
                         int y_pos = kBackLabelY, const char *label = "< Back",
                         UiColor text_col = kChromeBackLabel);
 
 void render_page_header(Rgb565Surface &it, int cx, const char *title,
-                        UiFontView font,
-                        UiColor color = UiColor::WHITE, bool shadow = true);
+                        UiFontView font);
 void render_page_header(Rgb565Surface &it, int cx, const std::string &title,
-                        UiFontView font,
-                        UiColor color = UiColor::WHITE, bool shadow = true);
+                        UiFontView font);
 
 void render_sub_header(Rgb565Surface &it, int cx, const char *text,
                        UiFontView font, UiColor color);
@@ -120,7 +118,7 @@ UiColor chrome_wheel_inner_ring();
 UiColor chrome_wheel_outer_ring();
 
 // ------------------------------------------------------------------------------
-// 3. Canonical Solid + Negative-Space Custom Glyph Library (D-008 / D-051)
+// 3. Canonical MDI-Backed Icon Helpers & Route Icon Dispatch (D-071 / D-078)
 // ------------------------------------------------------------------------------
 inline constexpr int dock_icon_r(int dock_r = layout().dock_r) {
   return dock_icon_r_for(dock_r);
@@ -178,7 +176,7 @@ void draw_icon_wind(Rgb565Surface &it, int cx, int cy, int r, UiColor col, bool 
 void draw_icon_arrow_v(Rgb565Surface &it, int cx, int cy, int r, bool is_up, UiColor col, bool shadow = false);
 const char *route_icon_slug(latter_core::RouteId route) noexcept;
 void draw_route_icon(Rgb565Surface &it, latter_core::RouteId route, int cx, int cy, int r,
-                     UiColor col, UiColor cut_c, bool shadow = false);
+                     UiColor col, bool shadow = false);
 
 // ------------------------------------------------------------------------------
 // 4. Canonical Text, Stack Width & Functional Component Library (D-070)
@@ -380,7 +378,7 @@ void confirm_modal(Rgb565Surface &it, int cx, const char *title,
                    const char *cancel_lbl, const char *confirm_lbl,
                    UiColor confirm_border, UiColor confirm_bg,
                    UiFontView font_hdr, UiFontView font_body,
-                   UiColor theme_primary, UiColor col_white, UiColor col_slate,
+                   UiColor col_white, UiColor col_slate,
                    uint16_t cancel_wid = WidgetId::CONFIRM_CANCEL,
                    uint16_t confirm_wid = WidgetId::CONFIRM_ACCEPT);
 
@@ -426,9 +424,8 @@ bool requires_perimeter_pin_prompt(const std::string &policy, const std::string 
 bool requires_perimeter_pin_prompt(const std::string &policy, const std::string &domain_or_entity,
                                    const std::string &action, int level, uint16_t alarm_caps);
 
-void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
-                   UiFontView font_hdr, UiFontView font_key,
-                   UiFontView font_small,
+void pin_pad_modal(Rgb565Surface &it, int cx, uint32_t now_ms,
+                   UiFontView font_key, UiFontView font_small,
                    UiColor theme_primary, UiColor col_white,
                    UiColor col_slate, UiColor col_red);
 

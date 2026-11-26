@@ -24,15 +24,15 @@ int parse_calendar_sources_meta(std::string_view raw,
   const size_t n = v3_split_fields(raw, recs, static_cast<size_t>(cap), kProtocolRecordSep);
   int count = 0;
   for (size_t i = 0; i < n; ++i) {
-    std::string_view cols[5]{};
-    const size_t cn = v3_split_fields(recs[i], cols, 5, '|');
-    if (cn < 2 || cols[0].empty()) continue;
+    std::string_view cols[6]{};
+    const size_t cn = v3_split_fields(recs[i], cols, 6, '|');
+    if (cn != 5U || cols[0].empty()) continue;
     CalendarSourceMeta item{};
     copy_bounded_cstr(item.entity_id, v3_unescape_subfield(cols[0]));
     copy_bounded_cstr(item.label, v3_unescape_subfield(cols[1].empty() ? cols[0] : cols[1]));
-    item.color_idx = static_cast<uint8_t>(std::clamp(cn >= 3 ? v3_parse_int(cols[2], count) : count, 0, 5));
-    item.can_create = (cn >= 4) && v3_parse_bool(cols[3]);
-    item.can_delete = (cn >= 5) && v3_parse_bool(cols[4]);
+    item.color_idx = static_cast<uint8_t>(std::clamp(v3_parse_int(cols[2], count), 0, 5));
+    item.can_create = v3_parse_bool(cols[3]);
+    item.can_delete = v3_parse_bool(cols[4]);
     out[count++] = item;
   }
   return count;
@@ -48,18 +48,18 @@ int collect_writable_calendar_sources(std::string_view raw,
   int src_idx = 0;
   int wcnt = 0;
   for (size_t i = 0; i < n; ++i) {
-    std::string_view cols[5]{};
-    const size_t cn = v3_split_fields(recs[i], cols, 5, '|');
-    if (cn < 2 || cols[0].empty()) continue;
-    const bool can_create = (cn >= 4) && (cols[3] == "1" || cols[3] == "true");
+    std::string_view cols[6]{};
+    const size_t cn = v3_split_fields(recs[i], cols, 6, '|');
+    if (cn != 5U || cols[0].empty()) continue;
+    const bool can_create = (cols[3] == "1" || cols[3] == "true");
     if (can_create && wcnt < max_out) {
       if (out != nullptr) {
         CalendarSourceMeta item{};
         copy_bounded_cstr(item.entity_id, v3_unescape_subfield(cols[0]));
         copy_bounded_cstr(item.label, v3_unescape_subfield(cols[1].empty() ? cols[0] : cols[1]));
-        item.color_idx = static_cast<uint8_t>(std::clamp(cn >= 3 ? v3_parse_int(cols[2], src_idx) : src_idx, 0, 5));
+        item.color_idx = static_cast<uint8_t>(std::clamp(v3_parse_int(cols[2], src_idx), 0, 5));
         item.can_create = true;
-        item.can_delete = (cn >= 5) && (cols[4] == "1" || cols[4] == "true");
+        item.can_delete = (cols[4] == "1" || cols[4] == "true");
         out[wcnt] = item;
       }
       if (out_source_indices != nullptr) out_source_indices[wcnt] = src_idx;
@@ -119,9 +119,9 @@ int populate_calendar_summary_preview(
 
 bool parse_calendar_window_event_record(std::string_view rec, CalendarWindowEvent &out) noexcept {
   if (rec.empty()) return false;
-  std::string_view f[11]{};
-  const size_t n = v3_split_fields(rec, f, 11, kProtocolFieldSep);
-  if (n < 9) return false;
+  std::string_view f[12]{};
+  const size_t n = v3_split_fields(rec, f, 12, kProtocolFieldSep);
+  if (n != 11U) return false;
   const int32_t s_ymd = parse_ymd_iso(f[0]);
   if (s_ymd == 0) return false;
   int32_t e_ymd = parse_ymd_iso(f[1]);
@@ -137,8 +137,8 @@ bool parse_calendar_window_event_record(std::string_view rec, CalendarWindowEven
   copy_bounded_cstr(out.uid, f[6]);
   copy_bounded_cstr(out.recurrence_id, f[7]);
   copy_bounded_cstr(out.title, f[8].empty() ? std::string_view("Event") : f[8]);
-  if (n >= 10) copy_bounded_cstr(out.location, f[9]);
-  if (n >= 11) copy_bounded_cstr(out.description, f[10]);
+  copy_bounded_cstr(out.location, f[9]);
+  copy_bounded_cstr(out.description, f[10]);
   return true;
 }
 
@@ -259,15 +259,12 @@ void append_music_lyrics_records_blob(std::string_view blob,
         (sep == std::string_view::npos) ? blob.substr(pos) : blob.substr(pos, sep - pos);
     if (!rec.empty()) {
       const size_t fsep = rec.find(kProtocolFieldSep);
-      MusicLyricLine line{};
       if (fsep != std::string_view::npos) {
+        MusicLyricLine line{};
         line.t_ms = static_cast<int32_t>(v3_parse_int(rec.substr(0, fsep), -1));
         line.text = std::string(rec.substr(fsep + 1U));
-      } else {
-        line.t_ms = -1;
-        line.text = std::string(rec);
+        dst.push_back(std::move(line));
       }
-      dst.push_back(std::move(line));
     }
     if (sep == std::string_view::npos) break;
     pos = sep + 1U;

@@ -26,7 +26,6 @@ script:
           ctx.pin_pad_open = latter_ui::ui::pin_pad_state().open;
 
           const auto eff = latter_core::v3_domain_reducer().reduce(sv_dom, ctx);
-          (void)eff.area_changed;
           if (eff.wake_from_screensaver) {
             latter_core::note_wake_reason(latter_core::WakeReason::MEDIA);
             id(wake_to_active_state).execute();
@@ -132,9 +131,14 @@ script:
     then:
       - lambda: |-
           const std::string_view sv_cmd(command.c_str(), command.size());
+          #ifdef USE_LATTER_BEACON
+          const bool ble_active = id(ble_ctrl).is_active();
+          #else
+          const bool ble_active = false;
+          #endif
           const auto d = latter_core::evaluate_device_command(
               sv_cmd, millis(), id(display_brightness).current_values.is_on(),
-              id(ble_ctrl).is_active(), "${name}", latter_ui::SCREEN_W, latter_ui::SCREEN_H);
+              ble_active, "${name}", latter_ui::SCREEN_W, latter_ui::SCREEN_H);
           if (d.restart) id(restart_button).press();
           if (d.toggle_find_my) id(toggle_find_my_device).execute();
           if (d.activate_screensaver) id(trigger_screensaver_now).execute();
@@ -144,7 +148,11 @@ script:
           if (d.turn_screen_off) id(turn_screen_off).execute();
           if (d.sync_brightness) id(sync_display_brightness).execute();
           if (d.apply_power_policy) id(apply_power_policy).execute();
+          #ifdef USE_LATTER_BEACON
           if (d.set_ble_prof_log) id(ble_ctrl).set_profile_logging(d.ble_prof_log_val);
+          #else
+          (void)d.set_ble_prof_log;
+          #endif
           if (d.publish_device_telemetry) id(publish_device_telemetry).execute();
           if (d.publish_display_state) id(publish_display_state).execute();
           if (d.start_va) latter_core::runtime_state().audio.start_va_now();
@@ -291,10 +299,6 @@ script:
                 case C::START_CALENDAR_DICTATION: au.start_calendar_dictation_now(); break;
                 case C::START_BROADCAST_DICTATION: au.start_broadcast_dictation_now(); break;
                 case C::APPLY_DEVICE_PREFS_EFFECTS: id(apply_device_prefs_effects).execute(); break;
-                case C::NOTIFY_WEATHER_SIM_CHANGED:
-                  latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
-                  latter_ui::schedule_disp_update(&id(disp1));
-                  break;
                 case C::SET_LOCAL_SPEAKER_VOL_PCT: {
                   const float target_v = static_cast<float>(std::clamp(arg0, 10, 100)) * 0.01f;
                   au.sync_local_volume(target_v, /*update_player=*/true, /*un_duck=*/false);

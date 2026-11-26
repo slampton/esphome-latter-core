@@ -17,6 +17,8 @@
 #include <string_view>
 #include <type_traits>
 
+#include "latter_protocol.h"
+
 namespace latter_rpc {
 
 static constexpr size_t kMaxRpcFrameBytes = 230;
@@ -69,17 +71,6 @@ std::string wrap_pin_code(
 // ------------------------------------------------------------------------------
 // Paced Multi-Slice RPC Outbox Queue
 // ------------------------------------------------------------------------------
-#ifndef LATTER_RPC_SLOT_CHANNEL_DEFINED
-#define LATTER_RPC_SLOT_CHANNEL_DEFINED 1
-enum class SlotChannel : uint8_t {
-  MUSIC         = 0,
-  AREA_LIST     = 1,
-  AREA_ENTITIES = 2,
-  CALENDAR      = 3,
-  COUNT         = 4,
-};
-#endif
-
 using PublishSinkFn = void (*)(void *ctx, const std::string &frame);
 
 struct RpcQueueState {

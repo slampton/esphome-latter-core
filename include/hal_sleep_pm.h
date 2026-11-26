@@ -372,10 +372,6 @@ inline RaiseToWakeDetector &raise_to_wake() {
   return det;
 }
 
-inline RaiseToWakeDetector &raise_wake_detector() {
-  return raise_to_wake();
-}
-
 struct ScreenOffTapState {
   uint32_t first_tap_ms = 0U;
   void reset() noexcept { first_tap_ms = 0U; }

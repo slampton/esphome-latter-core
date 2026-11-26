@@ -1224,7 +1224,6 @@ MusicHudAutoFadeResult step_music_hud_auto_fade(
   const uint32_t timeout_ms = (m.view == MusicView::VOLUME) ? 5000U : 10000U;
   if (elapsed_ms >= timeout_ms) {
     m.view = MusicView::NOW_PLAYING;
-    m.carousel_page = 0U;
     m.mode_bar_win_start = 0;
     m.hud_active = always_vis;
     return {true, true};

@@ -260,7 +260,9 @@ _CORE_SECTION_FLAG_MAP: Final[dict[str, dict[str, tuple[str, bool]]]] = {
     "backlight": {
         "pin": ("LATTER_BACKLIGHT_PIN", False),
         "en_pin": ("LATTER_BACKLIGHT_EN_PIN", False),
+        "en_inverted": ("LATTER_BACKLIGHT_EN_INVERTED", True),
         "inverted": ("LATTER_BACKLIGHT_INVERTED", True),
+        "custom": ("LATTER_BACKLIGHT_CUSTOM", True),
         "pwm_hz": ("LATTER_BACKLIGHT_PWM_HZ", False),
         "pwm_bits": ("LATTER_BACKLIGHT_PWM_BITS", False),
         "duty_min_pm": ("LATTER_BACKLIGHT_DUTY_MIN_PM", False),
@@ -306,7 +308,7 @@ _CORE_SECTION_FLAG_MAP: Final[dict[str, dict[str, tuple[str, bool]]]] = {
 
 
 def parse_latter_core_flags(yaml_text: str) -> dict[str, str]:
-    """Extract effective LATTER_* defines from typed `latter_core:` YAML (or legacy -DLATTER_* flags)."""
+    """Extract effective LATTER_* defines from typed `latter_core:` YAML."""
     code = strip_yaml_comments(yaml_text)
     flags: dict[str, str] = {}
     in_core = False
@@ -379,6 +381,4 @@ def parse_latter_core_flags(yaml_text: str) -> dict[str, str]:
         flags.setdefault("LATTER_IS_STATIONARY", "0")
         flags.setdefault("LATTER_IS_WEARABLE", "0")
 
-    for name, value in re.findall(r"-D(LATTER_[A-Z0-9_]+)=([^\"'\s]+)", code):
-        flags[name] = value.strip('"').strip("\\").strip('"')
     return flags

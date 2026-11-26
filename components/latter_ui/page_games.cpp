@@ -296,7 +296,7 @@ void render_games_launcher(Rgb565Surface &it, const UiFrameContext &ctx,
                            int menu_scroll_dir, int menu_scroll_target_page) {
   const int cx = ctx.cx;
   const auto &ly = layout();
-  const auto &prefs = device_prefs();
+  const auto &prefs = persisted_prefs();
   const bool game_sound_on = ctx.game_sound_enabled;
   const bool stacked_hero = (ly.size_class == SizeClass::Compact && SCREEN_H > SCREEN_W);
   const int hdr_y = ly.hdr_y + dp_px(18);

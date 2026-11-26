@@ -124,8 +124,6 @@ inline constexpr UiColor kChromeShadow{0, 0, 0};
 inline constexpr UiColor kChromeHomePill{175, 190, 210};
 inline constexpr UiColor kChromeTrack{30, 38, 50};
 inline constexpr UiColor kChromeTrackBorder{50, 62, 78};
-inline constexpr UiColor kChromeTrackDim{16, 20, 26};
-inline constexpr UiColor kChromeTrackBorderDim{24, 30, 38};
 inline constexpr UiColor kChromeBarTrack{16, 20, 27};
 inline constexpr UiColor kChromePipInactive{95, 112, 134};
 inline constexpr UiColor kChromeBackLabel{158, 158, 158};

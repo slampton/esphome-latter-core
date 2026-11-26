@@ -63,7 +63,7 @@ void TouchGestureEngine::launch_dock_app_(int chosen_app, DeviceRuntimeState &rs
   }
 
   if (chosen_app == PageId::HOME_HUB) {
-    TouchGestureEngine::enter_home_hub_tab_(-1, false, rs, rt, now_ms);
+    TouchGestureEngine::enter_home_hub_tab_(-1, rs, rt, now_ms);
   } else if (chosen_app == PageId::CAMERAS) {
     stop_calendar_dictation_if_active(rs, rt, now_ms);
     stop_broadcast_dictation_if_active(rs, rt, now_ms);
@@ -275,7 +275,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       else if (route_id == RouteId::HOME_HUB_ENTRY) tab = HomeHubTab::ENTRY;
       else if (route_id == RouteId::HOME_HUB_VACUUM) tab = HomeHubTab::VACUUM;
       rs.nav.shortcut_origin = ShortcutOrigin::NONE;
-      TouchGestureEngine::enter_home_hub_tab_(tab, false, rs, rt, now_ms);
+      TouchGestureEngine::enter_home_hub_tab_(tab, rs, rt, now_ms);
       mark_dirty_full();
       rt.schedule_disp();
       return;
@@ -414,7 +414,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
       TouchGestureEngine::launch_dock_app_(PageId::GAMES, rs, rt, now_ms);
       save_origin();
       int enabled_ids[kMaxGamesLauncherItems]{};
-      const int game_cnt = collect_enabled_games(enabled_ids, device_prefs());
+      const int game_cnt = collect_enabled_games(enabled_ids, persisted_prefs());
       int matched_slot = 0;
       for (int i = 0; i < game_cnt; ++i) {
         if (enabled_ids[i] == g_id) { matched_slot = i; break; }
@@ -448,14 +448,14 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
     case RouteId::SETTINGS_UPDATE: case RouteId::SETTINGS_INFO:
       TouchGestureEngine::launch_dock_app_(PageId::SYSTEM, rs, rt, now_ms);
       save_origin();
-      if (route_id == RouteId::SETTINGS_DISPLAY) { rs.nav.system_menu_mode = 2; rs.nav.display_menu_page = 1; }
-      else if (route_id == RouteId::SETTINGS_SLEEP) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
-      else if (route_id == RouteId::SETTINGS_SOUND) { rs.nav.system_menu_mode = 7; }
-      else if (route_id == RouteId::SETTINGS_VOICE) { rs.nav.system_menu_mode = 11; }
-      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = 9; rs.music.settings_page = 1; }
-      else if (route_id == RouteId::SETTINGS_ACTIONS) { rs.nav.system_menu_mode = 3; }
-      else if (route_id == RouteId::SETTINGS_UPDATE) { rs.nav.system_menu_mode = 5; rs.nav.update_check_state = 0; }
-      else if (route_id == RouteId::SETTINGS_INFO) { rs.nav.system_menu_mode = 8; }
+      if (route_id == RouteId::SETTINGS_DISPLAY) { rs.nav.system_menu_mode = SystemMenuMode::DISPLAY; rs.nav.display_menu_page = 1; }
+      else if (route_id == RouteId::SETTINGS_SLEEP) { rs.nav.system_menu_mode = SystemMenuMode::SLEEP_WAKE; rs.nav.sleep_menu_page = 1; }
+      else if (route_id == RouteId::SETTINGS_SOUND) { rs.nav.system_menu_mode = SystemMenuMode::SOUND; }
+      else if (route_id == RouteId::SETTINGS_VOICE) { rs.nav.system_menu_mode = SystemMenuMode::VOICE; }
+      else if (route_id == RouteId::SETTINGS_MUSIC) { rs.nav.system_menu_mode = SystemMenuMode::MUSIC; rs.music.settings_page = 1; }
+      else if (route_id == RouteId::SETTINGS_ACTIONS) { rs.nav.system_menu_mode = SystemMenuMode::ACTIONS; }
+      else if (route_id == RouteId::SETTINGS_UPDATE) { rs.nav.system_menu_mode = SystemMenuMode::UPDATE; rs.nav.update_check_state = 0; }
+      else if (route_id == RouteId::SETTINGS_INFO) { rs.nav.system_menu_mode = SystemMenuMode::SYSTEM_INFO; }
       mark_dirty_full();
       rt.schedule_disp();
       return;
@@ -609,7 +609,7 @@ bool TouchGestureEngine::handle_down_takeovers_(TouchGestureEngine &eng, int tx,
           auto &ap = prefs.alarms[rs.alarms.ringing_idx - 1];
           if (ap.recurrence == 3) {
             ap.enabled = false;
-            latter_core::sync_local_alarms_edit(now_ms);
+            latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
           }
         }
         rs.alarms.ringing = false;
@@ -899,8 +899,7 @@ void TouchGestureEngine::handle_down_alert_overlay_(TouchGestureEngine &eng, int
       eng.gate_or_dispatch_doorbell_unlock(now_ms);
       return;
     }
-    if (nwid == WidgetId::NOTIF_EXPAND_BTN || nwid == WidgetId::NOTIF_VIEW_BTN ||
-        nwid == WidgetId::NOTIF_OPEN_CAM_BTN) {
+    if (nwid == WidgetId::NOTIF_EXPAND_BTN || nwid == WidgetId::NOTIF_VIEW_BTN) {
       const std::string focus_ent = rs.alert.camera_entity;
       rs.alert.active = false;
       rs.cameras.doorbell_live_popup_active = false;
@@ -922,10 +921,9 @@ void TouchGestureEngine::handle_down_alert_overlay_(TouchGestureEngine &eng, int
   }
 
   if (is_cam_notif && (nwid == WidgetId::NOTIF_ANSWER_BTN ||
-                       nwid == WidgetId::NOTIF_VIEW_BTN ||
-                       nwid == WidgetId::NOTIF_OPEN_CAM_BTN)) {
+                       nwid == WidgetId::NOTIF_VIEW_BTN)) {
     const std::string focus_ent = rs.alert.camera_entity;
-    const bool want_listen = (nwid == WidgetId::NOTIF_ANSWER_BTN || nwid == WidgetId::NOTIF_OPEN_CAM_BTN);
+    const bool want_listen = (nwid == WidgetId::NOTIF_ANSWER_BTN);
     rs.alert.active = false;
     rs.cameras.doorbell_live_popup_active = false;
     rs.nav.shortcut_origin = ShortcutOrigin::NONE;

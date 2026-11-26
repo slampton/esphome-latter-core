@@ -144,6 +144,15 @@ inline constexpr float dp_f(float dp) noexcept {
   return dp_f_for(dp, kUiScaleMilli);
 }
 
+// Proportional 466 px full-bleed canvas scaler for circular horology, tools & games artwork.
+inline constexpr float canvas_f(float v466) noexcept {
+  return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
+}
+
+inline constexpr int canvas_px(int v466) noexcept {
+  return (v466 * SCREEN_MIN_DIM + 233) / 466;
+}
+
 inline constexpr SizeClass compute_size_class(const UiDisplaySpec &spec) noexcept {
   const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
   const int w_dp = px_to_dp_for(spec.w, s);

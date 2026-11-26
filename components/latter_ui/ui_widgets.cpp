@@ -1075,11 +1075,10 @@ void confirm_modal(Rgb565Surface &it, int cx, const char *title,
                    const char *cancel_lbl, const char *confirm_lbl,
                    UiColor confirm_border, UiColor confirm_bg,
                    UiFontView font_hdr, UiFontView font_body,
-                   UiColor theme_primary, UiColor col_white, UiColor col_slate,
+                   UiColor col_white, UiColor col_slate,
                    uint16_t cancel_wid, uint16_t confirm_wid) {
-  (void)theme_primary;
   const auto ly = layout();
-  render_page_header(it, cx, title, font_hdr, col_white, true);
+  render_page_header(it, cx, title, font_hdr);
   const int y1 = ly.hdr_y + dp_px(56);
   const int y2 = y1 + dp_px(34);
   if (line1 != nullptr && line1[0] != '\0') {
@@ -1192,15 +1191,13 @@ bool requires_perimeter_pin_prompt(const std::string &policy, const std::string 
       policy, domain_or_entity, action, level, effective_alarm_caps());
 }
 
-void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
-                   UiFontView font_hdr, UiFontView font_key, UiFontView font_small,
+void pin_pad_modal(Rgb565Surface &it, int cx, uint32_t now_ms,
+                   UiFontView font_key, UiFontView font_small,
                    UiColor theme_primary, UiColor col_white, UiColor col_slate, UiColor col_red) {
-  (void)cy;
-  (void)font_hdr;
   const auto ly = layout();
   auto &st = pin_pad_state();
   const char *hdr = (st.prompt[0] != '\0') ? st.prompt : "ENTER SECURITY PIN";
-  render_page_header(it, cx, hdr, font_small, col_white, true);
+  render_page_header(it, cx, hdr, font_small);
 
   const int disp_y = ly.hdr_y + dp_px(32);
   const int disp_w = std::min(ly.max_content_w(260), ly.safe_span(disp_y, dp_px(22)));
@@ -1287,9 +1284,7 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
 // 1. Page Headers, Sub-Headers, Empty States & Time Readout (D-060 / D-070)
 // ==============================================================================
 void render_page_header(Rgb565Surface &it, int cx, const char *title,
-                        UiFontView font, UiColor color, bool shadow) {
-  (void)color;
-  (void)shadow;
+                        UiFontView font) {
   if (title == nullptr || title[0] == '\0' || font == nullptr) return;
   const int y = layout().hdr_y;
   fast_print(it, cx + 1, y + 1, font, kChromeShadow, UiTextAlign::CENTER, title);
@@ -1297,12 +1292,12 @@ void render_page_header(Rgb565Surface &it, int cx, const char *title,
 }
 
 void render_page_header(Rgb565Surface &it, int cx, const std::string &title,
-                        UiFontView font, UiColor color, bool shadow) {
+                        UiFontView font) {
   if (title.empty() || font == nullptr) return;
   const auto ly = layout();
   const int hdr_w = std::max(80, std::min(ly.max_content_w(300), ly.safe_span(ly.hdr_y, dp_px(18))));
   const std::string fitted = fit_text_to_width_font(title, hdr_w, font);
-  render_page_header(it, cx, fitted.c_str(), font, color, shadow);
+  render_page_header(it, cx, fitted.c_str(), font);
 }
 
 void render_sub_header(Rgb565Surface &it, int cx, const char *text,

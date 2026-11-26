@@ -2,9 +2,9 @@
 """Cross-platform static architecture, DAG, HAL, UI, protocol, and C++20 host verifier for esphome-latter-core.
 
 Usage:
-    python tools/verify_core.py                   # Full static + DAG + protocol/board/sound + 6-geom C++20 tests
+    python tools/verify_core.py                   # Full static + DAG + protocol/board/sound + 9-geom C++20 tests
     python tools/verify_core.py --fast            # Fast static/AST/DAG pass (<250ms, skips subprocesses)
-    python tools/verify_core.py --host-tests-only # Compile & run 6-geometry C++20 host binaries only
+    python tools/verify_core.py --host-tests-only # Compile & run 9-geometry C++20 host binaries only
 """
 
 from __future__ import annotations
@@ -31,13 +31,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument(
         "--host-tests-only",
         action="store_true",
-        help="Compile and run the 6-geometry C++20 host test binaries only.",
+        help="Compile and run the 9-geometry C++20 host test binaries only.",
     )
     args = ap.parse_args(argv)
     fast_mode = args.fast or os.environ.get("LATTER_VERIFY_FAST") == "1"
 
     failures: list[str] = []
-    warnings: list[str] = []
 
     if args.host_tests_only:
         run_subprocess_gates(failures, host_tests_only=True)
@@ -50,9 +49,6 @@ def main(argv: list[str] | None = None) -> int:
         if not fast_mode:
             run_subprocess_gates(failures, host_tests_only=False)
 
-    for warn in warnings:
-        print(f"  [warn] {warn}")
-
     if failures:
         print(f"verify_core.py FAILED ({len(failures)} issue(s)):")
         for item in failures:
@@ -60,12 +56,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.host_tests_only:
-        mode_lbl = "6-geometry C++20 host unit tests"
+        mode_lbl = "9-geometry C++20 host unit tests"
     elif fast_mode:
         mode_lbl = "fast static + Tarjan DAG"
     else:
-        mode_lbl = "full static + Tarjan DAG + protocol/boards/sounds + 6-geometry C++20 host tests"
-    print(f"verify_core.py PASSED ({mode_lbl}, {len(warnings)} warning(s), 0 issues)")
+        mode_lbl = "full static + Tarjan DAG + protocol/boards/sounds + 9-geometry C++20 host tests"
+    print(f"verify_core.py PASSED ({mode_lbl}, 0 issues)")
     return 0
 
 

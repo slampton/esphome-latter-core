@@ -30,19 +30,6 @@
 
 #include "latter_protocol.h"
 
-namespace latter_rpc {
-#ifndef LATTER_RPC_SLOT_CHANNEL_DEFINED
-#define LATTER_RPC_SLOT_CHANNEL_DEFINED 1
-enum class SlotChannel : uint8_t {
-  MUSIC         = 0,
-  AREA_LIST     = 1,
-  AREA_ENTITIES = 2,
-  CALENDAR      = 3,
-  COUNT         = 4,
-};
-#endif
-}  // namespace latter_rpc
-
 namespace latter_core {
 
 // Canonical top-level page IDs.
@@ -272,8 +259,6 @@ struct BrowseSlotItem {
   bool is_current = false;
 };
 
-using MusicBrowseSlot = BrowseSlotItem;
-
 
 extern constinit LinkState g_link_state;
 
@@ -492,6 +477,14 @@ inline constexpr bool eq_ascii_ci_sv(std::string_view a, std::string_view b) noe
     if (ca != cb) return false;
   }
   return true;
+}
+
+inline std::string to_ascii_upper(std::string_view sv) {
+  std::string out(sv);
+  for (char &ch : out) {
+    if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - ('a' - 'A'));
+  }
+  return out;
 }
 
 

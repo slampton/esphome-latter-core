@@ -439,7 +439,7 @@ bool accept_req_id(SlotChannel ch, int req_id) {
 }
 
 SlotChannel classify_browse_mode(std::string_view mode) {
-  if (mode == "area_areas" || mode == "areas") return SlotChannel::AREA_LIST;
+  if (mode == "areas") return SlotChannel::AREA_LIST;
   if (mode == "calendar_agenda") return SlotChannel::CALENDAR;
   if (mode == "entities" || mode == "home" || mode.starts_with("area_")) return SlotChannel::AREA_ENTITIES;
   return SlotChannel::MUSIC;

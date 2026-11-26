@@ -414,25 +414,24 @@ void parse_pinned_page_titles_blob(std::string_view blob, std::vector<PinnedPage
 
 bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
   if (rec.empty()) return false;
-  std::string_view cols[14]{};
-  const size_t n = v3_split_fields(rec, cols, 14, '|');
-  if (n < 4) return false;
+  std::string_view cols[15]{};
+  const size_t n = v3_split_fields(rec, cols, 15, '|');
+  if (n != 14U) return false;
   out_item = ShortcutItem{};
   const std::string_view kind_sv = cols[0];
   const std::string_view target_sv = cols[1];
   const std::string_view action_sv = cols[2];
   const std::string_view label_sv = cols[3];
-  const std::string_view icon_sv = (n >= 5) ? cols[4] : std::string_view{};
-  const std::string_view confirm_sv = (n >= 6) ? cols[5] : std::string_view{};
-  const std::string_view state_sv = (n >= 7) ? cols[6] : std::string_view{};
-  const std::string_view badge_sv = (n >= 8) ? trim_ascii_ws(cols[7]) : std::string_view{};
-  const std::string_view accent_sv = (n >= 9) ? trim_ascii_ws(cols[8]) : std::string_view{};
+  const std::string_view icon_sv = cols[4];
+  const std::string_view confirm_sv = cols[5];
+  const std::string_view state_sv = cols[6];
+  const std::string_view badge_sv = trim_ascii_ws(cols[7]);
+  const std::string_view accent_sv = trim_ascii_ws(cols[8]);
 
   int p_val = -1;
   int c_val = -1;
   int r_val = -1;
   const bool explicit_pos =
-      (n >= 12) &&
       parse_strict_nonneg_int(cols[9], p_val) && p_val >= 0 && p_val < kTileGridMaxLogicalPages &&
       parse_strict_nonneg_int(cols[10], c_val) && c_val >= 0 && c_val < kTileGridMaxCols &&
       parse_strict_nonneg_int(cols[11], r_val) && r_val >= 0 && r_val < kTileGridMaxRows;
@@ -442,11 +441,11 @@ bool parse_shortcut_record(std::string_view rec, ShortcutItem &out_item) {
   int cs_val = 1;
   int rs_val = 1;
   const uint8_t parsed_col_span =
-      ((n >= 13) && parse_strict_nonneg_int(cols[12], cs_val))
+      parse_strict_nonneg_int(cols[12], cs_val)
           ? static_cast<uint8_t>(std::clamp(cs_val, 1, kTileGridMaxCols))
           : 1U;
   const uint8_t parsed_row_span =
-      ((n >= 14) && parse_strict_nonneg_int(cols[13], rs_val))
+      parse_strict_nonneg_int(cols[13], rs_val)
           ? static_cast<uint8_t>(std::clamp(rs_val, 1, kTileGridMaxRows))
           : 1U;
 
@@ -672,16 +671,16 @@ void build_shortcut_confirm_copy(const ShortcutItem &item,
   } else if (act == "unlock") {
     out_verb_btn = "Unlock";
     out_is_danger = true;
-  } else if (act == "disarm" || act == "alarm_disarm") {
+  } else if (act == "disarm") {
     out_verb_btn = "Disarm";
     out_is_danger = true;
-  } else if (act == "arm_home" || act == "alarm_arm_home") {
+  } else if (act == "arm_home") {
     out_verb_btn = "Arm Home";
-  } else if (act == "arm_away" || act == "alarm_arm_away") {
+  } else if (act == "arm_away") {
     out_verb_btn = "Arm Away";
-  } else if (act == "arm_night" || act == "alarm_arm_night") {
+  } else if (act == "arm_night") {
     out_verb_btn = "Arm Night";
-  } else if (act == "arm_vacation" || act == "alarm_arm_vacation") {
+  } else if (act == "arm_vacation") {
     out_verb_btn = "Arm Vacation";
   } else if (act == "start" || act == "start_mowing") {
     out_verb_btn = "Start";

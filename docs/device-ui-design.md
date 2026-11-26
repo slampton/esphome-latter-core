@@ -1,6 +1,6 @@
 # Device UI design guide
 
-This guide is the standard for the on-device GUI: the universal GUI shell in [`guis/universal/`](../guis/universal/), the compiled `latter_ui` component in [`components/latter_ui/`](../components/latter_ui/) (`ui_gfx.cpp`, `ui_mdi.cpp`, `hit_table.cpp`, `ui_widgets.cpp`, `ui_compositor.cpp`, `touch_engine.cpp`, `touch_dispatch.cpp`, and the 14 cohesive `page_*.cpp` translation units), and the C++20 UI headers in [`include/`](../include/) (host-compilable `ui_*.h` headers plus the `ui_esphome_display.h` display bridge). Read it before changing the device UI. [Porting hardware](porting-hardware.md) explains how to add a board and defers to this guide for visual, touch and rendering rules. Latter Studio, the admin panel in Home Assistant, has its own guide in the `ha-latter` repository (`docs/studio-design.md`).
+This guide is the standard for the on-device GUI: the universal GUI shell in [`guis/universal/`](../guis/universal/), the compiled `latter_ui` component in [`components/latter_ui/`](../components/latter_ui/) (`ui_gfx.cpp`, `ui_gfx_text_art.cpp`, `ui_mdi.cpp`, `hit_table.cpp`, `ui_widgets.cpp`, `ui_widgets_icons_chrome.cpp`, `ui_tile_grid.cpp`, `ui_compositor.cpp`, `touch_engine.cpp`, `touch_dispatch_*.cpp`, and the 14 cohesive `page_*.cpp` translation units), and the C++20 UI headers in [`include/`](../include/) (host-compilable `ui_*.h` headers plus the `ui_esphome_display.h` display bridge). Read it before changing the device UI. [Porting hardware](porting-hardware.md) explains how to add a board and defers to this guide for visual, touch and rendering rules. Latter Studio, the admin panel in Home Assistant, has its own guide in the `ha-latter` repository (`docs/studio-design.md`).
 
 Each rule is marked:
 
@@ -16,7 +16,7 @@ The [decision log](#10-decision-log) records the standing decisions behind this 
 1. **Traits, not names.** UI code branches on capability flags (`LATTER_ROUND_DISPLAY`, `LATTER_IS_WEARABLE`, `LATTER_HAS_IMU`, `LATTER_HAS_TOUCH`, `LATTER_PANEL_IPS`, screen size), never on a product or board name (D-001). **Enforced: `[TRAITS NOT NAMES]`**, **`[TERMINOLOGY]`**.
 2. **One canonical path.** Every role (a header, a back affordance, a pager, a toggle, a modal, a hit-test, a motion, a debounce) has one implementation, in `ui_types.h`, `ui_gfx.h`, `ui_layout.h`, or `ui_widgets.h` (`components/latter_ui/`). A page that needs something new adds it there and reuses it.
 3. **Geometry is single-source.** Interactive widgets register their exact rendered bounds into `FrameHitTable` (`ui_hit_table.h`) as they draw or share `UiLayout` anchors, and touch thresholds are millimetres (D-002, D-011, D-031, D-032).
-4. **One reference grid.** Layout values are written for the 466 × 466 reference panel and adapted with `scale_x`/`scale_y`/`scale_s`/`scale_w`/`scale_min`, `safe_span(y)`, and three width buckets (D-024, D-031).
+4. **Isotropic dp grid & SafeFrame.** Layout values derive from isotropic logical `dp_px()`/`dp_f()`, `SafeFrame` (`safe_span(y)` / `band_safe_span()` / `max_content_w()`), `SizeClass` (`Compact` / `Regular` / `Expanded`), and `canvas_px()`/`canvas_f()` for 466 px circular art (D-031, D-087).
 5. **Unknown renders as unknown.** A value the device hasn't received shows `—` (`kUnknownGlyph`), never a demo default. **Enforced: `[UNKNOWN GLYPH INVARIANT]`**.
 6. **Fast, row-major and scissor-clipped by band.** Every pixel goes through the `fast_*` primitives in row-major order, every frame paints its background once, and localized updates both scissor-clip row loops to the active `[y0, y1]` span and flush `2px`-aligned full-width horizontal bands via `DirtyBandTracker` while keeping `FrameHitTable` registrations full-screen (D-004, D-005, D-031, D-037).
 
@@ -45,46 +45,46 @@ Palette colors are ESPHome `color:` IDs in [`gui.yaml`](../guis/universal/gui.ya
 
 - **Small text contrast.** Text in `font_small` or `font_micro` is at least 4.5:1 on its background; the colors below that are for large text (`font_date` and up), fills and icons. Disabled controls may use `col_gray`. **Enforced: `[TEXT CONTRAST]`** (D-019).
 - **Theme presets.** `apply_theme_preset` in [`modules/system_ui_sync.yaml`](../modules/system_ui_sync.yaml) writes `theme_primary` from the synced `color_profile` preference: Steel Blue (default, `6B8E9E`), Blue (`456E8A`), Green (`427453`), Pink (`A87884`), or Custom (a color-wheel pick through `apply_custom_rgb_harmony`). It resets `theme_secondary` to `C0C0C0`. These two are the only color IDs the core modules write.
-- **Chrome colors** are named constants in `ui_types.h`, never literals (D-021, D-032, D-037, D-070): `kChromeShadow`, `kChromeHomePill`, `kChromeTrack`, `kChromeTrackBorder`, `kChromeTrackDim`, `kChromeTrackBorderDim`, `kChromeBarTrack`, `kChromeCardBorder`, `kChromePipInactive`, `kChromeBackLabel`, `kChromeGlassTint` (`GlassVariant::Clear`), `kChromeModalBg` (`GlassVariant::ReadableDark`), `kChromeGlassSheen`, plus semantic chrome accents (`kChromeLightFill`, `kChromeCoverFill`, `kChromeFanFill`, `kChromeFanAccent`, `kChromeTeleIce`, `kChromeWarmKelvin`, `kChromeCoolKelvin`, `kChromeDegSilver`, `kChromeDayGold`, `kChromeRgbRed`/`Green`/`Blue`, `kChromeGridDivider`/`Bg`/`Line`, `kChromeCaptionBg`, `kChromeDwellTrack`, `kChromePlayGlyph`, `kChromePauseGlyph`). Non-game/non-sky UI files (`page_cameras.cpp`, `page_area_hub.cpp`, `page_home_hub.cpp`, `page_calendar.cpp`, `page_music.cpp`, `page_time.cpp`, `page_system.cpp`, `page_remote.cpp`, `page_pinned.cpp`) must contain zero raw `Color(r, g, b)` literals. **Enforced: `[UI COLOR TOKENS]`**, **`[UI CHROME TOKENS]`**.
+- **Chrome colors** are named constants in `ui_color.h` (re-exported via `ui_types.h`), never literals (D-021, D-032, D-037, D-070): `kChromeShadow`, `kChromeHomePill`, `kChromeTrack`, `kChromeTrackBorder`, `kChromeBarTrack`, `kChromeCardBorder`, `kChromePipInactive`, `kChromeBackLabel`, `kChromeGlassTint` (`GlassVariant::Clear`), `kChromeModalBg` (`GlassVariant::ReadableDark`), `kChromeGlassSheen`, plus semantic chrome accents (`kChromeLightFill`, `kChromeCoverFill`, `kChromeFanFill`, `kChromeFanAccent`, `kChromeTeleIce`, `kChromeWarmKelvin`, `kChromeCoolKelvin`, `kChromeDegSilver`, `kChromeDayGold`, `kChromeRgbRed`/`Green`/`Blue`, `kChromeGridDivider`/`Bg`/`Line`, `kChromeCaptionBg`, `kChromeDwellTrack`, `kChromePlayGlyph`, `kChromePauseGlyph`). Non-game/non-sky UI files (`page_cameras.cpp`, `page_area_hub.cpp`, `page_home_hub.cpp`, `page_calendar.cpp`, `page_music.cpp`, `page_time.cpp`, `page_system.cpp`, `page_remote.cpp`, `page_pinned.cpp`) must contain zero raw `Color(r, g, b)` literals. **Enforced: `[UI COLOR TOKENS]`**, **`[UI CHROME TOKENS]`**.
 
 ### 1.2 Typography
 
-Every font is a Google font fetched at build time: Roboto, plus Orbitron 700 for game titles. Sizes are pixel sizes declared by each board HAL (`boards/*.yaml`) and consumed by [`gui.yaml`](../guis/universal/gui.yaml) (never duplicated in `devices/*.yaml` or overridden by later packages).
+Every font is a Google font fetched at build time: Roboto, plus Orbitron 700 for game titles. [`gui.yaml`](../guis/universal/gui.yaml) declares `size: 1`, and `components/latter_core/__init__.py` (`compute_auto_font_sizes()`, mirrored 1:1 in `include/ui_scale.h`) derives all 7 font pixel sizes deterministically from `(W, H, PPI, view_scale, stationary)` with zero per-board `font_*_size` substitutions.
 
-| ID | Weight | Glyphs | Default | Wrist, Mobile | Desk | Use |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| `font_time` | 400 | digits, `:.-°%—` | 77 | 77 | 112 | Clock and big numbers |
-| `font_chrono_time` | 400 | digits, `sAMP°%—` | 38 | 38 | 56 | Secondary clocks, countdowns |
-| `font_date` | 400 | Latin-1 + Latin Extended-A subset | 27 | 27 | 38 | Titles, large labels |
-| `font_btn_bold` | 700 | same as `font_date` | 26 | 26 | 36 | Buttons, keypad |
-| `font_small` | 400 | same | 21 | 25 | 30 | Body text, headers, list rows |
-| `font_micro` | 400 | same | 18 | 21 | 19 | Captions, top-corner battery readout, compact calendar/camera metadata |
-| `font_games_title` | Orbitron 700 | caps, digits, `:.-•!` | 38 | 38 | 56 | Game titles |
+| ID | Weight | Glyphs | Pocket (`466R`) | Mobile (`480`) | Wrist (`410×502`) | Remote (`320×480`) | Desk (`720`) | Use |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `font_time` | 400 | digits, `:.-°%—` | 76 | 89 | 76 | 68 | 105 | Clock and big numbers |
+| `font_chrono_time` | 400 | digits, `sAMP°%—` | 38 | 45 | 44 | 34 | 53 | Secondary clocks, countdowns |
+| `font_date` | 400 | Latin-1 + Latin Extended-A subset | 28 | 33 | 32 | 24 | 39 | Titles, large labels |
+| `font_btn_bold` | 700 | same as `font_date` | 25 | 29 | 29 | 22 | 35 | Buttons, keypad |
+| `font_small` | 400 | same | 21 | 25 | 25 | 19 | 29 | Body text, headers, list rows |
+| `font_micro` | 400 | same | 18 | 21 | 21 | 13 | 19 | Captions, top-corner battery readout, compact calendar/camera metadata |
+| `font_games_title` | Orbitron 700 | caps, digits, `:.-•!` | 38 | 45 | 44 | 34 | 53 | Game titles |
 
 - **Minimum sizes** (D-019, amended by D-087): `font_small` at least 2.0 mm and `font_micro` at least 1.65 mm at the board's PPI (size in px × 25.4 ÷ PPI). **Enforced: `[FONT MM]`**.
 - **Text from Home Assistant passes through the glyph helpers** before drawing: `sanitize_utf8_for_font` (probing `font.find_glyph()` across UTF-8 codepoints with ASCII punctuation fallback when a glyph is absent) and `fit_text_to_width_font` (O(log N) UTF-8 codepoint-boundary binary search by measured pixel width) in `ui_gfx.h`, and `wrap_text_lines` in `ui_widgets.h` (D-082). *Documented only.*
-- **Headers** (D-025, D-060, D-070): `render_page_header()` draws an UPPERCASE title in `font_small` and `col_white` (`Color::WHITE`) at `layout().hdr_y` with a `1 px` `kChromeShadow` drop shadow (the sole documented carve-out is the Orbitron `"GAMES"` arcade title in `page_games.cpp`). `render_sub_header()` draws the line below it at `layout().sub_hdr_y`, always `font_small`: action feedback in `theme_secondary`, otherwise a context line in `col_slate` or `col_white`. Multi-item selectors (`Cameras -> Single`, `Home Hub` Thermostat/Vacuum) use `ui::header_pager_bar()` (`[‹]` circle + bare shadowed title + `[›]` circle, zero glass behind the title). **Enforced: `[UI HEADER STANDARD]`**.
+- **Headers** (D-025, D-060, D-070): `render_page_header(it, cx, title, font_small)` draws an UPPERCASE title in `font_small` and `UiColor::WHITE` (`col_white`) at `layout().hdr_y` with a `1 px` `kChromeShadow` drop shadow (the sole documented carve-out is the Orbitron `"GAMES"` arcade title in `page_games.cpp`). `render_sub_header()` draws the line below it at `layout().sub_hdr_y`, always `font_small`: action feedback in `theme_secondary`, otherwise a context line in `col_slate` or `col_white`. Multi-item selectors (`Cameras -> Single`, `Home Hub` Thermostat/Vacuum) use `ui::header_pager_bar()` (`[‹]` circle + bare shadowed title + `[›]` circle, zero glass behind the title). **Enforced: `[UI HEADER STANDARD]`**.
 
 ### 1.3 Spacing and layout anchors
 
-There is no spacing scale. Spacing lives in `UiLayout` ([`ui_layout.h`](../include/ui_layout.h)), one struct of named anchors, reached through `latter_ui::layout()`. Values below are round (466 × 466) / rectangular.
+There is no spacing scale. Spacing lives in `UiLayout` ([`ui_layout.h`](../include/ui_layout.h)), backed by `compute_panel_layout()` / `SafeFrame` / `dp_px()` / `SizeClass` (`Compact`, `Regular`, `Expanded`), one struct of named anchors reached through `latter_ui::layout()`. Values below show Pocket (466 × 466 round) / adaptive derivation.
 
-| Anchor | Round | Rectangular | Notes |
+| Anchor | Pocket (466R) | Adaptive derivation | Notes |
 | :--- | :--- | :--- | :--- |
-| `hdr_y` | 48 | 36 wearable, 28 standard, 48 above 520 px | Page header |
-| `sub_hdr_y` | 76 | 64 wearable, 56 standard, 88 above 520 px | Sub-header / feedback line |
-| `back_y` | 426 | `H − scale_y(28)` | Back label (`kBackLabelY` in `ui_layout.h`) |
-| `home_bar_y` | 434 | `H − scale_y(11)` | Home pill (`kHomeBarY`) |
-| `dock_y` | 359 | `H − scale_y(66)` | Home dock icon centers |
-| `app_dock_y` | 369 | `H − scale_y(66)` | In-app mode bar centers |
-| `dock_pips_y`, `app_dock_pips_y` | 404, 408 | `H − scale_y(27)` | Scrollbar / pips row |
-| `dock_r` | 27 | 24 below 360 px wide, 27 standard, 40 above 520 px | Dock icon radius |
-| `list_card_w` | 276 | `W − 88` below 380 px, 276 standard, scaled above 520 px | 5-slot list card width |
-| `slot5_y(i)` | 236 + (i − 2) × 63 | scaled above 520 px | 5-slot list rows (height 44; hit-tested via `FrameHitTable`) |
-| `area_card3_*`, `tool_card3_stride` | stride 76 / 100, height 64 | scaled above 520 px | 3-card pages |
-| `home_*_y` | date 52, clock 128, weather 200 | scaled above 520 px | Home screen zones |
-| `home_activity_cy_for_rows()`, `home_activity_h_for_rows()` | centered between the weather line and the dock (one line, 68) | bottom-anchored at `dock_y − dock_r − home_activity_dock_gap()` (3 mm): `scale_y(60)` for 1 row, `scale_y(60) + scale_y(56)` (`116`) for 2 rows | Adaptive Home activity card (D-028, D-045) |
-| `battery_cx/y`, `celestial_x/y` | — | per width bucket | Corner-safe indicators |
+| `hdr_y` | 48 | `dp_px()` + top `SafeFrame` bezel clearance | Page header |
+| `sub_hdr_y` | 76 | `hdr_y` + `dp_px()` vertical rhythm | Sub-header / feedback line |
+| `back_y` | 426 | Bottom-anchored via `SafeFrame` & `dp_px()` | Back label (`kBackLabelY` in `ui_layout.h`) |
+| `home_bar_y` | 434 | Bottom-anchored via `SafeFrame` & `dp_px()` | Home pill (`kHomeBarY`) |
+| `dock_y` | 359 | Bottom-anchored above `home_bar_y` | Home dock icon centers |
+| `app_dock_y` | 369 | Bottom-anchored above `home_bar_y` | In-app mode bar centers |
+| `dock_pips_y`, `app_dock_pips_y` | 404, 408 | Below dock / mode bar via `dp_px()` | Scrollbar / pips row |
+| `dock_r` | 27 | Dynamic solver across 4–6 slots & `SizeClass` | Dock icon radius |
+| `list_card_w` | 276 | `SafeFrame::safe_span()` capped by `max_content_w(460)` | Standard list card width |
+| `slot5_y(i)` / `list_row_y(i)` / `peer_list_row_y(i)` | 5-slot & viewport-solved rows | `dp_px()` + `min_row_hit_px()` floor | Standard list rows (hit-tested via `FrameHitTable`) |
+| `area_card3_*`, `tool_card3_stride` | stride 76 / 100, height 64 | `SafeFrame` & `dp_px()` scaled | 3-card pages |
+| `home_*_y` | date 52, clock 128, weather 200 | `SafeFrame` & `dp_px()` vertical layout | Home screen zones |
+| `home_activity_cy_for_rows()`, `home_activity_h_for_rows()` | centered between the weather line and the dock | bottom-anchored at `dock_y − dock_r − home_activity_dock_gap()` (3 mm), 1 or 2 rows based on available `avail_h` | Adaptive Home activity card (D-028, D-045, D-087) |
+| `battery_cx/y`, `celestial_x/y` | — | Corner-geometry placement via `SafeFrame` | Corner-safe indicators |
 
 UiLayout also holds shared page anchors (steppers, mode-bar slot geometry) and the touch constants in [1.6](#16-touch-constants), while interactive widgets register their exact rendered hit bounds directly into `FrameHitTable`. **Rule:** a spacing value used by more than one page, or by both drawing and touch, goes into `UiLayout`. *Documented only.*
 
@@ -93,13 +93,13 @@ UiLayout also holds shared page anchors (steppers, mode-bar slot geometry) and t
 | Radius | Value | Source | Use |
 | :--- | :--- | :--- | :--- |
 | Panel corner (`LATTER_CORNER_R`) | `W/2` round, 98 wearable, 20 other rectangular (Mobile overrides to 76) | Derived in `ui_types.h` from `LATTER_ROUND_DISPLAY` and `LATTER_IS_WEARABLE`; a board can override it | Bezel / alert border |
-| Standard card (`kRadiusCardPx()`) | `scale_s(12)` (`12` on `<= 520`, `18` on Desk) | `ui_types.h` / `radius_card_for()` | Settings/config rows, list rows, toggles, sliders, 2×3 tiles, vertical action-sheet / quick-reply rows, segmented control outer frame |
-| Compact key / tile (`kRadiusKeyPx()`) | `scale_s(10)` (`10` on `<= 520`, `15` on Desk) | `ui_types.h` / `radius_key_for()` | Calculator keys, PIN keypad keys, dense calendar day capsules & board tiles |
+| Standard card (`kRadiusCardPx()`) | `dp_px(12)` (`12` on `1.0×` `266 PPI`, `17` on Desk) | `ui_types.h` / `radius_card_for()` | Settings/config rows, list rows, toggles, sliders, 2×3 tiles, vertical action-sheet / quick-reply rows, segmented control outer frame |
+| Compact key / tile (`kRadiusKeyPx()`) | `dp_px(10)` (`10` on `1.0×` `266 PPI`, `14` on Desk) | `ui_types.h` / `radius_key_for()` | Calculator keys, PIN keypad keys, dense calendar day capsules & board tiles |
 | Full stadium action pill | `h / 2` | `ui::action_pill*` (`ui_widgets.h`) | Standalone or horizontal-row primary/secondary action buttons only (Start, Stop, Play, Answer, Dismiss, Talk, Listen, Unlock, Save) |
 | Circle icon button | `r` | `ui::icon_circle_button` / `render_glass_circle` | Round icon triggers (`‹`, `›`, `+`, `-`, Power, Home, Mute, Transport) |
-| Mode-bar track | `dock_r + scale_s(3)` | `ui::mode_bar` (`ui_widgets.cpp`) | Connected 1–9 tab stadium mode bar across all 7 mode-bar apps |
+| Mode-bar track | `dock_r + dp_px(3)` | `ui::mode_bar` (`ui_widgets_icons_chrome.cpp`) | Connected 1–9 tab stadium mode bar across all 7 mode-bar apps |
 
-**Enforced: `[UI RADIUS TOKENS]`** (forbids hardcoded magic radii `10/12/14/15/16` in `render_card_box` calls across `page_*.cpp`). **Content column cap (D-060, D-070):** on `> 520 px` panels (`720×720` Desk), card stacks, action-pill rows, sliders, and 2×3 tile grids cap centered content width at `kMaxContentColW = 480 px` via `compute_uniform_stack_w_for()` / `compute_action_pill_row()` (exempting Desk 7-column Calendar Week/Month grids and full-bleed Video/Games).
+**Enforced: `[UI RADIUS TOKENS]`** (forbids hardcoded magic radii `10/12/14/15/16` in `render_card_box` calls across `page_*.cpp`). **Content column cap (D-060, D-070, D-087):** card stacks, action-pill rows, sliders, and tile grids cap centered content width at `SafeFrame::max_content_w(460)` (`dp_px(460)`, e.g. `460 px` on Pocket / `637 px` on Desk) via `compute_uniform_stack_w_for()` / `action_pill_row()` (exempting wide Calendar Week/Month grids and full-bleed Video/Games).
 
 ### 1.5 Motion
 
@@ -107,8 +107,8 @@ One motion system (D-015): every UI transition is time-based and eases out cubic
 
 | Motion | Implementation |
 | :--- | :--- |
-| Home dock page slide, mode-bar capsule glide | `DockSlideAnimator` (`ui_layout.h`): `home_dock_anim()` on page 1 (flushed inside `[dock_dirty_band_y0(), SCREEN_H - 1]`), `mode_bar_anim()` on pages 2, 5, 6, 9, 10 and 12 |
-| Clamped boundary rubber-band bounce | `EdgeBounceState` (`ui_touch_recognizer.h`): `edge_bounce()` (`135 ms` `1.8 mm` parabolic pull-and-return on Home Dock page 0 / last page and all clamped vertical menus/lists) |
+| Home dock page slide, mode-bar capsule glide | `DockSlideAnimator` (`ui_layout.h`): `home_dock_anim()` on page 1 (flushed inside `[dock_dirty_band_y0(), SCREEN_H - 1]`), `mode_bar_anim()` on pages 2, 5, 6, 9, 10, 12, and 13 |
+| Clamped boundary rubber-band bounce | `EdgeBounceState` (`ui_touch_recognizer.h`): `edge_bounce()` (`135 ms` `1.35 mm` `kEdgeBouncePeakMm` parabolic pull-and-return on Home Dock page 0 / last page and all clamped vertical menus/lists) |
 | List and carousel page transitions (System, Music, Tools, Pinned and Games launchers) | `start_menu_scroll()` starts the tween (`menu_scroll_start_ms`); renderers read `menu_scroll_shift(span)`; `gui.yaml` requests animation frames while `menu_scroll_active` |
 
 Frame pacing:
@@ -121,7 +121,7 @@ Frame pacing:
 
 ### 1.6 Touch constants
 
-Every gesture threshold in `TouchGestureEngine` ([`ui_touch_engine.h`](../include/ui_touch_engine.h) / [`ui_touch_recognizer.h`](../include/ui_touch_recognizer.h) / `touch_engine.cpp` & `touch_dispatch.cpp` in [`components/latter_ui/`](../components/latter_ui/)) comes from a millimetre constant in `UiLayout` / `ui_panel_metrics.h`, converted with `mm_to_px(mm) = mm × LATTER_PANEL_PPI / 25.4` (D-011, D-031, D-032, D-049). Exceeding `tap_max()` (`1.65 mm`) permanently latches `tap_cancelled = true` for that stroke so an aborted or boundary swipe can never fall through as a tap. **Enforced: `[TOUCH MM]`**.
+Every gesture threshold in `TouchGestureEngine` ([`ui_touch_engine.h`](../include/ui_touch_engine.h) / [`ui_touch_recognizer.h`](../include/ui_touch_recognizer.h) / `touch_engine.cpp` & `touch_dispatch_*.cpp` in [`components/latter_ui/`](../components/latter_ui/)) comes from a millimetre constant in `UiLayout` / `ui_panel_metrics.h`, converted with `mm_to_px(mm) = mm × LATTER_PANEL_PPI / 25.4` (D-011, D-031, D-032, D-049). Exceeding `tap_max()` (`1.65 mm`) permanently latches `tap_cancelled = true` for that stroke so an aborted or boundary swipe can never fall through as a tap. **Enforced: `[TOUCH MM]`**.
 
 | `layout().` | mm | Use | Pocket (266) | Mobile (313) | Wrist (315) | Remote (165) | Desk (254) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -132,9 +132,9 @@ Every gesture threshold in `TouchGestureEngine` ([`ui_touch_engine.h`](../includ
 | `swipe_min()` | 2.35 | Unified live swipe commit (`on_touch_move`, 1 step per stroke) | 25 | 29 | 29 | 15 | 24 |
 | `edge_guard_y()` | 1.5 | Band below in-app content (from the bottom) | 16 | 18 | 19 | 10 | 15 |
 | `top_edge_zone_y()` | 5.2 | Pull-down Quick Actions starts here (from the top; round: y 54; mirror of `home_zone_y()`) | 54 | 64 | 64 | 34 | 52 |
-| `home_zone_y()` | 5.2 | Swipe-up home starts here (from the bottom; round: y 412) | 412 | 64 | 64 | 34 | 52 |
-| `chin_guard_y()` | 2.7 | The home pill's chin (from the bottom; round: y 412) | 412 | 33 | 33 | 18 | 27 |
-| `mode_bar_zone_top()` | `app_dock_y − dock_r − scale_s(14)` | Vertical list boundary above in-app mode bar | | | | | |
+| `home_zone_y()` | 5.2 | Swipe-up home starts here (from the bottom; round: y 411) | 411 | 64 | 64 | 34 | 52 |
+| `chin_guard_y()` | 2.7 | The home pill's chin (from the bottom; round: y 411) | 411 | 33 | 33 | 18 | 27 |
+| `mode_bar_zone_top()` | `app_dock_y − dock_r − dp_px(14)` | Vertical list boundary above in-app mode bar | | | | | |
 | `dock_hit_r()` | max(`dock_r` + 16, 3.6 mm) | Home dock icon hit radius (≥ 7 mm target) | 43 | 44 | 45 | 40 | 56 |
 
 **Debounce** (`ui_hit_table.h` / `ui_touch_engine.h`, D-023, D-049). Taps debounce per widget target (`make_tap_target_key`) through `touch_router().allow_tap(now, TOUCH_DEBOUNCE_*, target_key)` (`15 ms` cross-target bounce guard so alternating buttons never swallow a rapid second tap). **Enforced: `[TOUCH DEBOUNCE]`**.
@@ -161,8 +161,8 @@ Pick the widget from the role — never hand-draw a one-off glass box or custom 
 
 | UI Function | Canonical Widget (`ui_widgets.h`) | Corner Radius | Glass Surface | Font |
 | :--- | :--- | :--- | :--- | :--- |
-| Bottom mode switcher (1–9 tabs) | `ui::mode_bar(...)` | Stadium (`dock_r + 3`) | Yes (`Clear`) | SDF icons |
-| Page title header | `render_page_header(..., font_small, col_white)` | — | **No** (bare + shadow) | `font_small` |
+| Bottom mode switcher (1–9 tabs) | `ui::mode_bar(...)` | Stadium (`dock_r + dp_px(3)`) | Yes (`Clear`) | SDF icons |
+| Page title header | `render_page_header(..., font_small)` | — | **No** (bare + shadow) | `font_small` |
 | Multi-item header selector | `ui::header_pager_bar(...)` | `[‹]`/`[›]` circles | Circles only (**zero glass on title**) | `font_small` |
 | Primary / secondary action CTA (standalone or horizontal row) | `ui::action_pill(...)` / `action_pill_centered(...)` / `action_pill_row(...)` | Full stadium (`h / 2`) | Yes (`Clear`) | `font_small` / `font_btn_bold` |
 | Two-option mode switcher | `ui::segmented_toggle(...)` | `kRadiusCardPx()` outer | Yes (`Clear`) | `font_small` |
@@ -180,7 +180,7 @@ Pick the widget from the role — never hand-draw a one-off glass box or custom 
 
 | Component | API | Geometry from | Use for |
 | :--- | :--- | :--- | :--- |
-| Page header | `render_page_header(it, cx, title, font_small, col_white, shadow = true)` | `UiLayout::hdr_y` | The UPPERCASE white title of every page (`[UI HEADER STANDARD]`). |
+| Page header | `render_page_header(it, cx, title, font_small)` | `UiLayout::hdr_y` | The UPPERCASE `UiColor::WHITE` title of every page with `1 px` `kChromeShadow` (`[UI HEADER STANDARD]`). |
 | Header pager bar | `ui::header_pager_bar(it, cx, cy, title, font_small, ...)` | `UiLayout::hdr_y` | Multi-item top selector (`Cameras -> Single`, `Home Hub` Thermostat/Vacuum): `[‹]` circle + bare shadowed title + `[›]` circle (zero glass behind title text). |
 | Sub-header | `render_sub_header(it, cx, text, font, color)` | `UiLayout::sub_hdr_y` | Action feedback (`theme_secondary`) or a context line (`col_slate`/`col_white`) |
 | Empty state | `render_empty_state(it, cx, cy, text, font, text_c)` | Caller's row | Bare shadowed auto-wrapped status sentence (zero glass box, `D-043`/`D-048`/`D-070`). |
@@ -194,24 +194,24 @@ Pick the widget from the role — never hand-draw a one-off glass box or custom 
 | In-app mode bar | `ui::mode_bar(...)` (wrapping `render_in_app_mode_bar_track`); `mode_bar_anim()` | `UiLayout::app_dock_y`, `dock_r`, `compute_mode_bar_slot_xs` | Single-source bottom mode switcher for all 7 mode-bar apps (`Area`, `Weather`, `Home Hub`, `Time`, `Calendar`, `Music`, `Cameras`). **Enforced: `[UI MODE BAR]`**. |
 | Viewport scrollbar | `render_viewport_scrollbar(it, cx, y, total, start_idx, thumb, dim)` | `dock_pips_y` / `app_dock_pips_y` | Under the Home dock and a mode bar when there are more than 4 items (D-016) |
 | Page pips | `render_dock_page_pips(it, cx, y, pages, active, c_active, c_inactive)` | Caller | Paged carousels: Games launcher, camera carousel (D-016) |
-| Vertical chevrons | `render_vertical_page_pips(it, show_up, show_down, bg, active, inactive, bottom_limit_y)` | Right-edge column per width bucket, centered cleanly above `mode_bar_zone_top()` | Paged vertical lists across all apps (D-016, D-054, D-070) |
+| Vertical chevrons | `render_vertical_page_pips(it, show_up, show_down, bg, active, bottom_limit_y)` | Right-edge column via `SafeFrame`, centered cleanly above `mode_bar_zone_top()` | Paged vertical lists across all apps (D-016, D-054, D-070) |
 | Focus ring | `render_focus_ring_circle`, `render_focus_ring_rect`, `render_active_focus_overlay` | Registered `kHitFocusSlot` / `kHitFocusCircle` regions in `frame_hits()` | Rotary / button navigation |
-| Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_R` / `LATTER_CORNER_R` | Ringing timer, alarm, Find My, or push notification takeover (D-007) |
+| Alert border | `render_bezel_alert_border(it, cx, cy, color)` | `SCREEN_MIN_R` / `LATTER_CORNER_R` | Ringing timer, alarm, Find My, or push notification takeover (D-007) |
 | Battery indicator | `render_battery_indicator` (`page_home.cpp`) | `UiLayout::battery_cx/y` | Home (D-042 removes battery chrome from Clock) |
-| Time readout | `render_time_readout(it, cx, text, font_time, color, y_pos)` (`ui_widgets.h`) | `scale_y(142)` default (`scale_y(164)` on Timer Detail) | Big readout on timer and stopwatch pages |
+| Time readout | `render_time_readout(it, cx, text, font_time, color, y_pos)` (`ui_widgets.h`) | `dp_px(202)` default (`top_y + (avail_h * 27) / 100` on Timer Detail) | Big readout on timer and stopwatch pages |
 | Analog horology | `ui::draw_aa_line`, `ui::draw_aa_tapered_hand`, `ui::render_analog_chapter_ring`, `ui::render_center_arbor_aa` | Caller | Sub-pixel SDF anti-aliased chapter rings, tapered watch hands, and center arbor |
-| Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` (`<= kMaxContentColW`) | Adaptive Home front-deck card (`kRadiusCardPx()`, D-028, D-045, D-070) |
+| Home activity card | Home renderer + `resolve_home_activity_view()` | `UiLayout::home_activity_*` (`<= SafeFrame::max_content_w(460)`) | Adaptive Home front-deck card (`kRadiusCardPx()`, D-028, D-045, D-070) |
 | Offline pill | `render_offline_pill(it, ctx)` | Top edge | Home Assistant disconnected for 8 s or more (D-026) |
 | Settings & list rows | `ui::setting_cycle_row`, `ui::toggle_card_row`, `ui::slider_card_row`, `ui::list_row`, `ui::split_action_card_row`, `ui::grid_tile` | `UiLayout` + `FrameHitTable` (`kRadiusCardPx()`) | Standardized settings, toggles, horizontal sliders, selectable list/sheet rows, dual-target 3-card rows, and 2×3 launcher tiles (D-031, D-042, D-070) |
 | Segmented, stepper & keypad | `ui::segmented_toggle`, `ui::stepper_row`, `ui::keypad_button` | `UiLayout` + `FrameHitTable` | 2-option segmented switchers, 4-column time/date steppers, and Calculator/PIN keys (`kRadiusKeyPx()`, D-070) |
 | HSV color wheel | `ui::hsv_color_wheel` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Single LUT-backed custom color picker ring and Save action (D-031) |
 | Modals & PIN pad | `ui::confirm_modal`, `ui::game_over_sheet`, `ui::pin_pad_modal` (`ui_widgets.h`) | `UiLayout` + `FrameHitTable` | Destructive confirmation sheets, bare-text game-over summaries + pill CTAs, and the 3×4 Security PIN keypad modal (D-031, D-070) |
 
-**Icons** use one universal standard across the entire OS: **Material Design Icons (`@mdi/js v7.4.47`)** rasterized at 4× supersampled AA via `render_mdi_icon()` over the provider-agnostic `has_icon()` / `rasterize_icon()` dispatch seam (`ui_mdi.h` / `ui_mdi.cpp`, D-040, D-071, D-078), matching Latter Studio's `ROUTE_PREVIEW_ICONS` 1:1 with unified **solid silhouette weight** across all 63+ built-in routes, Home Dock, `Pinned`, `Tools`, all 7 in-app stadium mode bars, Home Activity Card, entity controls, Home Hub heroes, and Remote controls. All `ui::draw_icon_*` wrappers, `ui::route_icon_slug()`, and `ui::draw_route_icon()` in `ui_widgets.cpp` delegate to `render_mdi_icon()` with explicit container-derived sizes (`ui::dock_icon_r(dock_r)`, `ui::card_icon_r(card_h)`, `ui::hero_icon_r(hero_h)`, zero internal `scale_s` double-scaling, D-051). Live entity states apply automatic **outline <-> solid state feedback** via `resolve_state_mdi_slug()` on Home Dock and `Pinned` entity shortcuts (Off -> `-outline` when a pair exists, On -> solid), `draw_icon_lightbulb(..., is_on)` on Area Control light cards, and `draw_icon_shield_home(..., !is_disarmed)` on the Home Hub Security Alarm hero (keeping in-app mode bars solid). Shortcuts optionally carry per-item `badge_style` (`glass` | `inverted` dark negative-space cutout on a solid AA orb/medallion) and semantic `accent` (`default` | `primary` | `gold` | `green` | `red` | `orange`) mapped strictly to `UiFrameContext` palette tokens (`D-078`). `RouteId::APP_AREA` (`app:area`) resolves dynamically via `resolve_area_dock_icon(area_ctx_state())` to the active Home Assistant Area's configured `area_icon` (falling back to `"mdi:sofa"` when unassigned or unset), retiring the redundant floating roaming Area badge beside/below the Home battery readout (D-071).
+**Icons** use one universal standard across the entire OS: **Material Design Icons (`@mdi/js v7.4.47`)** rasterized at 4× supersampled AA via `render_mdi_icon()` over the provider-agnostic `has_icon()` / `rasterize_icon()` dispatch seam (`ui_mdi.h` / `ui_mdi.cpp`, D-040, D-071, D-078), matching Latter Studio's `ROUTE_PREVIEW_ICONS` 1:1 with unified **solid silhouette weight** across all 63+ built-in routes, Home Dock, `Pinned`, `Tools`, all 7 in-app stadium mode bars, Home Activity Card, entity controls, Home Hub heroes, and Remote controls. All `ui::draw_icon_*` wrappers, `ui::route_icon_slug()`, and `ui::draw_route_icon()` in `ui_widgets.cpp` / `ui_widgets_icons_chrome.cpp` delegate to `render_mdi_icon()` with explicit container-derived sizes (`ui::dock_icon_r(dock_r)`, `ui::card_icon_r(card_h)`, `ui::hero_icon_r(hero_h)`, zero internal double-scaling, D-051). Live entity states apply automatic **outline <-> solid state feedback** via `resolve_state_mdi_slug()` on Home Dock and `Pinned` entity shortcuts (Off -> `-outline` when a pair exists, On -> solid), `draw_icon_lightbulb(..., is_on)` on Area Control light cards, and `draw_icon_shield_home(..., !is_disarmed)` on the Home Hub Security Alarm hero (keeping in-app mode bars solid). Shortcuts optionally carry per-item `badge_style` (`glass` | `inverted` dark negative-space cutout on a solid AA orb/medallion) and semantic `accent` (`default` | `primary` | `gold` | `green` | `red` | `orange`) mapped strictly to `UiFrameContext` palette tokens (`D-078`). `RouteId::APP_AREA` (`app:area`) resolves dynamically via `resolve_area_dock_icon(area_ctx_state())` to the active Home Assistant Area's configured `area_icon` (falling back to `"mdi:sofa"` when unassigned or unset), retiring the redundant floating roaming Area badge beside/below the Home battery readout (D-071).
 
 **States.** Unknown values use `kUnknownGlyph` (`—`). Empty and loading cards use `render_empty_state`; status lines inside a page (for example "No updates available" under Update) stay plain sub-text.
 
-**Adding shared controls.** Interactive multi-page controls live in [`ui_widgets.h`](../include/ui_widgets.h) and `ui_widgets.cpp` in [`components/latter_ui/`](../components/latter_ui/), registering their hit bounds into `frame_hits()` as they draw. Add any new multi-page widget there before introducing a page-local copy.
+**Adding shared controls.** Interactive multi-page controls live in [`ui_widgets.h`](../include/ui_widgets.h) and `ui_widgets*.cpp` / `ui_tile_grid.cpp` in [`components/latter_ui/`](../components/latter_ui/), registering their hit bounds into `frame_hits()` as they draw. Add any new multi-page widget there before introducing a page-local copy.
 
 ## 3. Navigation
 
@@ -225,11 +225,11 @@ Pick the widget from the role — never hand-draw a one-off glass box or custom 
 | 1 | `HOME` | Home | `home_subpage`: 0 dock, 1 Home settings, 2 Activity overlay |
 | 2 | `MUSIC` | Music | `music.view`: `MusicView` 0–8 peer tabs (`NOW_PLAYING`, `LIBRARY` 4-row standard `slot5_*` list across 2 pages, `SPEAKERS`, `VOLUME`, `QUEUE`, `LYRICS` with tap-to-reveal `Prev` / `Play/Pause` / `Next` transport HUD, `ALBUM_TRACKS`, `INFO`, `SETTINGS`) + `music.drilldown`: `MusicDrilldown` (`NONE`, `LIB_LIST` 5-row standard `slot5_*` list, `SPEAKER_ACTIONS`) + `music.takeover`: `MusicTakeover` (`NONE`, `SCRUB`, `ACTION_SHEET`), switched by the 9-slot sliding stadium mode bar and horizontal canvas swipes; drawn by `render_music_page` (`page_music.cpp`, D-059, D-060, D-072, D-079) |
 | 3 | `GAMES` | Games | `active_game`: 0 launcher, 1 Marbles (universal), 2 Archery (`IMU`), 3 Bricks (`IMU`), 4 Chomp (`IMU`), 5 Blocks (`NO_IMU`), 6 Snake (`NO_IMU`), 7 Drop Four (`NO_IMU`) (D-081) |
-| 4 | `SYSTEM` | Settings | `system_menu_mode`: 0 dashboard, 1–13 menus |
+| 4 | `SYSTEM` | Settings | `system_menu_mode`: 0 dashboard, 1–12 menus |
 | 5 | `WEATHER` | Sky & Weather | `sky_weather_subpage`: 0–3, switched by the mode bar |
 | 6 | `AREA` | Area Control | `area_subpage`: 0 entity cards, 1 Area picker; categories switched by the mode bar |
 | 7 | `REMOTE` | Remote | `remote_subpage`: 0 remote, 1 control list (master power and up to 10 devices); exempt from idle Return to Home (D-079) |
-| 8 | `TOOLS` | Tools | `tools_subpage`: `ToolsSubpage` (0 N-page launcher via `tools_launcher_page_count()`, 3 round-only Analog Chronograph on `LATTER_ROUND_DISPLAY=1`, 4 dice, 5 flashlight, 6 calculator, 7 level, 8 coin flip, 9 calendar) |
+| 8 | `TOOLS` | Tools | `tools_subpage`: `ToolsSubpage` (0 N-page launcher via `active_tools_launcher_page_count()`, 3 round-only Analog Chronograph on `LATTER_ROUND_DISPLAY=1`, 4 dice, 5 flashlight, 6 calculator, 7 level, 8 coin flip) |
 | 9 | `HOME_HUB` | Home Hub | `home_hub_tab()`: `HomeHubTab` 0–4 (`alarm`, `intercom` **Broadcast** with inline STT `Speak` + paginated Quick Phrases, `thermostat`, `entry` button-only glass via `ui::labeled_action_row`, `vacuum`), switched by the 4-slot conveyor mode bar strictly from synced `area_context.home_categories` (rendering passive empty states with zero placeholder tabs or controls before sync or when unassigned); drawn by `render_home_hub_page` (`page_home_hub.cpp`, D-046, D-048, D-066, D-073) |
 | 10 | `TIME` | Time | `time_subpage`: `TimeSubpage` 0–3 (`Clock` + World Clocks, `Timers`, `Alarms`, `Stopwatch`), switched by the mode bar; drawn by `render_time_page` (D-042) |
 | 11 | `PINNED` | Pinned | `pinned_menu_page`: `0 .. N-1` (`pinned_total_pages()`, 6-card 2×3 shortcut grid per page, switched by vertical swipe or chevrons); drawn by `render_pinned_page` (`page_pinned.cpp`, D-054) |
@@ -281,7 +281,7 @@ After the page, `gui.yaml` draws the chrome in order: the focus overlay (not dur
 - **Home affordances.** Swipe up starting at or below `home_zone_y()`, at least `swipe_min()` and mostly vertical (D-043). The home pill at `home_bar_y` is a purely visual swipe-up cue and never triggers Home on tap; while it shows, the chin below `chin_guard_y()` suppresses in-app list taps.
 - **Entity cards vs. swipe zones (Page 6, D-050).** Overview entity cards on `Area Control` (`AreaSubpage::OVERVIEW`) register zero horizontal sliders (`kHitHorizSlider` lives strictly inside dedicated inspectors): the left icon zone (`AREA_CARD_TOGGLE`) toggles On/Off (Open/Close), while the right body (`AREA_CARD_TAP`) on `light`, `cover`, and `fan` opens the generalized Entity Level & Color Inspector (`AreaSubpage::LIGHT_DETAIL`). Horizontal swipes anywhere on the canvas or bottom mode bar step categories (`sync_mode_bar_window`), and vertical swipes above `mode_bar_zone_top()` always page entity cards.
 - **Standardized chrome widgets (`FrameHitTable`):** `WidgetId::BACK_BUTTON` (bottom navigation button registered by `render_back_button`) and `WidgetId::CHEVRON_UP` / `WidgetId::CHEVRON_DOWN` / `WidgetId::MODE_BAR_LEFT` / `WidgetId::MODE_BAR_RIGHT` (edge pagination targets).
-- **Touch flow.** Capacitive touch bindings live in optional [`guis/universal/gui_touch.yaml`](../guis/universal/gui_touch.yaml) (omitted on `LATTER_HAS_TOUCH=0` builds). `TouchRouter` (`ui_hit_table.h`) forwards the first touch point to the compiled `TouchGestureEngine` (`touch_engine()` in [`ui_touch_engine.h`](../include/ui_touch_engine.h) / `touch_engine.cpp` & `touch_dispatch.cpp` in [`components/latter_ui/`](../components/latter_ui/), bound via `UiTouchRuntime`), which dispatches registered `FrameHitTable` regions and classifies taps, drags and swipes using `UiLayout` millimetre thresholds (D-031, D-032). A gesture is cancelled if the page context or active takeover changes between press and release.
+- **Touch flow.** Capacitive touch bindings live in optional [`guis/universal/gui_touch.yaml`](../guis/universal/gui_touch.yaml) (omitted on `LATTER_HAS_TOUCH=0` builds). `TouchRouter` (`ui_hit_table.h`) forwards the first touch point to the compiled `TouchGestureEngine` (`touch_engine()` in [`ui_touch_engine.h`](../include/ui_touch_engine.h) / `touch_engine.cpp` & `touch_dispatch_*.cpp` in [`components/latter_ui/`](../components/latter_ui/), bound via `UiTouchRuntime`), which dispatches registered `FrameHitTable` regions and classifies taps, drags and swipes using `UiLayout` millimetre thresholds (D-031, D-032). A gesture is cancelled if the page context or active takeover changes between press and release.
 - **Non-touch / rotary input.** `touch_engine().on_input_event(...)` / `ui_input_event(action, delta)` takes `home`, `back`, `select`, `next`, `prev`, stepping and activating registered `FrameHitTable` `kHitFocusSlot` regions (`BACK_BUTTON`, `CHEVRON_UP`/`CHEVRON_DOWN`, `MODE_BAR_LEFT`/`MODE_BAR_RIGHT`, Home Dock paging, `VA_CANCEL_BTN`, and interactive page controls; `PageId::CLOCK` and `FLASHLIGHT` exit cleanly on `select`/`back` when `focus_count == 0`, D-082). The focus ring shows for 8 s after the last input, and always on `LATTER_HAS_TOUCH=0` boards.
 - **Games** use IMU tilt on `LATTER_HAS_IMU=1` boards (touch-drag as a fallback) and touch steering on `LATTER_HAS_IMU=0` boards (D-009).
 

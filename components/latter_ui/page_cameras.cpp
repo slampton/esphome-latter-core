@@ -98,7 +98,7 @@ void render_camera_quick_reply_sheet(Rgb565Surface &it, const UiFrameContext &ct
   const auto &ly = layout();
   const auto &rs = runtime_state();
 
-  render_page_header(it, ctx.cx, "QUICK REPLY", ctx.font_small, ctx.col_white);
+  render_page_header(it, ctx.cx, "QUICK REPLY", ctx.font_small);
   if (!rs.intercom.cam_intercom_status.empty() &&
       (ctx.now_ms - rs.intercom.cam_status_ms < 3200U)) {
     render_sub_header(it, ctx.cx, rs.intercom.cam_intercom_status, ctx.font_small, ctx.theme_secondary);
@@ -161,7 +161,7 @@ void render_cameras_grid_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     ui::header_pager_bar(it, ctx.cx, ly.hdr_y, hdr_buf, ctx.font_small, ctx.col_white, true,
                          WidgetId::CAM_GRID_PREV_BTN, WidgetId::CAM_GRID_NEXT_BTN);
   } else {
-    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_small, ctx.col_white);
+    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_small);
   }
 
   // Blit live 2x2 server-composited MJPEG grid frame (or clean placeholder while connecting)
@@ -478,7 +478,7 @@ void render_cameras_settings_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &ly = layout();
   const auto &prefs = persisted_prefs();
 
-  render_page_header(it, ctx.cx, "CAMERA SETTINGS", ctx.font_small, ctx.col_white);
+  render_page_header(it, ctx.cx, "CAMERA SETTINGS", ctx.font_small);
 
   char labels[5][44]{};
   int ids[5]{};
@@ -516,7 +516,7 @@ void render_cameras_settings_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   if (total_pages > 1) {
     render_vertical_page_pips(it, rs.cameras.settings_page > 0,
                               rs.cameras.settings_page + 1 < total_pages,
-                              ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                              ctx.col_bg, ctx.theme_primary,
                               ly.mode_bar_zone_top());
   }
 
@@ -733,7 +733,7 @@ void render_cameras_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   // Empty state (0 cameras configured) on non-Settings tabs
   if (cam_count == 0 && !has_fallback_src && rs.cameras.tab != CamerasTab::SETTINGS) {
     fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, ctx.col_black);
-    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_small, ctx.col_white);
+    render_page_header(it, ctx.cx, "CAMERAS", ctx.font_small);
     render_empty_state(it, ctx.cx, ctx.cy, "No cameras configured. Add cameras in Latter Studio.",
                        ctx.font_small, ctx.col_slate);
     render_cameras_mode_bar(it, ctx, rs.cameras.tab);

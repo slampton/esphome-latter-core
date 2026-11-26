@@ -295,7 +295,7 @@ void render_screensaver_starfield(Rgb565Surface &it, int cx, int cy, uint32_t no
     const float k = 230.0f / stars[i].z;
     const int sx = cx + static_cast<int>(stars[i].x * k);
     const int sy = cy + static_cast<int>(stars[i].y * k);
-    if (!is_inside_bezel(sx, sy, cy, 6)) {
+    if (!is_inside_bezel(sx, sy, 6)) {
       respawn_star(i, false);
       continue;
     }
@@ -551,7 +551,7 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
       const int mx = (hx + tx) >> 1;
       const int my = (hy + ty) >> 1;
 
-      if (is_inside_bezel(hx, hy, cy, 5) && is_inside_bezel(tx, ty, cy, 5)) {
+      if (is_inside_bezel(hx, hy, 5) && is_inside_bezel(tx, ty, 5)) {
         fast_line(it, tx, ty, mx, my, UiColor(160, 65, 10));
         draw_glow_line(it, mx, my, hx, hy, UiColor(255, 235, 150), UiColor(220, 110, 20));
         fast_filled_circle(it, hx, hy, 2, UiColor(255, 255, 220));
@@ -596,7 +596,7 @@ void render_screensaver_fireworks(Rgb565Surface &it, int cx, int cy, uint32_t no
       const ProjectedPoint p_head = project_3d({dir_3d.x * r_h, dir_3d.y * r_h + grav_head, dir_3d.z * r_h}, bx, by, 260.0f, 320.0f);
       const ProjectedPoint p_tail = project_3d({dir_3d.x * r_t, dir_3d.y * r_t + grav_tail, dir_3d.z * r_t}, bx, by, 260.0f, 320.0f);
       if (!p_head.visible || !p_tail.visible ||
-          !is_inside_bezel(p_head.x, p_head.y, cy, 5) || !is_inside_bezel(p_tail.x, p_tail.y, cy, 5)) continue;
+          !is_inside_bezel(p_head.x, p_head.y, 5) || !is_inside_bezel(p_tail.x, p_tail.y, 5)) continue;
 
       const float depth_boost = std::fmax(0.55f, std::fmin(1.15f, p_head.scale * 1.12f));
       const float bright = std::fmin(1.0f, base_bright * depth_boost);

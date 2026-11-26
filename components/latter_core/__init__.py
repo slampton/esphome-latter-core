@@ -401,7 +401,7 @@ STAGED_HEADERS: tuple[str, ...] = (
 )
 
 # Minimal DAG roots emitted into generated main.cpp; transitively pull every staged core header
-# needed by YAML lambdas without polluting main.cpp with 28 redundant top-level #include lines.
+# needed by YAML lambdas without polluting main.cpp with 29 redundant top-level #include lines.
 GLOBAL_YAML_INCLUDES: tuple[str, ...] = (
     "esphome_bridge.h",
     "latter_actions.h",

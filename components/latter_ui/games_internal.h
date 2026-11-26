@@ -9,10 +9,10 @@
 namespace latter_ui {
 
 inline constexpr float game_f(float v466) noexcept {
-  return v466 * (static_cast<float>(SCREEN_MIN_DIM) * (1.0f / 466.0f));
+  return canvas_f(v466);
 }
 inline constexpr int game_px(int v466) noexcept {
-  return (v466 * SCREEN_MIN_DIM + 233) / 466;
+  return canvas_px(v466);
 }
 
 struct GameBallPod {

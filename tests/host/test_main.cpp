@@ -64,21 +64,15 @@ void test_music_app_v3_d059() {
     const auto np = compute_music_now_playing_geom(p.w, p.h, p.round, p.wearable, p.ppi);
     LATTER_CHECK(np.prog_h == std::max(4, dp_px_for(4, ly.scale_milli)));
 
-    const int max_ws = std::max(0, kMusicPeerTabCount - np.mode_slot_count);
-    for (int win_start = 0; win_start <= max_ws; ++win_start) {
+    {
       FrameHitTable ht{};
-      register_music_now_playing_hits(ht, np, true, true, MusicTakeover::NONE, win_start, true);
+      register_music_now_playing_hits(ht, np, true, true, MusicTakeover::NONE);
       check_zero_aabb_overlaps(ht, p.w, p.h);
 
       for (uint16_t wid : {WidgetId::MUSIC_SCRUB_OPEN_BTN, WidgetId::MUSIC_PREV_BTN,
                            WidgetId::MUSIC_PLAY_PAUSE, WidgetId::MUSIC_NEXT_BTN}) {
         const HitRegion *r = ht.find_by_id(wid);
         LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_hit);
-      }
-      for (int i = 0; i < np.mode_slot_count; ++i) {
-        const HitRegion *slot_r = ht.find_by_id(static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i));
-        LATTER_CHECK(slot_r != nullptr && slot_r->param == win_start + i);
-        LATTER_CHECK(pad_w(slot_r) >= min_hit && pad_h(slot_r) >= min_hit);
       }
     }
 
@@ -161,6 +155,36 @@ void test_music_app_v3_d059() {
         register_music_list_row_hits(ht, rg, r, true);
       }
       check_zero_aabb_overlaps(ht, p.w, p.h);
+    }
+  }
+
+  {
+    HostSurfaceFixture fix{};
+    const auto np_self = compute_music_now_playing_geom(
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+    const int min_hit_self = mm_to_px_for(7.0f, LATTER_PANEL_PPI);
+    const int max_ws_self = std::max(0, kMusicPeerTabCount - np_self.mode_slot_count);
+    for (int win_start = 0; win_start <= max_ws_self; ++win_start) {
+      fix.fill(0U);
+      frame_hits().clear();
+      register_music_now_playing_hits(frame_hits(), np_self, true, true, MusicTakeover::NONE);
+      ui::mode_bar(fix.surf, SCREEN_CX, kMusicPeerTabCount, win_start, win_start,
+                   UiColor::WHITE, UiColor::WHITE,
+                   [](Rgb565Surface &, int, int, int, int, UiColor, bool, void *) {});
+      check_zero_aabb_overlaps(frame_hits(), SCREEN_W, SCREEN_H);
+      for (int i = 0; i < np_self.mode_slot_count; ++i) {
+        const HitRegion *slot_r =
+            frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i));
+        LATTER_CHECK(slot_r != nullptr && slot_r->param == win_start + i);
+        LATTER_CHECK(pad_w(slot_r) >= min_hit_self && pad_h(slot_r) >= min_hit_self);
+      }
+      if (win_start > 0 && (np_self.mode_slot_xs[0] - np_self.mode_bar_r) >= 8) {
+        LATTER_CHECK(frame_hits().find_by_id(WidgetId::MODE_BAR_LEFT) != nullptr);
+      }
+      if (win_start + np_self.mode_slot_count < kMusicPeerTabCount &&
+          (SCREEN_W - (np_self.mode_slot_xs[np_self.mode_slot_count - 1] + np_self.mode_bar_r + 1)) >= 8) {
+        LATTER_CHECK(frame_hits().find_by_id(WidgetId::MODE_BAR_RIGHT) != nullptr);
+      }
     }
   }
 
@@ -619,7 +643,7 @@ std::string build_verify_wire_dump() {
   out += ",\"alarms_summary\":";
   json_append_escaped(out, format_alarms_summary(prefs));
   out += ",\"dirty_prefs\":";
-  json_append_escaped(out, format_dirty_prefs(prefs));
+  json_append_escaped(out, build_hello_dirty_prefs(prefs));
   out += ",\"values\":{";
   for (uint8_t k = 0; k < static_cast<uint8_t>(PrefKey::COUNT); ++k) {
     if (k > 0U) out.push_back(',');
@@ -858,7 +882,6 @@ int run_verify_wire_cli() {
         eff = v3_domain_reducer().reduce(domain, rctx);
       }
       std::cout << "{\"ok\":true,\"parsed\":" << (parsed ? "true" : "false")
-                << ",\"area_changed\":" << (eff.area_changed ? "true" : "false")
                 << ",\"sync_brightness\":" << (eff.sync_display_brightness ? "true" : "false")
                 << ",\"mismatch_warns\":" << v3_mismatch_warn_count() << "}\n"
                 << std::flush;

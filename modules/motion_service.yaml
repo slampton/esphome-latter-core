@@ -21,7 +21,7 @@ esphome:
             };
             rs.on_imu_wom_wake = +[](uint32_t now_wom) {
               if (latter_core::runtime_state().nav.display_power_state == 2) {
-                latter_core::raise_wake_detector().arm_from_wom(now_wom);
+                latter_core::raise_to_wake().arm_from_wom(now_wom);
               }
               id(apply_power_policy).execute();
             };

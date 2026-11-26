@@ -50,7 +50,7 @@ jobs:
           restore-keys: |
             external-files-esphome-2026.11.1-
 
-      - name: Verify static architecture, DAG, protocol, sounds, trait matrices, and 6-geometry C++20 host tests
+      - name: Verify static architecture, DAG, protocol, sounds, trait matrices, and 9-geometry C++20 host tests
         run: python tools/verify_core.py
 
       - name: Check board facts release ledger (zero L-confidence nets)

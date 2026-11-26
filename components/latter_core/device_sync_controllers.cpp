@@ -360,11 +360,11 @@ void commit_menu_scroll_target() {
   } else if (rs.nav.gui_page == 2 && rs.music.view == MusicView::SETTINGS) {
     rs.music.settings_page = rs.nav.menu_scroll_target_page;
   } else if (rs.nav.gui_page == 3 && rs.nav.active_game == 0) {
-    const int g_cnt = active_games_launcher_count(device_prefs());
+    const int g_cnt = active_games_launcher_count(persisted_prefs());
     rs.nav.game_carousel_idx =
         (g_cnt > 0) ? std::clamp(rs.nav.menu_scroll_target_page, 0, g_cnt - 1) : 0;
   } else if (rs.nav.gui_page == 8 && rs.nav.tools_subpage == 0) {
-    const int t_pgs = std::max(1, active_tools_launcher_page_count(device_prefs()));
+    const int t_pgs = std::max(1, active_tools_launcher_page_count(persisted_prefs()));
     rs.nav.tools_menu_page = std::clamp(rs.nav.menu_scroll_target_page, 0, t_pgs - 1);
   } else if (rs.nav.gui_page == PageId::PINNED) {
     const int p_pgs = std::max(1, pinned_total_pages());

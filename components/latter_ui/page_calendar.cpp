@@ -111,7 +111,7 @@ void render_calendar_detail_drilldown(Rgb565Surface &it, const UiFrameContext &c
   const auto &ly = layout();
   const int cx = ctx.cx;
   if (rs.cal.selected_event_idx < 0 || rs.cal.selected_event_idx >= store.count) {
-    render_page_header(it, cx, "EVENT DETAILS", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "EVENT DETAILS", ctx.font_small);
     render_empty_state(it, cx, ctx.cy, "Event no longer available", ctx.font_small, ctx.col_slate);
     render_back_button(it, cx, ctx.font_small, ly.back_y, "< Back");
     return;
@@ -128,12 +128,12 @@ void render_calendar_detail_drilldown(Rgb565Surface &it, const UiFrameContext &c
     ui::confirm_modal(it, cx, "DELETE EVENT?", ev.title, dt_line,
                       "Cancel", "Delete", ctx.col_red, ui::chrome_danger_bg(),
                       ctx.font_small, ctx.font_small,
-                      ctx.col_white, ctx.col_white, ctx.col_slate,
+                      ctx.col_white, ctx.col_slate,
                       WidgetId::CONFIRM_CANCEL, WidgetId::CONFIRM_ACCEPT);
     return;
   }
 
-  render_page_header(it, cx, "EVENT DETAILS", ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, "EVENT DETAILS", ctx.font_small);
 
   const UiColor accent = event_accent_color(ctx, ev.cal_idx, sources, source_cnt);
   const int meta_y = ly.hdr_y + dp_px(32);
@@ -237,11 +237,11 @@ void render_calendar_add_step1(Rgb565Surface &it, const UiFrameContext &ctx,
   if (dictating) {
     render_page_header(it, cx,
                        (rs.cal.dictation_field == 1U) ? "SPEAK EVENT TITLE..." : "SPEAK LOCATION...",
-                       ctx.font_small, ctx.col_white);
+                       ctx.font_small);
   } else if (show_fb) {
-    render_page_header(it, cx, rs.cal.feedback_text, ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, rs.cal.feedback_text, ctx.font_small);
   } else {
-    render_page_header(it, cx, "NEW EVENT", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "NEW EVENT", ctx.font_small);
   }
 
   const int row_h = ly.slot5_h;
@@ -354,7 +354,7 @@ void render_calendar_add_step2(Rgb565Surface &it, const UiFrameContext &ctx,
                                int32_t today_ymd) {
   const auto &ly = layout();
   const int cx = ctx.cx;
-  render_page_header(it, cx, "DATE & TIME", ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, "DATE & TIME", ctx.font_small);
 
   const int row_h = ly.slot5_h;
   const int btn_r = row_h / 2;
@@ -482,7 +482,7 @@ void render_calendar_picker_drilldown(Rgb565Surface &it, const UiFrameContext &c
     }
   }
 
-  render_page_header(it, cx, hdr, ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, hdr, ctx.font_small);
 
   if (opt_cnt <= 0) {
     render_empty_state(it, cx, ctx.cy, "No options available", ctx.font_small, ctx.col_slate);
@@ -515,7 +515,7 @@ void render_calendar_picker_drilldown(Rgb565Surface &it, const UiFrameContext &c
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, rs.cal.picker_page > 0, (rs.cal.picker_page + 1) < total_pages,
-                              ctx.col_bg, ctx.theme_secondary, ctx.col_slate);
+                              ctx.col_bg, ctx.theme_secondary);
   }
 
   render_back_button(it, cx, ctx.font_small, ly.back_y, "< Back");
@@ -582,9 +582,9 @@ CalSubheaderGeom render_calendar_subheader(Rgb565Surface &it, const UiFrameConte
                        ((ctx.now_ms - rs.cal.feedback_ms) < 2400U);
   if (show_fb) {
     const std::string fit_fb = fit_text_to_width_font(rs.cal.feedback_text, safe_span(ly.hdr_y, 24), ctx.font_small);
-    render_page_header(it, cx, fit_fb, ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, fit_fb, ctx.font_small);
   } else {
-    render_page_header(it, cx, page_title, ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, page_title, ctx.font_small);
   }
 
   const int sub_y = ly.cal_sub_y();
@@ -747,7 +747,7 @@ void render_event_list_cards(Rgb565Surface &it, const UiFrameContext &ctx,
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, io_page > 0, (io_page + 1) < total_pages,
-                              ctx.col_bg, ctx.theme_secondary, ctx.col_slate,
+                              ctx.col_bg, ctx.theme_secondary,
                               ly.mode_bar_zone_top());
   }
 }

@@ -196,9 +196,15 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   LATTER_CHECK(alarm_joined.find("\"2468\"") == std::string::npos);
   latter_rpc::clear_pin_session_key();
 
-  static_assert(tools_launcher_item_count_for(true, true) == 6);
-  static_assert(tools_launcher_page_count(6) == 1);
-  static_assert(tools_launcher_page_count(7) == 2);
+  static_assert(tile_grid_cols_for(466, 466, true) == 2 && tile_grid_rows_for(466, 466, true) == 3);
+  static_assert(tile_grid_cols_for(720, 720, false) == 3 && tile_grid_rows_for(720, 720, false) == 3);
+  const int per_pg = std::max(
+      1,
+      tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0) *
+          tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0));
+  const int active_cnt = active_tools_launcher_item_count(persisted_prefs());
+  LATTER_CHECK(active_tools_launcher_page_count(persisted_prefs()) ==
+               std::max(1, (active_cnt + per_pg - 1) / per_pg));
 
   const std::string wx_src = read_repo_files({
       "../../components/latter_ui/page_weather.cpp",

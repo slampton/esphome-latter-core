@@ -110,7 +110,6 @@ void test_ui_layout_hit_table_and_dirty_band() {
     LATTER_CHECK(ly.dock_y < ly.back_y && ly.back_y < ly.home_bar_y && ly.home_bar_y < p.h);
     LATTER_CHECK(ly.list_card_w > 0 && ly.list_card_w <= p.w);
     LATTER_CHECK(ly.area_card3_w > 0 && ly.area_card3_w <= p.w);
-    LATTER_CHECK(ly.tool_card3_w > 0 && ly.tool_card3_w <= p.w);
     LATTER_CHECK(ly.scale_milli >= 760);
 
     for (int frac : {18, 35, 50, 72, 85}) {
@@ -510,7 +509,6 @@ void test_gui_standardization_d070() {
   using namespace latter_core;
 
   for (const auto &b : kAllNinePanels) {
-    const int min_dim = (b.w < b.h) ? b.w : b.h;
     const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
     int mode_xs[kMaxDockSlots] = {};
     compute_mode_bar_slot_xs(ly.dock_slot_count, b.w, b.round, mode_xs, b.h, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
@@ -519,7 +517,7 @@ void test_gui_standardization_d070() {
     compute_mode_bar_slot_xs(4, b.w, b.round, cam_mode_xs);
     for (int i = 0; i < 4; ++i) LATTER_CHECK(cam_g.mode_slot_xs[i] == cam_mode_xs[i]);
     for (int i = 1; i < ly.dock_slot_count; ++i) LATTER_CHECK(mode_xs[i - 1] < mode_xs[i]);
-    LATTER_CHECK(radius_card_for(min_dim) > radius_key_for(min_dim));
+    LATTER_CHECK(radius_card_for() > radius_key_for());
     const int stack_w = compute_uniform_stack_w_for(
         ly.slot5_y(0), ly.slot5_y(4), ly.slot5_h, b.w - 20, b.w, b.h, b.round, b.wearable, 14,
         ly.corner_r, ly.scale_milli);

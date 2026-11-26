@@ -267,7 +267,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
             static constexpr int kMSteps[4] = {-5, -1, 1, 5};
             ap.minute = static_cast<uint8_t>((static_cast<int>(ap.minute) + 60 + kMSteps[col]) % 60);
           }
-          latter_core::sync_local_alarms_edit(now_ms);
+          latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
           rt.schedule_disp();
         }
         return true;
@@ -275,7 +275,7 @@ bool TouchGestureEngine::handle_down_time_cal_(TouchGestureEngine &eng, int /*tx
       if (wid == WidgetId::ALARM_RECUR_BTN && touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         gest.active = false;
         ap.recurrence = static_cast<uint8_t>((ap.recurrence + 1) % 4);
-        latter_core::sync_local_alarms_edit(now_ms);
+        latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
         rt.schedule_disp();
       }
       return true;
@@ -479,7 +479,7 @@ bool TouchGestureEngine::handle_tap_time_cal_(
           rs.alarms.snooze_until = 0;
           snoozed_alarm_slot() = 0;
         }
-        latter_core::sync_local_alarms_edit(now_rel);
+        latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
         rt_.schedule_disp();
       } else if (wid >= WidgetId::ALARM_CARD_BASE && wid < WidgetId::ALARM_CARD_BASE + 3 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {

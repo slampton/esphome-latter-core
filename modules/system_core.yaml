@@ -226,7 +226,12 @@ api:
       variables:
         uuid: string
       then:
-        - lambda: 'id(ble_ctrl).set_uuid_hex(std::string_view(uuid.c_str(), uuid.size()));'
+        - lambda: |-
+            #ifdef USE_LATTER_BEACON
+            id(ble_ctrl).set_uuid_hex(std::string_view(uuid.c_str(), uuid.size()));
+            #else
+            (void)uuid;
+            #endif
 
     - action: latter_set_slots
       variables:
@@ -669,9 +674,14 @@ script:
           const int int_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024U);
           const int int_largest_kb = static_cast<int>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024U);
           const int psram_min_kb = static_cast<int>(heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM) / 1024U);
+          #ifdef USE_LATTER_BEACON
+          const bool ble_active = id(ble_ctrl).is_active();
+          #else
+          const bool ble_active = false;
+          #endif
           latter_core::emit_device_telemetry(
               link_j, int_free_kb, int_min_kb, int_largest_kb, psram_min_kb,
-              id(ble_ctrl).is_active(), latter_core::profiler_enabled());
+              ble_active, latter_core::profiler_enabled());
 
   - id: trigger_firmware_update
     mode: restart

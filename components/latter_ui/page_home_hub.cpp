@@ -1,7 +1,6 @@
 #include "ui_pages.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -13,24 +12,6 @@ namespace latter_ui {
 using namespace latter_core;
 
 namespace {
-
-int band_safe_w(int cy_band, int h_band, int inset = 14) {
-  const int half_h = std::max(1, h_band / 2);
-  const int y_top = std::clamp(cy_band - half_h, 0, SCREEN_H - 1);
-  const int y_bot = std::clamp(cy_band + half_h, 0, SCREEN_H - 1);
-  return std::min(safe_span(y_top, inset), safe_span(y_bot, inset));
-}
-
-std::string to_ascii_upper_str(std::string_view sv) {
-  std::string out(sv);
-  for (char &c : out) {
-    unsigned char uc = static_cast<unsigned char>(c);
-    if (uc >= 'a' && uc <= 'z') {
-      c = static_cast<char>(uc - ('a' - 'A'));
-    }
-  }
-  return out;
-}
 
 struct HomeHubModeIconCtx {
   const int *tabs{nullptr};
@@ -83,8 +64,9 @@ void render_home_hub_mode_bar(Rgb565Surface &it, const UiFrameContext &ctx,
 void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
                       const DeviceRuntimeState &rs, const AreaContextState &ac,
                       int content_top, int content_bot) {
+  const auto &ly = layout();
   const int cx = ctx.cx;
-  render_page_header(it, cx, "SECURITY ALARM", ctx.font_small, ctx.col_white);
+  render_page_header(it, cx, "SECURITY ALARM", ctx.font_small);
   if (ac.alarm_entity.empty()) {
     render_empty_state(it, cx, (content_top + content_bot) / 2,
                        "No Security Alarm configured", ctx.font_small, ctx.col_slate);
@@ -146,15 +128,15 @@ void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const bool is_disarmed = eq_ascii_ci_sv(alarm_state, "disarmed");
   ui::draw_icon_shield_home(it, cx, icon_cy, ui::hero_icon_r(hero_h), badge_col, true, !is_disarmed);
 
-  const UiFontView st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
-  const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
+  const UiFontView st_font = (ly.size_class == SizeClass::Compact) ? ctx.font_btn_bold : ctx.font_date;
+  const int st_max_w = std::max(80, ly.band_safe_span(st_y, dp_px(32), dp_px(16)));
   const std::string fit_badge = fit_text_to_width_font(std::string(badge_txt), st_max_w, st_font);
   ui::shadow_print(it, cx, st_y, st_font, badge_col, TextAlign::CENTER, fit_badge.c_str());
 
   if (is_fb) {
-    const UiFontView fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView fb_font = (ly.size_class == SizeClass::Compact) ? ctx.font_micro : ctx.font_small;
     const int fb_y = hero_y0 + (hero_h * 88) / 100;
-    const int fb_max_w = std::max(80, band_safe_w(fb_y, 24, 16));
+    const int fb_max_w = std::max(80, ly.band_safe_span(fb_y, dp_px(24), dp_px(16)));
     const std::string fit_fb = fit_text_to_width_font(rs.area.action_feedback, fb_max_w, fb_font);
     ui::shadow_print(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   }
@@ -188,7 +170,7 @@ void render_alarm_tab(Rgb565Surface &it, const UiFrameContext &ctx,
         acc, is_disarm_cta ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
         use_short ? specs[i].short_label : specs[i].label,
         ctx.col_white,
-        (geom_cnt == 1 && SCREEN_W >= 360) ? ctx.font_btn_bold : ctx.font_small,
+        (geom_cnt == 1 && ly.frame.w_dp >= 360) ? ctx.font_btn_bold : ctx.font_small,
         WidgetId::NONE);
   }
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::ALARM_MODE_BASE, codes, geoms, geom_cnt);
@@ -200,8 +182,8 @@ void render_hub_selector_pill(Rgb565Surface &it, const UiFrameContext &ctx,
                               int hdr_cy, uint16_t prev_wid, uint16_t next_wid) {
   const int cx = ctx.cx;
   if (item_count <= 1) {
-    const std::string hdr_txt = !item_name.empty() ? to_ascii_upper_str(item_name) : std::string(fallback_hdr);
-    render_page_header(it, cx, hdr_txt, ctx.font_small, ctx.col_white);
+    const std::string hdr_txt = !item_name.empty() ? to_ascii_upper(item_name) : std::string(fallback_hdr);
+    render_page_header(it, cx, hdr_txt, ctx.font_small);
     return;
   }
 
@@ -209,7 +191,7 @@ void render_hub_selector_pill(Rgb565Surface &it, const UiFrameContext &ctx,
   std::string title = std::string(prefix_lbl) + " " + std::to_string(active_idx + 1) + "/" +
                       std::to_string(item_count);
   if (!item_name.empty()) {
-    title += " \xC2\xB7 " + to_ascii_upper_str(item_name);
+    title += " \xC2\xB7 " + to_ascii_upper(item_name);
   }
   ui::header_pager_bar(it, cx, hdr_cy, title, ctx.font_small, ctx.col_white, true,
                        prev_wid, next_wid, -1, 1);
@@ -226,9 +208,9 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   if (show_fb && !rs.intercom.broadcast_feedback.empty()) {
     const std::string fit_fb = fit_text_to_width_font(
         rs.intercom.broadcast_feedback, safe_span(layout().hdr_y, 16), ctx.font_small);
-    render_page_header(it, cx, fit_fb, ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, fit_fb, ctx.font_small);
   } else {
-    render_page_header(it, cx, "BROADCAST", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "BROADCAST", ctx.font_small);
   }
 
   const auto &ly = layout();
@@ -237,7 +219,7 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const int total_cnt = parse_broadcast_phrases(ac.broadcast_phrases, phrases);
 
   const bool has_mic = (LATTER_HAS_MIC != 0);
-  const int speak_h = (SCREEN_H < 400) ? 36 : dp_px(44);
+  const int speak_h = (ly.size_class == SizeClass::Compact) ? dp_px(36) : dp_px(44);
   const int speak_hit_h = std::max(speak_h, min_hit);
   const char *speak_lbl = dictating
                               ? (rs.voice.vad_active ? "Listening..." : "Cancel")
@@ -250,7 +232,7 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     home_hub_broadcast_page() = 0;
     const int mid_cy = (content_top + content_bot) / 2;
     if (has_mic) {
-      const int speak_w = std::min({ly.list_card_w, band_safe_w(mid_cy, speak_h, 16)});
+      const int speak_w = std::min({ly.list_card_w, ly.band_safe_span(mid_cy, speak_h, dp_px(16))});
       ui::action_pill_centered(it, cx, speak_w, mid_cy, speak_h,
                                speak_brd, speak_bg, speak_lbl, ctx.col_white,
                                ctx.font_small, WidgetId::INTERCOM_SPEAK_BTN,
@@ -265,7 +247,7 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   int rows_top = content_top;
   if (has_mic) {
     const int speak_cy = content_top + speak_h / 2 + std::max(2, dp_px(4));
-    const int speak_w = std::min({ly.list_card_w, band_safe_w(speak_cy, speak_h, 14)});
+    const int speak_w = std::min({ly.list_card_w, ly.band_safe_span(speak_cy, speak_h, dp_px(14))});
     ui::action_pill_centered(it, cx, speak_w, speak_cy, speak_h,
                              speak_brd, speak_bg, speak_lbl, ctx.col_white,
                              ctx.font_small, WidgetId::INTERCOM_SPEAK_BTN,
@@ -289,8 +271,8 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const int bot_cy = start_y0 + std::max(0, vis_cnt - 1) * (card_h + eff_gap) + card_h / 2;
   const int pips_inset = (total_pages > 1) ? 24 : 14;
   const int stack_w = std::min({ly.list_card_w,
-                                band_safe_w(top_cy, card_h, pips_inset),
-                                band_safe_w(bot_cy, card_h, pips_inset)});
+                                ly.band_safe_span(top_cy, card_h, dp_px(pips_inset)),
+                                ly.band_safe_span(bot_cy, card_h, dp_px(pips_inset))});
   const int bounce_y = edge_bounce().offset_px(
       PageId::HOME_HUB, GestureAxisLock::Vertical, ctx.now_ms, LATTER_PANEL_PPI);
 
@@ -307,19 +289,18 @@ void render_intercom_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   }
   if (total_pages > 1) {
     render_vertical_page_pips(it, cur_pg > 0, cur_pg + 1 < total_pages,
-                              ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                              ctx.col_bg, ctx.theme_primary,
                               ly.mode_bar_zone_top());
   }
 }
 
 void render_thermostat_tab(Rgb565Surface &it, const UiFrameContext &ctx,
-                           const DeviceRuntimeState &rs, const AreaContextState &ac,
+                           const DeviceRuntimeState &rs,
                            int content_top, int content_bot) {
-  (void)ac;
   const int cx = ctx.cx;
   const auto &hub = home_hub_state();
   if (hub.thermostat_count <= 0) {
-    render_page_header(it, cx, "THERMOSTAT", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "THERMOSTAT", ctx.font_small);
     render_empty_state(it, cx, (content_top + content_bot) / 2,
                        "No Thermostat configured", ctx.font_small, ctx.col_slate);
     return;
@@ -368,11 +349,12 @@ void render_entry_card(Rgb565Surface &it, const UiFrameContext &ctx,
   const int min_hit = UiLayout::mm_to_px(kHitFloorPrimaryMm);
   const int min_cta_w = std::max(84, min_hit);
   const int cta_w = safe_clamp(card_w / 3, min_cta_w, std::max(min_cta_w, dp_px(122)));
+  const auto &ly = layout();
   const int min_cta_h = std::max(36, min_row_hit_px_for(LATTER_PANEL_PPI));
   const int max_cta_h = std::max(min_cta_h, std::min(card_h - dp_px(8), dp_px(64)));
   const int cta_h = safe_clamp(card_h - dp_px(16), min_cta_h, max_cta_h);
-  const UiFontView pri_font = (SCREEN_H < 400) ? ctx.font_small : ctx.font_btn_bold;
-  const UiFontView sec_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+  const UiFontView pri_font = (ly.size_class == SizeClass::Compact) ? ctx.font_small : ctx.font_btn_bold;
+  const UiFontView sec_font = (ly.size_class == SizeClass::Compact) ? ctx.font_micro : ctx.font_small;
 
   ui::labeled_action_row(
       it, cx, cy, card_w, card_h,
@@ -384,17 +366,17 @@ void render_entry_card(Rgb565Surface &it, const UiFrameContext &ctx,
 }
 
 void render_entry_tab(Rgb565Surface &it, const UiFrameContext &ctx,
-                      const DeviceRuntimeState &rs, const AreaContextState &ac,
+                      const DeviceRuntimeState &rs,
                       int content_top, int content_bot) {
-  (void)ac;
+  const auto &ly = layout();
   const int cx = ctx.cx;
   const bool is_fb = (ctx.now_ms - rs.area.feedback_timer < 1800U && !rs.area.action_feedback.empty());
   if (is_fb) {
     const std::string fit_fb = fit_text_to_width_font(
-        rs.area.action_feedback, safe_span(layout().hdr_y, 16), ctx.font_small);
-    render_page_header(it, cx, fit_fb, ctx.font_small, ctx.col_white);
+        rs.area.action_feedback, safe_span(ly.hdr_y, 16), ctx.font_small);
+    render_page_header(it, cx, fit_fb, ctx.font_small);
   } else {
-    render_page_header(it, cx, "ENTRY & GARAGE", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "ENTRY & GARAGE", ctx.font_small);
   }
 
   const auto &hub = home_hub_state();
@@ -455,33 +437,33 @@ void render_entry_tab(Rgb565Surface &it, const UiFrameContext &ctx,
     const int cy0 = content_top + stride / 2 + bounce_y;
     const int cy1 = content_top + stride + stride / 2 + bounce_y;
     const int stack_w = std::min({max_entry_w,
-                                  band_safe_w(cy0, card_h, pips_inset),
-                                  band_safe_w(cy1, card_h, pips_inset)});
+                                  ly.band_safe_span(cy0, card_h, dp_px(pips_inset)),
+                                  ly.band_safe_span(cy1, card_h, dp_px(pips_inset))});
     draw_item_slot(0, cy0, stack_w, card_h, hit_h);
     draw_item_slot(1, cy1, stack_w, card_h, hit_h);
   } else {
     const int cy_only = content_top + avail_h / 2 + bounce_y;
     const int card_h = std::clamp((avail_h * 56) / 100, 68, dp_px(104));
     const int hit_h = std::max(card_h, min_hit);
-    const int w_only = std::min(max_entry_w, band_safe_w(cy_only, card_h, pips_inset));
+    const int w_only = std::min(max_entry_w, ly.band_safe_span(cy_only, card_h, dp_px(pips_inset)));
     draw_item_slot(0, cy_only, w_only, card_h, hit_h);
   }
 
   if (total_pages > 1) {
     render_vertical_page_pips(it, page > 0, page + 1 < total_pages,
-                              ctx.col_bg, ctx.col_white, ctx.col_slate,
-                              layout().mode_bar_zone_top());
+                              ctx.col_bg, ctx.col_white,
+                              ly.mode_bar_zone_top());
   }
 }
 
 void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
-                       const DeviceRuntimeState &rs, const AreaContextState &ac,
+                       const DeviceRuntimeState &rs,
                        int content_top, int content_bot) {
-  (void)ac;
+  const auto &ly = layout();
   const int cx = ctx.cx;
   const auto &hub = home_hub_state();
   if (hub.vacuum_count <= 0) {
-    render_page_header(it, cx, "ROBOT VACUUM", ctx.font_small, ctx.col_white);
+    render_page_header(it, cx, "ROBOT VACUUM", ctx.font_small);
     render_empty_state(it, cx, (content_top + content_bot) / 2,
                        "No Robot Vacuum configured", ctx.font_small, ctx.col_slate);
     return;
@@ -528,15 +510,15 @@ void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
   const int st_y = hero_y0 + (is_fb ? (hero_h * 60) / 100 : (hero_h * 72) / 100);
   ui::draw_icon_robot_vacuum(it, cx, icon_cy, ui::hero_icon_r(hero_h), st_col, true);
 
-  const UiFontView st_font = (SCREEN_H < 400) ? ctx.font_btn_bold : ctx.font_date;
-  const int st_max_w = std::max(80, band_safe_w(st_y, 32, 16));
+  const UiFontView st_font = (ly.size_class == SizeClass::Compact) ? ctx.font_btn_bold : ctx.font_date;
+  const int st_max_w = std::max(80, ly.band_safe_span(st_y, dp_px(32), dp_px(16)));
   const std::string fit_st = fit_text_to_width_font(std::string(st_lbl), st_max_w, st_font);
   ui::shadow_print(it, cx, st_y, st_font, st_col, TextAlign::CENTER, fit_st.c_str());
 
   if (is_fb) {
-    const UiFontView fb_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView fb_font = (ly.size_class == SizeClass::Compact) ? ctx.font_micro : ctx.font_small;
     const int fb_y = hero_y0 + (hero_h * 88) / 100;
-    const int fb_max_w = std::max(80, band_safe_w(fb_y, 24, 16));
+    const int fb_max_w = std::max(80, ly.band_safe_span(fb_y, dp_px(24), dp_px(16)));
     const std::string fit_fb = fit_text_to_width_font(rs.area.action_feedback, fb_max_w, fb_font);
     ui::shadow_print(it, cx, fb_y, fb_font, ctx.theme_secondary, TextAlign::CENTER, fit_fb.c_str());
   }
@@ -572,7 +554,7 @@ void render_vacuum_tab(Rgb565Surface &it, const UiFrameContext &ctx,
         it, geoms[i].cx, geoms[i].w, geoms[i].cy, geoms[i].h,
         vc, primary_only ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
         specs[i].label, ctx.col_white,
-        (primary_only && SCREEN_W >= 360) ? ctx.font_btn_bold : ctx.font_small,
+        (primary_only && ly.frame.w_dp >= 360) ? ctx.font_btn_bold : ctx.font_small,
         WidgetId::NONE);
   }
   register_home_hub_pill_deck_hits(frame_hits(), WidgetId::VACUUM_ACTION_BASE, codes, geoms, geom_cnt);
@@ -587,7 +569,7 @@ void render_home_hub_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   int tabs[kMaxHomeHubTabs]{};
   const int tab_count = collect_home_hub_tabs(tabs, ac);
   if (tab_count <= 0) {
-    render_page_header(it, ctx.cx, "HOME HUB", ctx.font_small, ctx.col_white);
+    render_page_header(it, ctx.cx, "HOME HUB", ctx.font_small);
     render_empty_state(it, ctx.cx, layout().area_card3_y(1),
                        "No Home Controls configured", ctx.font_small, ctx.col_slate);
     return;
@@ -617,14 +599,14 @@ void render_home_hub_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       render_intercom_tab(it, ctx, rs, ac, content_top, content_bot);
       break;
     case HomeHubTab::THERMOSTAT:
-      render_thermostat_tab(it, ctx, rs, ac, content_top, content_bot);
+      render_thermostat_tab(it, ctx, rs, content_top, content_bot);
       break;
     case HomeHubTab::ENTRY:
-      render_entry_tab(it, ctx, rs, ac, content_top, content_bot);
+      render_entry_tab(it, ctx, rs, content_top, content_bot);
       break;
     case HomeHubTab::VACUUM:
     default:
-      render_vacuum_tab(it, ctx, rs, ac, content_top, content_bot);
+      render_vacuum_tab(it, ctx, rs, content_top, content_bot);
       break;
   }
 
@@ -637,6 +619,7 @@ void render_climate_controls_deck(Rgb565Surface &it,
                                   const ThermostatZoneItem &clim,
                                   int content_top,
                                   int content_bot) {
+  const auto &ly = layout();
   const int cx = ctx.cx;
   const std::string &m = clim.mode;
   const uint16_t eff_caps = (clim.caps != 0U) ? clim.caps : kClimateCapDefault;
@@ -673,7 +656,7 @@ void render_climate_controls_deck(Rgb565Surface &it,
       ? std::clamp((avail_h * 46) / 100, 64, dp_px(108))
       : std::clamp((avail_h * 58) / 100, 78, dp_px(136));
   const int hero_cy = content_top + hero_h / 2 + std::max(2, dp_px(4));
-  const int hero_w = std::min({layout().max_content_w(340), dp_px(328), band_safe_w(hero_cy, hero_h, 14)});
+  const int hero_w = std::min({ly.max_content_w(340), dp_px(328), ly.band_safe_span(hero_cy, hero_h, dp_px(14))});
   const int hero_x0 = cx - hero_w / 2;
   const int hero_y0 = hero_cy - hero_h / 2;
 
@@ -707,7 +690,7 @@ void render_climate_controls_deck(Rgb565Surface &it,
   const int inner_span = show_setpoint_btns
       ? std::max(64, (plus_cx - btn_r) - (minus_cx + btn_r) - 12)
       : std::max(80, hero_w - 16);
-  const UiFontView temp_font = (SCREEN_H < 400 || inner_span < 120) ? ctx.font_date : ctx.font_chrono_time;
+  const UiFontView temp_font = (ly.size_class == SizeClass::Compact || inner_span < dp_px(120)) ? ctx.font_date : ctx.font_chrono_time;
   const int temp_y = hero_cy - std::max(8, hero_h / 7);
   ui::shadow_print(it, cx, temp_y, temp_font, ctx.col_white, TextAlign::CENTER, tgt_buf);
 
@@ -730,7 +713,7 @@ void render_climate_controls_deck(Rgb565Surface &it,
   }
 
   if (sub_buf[0] != '\0') {
-    const UiFontView sub_font = (SCREEN_H < 400) ? ctx.font_micro : ctx.font_small;
+    const UiFontView sub_font = (ly.size_class == SizeClass::Compact) ? ctx.font_micro : ctx.font_small;
     const std::string fit_sub = fit_text_to_width_font(std::string(sub_buf), inner_span, sub_font);
     const int sub_y = hero_cy + std::max(14, hero_h / 4);
     ui::shadow_print(it, cx, sub_y, sub_font, is_fb ? ctx.theme_secondary : sub_tint,

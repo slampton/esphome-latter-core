@@ -285,21 +285,21 @@ void test_universal_shortcuts_and_pinned_app() {
       if (i > 0) out.push_back(kProtocolRecordSep);
       const int idx = start_i + i;
       if (idx == 0) {
-        out.append("route|weather:moon||Moon Phase||0|-1");
+        out.append("route|weather:moon||Moon Phase||0|-1|||||||");
       } else if (idx == 1) {
-        out.append("entity|light.nursery|toggle|Nursery Light|mdi:ceiling-light|0|1");
+        out.append("entity|light.nursery|toggle|Nursery Light|mdi:ceiling-light|0|1|||||||");
       } else {
         out.append("entity|script.helper_" + std::to_string(idx) + "|turn_on|Helper " +
-                   std::to_string(idx) + "|mdi:bell-ring|1|-1");
+                   std::to_string(idx) + "|mdi:bell-ring|1|-1|||||||");
       }
     }
     return out;
   };
 
   const std::string dock_blob =
-      std::string("route|app:pinned||Pinned||0|-1") + kProtocolRecordSep +
-      "entity|script.call_jordan|turn_on|Call Jordan|mdi:bell-ring|1|-1" + kProtocolRecordSep +
-      "route|weather:moon||Moon Phase||0|-1";
+      std::string("route|app:pinned||Pinned||0|-1|||||||") + kProtocolRecordSep +
+      "entity|script.call_jordan|turn_on|Call Jordan|mdi:bell-ring|1|-1|||||||" + kProtocolRecordSep +
+      "route|weather:moon||Moon Phase||0|-1|||||||";
 
   LATTER_CHECK(!parse_v3_shortcuts_payload(build_sc_chunk(7, 1, 0, 3, dock_blob, 60, make_pin_slice(0, 24))));
   LATTER_CHECK(shortcuts_state().pinned_items.empty());
@@ -381,8 +381,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
                "stopwatch,level,flashlight,calculator,dice,coin_flip");
   LATTER_CHECK(std::string_view(kDefaultGamesItems) ==
                "blocks,snake,drop_four,marbles,archery,bricks,chomp");
-  LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
-  LATTER_CHECK(std::string_view(device_prefs().games_items) == kDefaultGamesItems);
+  LATTER_CHECK(std::string_view(persisted_prefs().tools_items) == kDefaultToolsItems);
+  LATTER_CHECK(std::string_view(persisted_prefs().games_items) == kDefaultGamesItems);
   LATTER_CHECK(persisted_prefs().home_date_tap_action == 1U);
   LATTER_CHECK(std::string_view(pref_home_date_tap_cstr()) == "Overview");
 
@@ -506,8 +506,8 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   dp_tok[static_cast<size_t>(DevicePrefsField::GAMES_ITEMS)] = "";
   eff = 0U;
   LATTER_CHECK(parse_v3_device_prefs_payload(build_v3_packet(90, 2, dp_tok), eff, 1500U));
-  LATTER_CHECK(std::string_view(device_prefs().tools_items) == kDefaultToolsItems);
-  LATTER_CHECK(std::string_view(device_prefs().games_items) == kDefaultGamesItems);
+  LATTER_CHECK(std::string_view(persisted_prefs().tools_items) == kDefaultToolsItems);
+  LATTER_CHECK(std::string_view(persisted_prefs().games_items) == kDefaultGamesItems);
 
   {
     ToolsLauncherItemSpec items[kMaxToolsLauncherItems]{};
@@ -518,12 +518,19 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
     LATTER_CHECK(items[2].id == ToolsSubpage::COIN_FLIP && std::string_view(items[2].label) == "Coin Flip");
 
     n = collect_tools_launcher_items_for("stopwatch,level", false, false, items, kMaxToolsLauncherItems);
-    LATTER_CHECK(n == 0 && tools_launcher_page_count(n) == 1);
+    LATTER_CHECK(n == 0);
 
     n = collect_tools_launcher_items_for(kDefaultToolsItems, true, true, items);
-    LATTER_CHECK(n == 6 && tools_launcher_page_count(n) == 1);
+    LATTER_CHECK(n == 6);
     n = collect_tools_launcher_items_for(kDefaultToolsItems, false, false, items);
-    LATTER_CHECK(n == 4 && tools_launcher_page_count(n) == 1);
+    LATTER_CHECK(n == 4);
+    const int per_pg = std::max(
+        1,
+        tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0) *
+            tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0));
+    const int active_cnt = active_tools_launcher_item_count(persisted_prefs());
+    LATTER_CHECK(active_tools_launcher_page_count(persisted_prefs()) ==
+                 std::max(1, (active_cnt + per_pg - 1) / per_pg));
 
     int g_ids[kMaxGamesLauncherItems]{};
     const int gc_no_imu = collect_enabled_games_for(kDefaultGamesItems, false, g_ids);
@@ -946,7 +953,8 @@ void test_ambient_light_brightness_d075() {
   LATTER_CHECK(area_ctx_state().area_ambient_pct == 58);
   LATTER_CHECK(area_ctx_state().area_lux_display == "5.6");
   const auto eff1 = v3_domain_reducer().reduce("area_context", rctx);
-  LATTER_CHECK(eff1.area_changed && eff1.sync_display_brightness && eff1.sync_display_brightness_smooth);
+  LATTER_CHECK(eff1.sync_display_brightness && eff1.sync_display_brightness_smooth);
+  LATTER_CHECK(runtime_state().area.active_area_id == "living_room");
   LATTER_CHECK(runtime_state().nav.ambient_bri_override_pct == -1);
 
   LATTER_CHECK(parse_v3_area_ctx_payload(make_area_payload(2U, "living_room", "58|5.6"),
@@ -1336,7 +1344,7 @@ void test_wave2_overhaul_contracts() {
 void test_wave2_reconnect_dirty_prefs_and_contract_wiring() {
   using namespace latter_core;
 
-  // 1. Pref contract wiring: pref_key_name() covers all 67 PrefKey values and matches kPrefContractSpecs.
+  // 1. Pref contract wiring: pref_key_name() covers all 72 PrefKey values and matches kPrefContractSpecs.
   size_t contract_matched = 0U;
   for (uint8_t k = 0; k < static_cast<uint8_t>(PrefKey::COUNT); ++k) {
     const auto pk = static_cast<PrefKey>(k);
@@ -1495,7 +1503,6 @@ void test_core_store_consolidation() {
   LATTER_CHECK(&latter_core::v3_mismatch_warn_count() == &latter_core::g_v3_mismatch_warn_count);
   LATTER_CHECK(&latter_core::device_prefs_state() == &latter_core::g_device_prefs_state);
   LATTER_CHECK(&latter_core::persisted_prefs() == &latter_core::g_persisted_prefs);
-  LATTER_CHECK(&latter_core::device_prefs() == &latter_core::g_persisted_prefs);
   LATTER_CHECK(&latter_core::bedtime_schedule_tracker() == &latter_core::g_bedtime_schedule_tracker);
   LATTER_CHECK(&latter_core::runtime_state() == &latter_core::g_runtime_state);
   LATTER_CHECK(&latter_core::media_state() == &latter_core::g_media_state);

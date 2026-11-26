@@ -223,7 +223,6 @@ inline void register_thermostat_stepper_hits(
 // ==============================================================================
 // Music App v3 Zero-Container Geometries (D-043 / D-048 / D-059 / D-072)
 // ==============================================================================
-#define LATTER_MUSIC_V2_GEOM_IN_HIT_TABLE 1
 
 inline void register_music_modal_backdrop_hits(
     FrameHitTable &ht, int w, int h, int bounds_x0, int bounds_y0, int bounds_w, int bounds_h) {

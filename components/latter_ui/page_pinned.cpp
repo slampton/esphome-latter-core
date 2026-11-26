@@ -9,14 +9,6 @@ using namespace latter_core;
 
 namespace {
 
-std::string to_ascii_upper(std::string_view sv) {
-  std::string out(sv);
-  for (char &ch : out) {
-    if (ch >= 'a' && ch <= 'z') ch = static_cast<char>(ch - ('a' - 'A'));
-  }
-  return out;
-}
-
 void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
                            UiColor icon_c, bool shadow, void *user_ctx) {
   const auto *item = static_cast<const ShortcutItem *>(user_ctx);
@@ -26,7 +18,7 @@ void draw_pinned_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
     if (!item->icon.empty()) {
       render_mdi_icon(it, item->icon, ix, iy, mdi_px, icon_c, shadow, "mdi:apps");
     } else {
-      ui::draw_route_icon(it, item->route_id, ix, iy, ir, icon_c, kChromeGlassTint, shadow);
+      ui::draw_route_icon(it, item->route_id, ix, iy, ir, icon_c, shadow);
     }
   } else {
     char state_slug_buf[96];

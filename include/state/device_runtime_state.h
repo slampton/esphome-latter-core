@@ -967,7 +967,6 @@ struct V3ReduceContext {
 };
 
 struct V3DomainEffects {
-  bool area_changed{false};
   bool mark_dirty_full{false};
   bool fetch_area_browse{false};
   bool fetch_on_demand_camera{false};

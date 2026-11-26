@@ -101,7 +101,7 @@ void TouchGestureEngine::handle_home_activity_action_(const HomeActivityItem *it
           rs.alarms.snooze_until = 0;
           snoozed_alarm_slot() = 0;
         }
-        latter_core::sync_local_alarms_edit(now_ms);
+        latter_core::sync_local_pref_key_edit(latter_core::PrefKey::ALARMS_SUMMARY);
       }
     } else if (kind == 6) {
       auto &ac = area_ctx_state();
@@ -191,7 +191,7 @@ void TouchGestureEngine::handle_home_activity_action_(const HomeActivityItem *it
       mode_bar_anim().snap(CamerasTab::SINGLE);
       rt.cmd(UiHostCmd::SYNC_CAMERA_STREAM);
     } else {
-      TouchGestureEngine::enter_home_hub_tab_(HomeHubTab::INTERCOM, false, rs, rt, now_ms);
+      TouchGestureEngine::enter_home_hub_tab_(HomeHubTab::INTERCOM, rs, rt, now_ms);
     }
   }
   mark_dirty_full();
@@ -211,7 +211,7 @@ void TouchGestureEngine::do_fetch_area_list_browse_() {
   latter_core::emit_area_browse_list(rs.area.active_area_id, page, std::clamp(layout().list_rows, 4, kMaxListSlots));
 }
 
-void TouchGestureEngine::enter_home_hub_tab_(int target_tab, bool /*expand_cam*/, DeviceRuntimeState &rs,
+void TouchGestureEngine::enter_home_hub_tab_(int target_tab, DeviceRuntimeState &rs,
                         const UiTouchRuntime &rt, uint32_t now_ms) {
   const bool was_hub = (rs.nav.gui_page == PageId::HOME_HUB);
   stop_broadcast_dictation_if_active(rs, rt, now_ms);
@@ -684,7 +684,7 @@ bool TouchGestureEngine::handle_tap_home_area_(
     const int slot = std::clamp(static_cast<int>(hit->param), 0, hh_tab_cnt - 1);
     const int target_tab = hh_tabs[slot];
     if (target_tab != home_hub_tab()) {
-      TouchGestureEngine::enter_home_hub_tab_(target_tab, false, rs, rt_, now_rel);
+      TouchGestureEngine::enter_home_hub_tab_(target_tab, rs, rt_, now_rel);
       mark_dirty_full();
       rt_.schedule_disp();
     }

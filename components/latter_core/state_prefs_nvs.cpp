@@ -540,10 +540,6 @@ std::string encode_prefs_mask(PrefMask mask, const PersistedDevicePrefs &p) {
   return out;
 }
 
-std::string format_dirty_prefs(const PersistedDevicePrefs &p) {
-  return encode_prefs_mask(p.dirty_mask, p);
-}
-
 // Only emit locally modified dirty prefs during device_hello. Clean boots (prefs_seq == 0
 // with an empty dirty_mask) return "" so hello stays compact and never dumps ~60 unchanged defaults.
 std::string build_hello_dirty_prefs(const PersistedDevicePrefs &p) {

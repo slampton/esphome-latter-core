@@ -14,13 +14,6 @@
 # ==============================================================================
 
 substitutions:
-  font_time_size: "89"
-  font_chrono_size: "45"
-  font_date_size: "33"
-  font_btn_bold_size: "29"
-  font_small_size: "25"   # >= 2.0 mm at this panel's PPI (device-ui-design.md, accessibility)
-  font_micro_size: "21"   # >= 1.65 mm
-  font_games_size: "45"
   art_resize: "480x480"
   # 4x fewer pixels decoded & ~345 KB less PSRAM per album art buffer (exact 2x upscale in draw_album_art)
   sendspin_art_resize: "240x240"

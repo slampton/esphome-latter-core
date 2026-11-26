@@ -64,18 +64,17 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   }
 
   // FACE 1 (MODERN ANALOG) & FACE 2 (HYBRID DIGITAL) — SDF anti-aliased horology
-  const float dial_scale = static_cast<float>(SCREEN_MIN_DIM) / 466.0f;
-  const int r_dial = static_cast<int>(224.0f * dial_scale);
+  const int r_dial = canvas_px(224);
 
   ui::render_analog_chapter_ring(it, cx, cy, r_dial,
                                  ctx.col_white, ctx.col_slate, ctx.col_gray, true);
 
   if (!ctx.now.is_valid()) {
     if (is_ring_digital) {
-      fast_print(it, cx, cy - static_cast<int>(12.0f * dial_scale), ctx.font_time, ctx.col_slate,
+      fast_print(it, cx, cy - canvas_px(12), ctx.font_time, ctx.col_slate,
                  UiTextAlign::CENTER, kUnknownGlyph);
     } else {
-      fast_print(it, cx, cy + static_cast<int>(78.0f * dial_scale), ctx.font_date, ctx.col_slate,
+      fast_print(it, cx, cy + canvas_px(78), ctx.font_date, ctx.col_slate,
                  UiTextAlign::CENTER, kUnknownGlyph);
       ui::render_center_arbor_aa(it, cx, cy, ctx.col_white, ctx.col_red, ctx.col_dark_gray);
     }
@@ -98,22 +97,22 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   if (is_ring_digital) {
     const float sin_s = std::sin(s_angle);
     const float cos_s = std::cos(s_angle);
-    const float r_s_in  = 200.0f * dial_scale;
-    const float r_s_out = 219.0f * dial_scale;
+    const float r_s_in  = canvas_f(200.0f);
+    const float r_s_out = canvas_f(219.0f);
     const float cx_f = static_cast<float>(cx) + 0.5f;
     const float cy_f = static_cast<float>(cy) + 0.5f;
     ui::draw_aa_line(it,
                      cx_f + r_s_in * sin_s, cy_f - r_s_in * cos_s,
                      cx_f + r_s_out * sin_s, cy_f - r_s_out * cos_s,
-                     std::max(2.4f, 3.0f * dial_scale), ctx.theme_primary);
+                     std::max(2.4f, canvas_f(3.0f)), ctx.theme_primary);
 
-    fast_print(it, cx, cy - static_cast<int>(86.0f * dial_scale), ctx.font_date, ctx.theme_primary,
+    fast_print(it, cx, cy - canvas_px(86), ctx.font_date, ctx.theme_primary,
                UiTextAlign::CENTER, date_buf);
 
     char dig_buf[16];
     char ap_str[8] = "";
     format_time_hhmm(hour, min, is_24h_format, dig_buf, sizeof(dig_buf), ap_str);
-    fast_print(it, cx, cy - static_cast<int>(8.0f * dial_scale), ctx.font_time, ctx.col_white,
+    fast_print(it, cx, cy - canvas_px(8), ctx.font_time, ctx.col_white,
                UiTextAlign::CENTER, dig_buf);
 
     char sec_buf[32];
@@ -122,10 +121,10 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     } else {
       std::snprintf(sec_buf, sizeof(sec_buf), "%s  •  %02ds", ap_str, sec);
     }
-    fast_print(it, cx, cy + static_cast<int>(52.0f * dial_scale), ctx.font_small, ctx.theme_secondary,
+    fast_print(it, cx, cy + canvas_px(52), ctx.font_small, ctx.theme_secondary,
                UiTextAlign::CENTER, sec_buf);
   } else {
-    fast_print(it, cx, cy - static_cast<int>(118.0f * dial_scale), ctx.font_date, ctx.theme_primary,
+    fast_print(it, cx, cy - canvas_px(118), ctx.font_date, ctx.theme_primary,
                UiTextAlign::CENTER, date_buf);
     char time_buf[32];
     if (is_24h_format) {
@@ -135,7 +134,7 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       if (h12 == 0) h12 = 12;
       std::snprintf(time_buf, sizeof(time_buf), "%d:%02d %s", h12, min, hour >= 12 ? "pm" : "am");
     }
-    fast_print(it, cx, cy + static_cast<int>(82.0f * dial_scale), ctx.font_date, ctx.col_slate,
+    fast_print(it, cx, cy + canvas_px(82), ctx.font_date, ctx.col_slate,
                UiTextAlign::CENTER, time_buf);
 
     const float h_angle = (static_cast<float>(hour % 12) + static_cast<float>(min) / 60.0f + sec_f / 3600.0f) *
@@ -145,28 +144,28 @@ void render_clock_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const float cy_f = static_cast<float>(cy) + 0.5f;
 
     ui::draw_aa_tapered_hand(it, cx_f, cy_f, h_angle,
-                             16.0f * dial_scale, 94.0f * dial_scale,
-                             std::max(6.5f, 8.2f * dial_scale), std::max(2.6f, 3.4f * dial_scale),
+                             canvas_f(16.0f), canvas_f(94.0f),
+                             std::max(6.5f, canvas_f(8.2f)), std::max(2.6f, canvas_f(3.4f)),
                              ctx.col_white, ctx.theme_primary, true, true);
 
     ui::draw_aa_tapered_hand(it, cx_f, cy_f, m_angle,
-                             20.0f * dial_scale, 154.0f * dial_scale,
-                             std::max(5.0f, 6.2f * dial_scale), std::max(2.0f, 2.5f * dial_scale),
+                             canvas_f(20.0f), canvas_f(154.0f),
+                             std::max(5.0f, canvas_f(6.2f)), std::max(2.0f, canvas_f(2.5f)),
                              ctx.col_slate, ctx.col_white, true, true);
 
     {
       const float sin_s = std::sin(s_angle);
       const float cos_s = std::cos(s_angle);
-      const float tip_x  = cx_f + 174.0f * dial_scale * sin_s;
-      const float tip_y  = cy_f - 174.0f * dial_scale * cos_s;
-      const float tail_x = cx_f - 32.0f * dial_scale * sin_s;
-      const float tail_y = cy_f + 32.0f * dial_scale * cos_s;
-      const float tail_r = std::max(3.0f, 4.0f * dial_scale);
+      const float tip_x  = cx_f + canvas_f(174.0f) * sin_s;
+      const float tip_y  = cy_f - canvas_f(174.0f) * cos_s;
+      const float tail_x = cx_f - canvas_f(32.0f) * sin_s;
+      const float tail_y = cy_f + canvas_f(32.0f) * cos_s;
+      const float tail_r = std::max(3.0f, canvas_f(4.0f));
       ui::draw_aa_line(it, tail_x + 1.0f, tail_y + 1.5f, tip_x + 1.0f, tip_y + 1.5f,
-                       std::max(1.6f, 2.0f * dial_scale), kChromeShadow, 128);
+                       std::max(1.6f, canvas_f(2.0f)), kChromeShadow, 128);
       ui::draw_aa_disc(it, tail_x + 1.0f, tail_y + 1.5f, tail_r, kChromeShadow, 128);
       ui::draw_aa_line(it, tail_x, tail_y, tip_x, tip_y,
-                       std::max(1.8f, 2.0f * dial_scale), ctx.col_red);
+                       std::max(1.8f, canvas_f(2.0f)), ctx.col_red);
       ui::draw_aa_disc(it, tail_x, tail_y, tail_r, ctx.col_red);
     }
 

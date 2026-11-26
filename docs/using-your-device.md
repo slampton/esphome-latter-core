@@ -66,7 +66,7 @@ Each device seeds its initial sleep, wake, and idle settings from its hardware t
 
 Instead of cluttering Home Assistant with dozens of internal entities, Latter uses a **clean 3-part surface**:
 
-1. **Latter Studio (`device_prefs` 2-Way Sync):** All 65 device preferences (display, adaptive `Glass Style`, Area Ambient Light, photo pools, 24-item dock, categories, wake-word sensitivities, sort orders, alarms, World Clocks, and live `device_telemetry`) live in **Latter Studio** and sync two-way with NVS—even while a handheld is hibernating.
+1. **Latter Studio (`device_prefs` 2-Way Sync):** All 70 device preferences (display, adaptive `Glass Style`, Area Ambient Light, photo pools, 24-item dock, categories, wake-word sensitivities, sort orders, alarms, World Clocks, and live `device_telemetry`) live in **Latter Studio** and sync two-way with NVS—even while a handheld is hibernating.
 2. **Curated Entities on the `Latter` Device (8 Platforms):**
    - **Presence & Spatial:** `device_tracker.<slug>`, `sensor.<slug>_current_area`, `sensor.<slug>_current_floor`, `sensor.<slug>_ble_distance` (native HA distance units).
    - **Live Screen & Ambience** *(honest radio availability)*: `light.<slug>_screen` (`on`/`off` + `1–100%` brightness) and `switch.<slug>_screensaver` (two-way screensaver toggle).

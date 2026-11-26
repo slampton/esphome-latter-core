@@ -244,7 +244,7 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
   // 6. 3-TIER SECURITY PIN PAD MODAL
   if (ui::pin_pad_state().open) {
     frame_base(it, st.col_bg);
-    ui::pin_pad_modal(it, st.cx, st.cy, st.now_ms, ctx.font_date, ctx.font_date, ctx.font_small,
+    ui::pin_pad_modal(it, st.cx, st.now_ms, ctx.font_date, ctx.font_small,
                       st.theme_primary, st.col_white, st.col_slate, st.col_red);
     render_active_focus_overlay(it, st.now_ms, st.theme_primary, st.col_white);
     return true;
@@ -272,7 +272,7 @@ bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
     ui::confirm_modal(it, st.cx, sc.title.c_str(), sc.line1.c_str(), sc.line2.c_str(),
                       "Cancel", sc.verb_btn.c_str(), brd_c, bg_c,
                       ctx.font_date, ctx.font_small,
-                      st.theme_primary, st.col_white, st.col_slate,
+                      st.col_white, st.col_slate,
                       WidgetId::CONFIRM_CANCEL, WidgetId::CONFIRM_ACCEPT);
     render_active_focus_overlay(it, st.now_ms, st.theme_primary, st.col_white);
     return true;

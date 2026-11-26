@@ -1,4 +1,4 @@
-"""Subprocess tool gates, 6-geometry ASan/UBSan/-Werror host test runner, and trait matrix checks."""
+"""Subprocess tool gates, 9-geometry ASan/UBSan/-Werror host test runner, and trait matrix checks."""
 
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ ESP32_ONLY_CORE_TUS: Final[frozenset[str]] = frozenset(
     }
 )
 
-FIVE_GEOM_CONFIGS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+HOST_GEOM_CONFIGS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     (
         "GEOM_320x480_P4",
         (
@@ -233,6 +233,7 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "USE_I2C",
             "USE_API",
             "USE_WIFI",
+            "USE_LATTER_BEACON",
             "USE_FONT",
             "USE_VOICE_ASSISTANT",
             "USE_MICRO_WAKE_WORD",
@@ -257,6 +258,7 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "USE_I2C",
             "USE_API",
             "USE_WIFI",
+            "USE_LATTER_BEACON",
             "USE_FONT",
             "USE_VOICE_ASSISTANT",
             "USE_MICRO_WAKE_WORD",
@@ -287,6 +289,7 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "USE_I2C",
             "USE_API",
             "USE_WIFI",
+            "USE_LATTER_BEACON",
             "USE_FONT",
             "USE_VOICE_ASSISTANT",
             "USE_MICRO_WAKE_WORD",
@@ -314,6 +317,7 @@ UI_TRAIT_MATRICES: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
             "USE_I2C",
             "USE_API",
             "USE_WIFI",
+            "USE_LATTER_BEACON",
             "USE_FONT",
             "CONFIG_IDF_TARGET_ESP32S3=1",
             "LATTER_SCREEN_W=800",
@@ -706,7 +710,7 @@ def _run_gpp_gates(gpp: str, *, host_tests_only: bool, failures: list[str]) -> N
             if ui_mdi_cpp is not None and mdi_obj is not None
             else None
         )
-        # Overlap independent syntax/beacon checks with ui_mdi.o and the 5-geometry host builds.
+        # Overlap independent syntax/beacon checks with ui_mdi.o and the 9-geometry host builds.
         extra_futs = [] if host_tests_only else _submit_gpp_syntax_and_beacon_tasks(pool, gpp, td_path)
 
         mdi_err = mdi_fut.result() if mdi_fut is not None else None
@@ -723,7 +727,7 @@ def _run_gpp_gates(gpp: str, *, host_tests_only: bool, failures: list[str]) -> N
             )
             geom_futs = [
                 pool.submit(_compile_and_run_single_gpp_geom, build_ctx, lbl, defs)
-                for lbl, defs in FIVE_GEOM_CONFIGS
+                for lbl, defs in HOST_GEOM_CONFIGS
             ]
 
         for fut in (*geom_futs, *extra_futs):
@@ -771,7 +775,7 @@ def _run_msvc_gates(vcvars: Path, *, host_tests_only: bool, failures: list[str])
             f'/I"{ROOT / "include"}" /I"{ROOT / "components" / "latter_core"}" '
             f'/I"{ROOT / "components" / "latter_ui"}" /I"{ROOT / "tests" / "host"}"'
         )
-        for geom_lbl, defs in FIVE_GEOM_CONFIGS:
+        for geom_lbl, defs in HOST_GEOM_CONFIGS:
             obj_dir = td_path / f"objs_{geom_lbl}"
             obj_dir.mkdir(parents=True, exist_ok=True)
             exe_path = td_path / f"{geom_lbl}.exe"
@@ -888,7 +892,7 @@ def _append_msvc_syntax_and_beacon_lines(td_path: Path, bat_lines: list[str]) ->
 
 
 def run_subprocess_gates(failures: list[str], *, host_tests_only: bool = False) -> None:
-    """Run Python codegen/protocol/board/sound tools and 5-geometry C++20 host unit & syntax gates."""
+    """Run Python codegen/protocol/board/sound tools and 9-geometry C++20 host unit & syntax gates."""
     if not host_tests_only:
         _run_py_tool_gates(failures)
 
