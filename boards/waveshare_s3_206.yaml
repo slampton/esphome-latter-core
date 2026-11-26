@@ -22,7 +22,7 @@ substitutions:
   font_date_size: "32"
   font_btn_bold_size: "29"
   font_small_size: "25"   # >= 2.0 mm at this panel's PPI (device-ui-design.md, accessibility)
-  font_micro_size: "17"   # >= 1.3 mm
+  font_micro_size: "21"   # >= 1.65 mm
   font_games_size: "44"
   art_resize: "410x502"
   # 4x fewer pixels decoded & ~345 KB less PSRAM per album art buffer (clean upscale in draw_album_art)

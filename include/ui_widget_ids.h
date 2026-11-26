@@ -28,10 +28,13 @@ namespace WidgetId {
   static constexpr uint16_t CHEVRON_DOWN       = 16;
   static constexpr uint16_t MODE_BAR_LEFT      = 17;
   static constexpr uint16_t MODE_BAR_RIGHT     = 18;
-  static constexpr uint16_t LIST_SLOT_BASE     = 20;   // 20..24 (param = item index)
+  static constexpr int kMaxDockSlotWidgets = 6;
+  static constexpr int kMaxListSlotWidgets = 8;
+
+  static constexpr uint16_t LIST_SLOT_BASE     = 20;   // 20..27 (param = item index; up to 8 dynamic rows)
   static constexpr uint16_t GRID_CARD_BASE     = 30;   // 30..35 (param = card index)
-  static constexpr uint16_t DOCK_SLOT_BASE     = 40;   // 40..43 (param = dock index)
-  static constexpr uint16_t MODE_BAR_SLOT_BASE = 44;   // 44..47 (param = mode global index)
+  static constexpr uint16_t DOCK_SLOT_BASE     = 40;   // 40..45 (param = dock index; up to 6 dynamic slots)
+  static constexpr uint16_t MODE_BAR_SLOT_BASE = 80;   // 80..85 (param = mode global index; up to 6 dynamic slots)
 
   // System takeover & modal buttons
   static constexpr uint16_t ALERT_SNOOZE_BTN    = 50;
@@ -170,8 +173,8 @@ namespace WidgetId {
   static constexpr uint16_t CAL_TODAY_BTN       = 797;
   static constexpr uint16_t CAL_ADD_BTN         = 798;
   static constexpr uint16_t CAL_DELETE_BTN      = 800;
-  static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..814 (param = phrase idx)
-  static constexpr uint16_t INTERCOM_SPEAK_BTN  = 816;
+  static constexpr uint16_t INTERCOM_ROW_BASE   = 810;  // 810..817 (param = phrase idx)
+  static constexpr uint16_t INTERCOM_SPEAK_BTN  = 818;
   static constexpr uint16_t CAM_PREV_BTN        = 820;
   static constexpr uint16_t CAM_NEXT_BTN        = 821;
   static constexpr uint16_t CAM_LISTEN_BTN      = 822;
@@ -209,7 +212,7 @@ namespace WidgetId {
   static constexpr uint16_t MUSIC_SCRUB_STEP_BACK     = 955;
   static constexpr uint16_t MUSIC_SCRUB_STEP_FWD      = 956;
   static constexpr uint16_t MUSIC_FAVORITE_BTN        = 957;
-  static constexpr uint16_t MUSIC_ROW_PLAY_BASE       = 960;  // 960..964 (leading 1-tap Play Now orb, param = slot 0..4)
+  static constexpr uint16_t MUSIC_ROW_PLAY_BASE       = 1080; // 1080..1087 (leading 1-tap Play Now orb, param = slot 0..7)
 
   static constexpr uint16_t MUSIC_ACTION_PLAY_NOW      = 965;
   static constexpr uint16_t MUSIC_ACTION_PLAY_NEXT     = 966;

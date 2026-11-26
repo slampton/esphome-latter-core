@@ -168,8 +168,8 @@ void populate_rich_host_state(latter_ui::UiFrameContext &ctx) {
 bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
   using namespace latter_ui;
   using namespace latter_core;
-  return (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) ||
-         (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) ||
+  return (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots) ||
+         (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots) ||
          wid == WidgetId::SYS_BRI_SLIDER ||
          wid == WidgetId::SYS_VOL_SLIDER ||
          wid == WidgetId::SYS_SECONDARY_BTN ||
@@ -177,8 +177,8 @@ bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
          wid == WidgetId::QUICK_BRI_SLIDER ||
          wid == WidgetId::QUICK_BEDTIME_TOGGLE ||
          wid == WidgetId::QUICK_DND_TOGGLE ||
-         (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + 5) ||
-         (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + 5) ||
+         (wid >= WidgetId::INTERCOM_ROW_BASE && wid < WidgetId::INTERCOM_ROW_BASE + kMaxListSlots) ||
+         (wid >= WidgetId::CAM_SETTINGS_ROW_BASE && wid < WidgetId::CAM_SETTINGS_ROW_BASE + kMaxListSlots) ||
          wid == WidgetId::REMOTE_PRIMARY_PWR ||
          (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3) ||
          (wid >= WidgetId::AREA_CARD_TOGGLE && wid < WidgetId::AREA_CARD_TOGGLE + 3) ||
@@ -188,8 +188,8 @@ bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
          (wid >= WidgetId::CAL_PICKER_SLOT_BASE && wid < WidgetId::CAL_PICKER_SLOT_BASE + 5) ||
          (wid >= WidgetId::CAL_ADD_TITLE_BTN && wid <= WidgetId::CAL_ADD_REPEAT_BTN) ||
          (wid >= WidgetId::CAL_ADD_ALLDAY_BTN && wid <= WidgetId::CAL_ADD_END_BTN) ||
-         (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5) ||
-         (wid >= WidgetId::HOME_ACT_OVERLAY_ACTION_BASE && wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + 5) ||
+         (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + kMaxListSlots) ||
+         (wid >= WidgetId::HOME_ACT_OVERLAY_ACTION_BASE && wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + kMaxListSlots) ||
          (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) ||
          wid == WidgetId::MUSIC_QUEUE_CLEAR ||
          wid == WidgetId::MUSIC_SHUFFLE_BTN ||
@@ -233,11 +233,11 @@ bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
 int sibling_family_key(uint16_t wid) noexcept {
   using namespace latter_ui;
   using namespace latter_core;
-  if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5) return 1;
-  if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) return 2;
-  if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) return 3;
+  if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots) return 1;
+  if (wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + kMaxDockSlots) return 2;
+  if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots) return 3;
   if (wid >= WidgetId::PIN_PAD_KEY_BASE && wid <= WidgetId::PIN_PAD_CANCEL) return 4;
-  if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) return 5;
+  if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots) return 5;
   if (wid >= WidgetId::AREA_CARD_TAP && wid < WidgetId::AREA_CARD_TAP + 3) return 6;
   if (wid >= WidgetId::AREA_CARD_TOGGLE && wid < WidgetId::AREA_CARD_TOGGLE + 3) return 7;
   if (wid >= WidgetId::ALARM_MODE_BASE && wid < WidgetId::ALARM_MODE_BASE + 5) return 8;

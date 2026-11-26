@@ -22,7 +22,7 @@ MAX_LATCH_CALLS: Final[int] = 4
 CARD_BOX_RAD_ARG_IDX: Final[int] = 7
 MIN_CONTRAST_RATIO: Final[float] = 4.5
 MIN_SMALL_FONT_MM: Final[float] = 1.95
-MIN_MICRO_FONT_MM: Final[float] = 1.29
+MIN_MICRO_FONT_MM: Final[float] = 1.64
 SRGB_LINEAR_CUTOFF: Final[float] = 0.04045
 WEARABLE_DEFAULT_CORNER_R: Final[int] = 98
 RECT_DEFAULT_CORNER_R: Final[int] = 0
@@ -332,7 +332,7 @@ def _collect_board_font_metrics(failures: list[str]) -> dict[str, dict[str, int]
         if f_small * 25.4 / ppi < MIN_SMALL_FONT_MM:
             failures.append(f"[FONT MM] {bf.name}: font_small_size={f_small}px at {ppi} PPI < 2.0 mm")
         if f_micro * 25.4 / ppi < MIN_MICRO_FONT_MM:
-            failures.append(f"[FONT MM] {bf.name}: font_micro_size={f_micro}px at {ppi} PPI < 1.3 mm")
+            failures.append(f"[FONT MM] {bf.name}: font_micro_size={f_micro}px at {ppi} PPI < 1.65 mm")
         board_metrics[bf.stem] = {"w": w_px, "h": h_px, "ppi": ppi, "cr": eff_cr, "small": f_small, "micro": f_micro}
     return board_metrics
 

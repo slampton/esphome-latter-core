@@ -19,7 +19,7 @@ substitutions:
   font_date_size: "28"
   font_btn_bold_size: "25"
   font_small_size: "21"
-  font_micro_size: "14"
+  font_micro_size: "18"
   font_games_size: "38"
   art_resize: "466x466"
   # 4x fewer pixels decoded & 326 KB less PSRAM per album art buffer (exact 2x upscale in draw_album_art)

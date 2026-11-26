@@ -143,7 +143,7 @@ inline void render_music_stadium_mode_bar(Rgb565Surface &it, const UiFrameContex
                                           bool is_speech_media) {
   auto &m = runtime_state().music;
   const auto &ms = media_state();
-  m.sync_carousel_for_view();
+  m.sync_carousel_for_view(layout().dock_slot_count);
   const int active_global = std::clamp(static_cast<int>(m.view), 0, kMusicPeerTabCount - 1);
   MusicModeBarIconCtx ic{is_speech_media, ms.muted};
   ui::mode_bar(it, ctx.cx, kMusicPeerTabCount, active_global, m.mode_bar_win_start,
@@ -711,41 +711,44 @@ void render_music_settings_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
                                      /*has_metadata_scrim=*/true, kArtDimMenu);
   render_page_header(it, ctx.cx, "MUSIC SETTINGS", ctx.font_small, ctx.col_white, true);
-  const int pg = std::clamp(rs.music.settings_page, 1, 2);
 
   struct SettingItem {
     const char *prefix;
     std::string_view value;
   };
-  SettingItem items[4]{};
-  int count = 0;
-  if (pg == 1) {
-    items[0] = {"Art", ctx.music_fullscreen_art_opt.sv()};
-    items[1] = {"HUD", ctx.music_overlay_style_opt.sv()};
-    items[2] = {"Auto-Open", ctx.music_auto_open_opt.sv()};
-    items[3] = {"Albums", ctx.music_album_sort_opt.sv()};
-    count = 4;
-  } else {
-    items[0] = {"Artist", ctx.music_artist_album_sort_opt.sv()};
-    items[1] = {"Podcasts", ctx.music_podcast_sort_opt.sv()};
-    count = 2;
-  }
+  const SettingItem all_items[6] = {
+      {"Art", ctx.music_fullscreen_art_opt.sv()},
+      {"HUD", ctx.music_overlay_style_opt.sv()},
+      {"Auto-Open", ctx.music_auto_open_opt.sv()},
+      {"Albums", ctx.music_album_sort_opt.sv()},
+      {"Artist", ctx.music_artist_album_sort_opt.sv()},
+      {"Podcasts", ctx.music_podcast_sort_opt.sv()},
+  };
+  const int per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
+  const int total_pages = std::max(1, (6 + per_pg - 1) / per_pg);
+  const int pg = std::clamp(rs.music.settings_page, 1, total_pages);
+  rs.music.settings_page = pg;
+  const int start_i = (pg - 1) * per_pg;
+  const int count = std::min(per_pg, 6 - start_i);
 
   const int bounce_y = edge_bounce().offset_px(PageId::MUSIC, GestureAxisLock::Vertical,
                                                ctx.now_ms, LATTER_PANEL_PPI);
   for (int i = 0; i < count; ++i) {
+    const int g_idx = start_i + i;
     char buf[72];
-    std::snprintf(buf, sizeof(buf), "%s: %.*s", items[i].prefix,
-                  static_cast<int>(items[i].value.size()), items[i].value.data());
-    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i) + bounce_y, ly.list_card_w, ly.slot5_h,
+    std::snprintf(buf, sizeof(buf), "%s: %.*s", all_items[g_idx].prefix,
+                  static_cast<int>(all_items[g_idx].value.size()), all_items[g_idx].value.data());
+    ui::setting_cycle_row(it, ctx.cx, ly.peer_list_row_y(i) + bounce_y, ly.list_card_w, ly.list_h,
                           buf, true, ctx.font_small, ctx.col_white, ctx.col_slate,
                           ctx.theme_secondary,
                           static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + i),
-                          kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
+                          kHitTap | kHitFocusSlot, static_cast<int16_t>(g_idx));
   }
 
-  render_vertical_page_pips(it, pg > 1, pg < 2, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
-                            ly.mode_bar_zone_top());
+  if (total_pages > 1) {
+    render_vertical_page_pips(it, pg > 1, pg < total_pages, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                              ly.mode_bar_zone_top());
+  }
   render_music_stadium_mode_bar(it, ctx, trk.is_speech);
 }
 
@@ -791,17 +794,18 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
 
     render_page_header(it, ctx.cx, "SPEAKERS", ctx.font_small, ctx.col_white, true);
     const int content_top = ly.hdr_y + dp_px(24);
+    const int vis_rows = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
     const bool has_pips = (pg > 1) || (pg < tot);
     const BrowseSlotItem *slots = rs.music_slots();
     int drawn = 0;
-    for (int r = 0; r < kMusicPeerListPageSize; ++r) {
+    for (int r = 0; r < vis_rows; ++r) {
       if (slots[r].name.empty()) continue;
       char lvl_buf[16] = "";
       if (slots[r].level >= 0) std::snprintf(lvl_buf, sizeof(lvl_buf), "%d%%", slots[r].level);
       const bool is_cur = slots[r].active || (!slots[r].id.empty() && slots[r].id == trk.speaker_entity);
-      render_slot_list_row(it, ctx, r, kMusicPeerListPageSize, content_top, mode_bar_bot_limit,
+      render_slot_list_row(it, ctx, r, vis_rows, content_top, mode_bar_bot_limit,
                            slots[r].name.c_str(), lvl_buf, is_cur,
                            /*has_leading_play=*/false, /*enable_long_press=*/false,
                            has_pips, /*register_hits=*/true);
@@ -864,16 +868,17 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
                     WidgetId::MUSIC_QUEUE_CLEAR, kHitTap | kHitFocusSlot, 0, q_hit_h);
 
     const int content_top = sy0 + strip_h + dp_px(6);
+    const int vis_rows = std::clamp(ly.queue_list_rows, 4, kMaxListSlots);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
     const bool has_pips = (pg > 1) || (pg < tot);
     const BrowseSlotItem *slots = rs.music_slots();
     int drawn = 0;
-    for (int r = 0; r < kMusicPeerListPageSize; ++r) {
+    for (int r = 0; r < vis_rows; ++r) {
       if (slots[r].name.empty()) continue;
       const bool is_now = slots[r].is_current || slots[r].active;
       const bool actionable = !slots[r].id.empty() || !slots[r].queue_item_id.empty();
-      render_slot_list_row(it, ctx, r, kMusicPeerListPageSize, content_top, mode_bar_bot_limit,
+      render_slot_list_row(it, ctx, r, vis_rows, content_top, mode_bar_bot_limit,
                            slots[r].name.c_str(), is_now ? "NOW" : "",
                            is_now, /*has_leading_play=*/false, actionable, has_pips, actionable);
       ++drawn;
@@ -897,13 +902,16 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
         "mdi:heart", "mdi:playlist-music", "mdi:account-music",
         "mdi:album", "mdi:podcast", "mdi:radio-tower", "mdi:book-open-variant"};
 
-    const int cat_pg = std::clamp(m.category_page, 1, 2);
-    const int start_i = (cat_pg == 1) ? 0 : 4;
-    const int page_cnt = (cat_pg == 1) ? 4 : 3;
+    const int per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
+    const int total_pages = std::max(1, (7 + per_pg - 1) / per_pg);
+    const int cat_pg = std::clamp(m.category_page, 1, total_pages);
+    m.category_page = cat_pg;
+    const int start_i = (cat_pg - 1) * per_pg;
+    const int page_cnt = std::min(per_pg, 7 - start_i);
 
     for (int local_i = 0; local_i < page_cnt; ++local_i) {
       const int cat_idx = start_i + local_i;
-      ui::list_row(it, ctx.cx, ly.slot5_y(local_i), ly.list_card_w, ly.slot5_h,
+      ui::list_row(it, ctx.cx, ly.peer_list_row_y(local_i), ly.list_card_w, ly.list_h,
                    kCatLabels[cat_idx], nullptr,
                    ui::chrome_card_bg_off(), ui::chrome_card_brd_off(),
                    ctx.col_white, ctx.col_slate, ctx.font_small,
@@ -912,14 +920,17 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
                    kCatIcons[cat_idx], ">", ctx.col_slate);
     }
 
-    render_vertical_page_pips(it, cat_pg > 1, cat_pg < 2, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
-                              ly.mode_bar_zone_top());
+    if (total_pages > 1) {
+      render_vertical_page_pips(it, cat_pg > 1, cat_pg < total_pages, ctx.col_bg, ctx.theme_primary, ctx.col_dark_gray,
+                                ly.mode_bar_zone_top());
+    }
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);
     return;
   }
 
   const bool is_peer_album_tab = (m.view == MusicView::ALBUM_TRACKS && m.drilldown == MusicDrilldown::NONE);
-  const int vis_rows = is_peer_album_tab ? kMusicPeerListPageSize : kMusicFullListPageSize;
+  const int vis_rows = is_peer_album_tab ? std::clamp(ly.peer_list_rows, 4, kMaxListSlots)
+                                         : std::clamp(ly.list_rows, 4, kMaxListSlots);
   const int content_bot = is_peer_album_tab ? mode_bar_bot_limit : full_list_bot_limit;
 
   std::string hdr_title = m.selected_category_title;
@@ -1147,7 +1158,7 @@ void render_now_playing_view(Rgb565Surface &it, const UiFrameContext &ctx) {
                        TextAlign::CENTER_LEFT, fit_spk.c_str());
     }
 
-    rs.music.sync_carousel_for_view();
+    rs.music.sync_carousel_for_view(layout().dock_slot_count);
     register_music_now_playing_hits(frame_hits(), g, show_metadata, show_controls,
                                     rs.music.takeover, rs.music.mode_bar_win_start, false);
     render_music_stadium_mode_bar(it, ctx, trk.is_speech);

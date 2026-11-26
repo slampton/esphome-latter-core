@@ -74,7 +74,7 @@ void draw_hub_plus_icon(Rgb565Surface &it, int cx, int cy, int r,
 
 void render_home_hub_mode_bar(Rgb565Surface &it, const UiFrameContext &ctx,
                               const int *tabs, int tab_count, int active_slot) {
-  home_hub_mode_bar_page() = get_mode_bar_start_index(tab_count, home_hub_mode_bar_page());
+  home_hub_mode_bar_page() = get_mode_bar_start_index(tab_count, home_hub_mode_bar_page(), layout().dock_slot_count);
   HomeHubModeIconCtx ic{tabs, tab_count};
   ui::mode_bar(it, ctx.cx, tab_count, active_slot, home_hub_mode_bar_page(),
                ctx.theme_primary, ctx.col_white, draw_home_hub_mode_icon, &ic);

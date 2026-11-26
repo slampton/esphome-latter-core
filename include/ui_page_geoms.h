@@ -572,7 +572,7 @@ struct CameraGridGeom {
   int pager_y{34};
   int mode_bar_cy{398};
   int mode_bar_r{28};
-  int mode_slot_xs[4]{143, 203, 263, 323};
+  int mode_slot_xs[kMaxDockSlots]{143, 203, 263, 323, 0, 0};
 };
 
 inline constexpr CameraRect compute_video_display_rect(

@@ -196,15 +196,28 @@ struct UiPanelLayout {
   int home_date_y{52};
   int home_clock_y{128};
   int home_weather_y{200};
-  int dock_hit_r{47};
-  int dock_stride{76};
+  int dock_hit_r{41};
+  int dock_stride{84};
+  int dock_slot_count{4};
   int list_rows{5};
+  int peer_list_rows{4};
+  int queue_list_rows{4};
+  int list_h{44};
+  int list_stride{52};
+  int list_top_cy{110};
+  int peer_list_top_cy{96};
   int scale_milli{1000};
   int corner_r{233};
   SizeClass size_class{SizeClass::Regular};
 
   constexpr int slot5_y(int idx_0_to_4) const {
     return slot5_cy + (idx_0_to_4 - 2) * slot5_stride;
+  }
+  constexpr int list_row_y(int idx) const {
+    return list_top_cy + idx * list_stride;
+  }
+  constexpr int peer_list_row_y(int idx) const {
+    return peer_list_top_cy + idx * list_stride;
   }
   constexpr int area_card3_y(int idx_0_to_2) const {
     return area_card3_cy + (idx_0_to_2 - 1) * area_card3_stride;
@@ -279,6 +292,7 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   L.dock_r = dm.dock_r;
   L.dock_hit_r = dm.dock_hit_r;
   L.dock_stride = dm.slot_stride;
+  L.dock_slot_count = dm.slot_count;
 
   // Home Dashboard hero typography, top-right battery, and celestial orb (pure geometry math):
   // - Round panels keep battery centered in the bottom chin and sun/moon in the upper-left circular arc.
@@ -298,7 +312,7 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   } else {
     const int batt_fh = fonts.micro;
     const int batt_half_h = std::max(6, (batt_fh + 1) / 2);
-    const int batt_half_w = std::max(20, (batt_fh * 170) / 100);
+    const int batt_half_w = std::max(20, (batt_fh * 155) / 100);
     const int pad_edge = std::max(6, dp_px_for(8, s));
     const int batt_top = std::max(pad_edge, (cr * 22) / 100);
     L.battery_y = batt_top + batt_half_h;
@@ -330,23 +344,51 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
     L.celestial_x = std::clamp(cel_mid_x, cel_min_x, cel_max_x);
   }
 
-  // 5-slot list geometry (safe between hdr_y and back_y, bezel-safe on all 4 corners)
+  // Dynamic viewport-solved list geometry (full-height hdr..back, mode-bar hdr..mode_bar, and Queue w/ control strip)
+  const int dyn_list_top = L.hdr_y + dp_px_for(24, s);
+  const int dyn_list_bot = L.back_y - dp_px_for(18, s);
+  const int dyn_list_avail_h = std::max(140, dyn_list_bot - dyn_list_top);
+  const int peer_zone_top = L.app_dock_y - L.dock_r - dp_px_for(14, s);
+  const int peer_list_bot = peer_zone_top - dp_px_for(8, s);
+  const int peer_avail_h = std::max(120, peer_list_bot - dyn_list_top);
+  const int q_strip_h = std::clamp(dp_px_for(32, s), 28, 46);
+  const int q_top = L.hdr_y + dp_px_for(22, s) + q_strip_h + dp_px_for(6, s);
+  const int q_avail_h = std::max(100, peer_list_bot - q_top);
+
+  L.list_h = compute_list_row_h(spec, fonts.small);
+  const int dyn_gap = compute_list_row_gap(spec);
+  L.list_stride = L.list_h + dyn_gap;
+  L.list_rows = compute_viewport_list_rows(spec, dyn_list_avail_h, fonts.small);
+  L.peer_list_rows = compute_viewport_list_rows(spec, peer_avail_h, fonts.small);
+  L.queue_list_rows = compute_viewport_list_rows(spec, q_avail_h, fonts.small);
+
+  const int full_block_h = L.list_rows * L.list_h + (L.list_rows - 1) * dyn_gap;
+  const int full_y0 = dyn_list_top + std::max(0, (dyn_list_avail_h - full_block_h) / 2);
+  L.list_top_cy = full_y0 + L.list_h / 2;
+
+  const int peer_block_h = L.peer_list_rows * L.list_h + (L.peer_list_rows - 1) * dyn_gap;
+  const int peer_y0 = dyn_list_top + std::max(0, (peer_avail_h - peer_block_h) / 2);
+  L.peer_list_top_cy = peer_y0 + L.list_h / 2;
+
+  // Fixed 5-slot geometry (kept for fixed 3..5 row overlays like Quick Actions with sub_hdr_y)
   const int list_top = L.hdr_y + dp_px_for(28, s);
   const int list_bot = L.back_y - dp_px_for(18, s);
   const int list_avail_h = std::max(160, list_bot - list_top);
-  L.list_rows = compute_viewport_list_rows(spec, list_avail_h, fonts.small);
   const int target_stride = std::max(dp_px_for(58, s), fonts.small + dp_px_for(30, s));
   L.slot5_stride = std::min(target_stride, list_avail_h / 5);
   if (L.slot5_stride < 36) L.slot5_stride = 36;
-  const int target_slot_h = std::max(dp_px_for(44, s), fonts.small + dp_px_for(18, s));
+  const int target_slot_h = std::max(L.list_h, fonts.small + dp_px_for(18, s));
   L.slot5_h = std::clamp(target_slot_h, 30, std::max(30, L.slot5_stride - std::max(6, dp_px_for(8, s))));
   L.slot5_cy = list_top + list_avail_h / 2;
 
   const int stack_span_w = sf.band_safe_span(L.slot5_cy, 4 * L.slot5_stride + L.slot5_h, dp_px_for(12, s));
+  const int full_dyn_span_w = sf.band_safe_span(full_y0 + full_block_h / 2, full_block_h, dp_px_for(12, s));
+  const int peer_dyn_span_w = sf.band_safe_span(peer_y0 + peer_block_h / 2, peer_block_h, dp_px_for(12, s));
+  const int min_stack_span_w = std::min({stack_span_w, full_dyn_span_w, peer_dyn_span_w});
   const int chev_reserve = dp_px_for(44, s);
   const int chev_safe_w = (w > 2 * chev_reserve + 120) ? (w - 2 * chev_reserve) : (w - 24);
   const int target_list_w = dp_px_for(is_round ? 304 : 380, s);
-  L.list_card_w = std::min({target_list_w, stack_span_w, chev_safe_w, sf.max_content_w(460)});
+  L.list_card_w = std::min({target_list_w, min_stack_span_w, chev_safe_w, sf.max_content_w(460)});
   if (L.list_card_w < 160) L.list_card_w = std::min(w - 16, 160);
   L.list_card_left = L.cx - (L.list_card_w / 2);
 
@@ -440,7 +482,7 @@ inline constexpr int radius_key_for(int min_dim) noexcept {
 }
 
 inline constexpr void compute_mode_bar_slot_xs(int vis_count, int w, bool is_round,
-                                               int out_xs[4],
+                                               int out_xs[kMaxDockSlots],
                                                int h = -1, int ppi = LATTER_PANEL_PPI,
                                                int corner_r = -1,
                                                int view_scale_pct = 0,
@@ -456,21 +498,12 @@ inline constexpr void compute_mode_bar_slot_xs(int vis_count, int w, bool is_rou
   const int eff_vs = resolve_view_scale_pct_for(w, eff_h, ppi, is_round, view_scale_pct, is_stationary);
   const DockMetrics dm = compute_dock_metrics(
       UiDisplaySpec{w, eff_h, ppi, is_round, eff_cr, eff_vs, is_stationary});
+  const int n = std::clamp(vis_count, 1, kMaxDockSlots);
   const int stride = dm.slot_stride;
-  if (vis_count == 1) {
-    out_xs[0] = cx;
-  } else if (vis_count == 2) {
-    out_xs[0] = cx - stride / 2;
-    out_xs[1] = cx + stride / 2;
-  } else if (vis_count == 3) {
-    out_xs[0] = cx - stride;
-    out_xs[1] = cx;
-    out_xs[2] = cx + stride;
-  } else {
-    out_xs[0] = dm.slot_xs[0];
-    out_xs[1] = dm.slot_xs[1];
-    out_xs[2] = dm.slot_xs[2];
-    out_xs[3] = dm.slot_xs[3];
+  const int total_span = (n - 1) * stride;
+  const int start_x = cx - (total_span / 2);
+  for (int i = 0; i < n; ++i) {
+    out_xs[i] = start_x + i * stride;
   }
 }
 

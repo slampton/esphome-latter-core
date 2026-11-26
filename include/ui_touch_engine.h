@@ -144,7 +144,8 @@ struct MusicNowPlayingGeom {
   int mode_bar_cy{398};
   int mode_bar_r{28};
   int mode_bar_pad{10};
-  int mode_slot_xs[4]{143, 203, 263, 323};
+  int mode_slot_count{4};
+  int mode_slot_xs[kMaxDockSlots]{143, 203, 263, 323, 0, 0};
 };
 
 inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
@@ -201,7 +202,8 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
   g.prev_cx = g.cx - dx;
   g.next_cx = g.cx + dx;
 
-  compute_mode_bar_slot_xs(4, w, round, g.mode_slot_xs, h, ppi, ly.corner_r);
+  g.mode_slot_count = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
+  compute_mode_bar_slot_xs(g.mode_slot_count, w, round, g.mode_slot_xs, h, ppi, ly.corner_r);
   return g;
 }
 
@@ -227,9 +229,10 @@ inline void register_music_now_playing_hits(
     ht.add_circle(g.next_cx, g.transport_cy, g.side_hit_r,
                   WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
     if (include_mode_bar) {
-      const int max_ws = std::max(0, latter_core::kMusicPeerTabCount - 4);
+      const int vis_cap = std::clamp(g.mode_slot_count, 1, kMaxDockSlots);
+      const int max_ws = std::max(0, latter_core::kMusicPeerTabCount - vis_cap);
       const int ws = std::clamp(mode_win_start, 0, max_ws);
-      for (int i = 0; i < 4; ++i) {
+      for (int i = 0; i < vis_cap; ++i) {
         ht.add_circle(g.mode_slot_xs[i], g.mode_bar_cy, g.mode_bar_r,
                       static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
                       kHitTap | kHitFocusSlot | kHitFocusCircle,
@@ -244,8 +247,8 @@ inline void register_music_now_playing_hits(
                       WidgetId::MODE_BAR_LEFT, kHitTap | kHitFocusSlot);
         }
       }
-      if (ws + 4 < latter_core::kMusicPeerTabCount) {
-        const int rx0 = g.mode_slot_xs[3] + g.mode_bar_r + 1;
+      if (ws + vis_cap < latter_core::kMusicPeerTabCount) {
+        const int rx0 = g.mode_slot_xs[vis_cap - 1] + g.mode_bar_r + 1;
         if (g.w - rx0 >= 8) {
           ht.add_rect(rx0, g.mode_bar_cy - g.mode_bar_r - arrow_pad, g.w - rx0,
                       2 * (g.mode_bar_r + arrow_pad),
@@ -256,15 +259,17 @@ inline void register_music_now_playing_hits(
   }
 }
 
-inline constexpr int kMusicPeerListPageSize = 4;
-inline constexpr int kMusicFullListPageSize = 5;
-
 inline constexpr int music_browse_page_size_for(
-    latter_core::MusicView /*view*/, latter_core::MusicDrilldown drilldown,
-    std::string_view mode = {}) noexcept {
-  if (mode == "bio" || mode == "track_info") return kMusicFullListPageSize;
-  if (drilldown == latter_core::MusicDrilldown::LIB_LIST) return kMusicFullListPageSize;
-  return kMusicPeerListPageSize;
+    latter_core::MusicView view, latter_core::MusicDrilldown drilldown,
+    std::string_view mode = {},
+    const UiPanelLayout &ly = compute_panel_layout(
+        LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+        LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, LATTER_CORNER_R,
+        LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0)) noexcept {
+  if (mode == "bio" || mode == "track_info") return std::clamp(ly.list_rows, 4, kMaxListSlots);
+  if (drilldown == latter_core::MusicDrilldown::LIB_LIST) return std::clamp(ly.list_rows, 4, kMaxListSlots);
+  if (view == latter_core::MusicView::QUEUE) return std::clamp(ly.queue_list_rows, 4, kMaxListSlots);
+  return std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
 }
 
 inline constexpr latter_core::MusicView step_music_peer_tab(latter_core::MusicView cur, int h_dir) noexcept {
@@ -296,25 +301,21 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
   MusicListRowGeom g{};
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
   g.min_hit = mm_to_px_for(7.0f, ppi);
-  const int rows = std::clamp(visible_rows, 1, 5);
+  const int rows = std::clamp(visible_rows, 1, kMaxListSlots);
   const int idx = std::clamp(row_idx, 0, rows - 1);
 
   g.card_w = ly.list_card_w;
-  g.card_h = ly.slot5_h;
+  g.card_h = ly.list_h;
   g.card_x0 = ly.cx - (g.card_w / 2);
 
-  const int std_top = ly.slot5_y(0) - g.card_h / 2;
-  const int std_bot = ly.slot5_y(rows - 1) + g.card_h / 2;
-  if (content_top <= std_top + 2 && std_bot <= content_bot + 2) {
-    g.cy_row = ly.slot5_y(idx);
-  } else {
-    const int avail_h = std::max(rows * g.card_h, content_bot - content_top);
-    const int std_gap = std::max(4, ly.slot5_stride - g.card_h);
-    const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, std_gap) : 0;
-    const int block_h = rows * g.card_h + (rows - 1) * gap;
-    const int start_y0 = content_top + std::max(0, (avail_h - block_h) / 2);
-    g.cy_row = start_y0 + idx * (g.card_h + gap) + g.card_h / 2;
-  }
+  // Pack rows symmetrically inside [content_top .. content_bot] using canonical list_h & list_stride.
+  // Eliminates top-gap drift between peer-tab views (Speakers / Library / Queue / Settings) on all shapes.
+  const int avail_h = std::max(rows * g.card_h, content_bot - content_top);
+  const int std_gap = std::max(4, ly.list_stride - g.card_h);
+  const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, std_gap) : 0;
+  const int block_h = rows * g.card_h + (rows - 1) * gap;
+  const int start_y0 = content_top + std::max(0, (avail_h - block_h) / 2);
+  g.cy_row = start_y0 + idx * (g.card_h + gap) + g.card_h / 2;
   g.card_y0 = g.cy_row - g.card_h / 2;
 
   if (has_leading_play) {

@@ -185,7 +185,7 @@ void reset_music_to_now_playing(DeviceRuntimeState &rs, uint32_t now_ms, bool sh
   rs.music.reset_overlays();
   rs.music.clear_lyrics_auto_state();
   rs.music.view = MusicView::NOW_PLAYING;
-  rs.music.sync_carousel_for_view();
+  rs.music.sync_carousel_for_view(layout().dock_slot_count);
   mode_bar_anim().snap(0, 0);
   rs.music.hud_active = show_hud;
   rs.music.hud_timer = now_ms;
@@ -710,7 +710,7 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
         if (cats[i] == dom) { act_idx = i; break; }
       }
       rs.area.domain_filter = (act_idx >= 0) ? cats[act_idx] : std::string(dom);
-      sync_mode_bar_window(area_cat_dock_page(), std::max(0, act_idx), cnt);
+      sync_mode_bar_window(area_cat_dock_page(), std::max(0, act_idx), cnt, layout().dock_slot_count);
       if (rs.area.active_area_id.empty()) {
         rs.nav.area_subpage = AreaSubpage::PICKER;
         rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST) = 1;
@@ -1263,7 +1263,8 @@ bool TouchGestureEngine::handle_tap_nav_and_takeovers_(
     if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       ShortcutItem *dock_items = dock_items_scratch();
       const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
-      const int total_pages = std::max(1, (dock_cnt + 3) / 4);
+      const int dock_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+      const int total_pages = std::max(1, (dock_cnt + dock_cap - 1) / dock_cap);
       const int next_pg = std::clamp(
           home_dock_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1), 0, total_pages - 1);
       if (next_pg != home_dock_page()) {
@@ -1276,7 +1277,7 @@ bool TouchGestureEngine::handle_tap_nav_and_takeovers_(
   }
 
   if (rs.nav.gui_page == PageId::HOME && rs.nav.home_subpage == 0 &&
-      wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + 4) {
+      wid >= WidgetId::DOCK_SLOT_BASE && wid < WidgetId::DOCK_SLOT_BASE + kMaxDockSlots) {
     if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       ShortcutItem *dock_items = dock_items_scratch();
       const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
@@ -1289,7 +1290,7 @@ bool TouchGestureEngine::handle_tap_nav_and_takeovers_(
   }
 
   if (rs.nav.gui_page == PageId::WEATHER) {
-    if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+    if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
       if (target_sub != rs.nav.sky_weather_subpage) {
@@ -1461,7 +1462,7 @@ void TouchGestureEngine::do_fetch_area_browse_() {
 void TouchGestureEngine::do_fetch_area_list_browse_() {
   const auto &rs = runtime_state();
   const int page = rs.slot_page_for(latter_rpc::SlotChannel::AREA_LIST);
-  latter_core::emit_area_browse_list(rs.area.active_area_id, page, LATTER_SLOT_COUNT);
+  latter_core::emit_area_browse_list(rs.area.active_area_id, page, std::clamp(layout().list_rows, 4, kMaxListSlots));
 }
 void TouchGestureEngine::enter_home_hub_tab_(int target_tab, bool /*expand_cam*/, DeviceRuntimeState &rs,
                         const UiTouchRuntime &rt, uint32_t now_ms) {
@@ -1490,14 +1491,14 @@ void TouchGestureEngine::enter_home_hub_tab_(int target_tab, bool /*expand_cam*/
   }
   if (slot >= 0) {
     home_hub_tab() = target_tab;
-    sync_mode_bar_window(home_hub_mode_bar_page(), slot, hh_cnt);
+    sync_mode_bar_window(home_hub_mode_bar_page(), slot, hh_cnt, layout().dock_slot_count);
   } else if (hh_cnt > 0) {
     slot = 0;
     for (int i = 0; i < hh_cnt; ++i) {
       if (hh_tabs[i] == home_hub_tab()) { slot = i; break; }
     }
     home_hub_tab() = hh_tabs[slot];
-    sync_mode_bar_window(home_hub_mode_bar_page(), slot, hh_cnt);
+    sync_mode_bar_window(home_hub_mode_bar_page(), slot, hh_cnt, layout().dock_slot_count);
   } else {
     home_hub_mode_bar_page() = 0;
     home_hub_tab() = (target_tab >= 0) ? target_tab : HomeHubTab::ALARM;
@@ -1600,7 +1601,7 @@ bool TouchGestureEngine::handle_tap_home_area_(
             rs.nav.home_settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, total_pages);
         rs.nav.home_settings_page = next_pg;
         rt_.schedule_disp();
-      } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+      } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const auto item = static_cast<HomeSettingsItemId>(hit->param);
         switch (item) {
@@ -1662,9 +1663,9 @@ bool TouchGestureEngine::handle_tap_home_area_(
     if (rs.nav.home_subpage == 2) {
       int act_count = 0;
       const HomeActivityItem *act_items = home_activity_rendered_items(act_count);
-      const bool is_open_slot = (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5);
+      const bool is_open_slot = (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots);
       const bool is_quick_slot = (wid >= WidgetId::HOME_ACT_OVERLAY_ACTION_BASE &&
-                                  wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + 5);
+                                  wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + kMaxListSlots);
       if ((is_open_slot || is_quick_slot) && act_count > 0) {
         if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           TouchGestureEngine::handle_home_activity_action_(
@@ -1726,9 +1727,9 @@ bool TouchGestureEngine::handle_tap_home_area_(
           TouchGestureEngine::do_fetch_area_list_browse_();
           rt_.schedule_disp();
         }
-      } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+      } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        const int s_idx = std::clamp(static_cast<int>(hit->param), 0, 4);
+        const int s_idx = std::clamp(static_cast<int>(hit->param), 0, kMaxListSlots - 1);
         const auto &asl = rs.area_list_slots()[s_idx];
         if (!asl.id.empty()) {
           rs.area.active_area_id = asl.id;
@@ -1805,20 +1806,21 @@ bool TouchGestureEngine::handle_tap_home_area_(
     if (rs.nav.area_subpage == AreaSubpage::OVERVIEW) {
       std::string cats[8];
       const int cat_cnt = collect_area_categories(cats);
+      const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
       if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        if (cat_cnt > 4) {
+        if (cat_cnt > vis_cap) {
           area_cat_dock_page() = std::clamp(
-              area_cat_dock_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? 4 : -4), 0, cat_cnt - 4);
+              area_cat_dock_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? vis_cap : -vis_cap), 0, cat_cnt - vis_cap);
           rt_.schedule_disp();
         }
-      } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+      } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         if (cat_cnt > 0) {
           const int c_idx = std::clamp(static_cast<int>(hit->param), 0, cat_cnt - 1);
           if (cats[c_idx] != rs.area.domain_filter) {
             rs.area.domain_filter = cats[c_idx];
-            sync_mode_bar_window(area_cat_dock_page(), c_idx, cat_cnt);
+            sync_mode_bar_window(area_cat_dock_page(), c_idx, cat_cnt, vis_cap);
             rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
             TouchGestureEngine::do_fetch_area_browse_();
             mark_dirty_full();
@@ -1922,14 +1924,15 @@ bool TouchGestureEngine::handle_tap_home_area_(
   const int hh_tab_cnt = collect_home_hub_tabs(hh_tabs);
   if (hh_tab_cnt <= 0) return true;
 
+  const int hh_vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
   if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
       touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-    if (hh_tab_cnt > 4) {
+    if (hh_tab_cnt > hh_vis_cap) {
       home_hub_mode_bar_page() = std::clamp(
-          home_hub_mode_bar_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? 4 : -4), 0, hh_tab_cnt - 4);
+          home_hub_mode_bar_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? hh_vis_cap : -hh_vis_cap), 0, hh_tab_cnt - hh_vis_cap);
       rt_.schedule_disp();
     }
-  } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+  } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
     const int slot = std::clamp(static_cast<int>(hit->param), 0, hh_tab_cnt - 1);
     const int target_tab = hh_tabs[slot];
@@ -2283,7 +2286,7 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
   m.hud_timer = now_ms;
   rs.nav.menu_scroll_active = false;
   m.view = target;
-  m.sync_carousel_for_view();
+  m.sync_carousel_for_view(layout().dock_slot_count);
 
   std::string t_title, t_artist, t_album;
   bool is_speech = false;
@@ -2520,7 +2523,7 @@ bool TouchGestureEngine::handle_tap_music_(
     return true;
   }
   if (m.drilldown == MusicDrilldown::NONE &&
-      wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4) {
+      wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots) {
     if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       m.direct_nav = false;
       activate_music_peer_tab(
@@ -2665,15 +2668,16 @@ bool TouchGestureEngine::handle_tap_music_(
   }
 
   if (m.view == MusicView::SETTINGS) {
+    const int per_pg = std::clamp(layout().peer_list_rows, 4, kMaxListSlots);
+    const int max_pg = std::max(1, (6 + per_pg - 1) / per_pg);
     if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-      m.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+      m.settings_page = std::clamp(m.settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, max_pg);
       m.hud_timer = now_rel;
       rt_.schedule_disp();
-    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 4 &&
+    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int idx = (std::clamp(m.settings_page, 1, 2) - 1) * 4 + static_cast<int>(hit->param);
-      cycle_music_pref_slot(rt_, idx);
+      cycle_music_pref_slot(rt_, static_cast<int>(hit->param));
       m.hud_timer = now_rel;
       rt_.schedule_disp();
     }
@@ -2710,10 +2714,11 @@ bool TouchGestureEngine::handle_tap_music_(
     } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       step_peer_chevron();
-    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMusicPeerListPageSize &&
+    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int si = std::clamp(static_cast<int>(hit->param), 0, kMusicPeerListPageSize - 1);
+      const int peer_cap = std::clamp(layout().peer_list_rows, 4, kMaxListSlots);
+      const int si = std::clamp(static_cast<int>(hit->param), 0, peer_cap - 1);
       const auto &sl = rs.music_slots()[si];
       if (!sl.name.empty() && !sl.id.empty() && sl.type != "text") {
         m.target_speaker_id = sl.id;
@@ -2751,10 +2756,11 @@ bool TouchGestureEngine::handle_tap_music_(
     } else if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       step_peer_chevron();
-    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMusicPeerListPageSize &&
+    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int si = std::clamp(static_cast<int>(hit->param), 0, kMusicPeerListPageSize - 1);
+      const int q_cap = std::clamp(layout().queue_list_rows, 4, kMaxListSlots);
+      const int si = std::clamp(static_cast<int>(hit->param), 0, q_cap - 1);
       const auto &sl = rs.music_slots()[si];
       if (!sl.queue_item_id.empty()) {
         audio_session().set_play_intent(MusicPlayIntent::ExternalOrUserExplicit, now_rel);
@@ -2777,7 +2783,9 @@ bool TouchGestureEngine::handle_tap_music_(
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       m.hud_timer = now_rel;
       if (on_cat_root) {
-        m.category_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+        const int cat_per_pg = std::clamp(layout().peer_list_rows, 4, kMaxListSlots);
+        const int cat_max_pg = std::max(1, (7 + cat_per_pg - 1) / cat_per_pg);
+        m.category_page = std::clamp(m.category_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, cat_max_pg);
         rt_.schedule_disp();
       } else if (b_tot > 1) {
         const int step_d = (wid == WidgetId::CHEVRON_UP) ? -1 : 1;
@@ -2792,7 +2800,7 @@ bool TouchGestureEngine::handle_tap_music_(
         }
       }
     } else if (on_cat_root &&
-               wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 4 &&
+               wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       const int idx = static_cast<int>(hit->param);
@@ -2813,19 +2821,19 @@ bool TouchGestureEngine::handle_tap_music_(
         mark_dirty_full();
         rt_.schedule_disp();
       }
-    } else if (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5 &&
+    } else if (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
+      const int si = std::clamp(static_cast<int>(hit->param), 0, kMaxListSlots - 1);
       const auto &sl = rs.music_slots()[si];
       if (!sl.id.empty() && sl.type != "text") {
         TouchGestureEngine::dispatch_music_play_item_(sl.id, resolve_browse_item_media_type(rs, sl), sl.name, "play", false, rs, now_rel);
         return_now_playing_dirty();
       }
-    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + 5 &&
+    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int si = std::clamp(static_cast<int>(hit->param), 0, 4);
+      const int si = std::clamp(static_cast<int>(hit->param), 0, kMaxListSlots - 1);
       const auto &sl = rs.music_slots()[si];
       if (!sl.id.empty() && sl.type != "text") {
         const std::string mtype = resolve_browse_item_media_type(rs, sl);
@@ -3143,7 +3151,7 @@ bool TouchGestureEngine::handle_tap_time_cal_(
 
   if (rs.nav.gui_page == PageId::TIME) {
     const int sub = std::clamp(rs.nav.time_subpage, 0, 3);
-    if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+    if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
       if (target_sub != sub) {
@@ -3321,7 +3329,7 @@ bool TouchGestureEngine::handle_tap_time_cal_(
       mark_dirty_full();
       rt_.schedule_disp();
     }
-  } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+  } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
     const int target_sub = std::clamp(static_cast<int>(hit->param), 0, 3);
     if (target_sub != rs.cal.subpage) {
@@ -3760,7 +3768,7 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
       mark_dirty_full();
       gate_or_dispatch_doorbell_unlock(now_rel);
     }
-  } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + 4 &&
+  } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
              touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
     int target_tab = std::clamp(static_cast<int>(hit->param), CamerasTab::GRID, CamerasTab::SETTINGS);
     if (target_tab == CamerasTab::GRID && c_total <= 1) {
@@ -3801,7 +3809,10 @@ bool TouchGestureEngine::handle_tap_cameras_games_(
 #if LATTER_HAS_HW_JPEG
     if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-      rs.cameras.settings_page = (wid == WidgetId::CHEVRON_UP) ? 0 : 1;
+      const int cam_per_pg = std::clamp(layout().peer_list_rows, 4, kMaxListSlots);
+      const int cam_max_pg = std::max(0, (5 - 1) / cam_per_pg);
+      rs.cameras.settings_page = std::clamp(
+          rs.cameras.settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 0, cam_max_pg);
       mark_dirty_full();
       rt_.schedule_disp();
       return true;
@@ -4093,17 +4104,19 @@ bool TouchGestureEngine::handle_down_system_tools_(TouchGestureEngine &eng, int 
         back_to_sys_root();
         return true;
       }
+      const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+      const int max_pg = std::max(1, (6 + per_pg - 1) / per_pg);
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        rs.music.settings_page = (wid == WidgetId::CHEVRON_UP) ? 1 : 2;
+        rs.music.settings_page = std::clamp(
+            rs.music.settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, max_pg);
         mark_dirty_full();
         rt.schedule_disp();
         return true;
       }
-      if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
+      if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
           touch_router().allow_tap(now_ms, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        const int pg = std::clamp(rs.music.settings_page, 1, 2);
-        cycle_music_pref_slot(rt, (pg - 1) * 5 + hit->param);
+        cycle_music_pref_slot(rt, hit->param);
         rt.schedule_disp();
       }
       return true;
@@ -4388,11 +4401,14 @@ bool TouchGestureEngine::handle_tap_system_tools_(
   if (rs.nav.gui_page == PageId::SYSTEM) {
     const int mode = rs.nav.system_menu_mode;
     if (!rs.nav.menu_scroll_active && (mode == 0 || mode == 1 || mode == 2)) {
+      const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
       const int cur_pg = (mode == 0) ? rs.nav.system_dashboard_page
                                      : ((mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page);
       if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int max_pg = (mode == 2) ? 3 : 2;
+        const int max_pg = (mode == 0) ? ((per_pg >= 8) ? 1 : 2)
+                                       : ((mode == 1) ? std::max(1, (10 + per_pg - 1) / per_pg)
+                                                      : std::max(1, (11 + per_pg - 1) / per_pg));
         const int target_pg = (wid == WidgetId::CHEVRON_DOWN)
                                   ? std::min(max_pg, cur_pg + 1)
                                   : std::max(1, cur_pg - 1);
@@ -4402,9 +4418,9 @@ bool TouchGestureEngine::handle_tap_system_tools_(
           rs.nav.menu_scroll_target_page = target_pg;
           rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
         }
-      } else if (mode == 0 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
+      } else if (mode == 0 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        const int item_idx = (rs.nav.system_dashboard_page == 1) ? hit->param : (hit->param + 3);
+        const int item_idx = hit->param;
         if (item_idx == 0) { rs.nav.system_menu_mode = 2; rs.nav.display_menu_page = 1; }
         else if (item_idx == 1) { rs.nav.system_menu_mode = 1; rs.nav.sleep_menu_page = 1; }
         else if (item_idx == 2) { rs.nav.system_menu_mode = 7; }
@@ -4419,9 +4435,9 @@ bool TouchGestureEngine::handle_tap_system_tools_(
         else if (item_idx == 7) { rs.nav.system_menu_mode = 8; }
         mark_dirty_full();
         rt_.schedule_disp();
-      } else if (mode == 1 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5 &&
+      } else if (mode == 1 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-        const int idx = (rs.nav.sleep_menu_page == 1) ? hit->param : (hit->param + 5);
+        const int idx = hit->param;
         if (idx == 0) {
 #if LATTER_HAS_IMU
           rt_.set_select_opt(UiSelectId::PICKUP_WAKE_MODE,
@@ -4482,9 +4498,8 @@ bool TouchGestureEngine::handle_tap_system_tools_(
             rt_.cmd(UiHostCmd::SYNC_DISPLAY_BRIGHTNESS);
             rt_.schedule_disp();
           }
-        } else if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + 5) {
-          const int clamped_pg = std::clamp(rs.nav.display_menu_page, 1, 3);
-          const int item_idx = (clamped_pg - 1) * 5 + hit->param;
+        } else if (wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots) {
+          const int item_idx = hit->param;
           const std::string_view ab = rt_.select_opt(UiSelectId::AUTO_BRIGHTNESS_MODE);
           if (item_idx == 0) {
             if (prefs.home_screen_enabled) {

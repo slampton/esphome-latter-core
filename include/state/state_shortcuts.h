@@ -251,23 +251,25 @@ inline std::string_view resolve_pinned_page_title(const ShortcutsState &st, int 
   return st.find_pinned_page_title(logical_page);
 }
 
-inline int get_mode_bar_start_index(int total_count, int win_start) {
-  if (total_count <= 4 || win_start <= 0) return 0;
-  return std::max(0, std::min(total_count - 4, win_start));
+inline int get_mode_bar_start_index(int total_count, int win_start, int vis_slots = 4) {
+  const int cap = (vis_slots > 1) ? vis_slots : 1;
+  if (total_count <= cap || win_start <= 0) return 0;
+  return std::max(0, std::min(total_count - cap, win_start));
 }
 
-inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count) {
-  if (total_count <= 4) {
+inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count, int vis_slots = 4) {
+  const int cap = (vis_slots > 1) ? vis_slots : 1;
+  if (total_count <= cap) {
     win_start = 0;
     return;
   }
-  win_start = get_mode_bar_start_index(total_count, win_start);
+  win_start = get_mode_bar_start_index(total_count, win_start, cap);
   if (active_idx < win_start) {
     win_start = active_idx;
-  } else if (active_idx >= win_start + 4) {
-    win_start = active_idx - 3;
+  } else if (active_idx >= win_start + cap) {
+    win_start = active_idx - (cap - 1);
   }
-  win_start = std::max(0, std::min(total_count - 4, win_start));
+  win_start = std::max(0, std::min(total_count - cap, win_start));
 }
 
 

@@ -339,7 +339,11 @@ void test_outline_solid_helpers_and_5geom_shortcut_rendering() {
     LATTER_CHECK(parse_shortcut_record("entity|script.sos|turn_on|Alert|mdi:bell-ring|1|0|inverted|red", d3));
     ShortcutItem d4{};
     LATTER_CHECK(parse_shortcut_record("entity|light.porch|toggle|Porch|mdi:lightbulb|0|2|inverted|green", d4));
-    sc.dock_items = {d0, d1, d2, d3, d4};
+    ShortcutItem d5{};
+    LATTER_CHECK(parse_shortcut_record("route|app:weather||Weather||0|-1|glass|default", d5));
+    ShortcutItem d6{};
+    LATTER_CHECK(parse_shortcut_record("route|app:tools||Tools||0|-1|glass|default", d6));
+    sc.dock_items = {d0, d1, d2, d3, d4, d5, d6};
 
     fix.ctx.home_weather_bg = false;
     fix.ctx.home_wake_greeting = false;

@@ -74,6 +74,7 @@ struct UiLayout {
   int app_dock_pips_y = base.app_dock_pips_y;
   int dock_r = base.dock_r;
   int dock_stride = base.dock_stride;
+  int dock_slot_count = base.dock_slot_count;
 
   int celestial_x = base.celestial_x;
   int celestial_y = base.celestial_y;
@@ -83,6 +84,14 @@ struct UiLayout {
   int list_card_w = base.list_card_w;
   int list_card_left = base.list_card_left;
   int list_rows = base.list_rows;
+  int peer_list_rows = base.peer_list_rows;
+  int queue_list_rows = base.queue_list_rows;
+  int list_h = base.list_h;
+  int list_stride = base.list_stride;
+  int list_top_cy = base.list_top_cy;
+  int peer_list_top_cy = base.peer_list_top_cy;
+  constexpr int list_row_y(int idx) const { return base.list_row_y(idx); }
+  constexpr int peer_list_row_y(int idx) const { return base.peer_list_row_y(idx); }
 
   int slot5_stride = base.slot5_stride;
   int slot5_h = base.slot5_h;
@@ -357,34 +366,37 @@ inline bool music_art_only(int gui_page, bool overlay_always_visible, bool hud_a
 }
 
 inline int get_home_dock_start_index(int total_count, int page) {
-  if (total_count <= 4 || page <= 0) return 0;
-  const int total_pages = (total_count + 3) / 4;
+  const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+  if (total_count <= vis_cap || page <= 0) return 0;
+  const int total_pages = (total_count + vis_cap - 1) / vis_cap;
   const int eff_page = (page >= total_pages) ? (total_pages - 1) : page;
-  int raw_start = eff_page * 4;
-  if (raw_start + 4 > total_count) {
-    raw_start = total_count - 4;
+  int raw_start = eff_page * vis_cap;
+  if (raw_start + vis_cap > total_count) {
+    raw_start = total_count - vis_cap;
   }
   return std::max(0, raw_start);
 }
 
-inline void get_home_dock_window_xs(int total_count, int page, int out_xs[4]) {
+inline void get_home_dock_window_xs(int total_count, int page, int out_xs[kMaxDockSlots]) {
   if (total_count <= 0) return;
+  const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
   const int start_idx = get_home_dock_start_index(total_count, page);
-  const int vis_count = std::min(4, total_count - start_idx);
+  const int vis_count = std::min(vis_cap, total_count - start_idx);
   compute_mode_bar_slot_xs(vis_count, SCREEN_W, LATTER_ROUND_DISPLAY != 0, out_xs);
 }
 
-inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int out_xs[4],
+inline void get_mode_bar_window_xs(int total_count, int win_start, int cx, int out_xs[kMaxDockSlots],
                                    bool &out_has_left_arrow, bool &out_has_right_arrow) {
   (void)cx;
   out_has_left_arrow = false;
   out_has_right_arrow = false;
   if (total_count <= 0) return;
-  const int start_idx = latter_core::get_mode_bar_start_index(total_count, win_start);
-  const int vis_count = std::min(4, total_count - start_idx);
-  get_home_dock_window_xs(vis_count, 0, out_xs);
+  const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+  const int start_idx = latter_core::get_mode_bar_start_index(total_count, win_start, vis_cap);
+  const int vis_count = std::min(vis_cap, total_count - start_idx);
+  compute_mode_bar_slot_xs(vis_count, SCREEN_W, LATTER_ROUND_DISPLAY != 0, out_xs);
   out_has_left_arrow  = (start_idx > 0);
-  out_has_right_arrow = (start_idx + 4 < total_count);
+  out_has_right_arrow = (start_idx + vis_cap < total_count);
 }
 
 struct DockSlideAnimator {

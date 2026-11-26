@@ -591,8 +591,8 @@ const HomeActivityItem *collect_home_activities_cached(
 }
 
 int get_activity_overlay_card_y(int vis_count, int row_idx) {
-  const int stride = layout().slot5_stride;
-  return layout().slot5_cy - (((vis_count - 1) * stride) / 2) + row_idx * stride;
+  (void)vis_count;
+  return layout().list_row_y(row_idx);
 }
 
 #if LATTER_HAS_BATTERY
@@ -837,7 +837,8 @@ int collect_home_settings_items(const PersistedDevicePrefs &prefs,
 int home_settings_page_count(const PersistedDevicePrefs &prefs) noexcept {
   HomeSettingsItemId items[12]{};
   const int n = collect_home_settings_items(prefs, items);
-  return std::max(1, (n + 4) / 5);
+  const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+  return std::max(1, (n + per_pg - 1) / per_pg);
 }
 
 void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
@@ -887,16 +888,17 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
     HomeSettingsItemId items[12]{};
     const int item_count = collect_home_settings_items(prefs, items);
-    const int total_pages = std::max(1, (item_count + 4) / 5);
+    const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+    const int total_pages = std::max(1, (item_count + per_pg - 1) / per_pg);
     const int hs_pg = std::clamp(rs.nav.home_settings_page, 1, total_pages);
     rs.nav.home_settings_page = hs_pg;
-    const int hs_w = layout().list_card_w, hs_h = layout().slot5_h;
+    const int hs_w = layout().list_card_w, hs_h = layout().list_h;
     const int hs_bounce_y = edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
-    const int start_idx = (hs_pg - 1) * 5;
-    const int vis_cnt = std::min(5, std::max(0, item_count - start_idx));
+    const int start_idx = (hs_pg - 1) * per_pg;
+    const int vis_cnt = std::min(per_pg, std::max(0, item_count - start_idx));
     for (int row = 0; row < vis_cnt; ++row) {
       const HomeSettingsItemId item = items[start_idx + row];
-      const int row_y = layout().slot5_y(row) + hs_bounce_y;
+      const int row_y = layout().list_row_y(row) + hs_bounce_y;
       const uint16_t wid = static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + row);
       const int16_t param = static_cast<int16_t>(item);
       char buf[48];
@@ -1062,13 +1064,14 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     if (act_count <= 0) {
       render_empty_state(it, cx, cy, "No active activities", ctx.font_small, ctx.col_slate);
     } else {
-      const int total_pages = std::max(1, (act_count + 4) / 5);
+      const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+      const int total_pages = std::max(1, (act_count + per_pg - 1) / per_pg);
       if (home_activity_overlay_page() >= total_pages || home_activity_overlay_page() < 0) home_activity_overlay_page() = 0;
-      const int start_i = home_activity_overlay_page() * 5;
-      const int vis_cnt = std::min(5, act_count - start_i);
+      const int start_i = home_activity_overlay_page() * per_pg;
+      const int vis_cnt = std::min(per_pg, act_count - start_i);
       const int act_bounce_y = edge_bounce().offset_px(PageId::HOME, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
       const int card_w = layout().list_card_w;
-      const int card_h = layout().slot5_h;
+      const int card_h = layout().list_h;
       const int card_left = cx - card_w / 2;
       const int act_col_w = std::min(card_w / 2, std::max(dp_px(44), layout().min_hit_px()));
       const int open_w = std::max(24, card_w - act_col_w);
@@ -1344,12 +1347,13 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   ShortcutItem *dock_items = dock_items_scratch();
   const int dock_count = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
   if (dock_count > 0) {
-    const int total_dock_pages = (dock_count + 3) / 4;
+    const int dock_cap = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
+    const int total_dock_pages = (dock_count + dock_cap - 1) / dock_cap;
     if (home_dock_page() < 0 || home_dock_page() >= total_dock_pages) home_dock_page() = 0;
-    int win_xs[4] = {0, 0, 0, 0};
+    int win_xs[kMaxDockSlots] = {};
     get_home_dock_window_xs(dock_count, home_dock_page(), win_xs);
     const int start_idx = get_home_dock_start_index(dock_count, home_dock_page());
-    const int vis_count = std::min(4, dock_count - start_idx);
+    const int vis_count = std::min(dock_cap, dock_count - start_idx);
     const int dock_y = ly.dock_y, dock_r = ly.dock_r, dock_pad = std::max(0, ly.dock_hit_r() - dock_r);
     const int dock_gutter_w = std::max(12, dp_px(26));
     if (total_dock_pages > 1 && home_dock_page() > 0 && vis_count > 0) {

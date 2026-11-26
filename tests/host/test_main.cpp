@@ -64,7 +64,8 @@ void test_music_app_v3_d059() {
     const auto np = compute_music_now_playing_geom(p.w, p.h, p.round, p.wearable, p.ppi);
     LATTER_CHECK(np.prog_h == std::max(4, dp_px_for(4, ly.scale_milli)));
 
-    for (int win_start = 0; win_start <= 5; ++win_start) {
+    const int max_ws = std::max(0, kMusicPeerTabCount - np.mode_slot_count);
+    for (int win_start = 0; win_start <= max_ws; ++win_start) {
       FrameHitTable ht{};
       register_music_now_playing_hits(ht, np, true, true, MusicTakeover::NONE, win_start, true);
       check_zero_aabb_overlaps(ht, p.w, p.h);
@@ -74,7 +75,7 @@ void test_music_app_v3_d059() {
         const HitRegion *r = ht.find_by_id(wid);
         LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_hit);
       }
-      for (int i = 0; i < 4; ++i) {
+      for (int i = 0; i < np.mode_slot_count; ++i) {
         const HitRegion *slot_r = ht.find_by_id(static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i));
         LATTER_CHECK(slot_r != nullptr && slot_r->param == win_start + i);
         LATTER_CHECK(pad_w(slot_r) >= min_hit && pad_h(slot_r) >= min_hit);
@@ -85,7 +86,7 @@ void test_music_app_v3_d059() {
       FrameHitTable ht{};
       const auto lg = compute_music_lyrics_transport_geom(p.w, p.h, p.round, p.wearable, p.ppi);
       register_music_lyrics_transport_hits(ht, lg);
-      for (int i = 0; i < 4; ++i) {
+      for (int i = 0; i < np.mode_slot_count; ++i) {
         ht.add_circle(np.mode_slot_xs[i], np.mode_bar_cy, np.mode_bar_r,
                       static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
                       kHitTap | kHitFocusSlot | kHitFocusCircle,
@@ -151,11 +152,12 @@ void test_music_app_v3_d059() {
       FrameHitTable ht{};
       const int c_top = ly.hdr_y + dp_px_for(24, ly.scale_milli);
       const int c_bot = ly.back_y - dp_px_for(26, ly.scale_milli);
-      for (int r = 0; r < kMusicFullListPageSize; ++r) {
+      const int dyn_rows = std::clamp(ly.list_rows, 4, kMaxListSlots);
+      for (int r = 0; r < dyn_rows; ++r) {
         const auto rg = compute_music_list_row_geom(
-            r, kMusicFullListPageSize, c_top, c_bot, true, false,
+            r, dyn_rows, c_top, c_bot, true, false,
             p.w, p.h, p.round, p.wearable, p.ppi);
-        LATTER_CHECK(rg.card_w == ly.list_card_w && rg.card_h == ly.slot5_h);
+        LATTER_CHECK(rg.card_w == ly.list_card_w && rg.card_h == ly.list_h);
         register_music_list_row_hits(ht, rg, r, true);
       }
       check_zero_aabb_overlaps(ht, p.w, p.h);

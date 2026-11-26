@@ -74,7 +74,7 @@ void test_device_prefs_v2_and_event_timer_sync() {
   LATTER_CHECK(latter_core::collect_home_hub_tabs(hh_tabs, uninit_ac) == 0);
 
   const std::string full_manifest = latter_core::build_hardware_manifest_json();
-  LATTER_CHECK(full_manifest.find("\"slot_count\":5") != std::string::npos);
+  LATTER_CHECK(full_manifest.find("\"slot_count\":" + std::to_string(LATTER_SLOT_COUNT)) != std::string::npos);
   LATTER_CHECK(full_manifest.find("\"card_slot_count\":3") != std::string::npos);
   const int exp_gcols = latter_core::tile_grid_cols_for(
       LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,

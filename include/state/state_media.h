@@ -311,17 +311,19 @@ struct MusicRuntimeState {
   std::string loaded_screensaver_photo_url = "";
   bool screensaver_photo_failed = false;
 
-  void sync_carousel_for_view() noexcept {
+  void sync_carousel_for_view(int vis_slots = 4) noexcept {
+    const int cap = std::clamp(vis_slots, 1, kMusicPeerTabCount);
+    const int max_start = std::max(0, kMusicPeerTabCount - cap);
     const int idx = std::clamp(static_cast<int>(view), 0, kMusicPeerTabCount - 1);
-    if (mode_bar_win_start < 0 || mode_bar_win_start > kMusicPeerTabCount - 4) {
+    if (mode_bar_win_start < 0 || mode_bar_win_start > max_start) {
       mode_bar_win_start = 0;
     }
     if (idx < mode_bar_win_start) {
       mode_bar_win_start = idx;
-    } else if (idx >= mode_bar_win_start + 4) {
-      mode_bar_win_start = idx - 3;
+    } else if (idx >= mode_bar_win_start + cap) {
+      mode_bar_win_start = idx - (cap - 1);
     }
-    mode_bar_win_start = std::clamp(mode_bar_win_start, 0, kMusicPeerTabCount - 4);
+    mode_bar_win_start = std::clamp(mode_bar_win_start, 0, max_start);
     carousel_page = static_cast<uint8_t>(mode_bar_win_start);
   }
 

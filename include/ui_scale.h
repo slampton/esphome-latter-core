@@ -161,7 +161,7 @@ inline constexpr SizeClass current_size_class() noexcept {
 // Auto-Derived 7-Font Typography Ramp (mirrored 1:1 in latter_core/__init__.py)
 // ==============================================================================
 struct AutoFontSizes {
-  int micro{14};
+  int micro{18};
   int small{21};
   int btn_bold{25};
   int date{28};
@@ -177,7 +177,7 @@ inline constexpr AutoFontSizes compute_auto_font_sizes(const UiDisplaySpec &spec
   const int s = compute_ui_scale_milli(eff_ppi, eff_vs, spec.is_stationary);
 
   const int raw_micro = dp_px_for(14, s);
-  const int floor_micro = mm_ceil_px_for(13, eff_ppi);
+  const int floor_micro = (165 * eff_ppi + 2539) / 2540;  // >= 1.65 mm legibility floor across all panels
   const int micro = std::max(12, std::max(floor_micro, raw_micro));
 
   const int raw_small = dp_px_for(21, s);
@@ -258,21 +258,24 @@ struct SafeFrame {
 };
 
 // ==============================================================================
-// Remote-Proportioned 4-Icon Dock Solver (Taking Extra Radius Downward)
+// Remote-Proportioned Dynamic Dock Solver (4..6 Slots; Taking Extra Radius Down)
 // ==============================================================================
+inline constexpr int kMaxDockSlots = 6;
+inline constexpr int kMaxListSlots = 8;
+
 struct DockMetrics {
   int slot_count{4};
-  int max_slots_capable{4};  // 6 on Expanded tablet-class W_dp >= 800
-  int dock_r{31};
-  int dock_y{370};
-  int app_dock_y{374};
-  int dock_pips_y{412};
-  int app_dock_pips_y{415};
+  int max_slots_capable{4};  // 5 on Desk (720x720), 6 on Expanded landscape tablets
+  int dock_r{29};
+  int dock_y{368};
+  int app_dock_y{372};
+  int dock_pips_y{407};
+  int app_dock_pips_y{410};
   int home_bar_y{440};
   int back_y{430};
-  int dock_hit_r{47};
-  int slot_stride{76};
-  int slot_xs[4]{119, 195, 271, 347};
+  int dock_hit_r{41};
+  int slot_stride{84};
+  int slot_xs[kMaxDockSlots]{107, 191, 275, 359, 0, 0};
 };
 
 // Exact maximum horizontal half-spread (from cx to outer dock slot center) such that BOTH:
@@ -312,7 +315,7 @@ inline constexpr int compute_dock_max_outer_dx(const UiDisplaySpec &spec, int sc
         if (corner_dx < dx_circle) dx_circle = corner_dx;
       }
     }
-    const int half_cap = dp_px_for(280, scale_milli) - r;
+    const int half_cap = dp_px_for(440, scale_milli) - r;
     if (half_cap < dx_circle) dx_circle = half_cap;
   }
 
@@ -326,8 +329,6 @@ inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noe
   const int s = sf.scale_milli;
   const int cx = spec.w / 2;
   const int min_dp = (sf.w_dp < sf.h_dp) ? sf.w_dp : sf.h_dp;
-  d.slot_count = 4;
-  d.max_slots_capable = (sf.w_dp >= 800) ? 6 : 4;
 
   // Target dock radius in logical dp scales smoothly from 28 dp (Remote) -> 31 dp (Pocket) -> 34 dp (Desk) -> 42 dp (10" Tablet).
   const int target_r_dp = std::clamp(19 + (min_dp * 28) / 1000, 25, 42);
@@ -344,15 +345,16 @@ inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noe
     return (y - cur_r > rect_max_bar_top) ? (rect_max_bar_top + cur_r) : y;
   };
 
-  // Universal joint (r, stride) solver: shrink r by 1 px until exact circular/corner bezel + chevron
-  // tangency accommodates Remote's golden ~45% diameter gap (>= 42.5% floor) across ALL display shapes.
-  int max_stride = 0;
+  // Step 1: Universal joint (r, stride) solver ensuring >= 4 slots fit at >= 42.5% diameter gap
+  // inside exact circular/corner bezel + overflow chevron tangency.
+  int max_dx = 0;
+  int max_stride4 = 0;
   while (true) {
     const int cur_dock_y = app_dock_y_for_r(r);
-    const int max_dx = compute_dock_max_outer_dx(spec, s, cur_dock_y, r);
-    max_stride = (2 * max_dx) / 3;
+    max_dx = compute_dock_max_outer_dx(spec, s, cur_dock_y, r);
+    max_stride4 = (2 * max_dx) / 3;
     const int min_comfort_stride = (r * 285 + 50) / 100;
-    if (max_stride >= min_comfort_stride || r <= min_r) break;
+    if (max_stride4 >= min_comfort_stride || r <= min_r) break;
     --r;
   }
 
@@ -360,7 +362,16 @@ inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noe
   d.app_dock_y = app_dock_y_for_r(r);
   const int desired_stride = (r * 290 + 50) / 100;  // Remote golden proportion (~0.45x diameter gap)
   const int min_gap = std::max(6, dp_px_for(8, s));
-  int stride = (desired_stride < max_stride) ? desired_stride : max_stride;
+
+  // Step 2: Dynamically grow visible slot count (4 -> 5 -> 6) whenever the same icon radius
+  // comfortably fits more slots at >= 40% diameter gap without shrinking icons (e.g. 5 on Desk 720x720, 6 on wide tablets).
+  const int min_multi_stride = (r * 280 + 50) / 100;
+  const int fit_slots = (min_multi_stride > 0) ? (1 + (2 * max_dx) / min_multi_stride) : 4;
+  d.slot_count = std::clamp(fit_slots, 4, kMaxDockSlots);
+  d.max_slots_capable = (sf.w_dp >= 800) ? kMaxDockSlots : d.slot_count;
+
+  const int max_stride_n = (d.slot_count > 1) ? ((2 * max_dx) / (d.slot_count - 1)) : max_stride4;
+  int stride = (desired_stride < max_stride_n) ? desired_stride : max_stride_n;
   if (stride < 2 * r + min_gap) stride = 2 * r + min_gap;
   d.slot_stride = stride;
 
@@ -381,10 +392,11 @@ inline constexpr DockMetrics compute_dock_metrics(const UiDisplaySpec &spec) noe
     d.app_dock_pips_y = d.dock_pips_y;
   }
 
-  d.slot_xs[0] = cx - (d.slot_stride * 3) / 2;
-  d.slot_xs[1] = cx - (d.slot_stride / 2);
-  d.slot_xs[2] = cx + (d.slot_stride / 2);
-  d.slot_xs[3] = cx + (d.slot_stride * 3) / 2;
+  const int total_span = (d.slot_count - 1) * d.slot_stride;
+  const int start_x = cx - (total_span / 2);
+  for (int i = 0; i < kMaxDockSlots; ++i) {
+    d.slot_xs[i] = (i < d.slot_count) ? (start_x + i * d.slot_stride) : 0;
+  }
 
   const int min_dock_hit = static_cast<int>((3.6f * static_cast<float>(spec.ppi)) / 25.4f + 0.5f);
   const int raw_hit = d.dock_r + std::max(10, dp_px_for(12, s));
@@ -437,17 +449,32 @@ inline constexpr HomeActivityMetrics compute_home_activity_metrics(
 }
 
 // ==============================================================================
-// Viewport-Solved List Row Capacity (4..7 rows based on real font height & bezel)
+// Viewport-Solved List Row Metrics & Capacity (4..8 rows from font, 5.5 mm floor & viewport)
 // ==============================================================================
+inline constexpr int compute_list_row_h(const UiDisplaySpec &spec, int font_small_h) noexcept {
+  const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
+  const int min_5_5mm = static_cast<int>((5.5f * static_cast<float>((spec.ppi > 50) ? spec.ppi : 266)) / 25.4f + 0.5f);
+  const int by_dp = dp_px_for(42, s);
+  const int by_font = font_small_h + dp_px_for(18, s);
+  const int by_ergo = std::min(min_5_5mm, dp_px_for(44, s));
+  int h = (by_dp > by_font) ? by_dp : by_font;
+  if (by_ergo > h) h = by_ergo;
+  return (h > 30) ? h : 30;
+}
+
+inline constexpr int compute_list_row_gap(const UiDisplaySpec &spec) noexcept {
+  const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
+  return std::max(6, dp_px_for(8, s));
+}
+
 inline constexpr int compute_viewport_list_rows(const UiDisplaySpec &spec, int avail_h,
                                                 int font_small_h) noexcept {
-  const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
-  const int min_row_h = std::max(dp_px_for(40, s), font_small_h + dp_px_for(16, s));
-  const int gap = std::max(6, dp_px_for(10, s));
-  const int stride = min_row_h + gap;
+  const int row_h = compute_list_row_h(spec, font_small_h);
+  const int gap = compute_list_row_gap(spec);
+  const int stride = row_h + gap;
   if (stride <= 0 || avail_h <= 0) return 4;
   const int raw = (avail_h + gap) / stride;
-  return std::clamp(raw, 4, 7);
+  return std::clamp(raw, 4, kMaxListSlots);
 }
 
 }  // namespace latter_ui

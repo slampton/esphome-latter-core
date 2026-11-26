@@ -509,13 +509,13 @@ void test_gui_standardization_d070() {
   for (const auto &b : kAllNinePanels) {
     const int min_dim = (b.w < b.h) ? b.w : b.h;
     const auto ly = compute_panel_layout(b.w, b.h, b.round, b.wearable, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
-    int mode_xs[4] = {0, 0, 0, 0};
-    compute_mode_bar_slot_xs(4, b.w, b.round, mode_xs, b.h, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
+    int mode_xs[kMaxDockSlots] = {};
+    compute_mode_bar_slot_xs(ly.dock_slot_count, b.w, b.round, mode_xs, b.h, b.ppi, b.corner_r, b.view_scale_pct, b.stationary);
     const auto cam_g = compute_camera_grid_geom(b.w, b.h, b.round, b.wearable, b.ppi);
-    int cam_mode_xs[4] = {0, 0, 0, 0};
+    int cam_mode_xs[kMaxDockSlots] = {};
     compute_mode_bar_slot_xs(4, b.w, b.round, cam_mode_xs);
     for (int i = 0; i < 4; ++i) LATTER_CHECK(cam_g.mode_slot_xs[i] == cam_mode_xs[i]);
-    LATTER_CHECK(mode_xs[0] < mode_xs[1] && mode_xs[1] < mode_xs[2] && mode_xs[2] < mode_xs[3]);
+    for (int i = 1; i < ly.dock_slot_count; ++i) LATTER_CHECK(mode_xs[i - 1] < mode_xs[i]);
     LATTER_CHECK(radius_card_for(min_dim) > radius_key_for(min_dim));
     const int stack_w = compute_uniform_stack_w_for(
         ly.slot5_y(0), ly.slot5_y(4), ly.slot5_h, b.w - 20, b.w, b.h, b.round, b.wearable, 14,
@@ -664,10 +664,10 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
     const auto sf = SafeFrame::for_spec(UiDisplaySpec{lc.w, lc.h, lc.ppi, false, 0, 0, true});
     LATTER_CHECK(ly.dock_y + ly.dock_r < ly.dock_pips_y);
     LATTER_CHECK(ly.list_card_w <= sf.max_content_w(460));
-    int xs[4] = {0, 0, 0, 0};
-    compute_mode_bar_slot_xs(4, lc.w, false, xs, lc.h, lc.ppi, 0, 0, true);
+    int xs[kMaxDockSlots] = {};
+    compute_mode_bar_slot_xs(ly.dock_slot_count, lc.w, false, xs, lc.h, lc.ppi, 0, 0, true);
     LATTER_CHECK(xs[0] - ly.dock_r >= 0);
-    LATTER_CHECK(xs[3] + ly.dock_r < lc.w);
+    LATTER_CHECK(xs[ly.dock_slot_count - 1] + ly.dock_r < lc.w);
     LATTER_CHECK((xs[1] - xs[0]) > 2 * ly.dock_r);
 
     const auto dp = compute_remote_dpad_geom(lc.w, lc.h, false);
@@ -1210,9 +1210,9 @@ void test_clean_sheet_scaling_9geom() {
   };
   static constexpr ExpectedPanel kExpected[5] = {
       {0,  900, 13, 19, 22, 24, 34,  68, 25, 2, SizeClass::Compact},  // Remote 320x480
-      {1, 1184, 17, 25, 29, 32, 44,  76, 31, 1, SizeClass::Compact},  // Wrist 410x502
-      {2, 1000, 14, 21, 25, 28, 38,  76, 29, 1, SizeClass::Regular},  // Pocket 466x466R
-      {3, 1177, 17, 25, 29, 33, 45,  89, 35, 1, SizeClass::Regular},  // Mobile 480x480
+      {1, 1184, 21, 25, 29, 32, 44,  76, 31, 1, SizeClass::Compact},  // Wrist 410x502
+      {2, 1000, 18, 21, 25, 28, 38,  76, 29, 1, SizeClass::Regular},  // Pocket 466x466R
+      {3, 1177, 21, 25, 29, 33, 45,  89, 35, 1, SizeClass::Regular},  // Mobile 480x480
       {4, 1385, 19, 29, 35, 39, 53, 105, 46, 2, SizeClass::Regular},  // Desk 720x720
   };
   for (const auto &e : kExpected) {
@@ -1229,13 +1229,28 @@ void test_clean_sheet_scaling_9geom() {
     LATTER_CHECK(dm.dock_r == e.dock_r);
     LATTER_CHECK(act.max_rows == e.act_rows);
     LATTER_CHECK(ly.size_class == e.size_class);
+    // Dynamic dock slot count: Desk (720x720) fits 5 icons at identical radius/spacing; compact/mobile/round fit 4.
+    if (e.idx == 4) {
+      LATTER_CHECK(dm.slot_count == 5 && ly.dock_slot_count == 5);
+    } else {
+      LATTER_CHECK(dm.slot_count == 4 && ly.dock_slot_count == 4);
+    }
+    LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[dm.slot_count - 1] + dm.dock_r < p.w);
+    // Remote & Desk fit all 7 Music Library items on 1 page and all 8 System root options on 1 page.
+    if (e.idx == 0 || e.idx == 4) {
+      LATTER_CHECK(ly.peer_list_rows >= 7 && ly.list_rows >= 8);
+    }
+    // Pocket peer-list row 0 aligns cleanly under header without excessive top gap (matches Speakers).
+    if (e.idx == 2) {
+      LATTER_CHECK(ly.peer_list_row_y(0) - ly.list_h / 2 <= ly.hdr_y + 48);
+    }
     // Universal dock spacing parity: every flagship converges to >= 40% diameter gap.
     const int gap_px = dm.slot_stride - 2 * dm.dock_r;
     LATTER_CHECK(gap_px * 100 >= 40 * (2 * dm.dock_r));
     if (!p.round) {
       // Top-right corner-hugging battery: square corners tuck tightly (cr == 0), rounded corners clear bezel & Date.
       const int batt_half_h = std::max(6, (af.micro + 1) / 2);
-      const int batt_half_w = std::max(20, (af.micro * 170) / 100);
+      const int batt_half_w = std::max(20, (af.micro * 155) / 100);
       const int batt_top = ly.battery_y - batt_half_h;
       const int batt_right = ly.battery_cx + batt_half_w;
       const int batt_left = ly.battery_cx - batt_half_w;
@@ -1263,14 +1278,14 @@ void test_clean_sheet_scaling_9geom() {
     const auto dm = compute_dock_metrics(spec);
     const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
     LATTER_CHECK(af.small * 25.4 / p.ppi >= 1.95);
-    LATTER_CHECK(af.micro * 25.4 / p.ppi >= 1.29);
-    LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[3] + dm.dock_r < p.w);
+    LATTER_CHECK(af.micro * 25.4 / p.ppi >= 1.64);
+    LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[dm.slot_count - 1] + dm.dock_r < p.w);
     LATTER_CHECK((dm.slot_stride - 2 * dm.dock_r) * 100 >= 40 * (2 * dm.dock_r));
     LATTER_CHECK(ly.home_date_y < ly.home_clock_y && ly.home_clock_y < ly.home_weather_y);
     if (idx == 5) {
-      LATTER_CHECK(ly.size_class == SizeClass::Compact);
+      LATTER_CHECK(ly.size_class == SizeClass::Compact && dm.slot_count == 4);
     } else {
-      LATTER_CHECK(ly.size_class == SizeClass::Expanded);
+      LATTER_CHECK(ly.size_class == SizeClass::Expanded && dm.slot_count == 6);
       LATTER_CHECK(dm.max_slots_capable == 6);
     }
   }

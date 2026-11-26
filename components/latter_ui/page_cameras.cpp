@@ -496,18 +496,19 @@ void render_cameras_settings_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   ids[row_cnt++] = 4;
 #endif
 
-  // D-072: Standard 4-row slot5_* list above Mode Bar (1 page of 4 on S3; 4 + 1 across 2 pages on P4)
+  // Dynamic viewport-solved list above Mode Bar (fits all 5 settings on 1 page on Desk/Remote/Wrist!)
   auto &rs = runtime_state();
-  const int total_pages = std::max(1, (row_cnt + 3) / 4);
+  const int per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
+  const int total_pages = std::max(1, (row_cnt + per_pg - 1) / per_pg);
   rs.cameras.settings_page = std::clamp(rs.cameras.settings_page, 0, total_pages - 1);
-  const int start_i = rs.cameras.settings_page * 4;
-  const int vis_cnt = std::min(4, row_cnt - start_i);
+  const int start_i = rs.cameras.settings_page * per_pg;
+  const int vis_cnt = std::min(per_pg, row_cnt - start_i);
 
   const int bounce_y = edge_bounce().offset_px(PageId::CAMERAS, GestureAxisLock::Vertical,
                                                ctx.now_ms, LATTER_PANEL_PPI);
   for (int i = 0; i < vis_cnt; ++i) {
     const int idx = start_i + i;
-    ui::setting_cycle_row(it, ctx.cx, ly.slot5_y(i) + bounce_y, ly.list_card_w, ly.slot5_h, labels[idx], true,
+    ui::setting_cycle_row(it, ctx.cx, ly.peer_list_row_y(i) + bounce_y, ly.list_card_w, ly.list_h, labels[idx], true,
                           ctx.font_small, ctx.col_white, ctx.col_slate, ctx.theme_secondary,
                           static_cast<uint16_t>(WidgetId::CAM_SETTINGS_ROW_BASE + ids[idx]),
                           kHitTap | kHitFocusSlot, static_cast<int16_t>(ids[idx]));

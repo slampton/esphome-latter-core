@@ -96,7 +96,8 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   const auto &ly = layout();
   const int row_w = ly.list_card_w;
-  const int row_h = ly.slot5_h;
+  const int row_h = ly.list_h;
+  const int per_pg = std::clamp(ly.list_rows, 4, kMaxListSlots);
 
   auto draw_back = [&]() {
     render_back_button(it, cx, font_small, ly.back_y, "< Back");
@@ -127,7 +128,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   };
 
   auto draw_toggle_card_y = [&](int y_mid, const char *label, bool is_on, int row_slot = -1, int item_param = -1) {
-    const uint16_t wid = (!menu_scroll_active && row_slot >= 0 && row_slot < 5)
+    const uint16_t wid = (!menu_scroll_active && row_slot >= 0 && row_slot < kMaxListSlots)
                              ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                              : WidgetId::NONE;
     const int16_t p = static_cast<int16_t>((item_param >= 0) ? item_param : row_slot);
@@ -149,10 +150,11 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     render_vertical_page_pips(it, show_up, show_down, col_bg, theme_secondary, col_slate);
   };
 
-  const int row0_y = ly.slot5_y(0);
-  const int row_s = ly.slot5_stride;
+  const int row0_y = ly.list_row_y(0);
+  const int row_s = ly.list_stride;
+  const int row_last_y = ly.list_row_y(per_pg - 1);
   const int mask_top_h = std::max(ly.hdr_y + dp_px(18), row0_y - row_h / 2 - dp_px(4));
-  const int mask_btm_y = std::min(ly.back_y - dp_px(16), ly.slot5_y(4) + row_h / 2 + dp_px(4));
+  const int mask_btm_y = std::min(ly.back_y - dp_px(16), row_last_y + row_h / 2 + dp_px(4));
   const int min_vis_y = mask_top_h - row_h / 2;
   const int max_vis_y = mask_btm_y + row_h / 2;
 
@@ -173,7 +175,10 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   char buf[64];
 
   if (system_menu_mode == 0) {
-    const int current_offset = compute_scroll_offset(system_dashboard_page, 3);
+    const int total_pages = (per_pg >= 8) ? 1 : 2;
+    const int step_rows = (total_pages > 1) ? std::max(1, 8 - per_pg) : 0;
+    const int clamped_pg = std::clamp(system_dashboard_page, 1, total_pages);
+    const int current_offset = compute_scroll_offset(clamped_pg, step_rows);
     static constexpr const char *kSysLabels[8] = {
         "Display", "Sleep & Wake", "Sound", "Voice",
         "Music",   "Home",         "Actions", "Info"};
@@ -182,7 +187,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       const int y = row0_y + i * row_s - current_offset;
       const bool vis = menu_scroll_active
                            ? (y >= min_vis_y && y <= max_vis_y)
-                           : (y >= row0_y - 10 && y <= layout().slot5_y(4) + 10);
+                           : (y >= row0_y - 10 && y <= row_last_y + 10);
       if (vis) {
         const bool row_en = (i != 5) || prefs.home_screen_enabled;
         render_card_box(it, cx - row_w / 2, y - row_h / 2, row_w, row_h,
@@ -190,9 +195,9 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                         row_en ? card_brd_on : card_brd_off, kRadiusCardPx());
         ui::shadow_print(it, cx, y, font_small, row_en ? col_white : col_slate,
                          TextAlign::CENTER, kSysLabels[i]);
-        if (!menu_scroll_active && vis_row < 5) {
+        if (!menu_scroll_active && vis_row < per_pg) {
           add_row_hit(y, static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + vis_row),
-                      kHitTap | kHitFocusSlot, static_cast<int16_t>(vis_row));
+                      kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
           vis_row++;
         }
       }
@@ -204,11 +209,15 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     render_page_header(it, cx, "SYSTEM", font_small, col_white);
 
-    const int active_page = menu_scroll_active ? menu_scroll_target_page : system_dashboard_page;
-    draw_right_chevrons(active_page == 2, active_page == 1);
+    if (total_pages > 1) {
+      const int active_page = menu_scroll_active ? std::clamp(menu_scroll_target_page, 1, total_pages) : clamped_pg;
+      draw_right_chevrons(active_page > 1, active_page < total_pages);
+    }
 
   } else if (system_menu_mode == 1) {
-    const int current_offset = compute_scroll_offset(sleep_menu_page, 5);
+    const int total_pages = std::max(1, (10 + per_pg - 1) / per_pg);
+    const int clamped_pg = std::clamp(sleep_menu_page, 1, total_pages);
+    const int current_offset = compute_scroll_offset(clamped_pg, per_pg);
     char sleep_labels[10][36];
 #if LATTER_HAS_IMU
     std::snprintf(sleep_labels[0], sizeof(sleep_labels[0]), "Pickup Wake: %s", ctx.pickup_wake_opt.c_str());
@@ -247,15 +256,15 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
                   ctx.do_not_disturb ? "On" : "Off");
 
     const bool saver_enabled = (ctx.screensaver_mode_opt != "Never");
-    const int page_base = (sleep_menu_page == 2) ? 5 : 0;
+    const int page_base = (clamped_pg - 1) * per_pg;
     for (int i = 0; i < 10; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
-        const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
+        const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + per_pg) ? (i - page_base) : -1;
         if (i == 7) {
-          draw_toggle_card_y(y, "Bedtime Mode", ctx.bedtime_active, row_slot, row_slot);
+          draw_toggle_card_y(y, "Bedtime Mode", ctx.bedtime_active, row_slot, i);
         } else if (i == 9) {
-          draw_toggle_card_y(y, "Do Not Disturb", ctx.do_not_disturb, row_slot, row_slot);
+          draw_toggle_card_y(y, "Do Not Disturb", ctx.do_not_disturb, row_slot, i);
         } else {
           const bool en = (i == 0) ? (LATTER_HAS_IMU != 0)
                         : (i == 1) ? (LATTER_HAS_TOUCH != 0)
@@ -266,7 +275,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;
-          draw_cycle_card_y(y, sleep_labels[i], en, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
+          draw_cycle_card_y(y, sleep_labels[i], en, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
         }
       }
     }
@@ -277,12 +286,15 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     render_page_header(it, cx, "SLEEP & WAKE", font_small, col_white);
     draw_back();
-    const int active_page = menu_scroll_active ? menu_scroll_target_page : sleep_menu_page;
-    draw_right_chevrons(active_page == 2, active_page == 1);
+    if (total_pages > 1) {
+      const int active_page = menu_scroll_active ? std::clamp(menu_scroll_target_page, 1, total_pages) : clamped_pg;
+      draw_right_chevrons(active_page > 1, active_page < total_pages);
+    }
 
   } else if (system_menu_mode == 2) {
-    const int clamped_pg = std::clamp(display_menu_page, 1, 3);
-    const int current_offset = compute_scroll_offset(clamped_pg, 5);
+    const int total_pages = std::max(1, (11 + per_pg - 1) / per_pg);
+    const int clamped_pg = std::clamp(display_menu_page, 1, total_pages);
+    const int current_offset = compute_scroll_offset(clamped_pg, per_pg);
     char disp_labels[11][36];
     const char *start_lbl =
         (ctx.default_start_app_opt == "Area Controls") ? "Area"
@@ -321,19 +333,19 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
 
     const bool ab_off = (ctx.auto_brightness_opt == "Disabled" || ctx.auto_brightness_opt.empty());
     const bool ab_sched = (ctx.auto_brightness_opt == "Time Schedule");
-    const int page_base = (clamped_pg - 1) * 5;
+    const int page_base = (clamped_pg - 1) * per_pg;
 
     for (int i = 0; i < 11; i++) {
       const int y = row0_y + i * row_s - current_offset;
       if (y >= min_vis_y && y <= max_vis_y) {
-        const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + 5) ? (i - page_base) : -1;
+        const int row_slot = (!menu_scroll_active && i >= page_base && i < page_base + per_pg) ? (i - page_base) : -1;
         if (i == 10) {
-          draw_toggle_card_y(y, "Photo Clock", ctx.screensaver_photo_clock, row_slot, row_slot);
+          draw_toggle_card_y(y, "Photo Clock", ctx.screensaver_photo_clock, row_slot, i);
         } else if (i <= 2 || i == 4) {
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;
-          draw_cycle_card_y(y, disp_labels[i], true, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
+          draw_cycle_card_y(y, disp_labels[i], true, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
         } else if (i == 6 || i == 8 || i == 9) {
           const bool active = (i == 6) ? ab_off : !ab_off;
           const int pct = (i == 6) ? ctx.manual_brightness_pct
@@ -345,7 +357,7 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
           const uint16_t wid = (row_slot >= 0)
                                    ? static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row_slot)
                                    : WidgetId::NONE;
-          draw_cycle_card_y(y, disp_labels[i], active, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(row_slot));
+          draw_cycle_card_y(y, disp_labels[i], active, wid, kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
           if (i == 3) {
             const int swatch_x = ly.sys_color_swatch_x();
             const int sw_r = dp_px(9);
@@ -367,8 +379,10 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
     render_page_header(it, cx, "DISPLAY", font_small, col_white);
     draw_back();
-    const int active_page = menu_scroll_active ? std::clamp(menu_scroll_target_page, 1, 3) : clamped_pg;
-    draw_right_chevrons(active_page > 1, active_page < 3);
+    if (total_pages > 1) {
+      const int active_page = menu_scroll_active ? std::clamp(menu_scroll_target_page, 1, total_pages) : clamped_pg;
+      draw_right_chevrons(active_page > 1, active_page < total_pages);
+    }
 
   } else if (system_menu_mode == 3) {
     render_page_header(it, cx, "ACTIONS", font_small, col_white);
@@ -560,32 +574,28 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     draw_back();
 
   } else if (system_menu_mode == 9) {
-    const int pg = std::clamp(rs.music.settings_page, 1, 2);
+    const int total_pages = std::max(1, (6 + per_pg - 1) / per_pg);
+    const int pg = std::clamp(rs.music.settings_page, 1, total_pages);
     const int by = edge_bounce().offset_px(PageId::SYSTEM, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
     render_page_header(it, cx, "MUSIC", font_small, col_white);
-    if (pg == 1) {
-      std::snprintf(buf, sizeof(buf), "Art: %s", ctx.music_fullscreen_art_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(0) + by, buf, true,
-                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
-      std::snprintf(buf, sizeof(buf), "Overlay: %s", ctx.music_overlay_style_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(1) + by, buf, true,
-                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 1), kHitTap | kHitFocusSlot, 1);
-      std::snprintf(buf, sizeof(buf), "Auto-Open: %s", ctx.music_auto_open_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(2) + by, buf, true,
-                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 2), kHitTap | kHitFocusSlot, 2);
-      std::snprintf(buf, sizeof(buf), "Album Sort: %s", ctx.music_album_sort_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(3) + by, buf, true,
-                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 3), kHitTap | kHitFocusSlot, 3);
-      std::snprintf(buf, sizeof(buf), "Artist Discog: %s", ctx.music_artist_album_sort_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(4) + by, buf, true,
-                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 4), kHitTap | kHitFocusSlot, 4);
-    } else {
-      std::snprintf(buf, sizeof(buf), "Podcast Sort: %s", ctx.music_podcast_sort_opt.c_str());
-      draw_cycle_card_y(layout().slot5_y(0) + by, buf, true,
-                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 0), kHitTap | kHitFocusSlot, 0);
+    const char *prefixes[6] = {"Art", "Overlay", "Auto-Open", "Album Sort", "Artist Discog", "Podcast Sort"};
+    const UiStrView vals[6] = {
+        ctx.music_fullscreen_art_opt, ctx.music_overlay_style_opt, ctx.music_auto_open_opt,
+        ctx.music_album_sort_opt, ctx.music_artist_album_sort_opt, ctx.music_podcast_sort_opt,
+    };
+    const int start_i = (pg - 1) * per_pg;
+    const int vis_cnt = std::min(per_pg, 6 - start_i);
+    for (int row = 0; row < vis_cnt; ++row) {
+      const int g_idx = start_i + row;
+      std::snprintf(buf, sizeof(buf), "%s: %s", prefixes[g_idx], vals[g_idx].c_str());
+      draw_cycle_card_y(ly.list_row_y(row) + by, buf, true,
+                        static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + row),
+                        kHitTap | kHitFocusSlot, static_cast<int16_t>(g_idx));
     }
     draw_back();
-    draw_right_chevrons(pg == 2, pg == 1);
+    if (total_pages > 1) {
+      draw_right_chevrons(pg > 1, pg < total_pages);
+    }
 
   } else if (system_menu_mode == 11) {
     render_page_header(it, cx, "VOICE", font_small, col_white);

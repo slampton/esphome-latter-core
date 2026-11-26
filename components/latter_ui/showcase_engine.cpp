@@ -372,7 +372,8 @@ bool TouchGestureEngine::navigate_route(std::string_view token, uint32_t now_ms)
 
     ShortcutItem *dock_items = dock_items_scratch();
     const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
-    const int dock_pages = std::max(1, (dock_cnt + 3) / 4);
+    const int dock_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+    const int dock_pages = std::max(1, (dock_cnt + dock_cap - 1) / dock_cap);
     const int cur_pg = std::clamp(home_dock_page(), 0, dock_pages - 1);
     const int target_pg = std::clamp<int>(std::clamp<int>(static_cast<int>(req_page), 0, 5), 0, dock_pages - 1);
 

@@ -1588,7 +1588,8 @@ void pin_pad_modal(Rgb565Surface &it, int cx, int cy, uint32_t now_ms,
 // ==============================================================================
 void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_items,
                                float cur_start_idx, UiColor col_thumb, bool is_dim) {
-  if (total_items <= 4) return;
+  const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+  if (total_items <= vis_cap) return;
   const int track_w = std::min(layout().safe_span(y_pos, dp_px(20)), std::max(84, dp_px(112)));
   const int track_h = std::max(4, dp_px(4));
   const int r_cap = track_h / 2;
@@ -1615,8 +1616,8 @@ void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_i
   }
 
   const int min_thumb_w = std::max(20, dp_px(20));
-  const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * 4) / total_items));
-  const float max_start = static_cast<float>(std::max(1, total_items - 4));
+  const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * vis_cap) / total_items));
+  const float max_start = static_cast<float>(std::max(1, total_items - vis_cap));
   const float clamped_start = std::max(0.0f, std::min(max_start, cur_start_idx));
   const float frac = clamped_start / max_start;
   const int thumb_x0 = track_x0 + static_cast<int>(std::round(frac * static_cast<float>(track_w - thumb_w)));
@@ -1754,7 +1755,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
   }
 
   const int mode_pad = std::max(dp_px(8), layout().dock_hit_r() - dr);
-  for (int i = 0; i < vis_count && i < 4; i++) {
+  for (int i = 0; i < vis_count && i < kMaxDockSlots; i++) {
     frame_hits().add_circle(win_xs[i], by, dr,
                             static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i),
                             kHitTap | kHitFocusSlot | kHitFocusCircle,
@@ -1784,7 +1785,7 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
                           2 * (dr + dp_px(12)), WidgetId::MODE_BAR_RIGHT, kHitTap | kHitFocusSlot);
   }
 
-  if (total_count > 4) {
+  if (total_count > std::clamp(layout().dock_slot_count, 1, kMaxDockSlots)) {
     render_viewport_scrollbar(it, cx, layout().app_dock_pips_y, total_count, anim_start,
                               theme_primary, false);
   }
@@ -1940,11 +1941,12 @@ void mode_bar(Rgb565Surface &it, int cx,
               UiColor theme_primary, UiColor col_white,
               ModeBarDrawIconFn draw_icon_fn, void *user_ctx) {
   if (total_count <= 0) return;
-  const int start_idx = get_mode_bar_start_index(total_count, win_start);
-  const int vis_count = std::min(4, total_count - start_idx);
+  const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+  const int start_idx = get_mode_bar_start_index(total_count, win_start, vis_cap);
+  const int vis_count = std::min(vis_cap, total_count - start_idx);
   if (vis_count <= 0) return;
 
-  int win_xs[4] = {0, 0, 0, 0};
+  int win_xs[kMaxDockSlots] = {};
   bool has_l = false;
   bool has_r = false;
   get_mode_bar_window_xs(total_count, start_idx, cx, win_xs, has_l, has_r);

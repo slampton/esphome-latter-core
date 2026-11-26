@@ -159,7 +159,7 @@
 #endif
 #endif
 #ifndef LATTER_SLOT_COUNT
-#define LATTER_SLOT_COUNT 5
+#define LATTER_SLOT_COUNT 8
 #endif
 #ifndef LATTER_CARD_SLOT_COUNT
 #define LATTER_CARD_SLOT_COUNT 3

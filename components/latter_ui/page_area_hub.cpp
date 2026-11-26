@@ -93,7 +93,7 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
         break;
       }
     }
-    area_cat_dock_page() = get_mode_bar_start_index(cat_count, area_cat_dock_page());
+    area_cat_dock_page() = get_mode_bar_start_index(cat_count, area_cat_dock_page(), layout().dock_slot_count);
     AreaModeIconCtx ic{cats, cat_count};
     ui::mode_bar(it, cx, cat_count, active_global_idx, area_cat_dock_page(),
                  theme_primary, col_white, draw_area_mode_icon, &ic);
@@ -271,16 +271,17 @@ void render_area_control_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     const int bounce_y = edge_bounce().offset_px(
         PageId::AREA, GestureAxisLock::Vertical, now_ms, LATTER_PANEL_PPI);
 
-    for (int i = 0; i < 5; i++) {
+    const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+    for (int i = 0; i < per_pg; i++) {
       const auto &s = list_slots[i];
       if (s.name.empty() && s.id.empty()) continue;
-      const int y_mid = layout().slot5_y(i) + bounce_y;
+      const int y_mid = layout().list_row_y(i) + bounce_y;
       const bool is_act = s.active || (!s.id.empty() && s.id == rs.area.active_area_id);
       const Color brd_c = is_act ? theme_primary : card_brd_off;
       const Color txt_c = is_act ? theme_primary : col_white;
       const int area_l = layout().list_card_left;
       const int area_w = layout().list_card_w;
-      const int area_h = layout().slot5_h;
+      const int area_h = layout().list_h;
       render_card_box(it, area_l, y_mid - area_h / 2, area_w, area_h,
                       is_act ? card_bg_on : card_bg_off, brd_c, kRadiusCardPx());
       frame_hits().add_centered_rect(cx, y_mid, area_w, area_h,

@@ -632,11 +632,12 @@ void test_rotary_navigation_and_glass_style_display_setting() {
   // Home Dock multi-page focusable MODE_BAR_RIGHT / MODE_BAR_LEFT
   shortcuts_state().dock_configured = true;
   shortcuts_state().dock_items.clear();
-  static constexpr RouteId kTestDockRoutes[6] = {
+  static constexpr RouteId kTestDockRoutes[8] = {
       RouteId::MUSIC_LIBRARY, RouteId::CALENDAR_OVERVIEW, RouteId::TIME_ALARMS,
       RouteId::TIME_STOPWATCH, RouteId::TOOLS_CALCULATOR, RouteId::TOOLS_DICE,
+      RouteId::SETTINGS_SLEEP, RouteId::SETTINGS_DISPLAY,
   };
-  for (int i = 0; i < 6; ++i) {
+  for (int i = 0; i < 8; ++i) {
     ShortcutItem it{};
     it.kind = ShortcutKind::ROUTE;
     it.route_id = kTestDockRoutes[i];
@@ -712,7 +713,9 @@ void test_rotary_navigation_and_glass_style_display_setting() {
   LATTER_CHECK(prefs.glass_style_enum() == GlassStyle::Auto);
   LATTER_CHECK(build_hello_dirty_prefs(prefs).find("glass_style=Auto") != std::string::npos);
 
-  // Chevron pagination reaches Page 2 and Page 3 cleanly
+  // Chevron pagination reaches every viewport-solved Display page cleanly (2 pages when list_rows >= 6, 3 when == 5)
+  const int disp_per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+  const int disp_total_pages = std::max(1, (11 + disp_per_pg - 1) / disp_per_pg);
   tap_region(chev_dn, 8000U);
   LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_target_page == 2);
   rs.nav.menu_scroll_active = false;
@@ -724,17 +727,21 @@ void test_rotary_navigation_and_glass_style_display_setting() {
   const HitRegion *chev_up2 = frame_hits().find_by_id(WidgetId::CHEVRON_UP);
   const HitRegion *chev_dn2 = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
   LATTER_CHECK(chev_up2 != nullptr && (chev_up2->flags & kHitFocusSlot) != 0U);
-  LATTER_CHECK(chev_dn2 != nullptr && (chev_dn2->flags & kHitFocusSlot) != 0U);
-  tap_region(chev_dn2, 8600U);
-  LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_target_page == 3);
-  rs.nav.menu_scroll_active = false;
-  rs.nav.display_menu_page = 3;
+  if (disp_total_pages >= 3) {
+    LATTER_CHECK(chev_dn2 != nullptr && (chev_dn2->flags & kHitFocusSlot) != 0U);
+    tap_region(chev_dn2, 8600U);
+    LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_target_page == 3);
+    rs.nav.menu_scroll_active = false;
+    rs.nav.display_menu_page = 3;
 
-  frame_hits().clear();
-  frame_base_begin();
-  render_active_page(surf, ctx);
-  LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_UP) != nullptr);
-  LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_DOWN) == nullptr);
+    frame_hits().clear();
+    frame_base_begin();
+    render_active_page(surf, ctx);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_UP) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_DOWN) == nullptr);
+  } else {
+    LATTER_CHECK(chev_dn2 == nullptr);
+  }
 
   latter_rpc::bind_sensor_sink(static_cast<MockRpcOutbox *>(nullptr));
   eng.runtime().exec_cmd = nullptr;
@@ -1053,12 +1060,14 @@ void test_home_screen_customizability_and_settings() {
     LATTER_CHECK(frame_hits().find_by_id(WidgetId::HOME_QUICK_BTN) == nullptr);
   }
 
-  // 5. Dynamic on-device Home Settings filtering, pagination, and 3-way cycling through "None"
+  // 5. Dynamic on-device Home Settings filtering, viewport-solved pagination, and 3-way cycling through "None"
   prefs = PersistedDevicePrefs{};
   HomeSettingsItemId items[12]{};
+  const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
   const int full_cnt = collect_home_settings_items(prefs, items);
   LATTER_CHECK(full_cnt == (LATTER_HAS_BATTERY ? 12 : 11));
-  LATTER_CHECK(home_settings_page_count(prefs) == 3);
+  const int exp_full_pages = std::max(1, (full_cnt + per_pg - 1) / per_pg);
+  LATTER_CHECK(home_settings_page_count(prefs) == exp_full_pages);
 
   prefs.home_show_time = false;
   prefs.home_show_date = false;
@@ -1066,7 +1075,8 @@ void test_home_screen_customizability_and_settings() {
   prefs.weather_background = false;
   const int min_cnt = collect_home_settings_items(prefs, items);
   LATTER_CHECK(min_cnt == (LATTER_HAS_BATTERY ? 7 : 6));
-  LATTER_CHECK(home_settings_page_count(prefs) == 2);
+  const int exp_min_pages = std::max(1, (min_cnt + per_pg - 1) / per_pg);
+  LATTER_CHECK(home_settings_page_count(prefs) == exp_min_pages);
 
   // Re-enable all and step through Home Settings pages + cycle Time Tap -> Clock Face -> None -> Time App
   prefs = PersistedDevicePrefs{};
@@ -1087,18 +1097,22 @@ void test_home_screen_customizability_and_settings() {
   eng.on_touch_up(4340U);
   LATTER_CHECK(prefs.home_clock_tap_action == 0U);  // Back to Time App
 
-  // Chevron down steps page 1 -> 2 -> 3
-  const HitRegion *chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
-  LATTER_CHECK(chev_dn != nullptr);
-  eng.on_touch_down(chev_dn->cx(), chev_dn->cy(), 4900U);
-  eng.on_touch_up(4940U);
-  LATTER_CHECK(rs.nav.home_settings_page == 2);
-  render_home(5000U);
-  chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
-  LATTER_CHECK(chev_dn != nullptr);
-  eng.on_touch_down(chev_dn->cx(), chev_dn->cy(), 5500U);
-  eng.on_touch_up(5540U);
-  LATTER_CHECK(rs.nav.home_settings_page == 3);
+  // Chevron down steps through all viewport-solved pages (1 -> 2, and -> 3 if needed)
+  if (exp_full_pages >= 2) {
+    const HitRegion *chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+    LATTER_CHECK(chev_dn != nullptr);
+    eng.on_touch_down(chev_dn->cx(), chev_dn->cy(), 4900U);
+    eng.on_touch_up(4940U);
+    LATTER_CHECK(rs.nav.home_settings_page == 2);
+    if (exp_full_pages >= 3) {
+      render_home(5000U);
+      chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+      LATTER_CHECK(chev_dn != nullptr);
+      eng.on_touch_down(chev_dn->cx(), chev_dn->cy(), 5500U);
+      eng.on_touch_up(5540U);
+      LATTER_CHECK(rs.nav.home_settings_page == 3);
+    }
+  }
 }
 
 void test_phase1_touch_unification_and_bugfixes() {
@@ -1203,7 +1217,7 @@ void test_phase1_touch_unification_and_bugfixes() {
   eng.on_touch_up(3920U);
   LATTER_CHECK(game_input().pop(gev) && gev.cmd == GameInputCmd::LEFT);
 
-  // 5. System Mode 9 (Settings -> Music) vertical swipe paging 1 -> 2 -> 1.
+  // 5. System Mode 9 (Settings -> Music, 6 items) vertical swipe paging: 1 page when list_rows >= 6, else 1 -> 2.
   rs.nav.gui_page = PageId::SYSTEM;
   rs.nav.system_menu_mode = 9;
   rs.music.settings_page = 1;
@@ -1211,7 +1225,8 @@ void test_phase1_touch_unification_and_bugfixes() {
   eng.on_touch_down(SCREEN_CX, SCREEN_H / 2, 4200U);
   eng.on_touch_move(SCREEN_CX, SCREEN_H / 2 - sw_px, 4240U);
   eng.on_touch_up(4280U);
-  LATTER_CHECK(rs.music.settings_page == 2);
+  const int exp_sys_music_pg = (std::clamp(layout().list_rows, 4, kMaxListSlots) >= 6) ? 1 : 2;
+  LATTER_CHECK(rs.music.settings_page == exp_sys_music_pg);
 
   // 6. on_input_event logs WakeReason::CROWN (not TOUCH) on dark wake.
   rs.nav.display_power_state = 2;

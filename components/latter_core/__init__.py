@@ -236,7 +236,7 @@ def compute_auto_font_sizes(
     def _mm_ceil(mm_x10: int) -> int:
         return (mm_x10 * eff_ppi + 253) // 254
 
-    micro = max(12, _mm_ceil(13), _dp(14))
+    micro = max(12, (165 * eff_ppi + 2539) // 2540, _dp(14))
     small = max(15, _mm_ceil(20), _dp(21))
     btn_bold = max(small + 1, min(_dp(25), (eff_w * 71) // 1000))
     date = max(btn_bold + 1, min(_dp(28), (eff_w * 78 + 20) // 1000))

@@ -477,7 +477,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       if ((wid == WidgetId::HOME_ACTIVITY_NEXT || wid == WidgetId::CHEVRON_DOWN) &&
           touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_SCROLL, tkey)) {
         gest.active = false;
-        const int max_pg = std::max(0, (act_count - 1) / 5);
+        const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+        const int max_pg = std::max(0, (act_count - 1) / per_pg);
         home_activity_overlay_page() = std::min(max_pg, home_activity_overlay_page() + 1);
         rt_.schedule_disp();
       }
@@ -958,7 +959,8 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         commit_swipe();
         ShortcutItem *dock_items = dock_items_scratch();
         const int dock_cnt = collect_effective_dock_items(dock_items, kMaxEffectiveDockItems);
-        const int dock_pages = std::max(1, (dock_cnt + 3) / 4);
+        const int dock_cap = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
+        const int dock_pages = std::max(1, (dock_cnt + dock_cap - 1) / dock_cap);
         bool changed = false;
         home_dock_page() = step_pager_index(
             home_dock_page(), 0, dock_pages - 1, h_dir, false,
@@ -980,9 +982,10 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     if (rs.nav.home_subpage == 2 && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       int act_cnt = 0;
       (void)home_activity_rendered_items(act_cnt);
+      const int per_pg = std::clamp(ly.list_rows, 4, kMaxListSlots);
       bool changed = false;
       home_activity_overlay_page() = step_v_pager(
-          home_activity_overlay_page(), 0, std::max(0, (act_cnt - 1) / 5), false, PageId::HOME, changed);
+          home_activity_overlay_page(), 0, std::max(0, (act_cnt - 1) / per_pg), false, PageId::HOME, changed);
       rt_.schedule_disp();
       return true;
     }
@@ -1019,9 +1022,12 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       if (v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
         if (rs.music.view == MusicView::LIBRARY || rs.music.view == MusicView::SETTINGS) {
           music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+          const int peer_per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
+          const int item_tot = (rs.music.view == MusicView::LIBRARY) ? 7 : 6;
+          const int max_pg = std::max(1, (item_tot + peer_per_pg - 1) / peer_per_pg);
           bool changed = false;
           int &pg = (rs.music.view == MusicView::LIBRARY) ? rs.music.category_page : rs.music.settings_page;
-          pg = step_v_pager(std::clamp(pg, 1, 2), 1, 2, false, PageId::MUSIC, changed);
+          pg = step_v_pager(std::clamp(pg, 1, max_pg), 1, max_pg, false, PageId::MUSIC, changed);
           rs.music.hud_timer = now_ms;
           rt_.schedule_disp();
           return true;
@@ -1101,17 +1107,24 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
   if (rs.nav.gui_page == PageId::SYSTEM && !rs.nav.menu_scroll_active &&
       (rs.nav.system_menu_mode == 0 || rs.nav.system_menu_mode == 1 || rs.nav.system_menu_mode == 2) &&
       v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+    const int per_pg = std::clamp(ly.list_rows, 4, kMaxListSlots);
     const int cur_pg = (rs.nav.system_menu_mode == 0)
                            ? rs.nav.system_dashboard_page
                            : ((rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page);
-    const int max_pg = (rs.nav.system_menu_mode == 2) ? 3 : 2;
+    const int max_pg = (rs.nav.system_menu_mode == 0)
+                           ? ((per_pg >= 8) ? 1 : 2)
+                           : ((rs.nav.system_menu_mode == 1)
+                                  ? std::max(1, (10 + per_pg - 1) / per_pg)
+                                  : std::max(1, (11 + per_pg - 1) / per_pg));
     return step_anim_v_pager(cur_pg, 1, max_pg, PageId::SYSTEM);
   }
   if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 9 &&
       v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+    const int per_pg = std::clamp(ly.list_rows, 4, kMaxListSlots);
+    const int max_pg = std::max(1, (6 + per_pg - 1) / per_pg);
     bool changed = false;
     rs.music.settings_page = step_v_pager(
-        std::clamp(rs.music.settings_page, 1, 2), 1, 2, false, PageId::SYSTEM, changed);
+        std::clamp(rs.music.settings_page, 1, max_pg), 1, max_pg, false, PageId::SYSTEM, changed);
     rt_.schedule_disp();
     return true;
   }
@@ -1153,7 +1166,7 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
           }
           const int next_c = step_wrap(cur_c, h_dir, cat_cnt);
           rs.area.domain_filter = cats[next_c];
-          sync_mode_bar_window(area_cat_dock_page(), next_c, cat_cnt);
+          sync_mode_bar_window(area_cat_dock_page(), next_c, cat_cnt, ly.dock_slot_count);
           rs.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
           TouchGestureEngine::do_fetch_area_browse_();
           mark_dirty_full();
@@ -1247,8 +1260,10 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     }
     if (rs.cameras.tab == CamerasTab::SETTINGS && v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
 #if LATTER_HAS_HW_JPEG
+      const int cam_per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
+      const int cam_max_pg = std::max(0, (5 - 1) / cam_per_pg);
       bool changed = false;
-      rs.cameras.settings_page = step_v_pager(rs.cameras.settings_page, 0, 1, false, PageId::CAMERAS, changed);
+      rs.cameras.settings_page = step_v_pager(rs.cameras.settings_page, 0, cam_max_pg, false, PageId::CAMERAS, changed);
       if (changed) mark_dirty_full();
       rt_.schedule_disp();
       return true;
@@ -1697,9 +1712,9 @@ bool TouchGestureEngine::try_commit_long_press_(uint32_t now_ms) {
 
   if (rs.nav.gui_page == PageId::MUSIC &&
       ((gest.long_press_wid >= WidgetId::LIST_SLOT_BASE &&
-        gest.long_press_wid < WidgetId::LIST_SLOT_BASE + 5) ||
+        gest.long_press_wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots) ||
        (gest.long_press_wid >= WidgetId::MUSIC_ROW_PLAY_BASE &&
-        gest.long_press_wid < WidgetId::MUSIC_ROW_PLAY_BASE + 5))) {
+        gest.long_press_wid < WidgetId::MUSIC_ROW_PLAY_BASE + kMaxListSlots))) {
     if (TouchGestureEngine::open_music_row_action_sheet_(gest.long_press_param, rs, now_ms)) {
       mark_dirty_full();
       rt_.schedule_disp();
