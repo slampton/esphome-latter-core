@@ -512,7 +512,10 @@ void test_phase4_security_dnd_hit_targets_and_iso_tz() {
 
   {
     const std::string cal_cpp = read_repo_file("../../components/latter_ui/page_calendar.cpp");
-    const std::string wth_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+    const std::string wth_cpp = read_repo_files({
+        "../../components/latter_ui/page_weather.cpp",
+        "../../components/latter_ui/weather_sky_fx.cpp",
+    });
     const std::string tch_cpp = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
     const std::string gui_yml = read_repo_file("../../guis/universal/gui.yaml");
     LATTER_CHECK(cal_cpp.find("render_map_drilldown") == std::string::npos);
@@ -551,9 +554,15 @@ void test_sram_psram_budget_and_http_stall_guards() {
   const std::string cal_src = read_repo_file("../../components/latter_ui/page_calendar.cpp");
   const std::string th_src = read_repo_file("../../components/latter_core/touch_hal.cpp");
   const std::string s3_yaml = read_repo_file("../../modules/hal/chip_esp32s3.yaml");
-  const std::string gfx_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp") +
-                              "\n" + read_repo_file("../../include/ui_gfx.h");
-  const std::string wth_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string gfx_src = read_repo_files({
+      "../../components/latter_ui/ui_gfx.cpp",
+      "../../components/latter_ui/ui_gfx_text_art.cpp",
+      "../../include/ui_gfx.h",
+  });
+  const std::string wth_src = read_repo_files({
+      "../../components/latter_ui/page_weather.cpp",
+      "../../components/latter_ui/weather_sky_fx.cpp",
+  });
   const std::string mdi_src = read_repo_file("../../components/latter_ui/ui_mdi.cpp");
   const std::string dp_yaml = read_repo_file("../../modules/display_pipeline.yaml");
 
@@ -599,7 +608,10 @@ void test_sram_psram_budget_and_http_stall_guards() {
   LATTER_CHECK(gfx_src.find("blit_dimmed_rgb565_scanline(") != std::string::npos);
   LATTER_CHECK(gfx_src.find("full_rect_overwrite") != std::string::npos);
   LATTER_CHECK(gfx_src.find("sample_glass_mean(") != std::string::npos);
-  const std::string wid_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+  const std::string wid_src = read_repo_files({
+      "../../components/latter_ui/ui_widgets.cpp",
+      "../../components/latter_ui/ui_widgets_icons_chrome.cpp",
+  });
   const std::string pm_yaml = read_repo_files({
       "../../modules/power_policy.yaml",
       "../../modules/sleep_lifecycle.yaml",
@@ -763,6 +775,48 @@ void test_wave2_v3_wire_escaping_and_base_fold() {
     LATTER_CHECK(sys_sync.find("apply_device_ui_command_effects") != std::string::npos);
     LATTER_CHECK(pmu_yaml.find("hw_wait_pwr_key_release") == std::string::npos);
     LATTER_CHECK(pmu_yaml.find("hal_wait_pwr_key_release") == std::string::npos);
+  }
+
+  // 9. Compiled YAML-offload helpers & out-of-line RPC default sink parity
+  {
+    reset_runtime_state();
+    reset_all_v3_rev_guards();
+    auto &prefs = persisted_prefs();
+    prefs = PersistedDevicePrefs{};
+
+    // dispatch_v3_domain_push handles all 7 domains
+    std::vector<std::string> w_tok(static_cast<size_t>(WeatherField::COUNT), "");
+    w_tok[static_cast<size_t>(WeatherField::CONDITION)] = "rainy";
+    w_tok[static_cast<size_t>(WeatherField::TEMPERATURE)] = "61.5";
+    LATTER_CHECK(dispatch_v3_domain_push("weather_forecast", build_v3_packet(700, 1, w_tok), 5000U));
+    LATTER_CHECK(weather_state().condition == "rainy");
+    LATTER_CHECK(!dispatch_v3_domain_push("unknown_domain", "v3\x1f" "1\x1f" "1", 5000U));
+
+    // try_handle_pin_session_key_command
+    latter_rpc::clear_pin_session_key();
+    LATTER_CHECK(!try_handle_pin_session_key_command("restart"));
+    LATTER_CHECK(try_handle_pin_session_key_command(
+        "set_pin_key:a1b2c3d4:000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"));
+    LATTER_CHECK(latter_rpc::has_pin_session_key());
+    latter_rpc::clear_pin_session_key();
+
+    // apply_remote_screen_brightness_cmd (both auto-brightness override and manual brightness)
+    bool need_wake = false;
+    LATTER_CHECK(apply_remote_screen_brightness_cmd("set_screen_bri:64", 6000U, false, need_wake));
+    LATTER_CHECK(need_wake && runtime_state().nav.ambient_bri_override_pct == 64);
+    prefs.auto_brightness_mode = static_cast<uint8_t>(AutoBrightnessMode::Disabled);
+    LATTER_CHECK(apply_remote_screen_brightness_cmd("set_screen_bri:72", 6100U, false, need_wake));
+    LATTER_CHECK(need_wake && persisted_prefs().manual_brightness == 72 &&
+                 runtime_state().nav.ambient_bri_override_pct == -1);
+    LATTER_CHECK(!apply_remote_screen_brightness_cmd("set_screen_bri:abc", 6200U, true, need_wake));
+
+    // Out-of-line latter_actions default nullptr sink after explicit bind_sensor_sink
+    MockRpcOutbox default_box{};
+    latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+    latter_rpc::bind_sensor_sink(&default_box);
+    emit_media_command("play");
+    LATTER_CHECK(!default_box.published.empty());
+    LATTER_CHECK(default_box.published[0].find("\"s\":\"media_command\"") != std::string::npos);
   }
 }
 

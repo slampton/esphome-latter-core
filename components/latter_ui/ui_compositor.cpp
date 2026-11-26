@@ -1,6 +1,7 @@
 #include "ui_cadence.h"
 #include "ui_compositor.h"
 #include "ui_layout.h"
+#include "ui_pages.h"
 #include "audio_router.h"
 #include "hal_display_lifecycle.h"
 #include "hal_panel_power.h"
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace latter_ui {
 using namespace latter_core;
@@ -24,6 +26,211 @@ bool is_music_playing_for_compositor(const MediaState &ms, bool local_media_play
 }
 
 }  // namespace
+
+bool parse_iso_timestamp_components(
+    std::string_view raw, ParsedIsoTimestamp &out) noexcept {
+  while (!raw.empty() && (raw.front() == ' ' || raw.front() == '\t')) raw.remove_prefix(1);
+  while (!raw.empty() && (raw.back() == ' ' || raw.back() == '\t')) raw.remove_suffix(1);
+  if (raw.size() < 16U || raw == "unknown" || raw == "unavailable") return false;
+
+  auto parse_digits = [&](size_t pos, size_t n, int &val) noexcept -> bool {
+    if (pos + n > raw.size()) return false;
+    int acc = 0;
+    for (size_t i = 0; i < n; ++i) {
+      const char ch = raw[pos + i];
+      if (ch < '0' || ch > '9') return false;
+      acc = acc * 10 + (ch - '0');
+    }
+    val = acc;
+    return true;
+  };
+
+  int yr = 0, mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
+  if (!parse_digits(0, 4, yr) || raw[4] != '-' ||
+      !parse_digits(5, 2, mo) || raw[7] != '-' ||
+      !parse_digits(8, 2, dy)) {
+    return false;
+  }
+  const char sep = raw[10];
+  if (sep != 'T' && sep != 't' && sep != ' ') return false;
+  if (!parse_digits(11, 2, hr) || raw[13] != ':' || !parse_digits(14, 2, mn)) {
+    return false;
+  }
+  size_t idx = 16U;
+  if (idx < raw.size() && raw[idx] == ':') {
+    if (!parse_digits(idx + 1U, 2U, sc)) return false;
+    idx += 3U;
+  }
+  if (idx < raw.size() && (raw[idx] == '.' || raw[idx] == ',')) {
+    ++idx;
+    if (idx >= raw.size() || raw[idx] < '0' || raw[idx] > '9') return false;
+    while (idx < raw.size() && raw[idx] >= '0' && raw[idx] <= '9') ++idx;
+  }
+
+  bool has_tz = false;
+  int tz_off_sec = 0;
+  if (idx < raw.size()) {
+    const char zc = raw[idx];
+    if (zc == 'Z' || zc == 'z') {
+      if (idx + 1U != raw.size()) return false;
+      has_tz = true;
+    } else if (zc == '+' || zc == '-') {
+      const int sign = (zc == '-') ? -1 : 1;
+      ++idx;
+      int oh = 0, om = 0;
+      if (!parse_digits(idx, 2U, oh)) return false;
+      idx += 2U;
+      if (idx < raw.size() && raw[idx] == ':') ++idx;
+      if (idx < raw.size()) {
+        if (!parse_digits(idx, 2U, om)) return false;
+        idx += 2U;
+      }
+      if (idx != raw.size() || oh > 23 || om > 59) return false;
+      has_tz = true;
+      tz_off_sec = sign * (oh * 3600 + om * 60);
+    } else {
+      return false;
+    }
+  }
+
+  if (mo < 1 || mo > 12 || dy < 1 || dy > 31 || hr < 0 || hr > 23 ||
+      mn < 0 || mn > 59 || sc < 0 || sc > 60) {
+    return false;
+  }
+
+  const int y = yr - (mo <= 2 ? 1 : 0);
+  const int era = (y >= 0 ? y : y - 399) / 400;
+  const int yoe = y - era * 400;
+  const int doy = (153 * (mo > 2 ? mo - 3 : mo + 9) + 2) / 5 + dy - 1;
+  const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  const int64_t days = static_cast<int64_t>(era) * 146097LL + static_cast<int64_t>(doe) - 719468LL;
+  const int64_t wall_sec = days * 86400LL + static_cast<int64_t>(hr) * 3600LL +
+                           static_cast<int64_t>(mn) * 60LL + static_cast<int64_t>(sc);
+
+  out.year = yr;
+  out.month = mo;
+  out.day = dy;
+  out.hour = hr;
+  out.minute = mn;
+  out.second = sc;
+  out.has_tz = has_tz;
+  out.tz_offset_sec = tz_off_sec;
+  out.utc_epoch_sec = wall_sec - static_cast<int64_t>(tz_off_sec);
+  return true;
+}
+
+void format_hhmm_clock_to(int hr, int mn, bool is_24h, char *out, size_t out_sz) noexcept {
+  if (out == nullptr || out_sz == 0U) return;
+  const int h = ((hr % 24) + 24) % 24;
+  const int m = std::clamp(mn, 0, 59);
+  if (is_24h) {
+    std::snprintf(out, out_sz, "%02d:%02d", h, m);
+  } else {
+    int h12 = h % 12;
+    if (h12 == 0) h12 = 12;
+    std::snprintf(out, out_sz, "%d:%02d %s", h12, m, (h >= 12) ? "PM" : "AM");
+  }
+}
+
+bool format_iso_time_with_offset(
+    std::string_view iso_str, bool is_24h, int local_utc_offset_min,
+    char *out, size_t out_sz) noexcept {
+  if (out == nullptr || out_sz == 0U) return false;
+  ParsedIsoTimestamp ts{};
+  if (!parse_iso_timestamp_components(iso_str, ts)) {
+    std::snprintf(out, out_sz, "%s", kUnknownGlyph);
+    return false;
+  }
+  if (!ts.has_tz) {
+    format_hhmm_clock_to(ts.hour, ts.minute, is_24h, out, out_sz);
+    return true;
+  }
+  const int64_t local_sec = ts.utc_epoch_sec + static_cast<int64_t>(local_utc_offset_min) * 60LL;
+  const int rem = static_cast<int>(((local_sec % 86400LL) + 86400LL) % 86400LL);
+  format_hhmm_clock_to(rem / 3600, (rem % 3600) / 60, is_24h, out, out_sz);
+  return true;
+}
+
+SystemTakeoverState SystemTakeoverState::from_context(const UiFrameContext &ctx) {
+  const auto &rs = ctx.state();
+  const auto &prefs = ctx.prefs();
+  SystemTakeoverState st{};
+  st.cx = ctx.cx;
+  st.cy = ctx.cy;
+  st.now_ms = ctx.now_ms;
+  st.is_24h_format = prefs.is_24h_format;
+  st.ota_in_progress = rs.nav.ota_in_progress;
+  st.ota_progress_pct = rs.nav.ota_progress_pct;
+  st.is_hibernating = rs.nav.is_hibernating;
+  st.hibernate_countdown_val = rs.nav.hibernate_countdown_val;
+  st.panel_is_on = ctx.panel_is_on;
+  st.display_power_state = rs.nav.display_power_state;
+  const bool sc_on = rs.showcase.is_active(ctx.now_ms);
+  st.alarm_ringing = rs.alarms.ringing || (sc_on && rs.showcase.silent_alarm);
+  st.alarm_ringing_idx = rs.alarms.ringing_idx;
+  st.alarm1_recurrence = prefs.alarms[0].recurrence;
+  st.alarm2_recurrence = prefs.alarms[1].recurrence;
+  st.alarm3_recurrence = prefs.alarms[2].recurrence;
+  st.timer_ringing = rs.timers.ringing;
+  st.find_my_active = rs.alarms.find_my_active || (sc_on && rs.showcase.silent_find_my);
+  st.va_timer_name = rs.timers.va_timer_name;
+  st.va_active = rs.voice.active;
+  st.va_status_text = rs.voice.status_text;
+  st.va_tts_received = rs.voice.tts_received;
+  st.va_vad_active = rs.voice.vad_active;
+  st.va_intercom_turn = rs.voice.intercom_turn;
+  if (!rs.voice.active && rs.voice.status_text.empty()) {
+    const uint8_t sc_va = rs.showcase.effective_va_phase(ctx.now_ms);
+    if (sc_va != 0U) {
+      st.va_active = true;
+      st.va_vad_active = (sc_va == static_cast<uint8_t>(ShowcaseVaStage::VAD));
+      st.va_tts_received = (sc_va == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING));
+      if (sc_va == static_cast<uint8_t>(ShowcaseVaStage::THINKING)) {
+        st.va_status_text = UiStrView("Thinking...");
+      } else if (sc_va == static_cast<uint8_t>(ShowcaseVaStage::SPEAKING)) {
+        st.va_status_text = UiStrView("Responding...");
+      } else {
+        st.va_status_text = UiStrView("Listening...");
+      }
+    }
+  }
+  st.va_visual_profile_opt =
+      (sc_on && rs.showcase.va_profile_override >= 0 &&
+       rs.showcase.va_profile_override < static_cast<int>(kPrefOptsVaVisualProfile.size()))
+          ? UiStrView(pref_opt_cstr(
+                kPrefOptsVaVisualProfile,
+                static_cast<uint8_t>(rs.showcase.va_profile_override)))
+          : ctx.va_visual_profile_opt;
+  st.notif_active = rs.alert.active;
+  st.notif_title = rs.alert.title;
+  st.notif_message = rs.alert.message;
+  st.notif_priority = rs.alert.priority;
+  st.notif_camera_url = rs.alert.camera_url;
+  st.notif_camera_entity = rs.alert.camera_entity;
+  st.current_loaded_camera_url = rs.alert.loaded_camera_url;
+  const bool sc_ss_override =
+      sc_on && rs.showcase.screensaver_style_override >= 0 &&
+      rs.showcase.screensaver_style_override < static_cast<int>(kPrefOptsScreensaverStyle.size());
+  st.screensaver_style_opt =
+      sc_ss_override
+          ? UiStrView(pref_opt_cstr(
+                kPrefOptsScreensaverStyle,
+                static_cast<uint8_t>(rs.showcase.screensaver_style_override)))
+          : (prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt);
+  st.screensaver_photo_clock = (!prefs.bedtime_active || sc_ss_override) && prefs.screensaver_photo_clock;
+  st.quick_actions_open = rs.nav.quick_actions_open;
+  st.theme_primary = ctx.theme_primary;
+  st.theme_secondary = ctx.theme_secondary;
+  st.col_bg = ctx.col_bg;
+  st.col_black = ctx.col_black;
+  st.col_white = ctx.col_white;
+  st.col_slate = ctx.col_slate;
+  st.col_dark_gray = ctx.col_dark_gray;
+  st.col_gold = ctx.col_gold;
+  st.col_red = ctx.col_red;
+  st.col_solaris_gold = ctx.col_solaris_gold;
+  return st;
+}
 
 DirtyBandTracker &dirty_band() { return g_dirty_band; }
 
@@ -188,8 +395,8 @@ bool is_music_lyrics_anim_active(uint32_t now_ms, bool local_media_playing) {
 }
 
 uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
-  const auto &rs = runtime_state();
-  const auto &prefs = persisted_prefs();
+  const auto &rs = ctx.state();
+  const auto &prefs = ctx.prefs();
   if (rs.nav.display_power_state == 1) {
     const std::string_view ss_style(effective_screensaver_style_cstr(prefs, rs, ctx.now_ms));
     if (ss_style == "Photo Frame" || ss_style == "Ambient Clock") {
@@ -543,7 +750,7 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
 }
 
 bool compute_live_sec_active(const UiFrameContext &ctx) {
-  const auto &rs = runtime_state();
+  const auto &rs = ctx.state();
   if (rs.nav.quick_actions_open) return false;
   static uint32_t s_last_music_np_pos_sec = 0xFFFFFFFFU;
   static int s_last_music_np_dur_sec = -1;
@@ -575,7 +782,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   }
   if (rs.nav.gui_page == PageId::MUSIC) {
     const auto &ms = media_state();
-    const auto &prefs = persisted_prefs();
+    const auto &prefs = ctx.prefs();
     const bool is_playing_eff = is_music_playing_for_compositor(ms, ctx.local_media_playing, ctx.now_ms);
     if (rs.music.view == MusicView::LYRICS && rs.music.drilldown == MusicDrilldown::NONE) {
       return is_music_lyrics_anim_active(ctx.now_ms, ctx.local_media_playing);
@@ -604,7 +811,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
       const int cur_dur_sec = (ms.duration > 0.0f && !std::isnan(ms.duration))
                                   ? static_cast<int>(ms.duration + 0.5f)
                                   : 0;
-      const int cur_sub = compute_active_subpage_id();
+      const int cur_sub = compute_active_subpage_id(rs);
       if (dirty_band().last_page != PageId::MUSIC || dirty_band().last_subpage != cur_sub ||
           s_last_music_np_pos_sec == 0xFFFFFFFFU) {
         s_last_music_np_pos_sec = cur_pos_sec;
@@ -1299,6 +1506,336 @@ CadenceScreensaverActions FrameCadenceController::step_screensaver_20ms(
   in.last_ambient_ms = last_ambient_anim_ms();
   in.last_disp_end_ms = last_disp_update_end_ms();
   return evaluate_screensaver_20ms(in);
+}
+
+void populate_frame_context_state(UiFrameContext &ctx) {
+  const auto &rs = runtime_state();
+  const auto &prefs = persisted_prefs();
+  ctx.rs_ptr = &rs;
+  ctx.prefs_ptr = &prefs;
+
+  ctx.local_media_playing = rs.audio.local_mp_playing();
+  ctx.spk_vol_pct = static_cast<int>(std::round(rs.audio.local_mp_volume_or(0.0f) * 100.0f));
+  ctx.alert_vol_pct = (prefs.alert_volume < 20) ? kPrefDefaultAlertVolume
+                                                : static_cast<int>(prefs.alert_volume);
+  ctx.vol_step_pct = (prefs.volume_step_size < 1 || prefs.volume_step_size > 10)
+                         ? 5
+                         : static_cast<int>(prefs.volume_step_size);
+
+  ctx.track_title = rs.music.last_sendspin_title;
+  ctx.track_artist = rs.music.last_sendspin_artist;
+  ctx.track_album = rs.music.last_sendspin_album;
+
+  ctx.clock_face_style_opt = effective_clock_face_cstr(prefs, rs, ctx.now_ms);
+  ctx.weather_sim_opt = effective_weather_sim_cstr(device_prefs_state(), rs, ctx.now_ms);
+  ctx.music_overlay_style_opt = pref_music_overlay_style_cstr(prefs);
+  ctx.music_auto_open_opt = pref_music_auto_open_cstr(prefs);
+  ctx.music_fullscreen_art_opt = pref_album_art_style_cstr(prefs);
+  ctx.music_album_sort_opt = pref_album_sort_order_cstr(prefs);
+  ctx.music_artist_album_sort_opt = pref_artist_album_sort_order_cstr(prefs);
+  ctx.music_podcast_sort_opt = pref_podcast_sort_order_cstr(prefs);
+  ctx.theme_palette_opt = pref_color_profile_cstr(prefs);
+  ctx.glass_style_opt = pref_glass_style_cstr(prefs);
+  ctx.tap_wake_opt = pref_tap_to_wake_cstr(prefs);
+  ctx.pickup_wake_opt = pref_pickup_to_wake_cstr(prefs);
+  ctx.display_off_timeout_opt = pref_battery_screen_timeout_cstr(prefs);
+  ctx.screensaver_mode_opt = pref_screensaver_mode_cstr(prefs);
+  ctx.screensaver_style_opt = effective_screensaver_style_cstr(prefs, rs, ctx.now_ms);
+  ctx.screensaver_docked_timeout_opt = pref_docked_idle_timeout_cstr(prefs);
+  ctx.hibernate_timeout_opt = pref_battery_hibernate_timeout_cstr(prefs);
+  ctx.bedtime_display_opt = pref_bedtime_display_cstr(prefs);
+  ctx.default_start_app_opt = pref_start_screen_cstr(prefs);
+  ctx.auto_brightness_opt = pref_auto_brightness_mode_cstr(prefs);
+  ctx.manual_brightness_pct = static_cast<int>(prefs.manual_brightness_pct());
+  ctx.day_brightness_pct = static_cast<int>(prefs.day_brightness_pct());
+  ctx.night_brightness_pct = static_cast<int>(prefs.night_brightness_pct());
+  ctx.va_wake_word_mode_opt = pref_wake_word_mode_cstr(prefs);
+  ctx.va_visual_profile_opt = effective_va_visual_profile_cstr(prefs, rs, ctx.now_ms);
+  ctx.ww_sens_okay_nabu_opt = pref_ww_sens_cstr(prefs.ww_sens_okay_nabu);
+  ctx.ww_sens_hey_luna_opt = pref_ww_sens_cstr(prefs.ww_sens_hey_luna);
+  ctx.ww_sens_hey_jarvis_opt = pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis);
+  ctx.ww_sens_hey_mycroft_opt = pref_ww_sens_cstr(prefs.ww_sens_hey_mycroft);
+  ctx.ww_sens_alexa_opt = pref_ww_sens_cstr(prefs.ww_sens_alexa);
+
+  ctx.day_start_hr = static_cast<int>(prefs.day_start_hour);
+  ctx.night_start_hr = static_cast<int>(prefs.night_start_hour);
+  ctx.home_weather_bg = prefs.weather_background;
+  ctx.weather_app_bg = prefs.weather_app_background;
+  ctx.home_wake_greeting = prefs.wake_greeting;
+  ctx.home_sun_arc = prefs.home_sun;
+  ctx.home_moon_phase = prefs.home_moon;
+  ctx.game_sound_enabled = prefs.game_sound_effects;
+  ctx.va_wake_screen = prefs.wake_screen_on_assist;
+  ctx.screensaver_photo_clock = prefs.screensaver_photo_clock;
+  ctx.bedtime_active = prefs.bedtime_active;
+  ctx.do_not_disturb = prefs.do_not_disturb;
+}
+
+bool prepare_frame_plan(const UiFrameContext &ctx, FrameRenderPlan &out) {
+  out = FrameRenderPlan{};
+  const auto &rs = ctx.state();
+  const auto &prefs = ctx.prefs();
+  const int prof_sub = compute_active_subpage_id(rs);
+
+  const auto &ac_wall = area_ctx_state();
+  const bool has_day_night_sky = is_day_night_sky_wallpaper_url(ac_wall.wallpaper_url);
+  const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
+                              !has_day_night_sky &&
+                              ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                              ctx.home_wallpaper_art.width > 0);
+  out.cam_live_canvas =
+      (rs.nav.gui_page == PageId::CAMERAS &&
+       rs.cameras.tab != CamerasTab::SETTINGS &&
+       !rs.cameras.quick_reply_open);
+  const bool tools_full_bleed =
+      (rs.nav.gui_page == PageId::TOOLS &&
+       rs.nav.tools_subpage == ToolsSubpage::FLASHLIGHT) ||
+      out.cam_live_canvas;
+  const bool weather_sim_active =
+      (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
+  out.bd_mode = resolve_backdrop_mode(
+      rs.nav.gui_page, rs.nav.home_subpage, ctx.home_weather_bg, ctx.weather_app_bg,
+      weather_sim_active, has_wallpaper, has_day_night_sky,
+      tools_full_bleed, ctx.music_fullscreen_art_opt == "None");
+  out.weather_sky_active = (out.bd_mode == BackdropMode::LiveWeatherSky);
+  const auto &ws_cad = weather_state();
+  const bool weather_ready_cad =
+      weather_sim_active ||
+      (!std::isnan(ws_cad.temperature) && !ws_cad.condition.empty() &&
+       !ws_cad.sun_state.empty() && ws_cad.sun_state != "unknown" &&
+       ws_cad.sun_state != "unavailable");
+  const uint32_t latest_input_ms = std::max(
+      touch_gesture().last_touch_ms, ui_focus_last_ms());
+  const bool motion_power_gui = rs.hw_usb_connected || rs.showcase.is_active(ctx.now_ms);
+  out.on_home_main =
+      (rs.nav.gui_page == PageId::HOME &&
+       rs.nav.home_subpage == HomeSubpage::MAIN);
+  const bool w_has_motion =
+      out.weather_sky_active &&
+      evaluate_sky_has_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
+  out.w_has_fast_motion =
+      w_has_motion &&
+      evaluate_sky_has_fast_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
+  out.weather_sky_stepping =
+      out.weather_sky_active && weather_ready_cad &&
+      weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion);
+  const bool weather_sky_full_hint =
+      out.weather_sky_stepping && (out.w_has_fast_motion || !out.on_home_main);
+
+  const bool clock_sweep_hint =
+      (rs.nav.gui_page == PageId::CLOCK) &&
+      clock_smooth_sweep_active(
+          motion_power_gui, ctx.now_ms, latest_input_ms,
+          effective_clock_face(prefs, rs, ctx.now_ms));
+  const bool time_sw_hint =
+      ((rs.nav.gui_page == PageId::TIME &&
+        rs.nav.time_subpage == TimeSubpage::STOPWATCH) ||
+       (rs.nav.gui_page == PageId::TOOLS &&
+        rs.nav.tools_subpage == ToolsSubpage::STOPWATCH)) &&
+      rs.stopwatch.running;
+
+  out.takeover_st = acquire_takeover_state(ctx);
+  out.takeover_sig = compute_takeover_signature(out.takeover_st, rs);
+  const bool photo_frame_art_ready =
+      resolve_photo_frame_art(
+          ctx.screensaver_photo_art, ctx.home_wallpaper_art,
+          ac_wall.screensaver_photo_url, rs.music.loaded_wallpaper_url).valid();
+  if (is_photo_frame_initial_load_pending(
+          out.takeover_sig, out.takeover_st.screensaver_style_opt,
+          ac_wall.screensaver_photo_url, photo_frame_art_ready,
+          rs.music.screensaver_photo_failed,
+          rs.nav.standby_entered_ms, ctx.now_ms)) {
+    return false;
+  }
+
+  out.dock_anim_now =
+      any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
+  out.page_horiz_bounce_now =
+      any_page_horiz_bounce_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
+  out.vert_bounce_now =
+      any_vert_bounce_active(rs.nav.gui_page, ctx.now_ms);
+  out.lyrics_anim_now =
+      is_music_lyrics_anim_active(ctx.now_ms, ctx.local_media_playing);
+  out.greet_fading_now =
+      is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting);
+  out.has_act_band = home_activity_band(out.act_y0, out.act_y1);
+
+  out.alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+                      rs.showcase.has_silent_alert(ctx.now_ms);
+  out.va_visible = should_va_takeover_preempt(
+      rs.voice.active, !rs.voice.status_text.empty(), rs.voice.intercom_turn,
+      rs.nav.gui_page, rs.cameras.doorbell_live_popup_active) ||
+      rs.showcase.has_va_preview(ctx.now_ms);
+
+  const bool static_screensaver_only =
+      (out.takeover_sig == (1U << 3)) &&
+      (out.takeover_st.screensaver_style_opt == "Ambient Clock" ||
+       out.takeover_st.screensaver_style_opt == "Photo Frame");
+  const bool quick_actions_only = (out.takeover_sig == (1U << 11));
+  const bool anim_or_scroll =
+      ((out.takeover_sig != 0U) && !static_screensaver_only && !quick_actions_only) ||
+      (!quick_actions_only &&
+       (weather_sky_full_hint ||
+        clock_sweep_hint ||
+        time_sw_hint ||
+        out.lyrics_anim_now ||
+        out.greet_fading_now ||
+        out.vert_bounce_now ||
+        out.page_horiz_bounce_now ||
+        rs.nav.menu_scroll_active ||
+        (rs.nav.gui_page == 3 && rs.nav.active_game > 0)));
+  const bool photo_frame_no_clock =
+      static_screensaver_only &&
+      (out.takeover_st.screensaver_style_opt == "Photo Frame") &&
+      !out.takeover_st.screensaver_photo_clock &&
+      photo_frame_art_ready;
+  const bool home_no_clock_or_date =
+      (out.takeover_sig == 0U) &&
+      (rs.nav.gui_page == PageId::HOME) &&
+      (rs.nav.home_subpage == HomeSubpage::MAIN) &&
+      !prefs.home_show_date && !prefs.home_show_time;
+  const int hhmm_key = (photo_frame_no_clock || quick_actions_only || home_no_clock_or_date)
+                           ? -1
+                           : compute_hhmm_key(ctx.now);
+  const uint32_t idle_state_sig = compute_idle_state_signature(ctx);
+  const bool live_sec_active = compute_live_sec_active(ctx);
+  const int home_clock_band_y1 =
+      (layout().home_clock_y + layout().home_weather_y) / 2 + dp_px(10);
+  if (!dirty_band().begin_frame(
+          rs.nav.gui_page, prof_sub, out.takeover_sig, anim_or_scroll,
+          hhmm_key, idle_state_sig, home_clock_band_y1, live_sec_active)) {
+    return false;
+  }
+
+  out.band_y0 = dirty_band().band_y0();
+  out.band_y1 = dirty_band().band_y1();
+  return true;
+}
+
+void render_composed_frame(Rgb565Surface &it, const UiFrameContext &ctx, const FrameRenderPlan &plan) {
+  if (render_system_takeovers(it, ctx, plan.takeover_st)) {
+    return;
+  }
+
+  const auto &rs = ctx.state();
+  if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
+    // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (7), Tools (8),
+    // Home Hub (9), Time (10), Pinned (11), Calendar (12), Cameras (13)
+    // Skip P4 between-frames PPA clear while full-screen live video is active so DPI scanout keeps full PSRAM bandwidth!
+    if (plan.cam_live_canvas) {
+      frame_base_skip();
+    } else if (plan.bd_mode == BackdropMode::DayNightSky) {
+      const auto &ws_bd = weather_state();
+      if (has_known_day_night_phase(ws_bd.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
+        const bool dns_night = resolve_day_night_sky_is_night(
+            ws_bd.sun_state, ctx.now.is_valid(), ctx.now.hour);
+        render_static_day_night_sky_base(it, ctx.cx, ctx.cy, dns_night);
+      } else {
+        frame_base(it, ctx.col_bg);
+      }
+    } else {
+      const bool use_page_wallpaper = (plan.bd_mode == BackdropMode::CustomWallpaper);
+      if (rs.nav.gui_page != 5 || use_page_wallpaper) {
+        render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
+      }
+    }
+  }
+
+  render_active_page(it, ctx);
+
+  const bool cam_hud_hidden =
+      (rs.nav.gui_page == PageId::CAMERAS &&
+       (rs.cameras.tab == CamerasTab::SINGLE ||
+        rs.cameras.tab == CamerasTab::CAROUSEL) &&
+       (!rs.cameras.hud_active || rs.voice.intercom_turn) &&
+       !rs.intercom.cam_call_active && !rs.intercom.cam_listen_active);
+  const bool show_home_pill =
+      !rs.nav.is_hibernating && !rs.nav.ota_in_progress && !plan.va_visible &&
+      !cam_hud_hidden && !rs.voice.intercom_turn &&
+      rs.nav.display_power_state == 0 &&
+      can_go_home(
+          rs.nav.gui_page, rs.nav.system_menu_mode, rs.nav.active_game,
+          rs.nav.area_subpage, rs.area.browse_mode == "areas", rs.nav.remote_subpage, rs.nav.tools_subpage,
+          rs.alarms.edit_idx, plan.alert_ringing) &&
+      !music_art_only(rs.nav.gui_page, ctx.music_overlay_style_opt == "Always Visible",
+                      rs.music.hud_active);
+
+  if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && !plan.va_visible &&
+      rs.nav.display_power_state == 0 && !plan.alert_ringing) {
+    render_active_focus_overlay(it, ctx.now_ms, ctx.theme_primary, ctx.col_white);
+  }
+
+  if (show_home_pill) {
+    render_home_indicator_bar(it, ctx.cx, layout().home_bar_y);
+  }
+
+  if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && rs.nav.display_power_state == 0) {
+    render_offline_pill(it, ctx);
+  }
+}
+
+PostFrameSchedule compute_post_frame_schedule(const UiFrameContext &ctx, const FrameRenderPlan &plan) {
+  PostFrameSchedule out{};
+  if (plan.takeover_sig != 0U) {
+    return out;
+  }
+  const auto &rs = ctx.state();
+  const bool coin_toss_active =
+      (rs.nav.gui_page == PageId::TOOLS) &&
+      (rs.nav.tools_subpage == ToolsSubpage::COIN_FLIP) &&
+      coin_state().anim_active;
+  const bool act_sliding_now = home_activity_slide_active(ctx.now_ms);
+
+  if (rs.nav.menu_scroll_active || plan.vert_bounce_now || plan.page_horiz_bounce_now ||
+      coin_toss_active || plan.greet_fading_now || plan.lyrics_anim_now) {
+    out.anim_full = true;
+  } else if (plan.dock_anim_now) {
+    out.anim_band = true;
+    out.anim_band_y0 = dock_dirty_band_y0();
+    out.anim_band_y1 = SCREEN_H - 1;
+  } else if (plan.weather_sky_active && !plan.va_visible && !plan.alert_ringing) {
+    if (act_sliding_now) {
+      out.anim_full = true;
+    } else if (plan.weather_sky_stepping) {
+      const bool spk_busy = rs.audio.speaker_busy();
+      const bool mww_busy = !spk_busy && !LATTER_CHIP_P4 && rs.audio.mww_running();
+      const uint32_t target_gap_ms = min_ambient_frame_gap_ms(spk_busy, false, false, mww_busy);
+      out.weather_gap_ms = weather_sky_frame_gap_ms(target_gap_ms, plan.w_has_fast_motion);
+      out.record_ambient_ms = true;
+      if (plan.on_home_main && !plan.w_has_fast_motion) {
+        out.weather_band = true;
+        out.weather_band_y0 = 0;
+        out.weather_band_y1 = calm_home_sky_band_y1(dock_dirty_band_y0());
+      } else {
+        out.weather_full = true;
+      }
+    }
+  } else if (act_sliding_now && plan.has_act_band) {
+    out.anim_band = true;
+    out.anim_band_y0 = plan.act_y0;
+    out.anim_band_y1 = plan.act_y1;
+  }
+
+  if (plan.on_home_main && !plan.va_visible && !plan.alert_ringing) {
+    if (is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting) &&
+        !plan.greet_fading_now &&
+        !out.weather_band && !out.weather_full &&
+        !is_weather_step_pending(ctx.now_ms)) {
+      const uint32_t g_el = (ctx.now_ms >= wake_greeting_start_ms())
+                                ? (ctx.now_ms - wake_greeting_start_ms())
+                                : 0U;
+      if (g_el < kWakeGreetingHoldMs) {
+        out.wake_greeting_hold_ms = kWakeGreetingHoldMs - g_el;
+      }
+    }
+    const uint32_t rot_due_ms = home_activity_next_rotate_due_ms(ctx.now_ms);
+    if (rot_due_ms > 0U && plan.has_act_band) {
+      out.activity_rotate_ms = rot_due_ms;
+      out.activity_rotate_y0 = plan.act_y0;
+      out.activity_rotate_y1 = plan.act_y1;
+    }
+  }
+  return out;
 }
 
 }  // namespace latter_ui

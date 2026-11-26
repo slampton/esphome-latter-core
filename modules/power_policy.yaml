@@ -92,118 +92,41 @@ interval:
               }
             }
           }
-          const auto &prefs = latter_core::persisted_prefs();
-          const bool showcase_active_1s = rs.showcase.is_active(now_1s_ms);
-          uint32_t last_user_act_ms = std::max({latter_core::last_screen_wake_ms(),
-                                                latter_ui::touch_gesture().last_touch_ms,
-                                                latter_ui::ui_focus_last_ms()});
-          if (rs.nav.display_power_state == 0 && !showcase_active_1s && (now_1s_ms > last_user_act_ms)) {
-            uint32_t touch_idle_ms = now_1s_ms - last_user_act_ms;
-            if (rs.nav.active_game > 0 && touch_idle_ms >= 180000U) {
-              ESP_LOGD("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
-              rs.nav.active_game = 0;
-              rs.audio.stop_alarm();
-              latter_core::display_lifecycle().note_activity(now_1s_ms);
-            }
-            if (!rs.hw_usb_connected &&
-                ((rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
-                 latter_core::is_camera_view_active(rs)) &&
-                touch_idle_ms >= 300000U) {
-              ESP_LOGD("power", "Tool/Camera untouched on battery for 5 min: exiting to idle");
-              if (latter_core::is_camera_view_active(rs)) {
-                if (latter_core::cam_call_active() || latter_core::cam_intercom_ptt_active() || latter_core::cam_listen_active()) {
-                  latter_core::intercom_session().stop_call_with_hw(now_1s_ms);
-                }
-                latter_core::cam_quick_reply_open() = false;
-                latter_core::video_client().stop();
-                rs.alert.loaded_camera_url.clear();
-                latter_ui::release_art(id(camera_snapshot_art));
-                id(sync_ui_touch_runtime).execute();
-                latter_ui::touch_engine().navigate_home(now_1s_ms);
-              } else {
-                rs.nav.tools_subpage = 0;
-              }
-              id(sync_display_brightness).execute();
-              latter_core::display_lifecycle().note_activity(now_1s_ms);
-            }
+          // 11. 1 s Power & DisplayLifecycle supervisor: forgotten games/tools/cameras,
+          // Return-to-Home idle check, DisplayLifecycleController, and battery hibernate descent.
+          latter_core::PowerSupervisor1sInputs pw_in{};
+          pw_in.panel_brightness_on = id(display_brightness).current_values.is_on();
+          pw_in.last_touch_ms = latter_ui::touch_gesture().last_touch_ms;
+          pw_in.ui_focus_last_ms = latter_ui::ui_focus_last_ms();
+          const auto pw_act = latter_core::evaluate_power_supervisor_1s(now_1s_ms, pw_in);
+          if (pw_act.stop_alarm_sound) {
+            rs.audio.stop_alarm();
           }
-          const uint32_t rth_ms = latter_core::return_to_home_timeout_ms(prefs);
-          const bool media_playing_1s =
-              rs.audio.local_mp_playing() ||
-              (latter_core::media_state().state == "playing");
-          const bool cam_busy_1s = latter_core::cam_call_active() ||
-                                   latter_core::cam_listen_active() ||
-                                   latter_core::cam_intercom_ptt_active();
-          if (rs.nav.display_power_state != 2 && rth_ms > 0U &&
-              (now_1s_ms > last_user_act_ms) &&
-              (now_1s_ms - last_user_act_ms >= rth_ms) &&
-              latter_core::should_return_to_home_on_idle(rs, prefs, media_playing_1s, cam_busy_1s)) {
-            ESP_LOGD("power", "Idle exceeded Return to Home timeout (%s): returning to Home",
-                     latter_core::pref_return_to_home_timeout_cstr(prefs));
+          if (pw_act.exit_camera_home) {
+            latter_ui::release_art(id(camera_snapshot_art));
             id(sync_ui_touch_runtime).execute();
             latter_ui::touch_engine().navigate_home(now_1s_ms);
+          }
+          if (pw_act.sync_brightness) {
+            id(sync_display_brightness).execute();
+          }
+          if (pw_act.navigate_home) {
+            id(sync_ui_touch_runtime).execute();
+            latter_ui::touch_engine().navigate_home(now_1s_ms);
+          }
+          if (pw_act.apply_power_policy) {
             id(apply_power_policy).execute();
           }
-
-          // 11. DisplayLifecycleController 1s supervisor: standby greeting tracking, external light-off sync,
-          // deterministic active-screen idle timeout, and battery hibernate descent.
-          const bool active_tool_awake =
-              ((rs.nav.gui_page == 8 &&
-                (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
-               latter_core::is_camera_view_active(rs));
-          const uint32_t since_touch_ms = now_1s_ms - std::max(latter_core::last_screen_wake_ms(),
-                                                               latter_ui::touch_gesture().last_touch_ms);
-          const bool in_hand_hold = (since_touch_ms < 90000U) &&
-              latter_core::should_in_hand_block_sleep(
-                  !rs.hw_usb_connected && !rs.audio.speaker_enabled() && rs.hw_pickup_detected);
-          const bool voice_or_announce_busy =
-              rs.voice.active || rs.audio.va_running() || rs.voice.tts_received ||
-              rs.audio.announcement_running();
-          const bool alert_or_stopwatch_busy =
-              rs.stopwatch.running || rs.timers.ringing || rs.alarms.ringing ||
-              rs.alarms.find_my_active || rs.alert.active;
-          const bool hibernate_blocked =
-              rs.nav.is_hibernating || rs.hw_usb_connected || rs.nav.ota_in_progress ||
-              showcase_active_1s ||
-              rs.audio.local_mp_playing() ||
-              rs.stopwatch.running || rs.timers.running || rs.timers.ringing ||
-              rs.alarms.ringing || rs.alarms.find_my_active || voice_or_announce_busy ||
-              cam_busy_1s || (rs.nav.active_game > 0);
-
-          latter_core::DisplaySupervisorInputs dl_in{};
-          dl_in.is_stationary = (LATTER_IS_STATIONARY != 0);
-          dl_in.has_battery = (LATTER_HAS_BATTERY != 0);
-          dl_in.usb_connected = rs.hw_usb_connected;
-          dl_in.screensaver_mode = prefs.screensaver_mode;
-          dl_in.docked_timeout_opt = latter_core::pref_docked_idle_timeout_cstr(prefs);
-          dl_in.battery_timeout_opt = latter_core::pref_battery_screen_timeout_cstr(prefs);
-          dl_in.hibernate_timeout_opt = latter_core::pref_battery_hibernate_timeout_cstr(prefs);
-          dl_in.wake_greeting_enabled = prefs.wake_greeting && !prefs.bedtime_active;
-          dl_in.bedtime_active = prefs.bedtime_active;
-          dl_in.panel_brightness_on = id(display_brightness).current_values.is_on();
-          dl_in.is_hibernating = rs.nav.is_hibernating;
-          dl_in.ota_in_progress = rs.nav.ota_in_progress;
-          dl_in.voice_or_announce_busy = voice_or_announce_busy;
-          dl_in.alert_or_stopwatch_busy = alert_or_stopwatch_busy;
-          dl_in.in_hand_hold = in_hand_hold;
-          dl_in.active_tool_awake = active_tool_awake;
-          dl_in.active_game_running = (rs.nav.active_game != 0);
-          dl_in.hibernate_blocked = hibernate_blocked;
-          dl_in.showcase_active = showcase_active_1s;
-
-          const auto dl_act = latter_core::display_lifecycle().evaluate_1s(
-              now_1s_ms, dl_in, rs.nav.display_power_state, rs.nav.sleep_start_time,
-              rs.nav.standby_entered_ms, rs.nav.wake_greeting_pending);
-          if (dl_act.turn_screen_off_now) {
+          if (pw_act.note_activity && !pw_act.turn_screen_off && !pw_act.enter_standby) {
+            latter_core::display_lifecycle().note_activity(now_1s_ms);
+          }
+          if (pw_act.turn_screen_off) {
             id(turn_screen_off).execute();
-          } else if (dl_act.enter_standby_now) {
+          } else if (pw_act.enter_standby) {
             id(enter_standby_state).execute();
           }
           #if LATTER_HAS_BATTERY
-          if (dl_act.start_hibernate_countdown_now) {
-            ESP_LOGD("power", "Inactivity with screen off exceeded %s: starting hibernation countdown",
-                     latter_core::pref_battery_hibernate_timeout_cstr(prefs));
-            latter_core::battery_model().hib_reason = latter_core::HibernateReason::IDLE;
+          if (pw_act.start_hibernate_countdown) {
             id(start_hibernation_countdown).execute();
           }
           #endif

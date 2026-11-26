@@ -466,7 +466,10 @@ void test_custom_icon_tiers_and_d051() {
   }
 
   const std::string w_hdr = read_repo_file("../../include/ui_widgets.h");
-  const std::string w_chrome = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+  const std::string w_chrome = read_repo_files({
+      "../../components/latter_ui/ui_widgets.cpp",
+      "../../components/latter_ui/ui_widgets_icons_chrome.cpp",
+  });
   const std::string home_src = read_repo_files({
       "../../components/latter_ui/page_clock.cpp",
       "../../components/latter_ui/page_home.cpp",
@@ -1288,6 +1291,9 @@ void test_clean_sheet_scaling_9geom() {
     const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
     LATTER_CHECK(af.small * 25.4 / p.ppi >= 1.95);
     LATTER_CHECK(af.micro * 25.4 / p.ppi >= 1.64);
+    LATTER_CHECK(af.micro < af.small && af.small < af.btn_bold &&
+                 af.btn_bold < af.date && af.date < af.chrono &&
+                 af.chrono == af.games && af.chrono < af.time);
     LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[dm.slot_count - 1] + dm.dock_r < p.w);
     LATTER_CHECK((dm.slot_stride - 2 * dm.dock_r) * 100 >= 40 * (2 * dm.dock_r));
     LATTER_CHECK(ly.home_date_y < ly.home_clock_y && ly.home_clock_y < ly.home_weather_y);

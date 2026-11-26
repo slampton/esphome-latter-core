@@ -273,7 +273,10 @@ void test_battery_model_and_power_policy() {
       "../../modules/power_policy.yaml",
       "../../modules/sleep_lifecycle.yaml",
   });
-  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string weather_cpp = read_repo_files({
+      "../../components/latter_ui/page_weather.cpp",
+      "../../components/latter_ui/weather_sky_fx.cpp",
+  });
 
   LATTER_CHECK(gfx_cpp.find("last_ambient_anim_ms() = start_m") != std::string::npos);
   LATTER_CHECK(comp_h.find("sync_disp_poller_for_anim(") != std::string::npos);
@@ -1128,6 +1131,39 @@ void test_profiler_timer_and_logging_policy() {
   LATTER_CHECK(axp_yaml.find("!bm.fault && latter_core::profiler_enabled()") != std::string::npos);
 }
 
+void test_compiled_camera_and_power_supervisors() {
+  using namespace latter_core;
+
+  reset_runtime_state();
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  prefs = PersistedDevicePrefs{};
+
+  // Camera supervisor: HUD auto-hide after 6 s when not talking/touching
+  rs.nav.gui_page = PageId::CAMERAS;
+  rs.nav.display_power_state = 0;
+  rs.cameras.tab = CamerasTab::SINGLE;
+  rs.cameras.hud_active = true;
+  rs.cameras.hud_timer = 1000U;
+  area_ctx_state().camera_stream_url = "http://127.0.0.1/mjpeg";
+  const auto c_act = camera_supervisor_controller().step_250ms(7500U, false);
+  LATTER_CHECK(!rs.cameras.hud_active);
+  LATTER_CHECK(c_act.mark_dirty_full && c_act.schedule_disp && c_act.sync_stream);
+
+  // Power supervisor 1s: forgotten game exits after 3 min untouched
+  rs.nav.gui_page = PageId::GAMES;
+  rs.nav.active_game = 1;
+  rs.nav.sleep_start_time = 1000U;
+  last_screen_wake_ms() = 1000U;
+  PowerSupervisor1sInputs p_in{};
+  p_in.panel_brightness_on = true;
+  p_in.last_touch_ms = 1000U;
+  p_in.ui_focus_last_ms = 1000U;
+  const auto p_act = evaluate_power_supervisor_1s(182000U, p_in);
+  LATTER_CHECK(rs.nav.active_game == 0);
+  LATTER_CHECK(p_act.stop_alarm_sound && p_act.note_activity);
+}
+
 }  // namespace
 
 void run_power_audio_hal_tests() {
@@ -1139,6 +1175,7 @@ void run_power_audio_hal_tests() {
   test_display_lifecycle_controller();
   test_audio_path_and_intercom_arbitrator();
   test_profiler_timer_and_logging_policy();
+  test_compiled_camera_and_power_supervisors();
 }
 
 }  // namespace latter_test

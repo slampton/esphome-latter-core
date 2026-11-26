@@ -1,16 +1,24 @@
 #if __has_include("audio_router.h")
 #include "audio_router.h"
+#include "hal_battery.h"
 #include "hal_display_lifecycle.h"
+#include "hal_link_report.h"
 #include "hal_radio_policy.h"
 #include "hal_sleep_pm.h"
+#include "hal_video_stream.h"
+#include "latter_prof.h"
 #include "state/state_nvs_snapshot.h"
 #include "latter_rpc.h"
 #include "latter_actions.h"
 #else
 #include "../../include/audio_router.h"
+#include "../../include/hal_battery.h"
 #include "../../include/hal_display_lifecycle.h"
+#include "../../include/hal_link_report.h"
 #include "../../include/hal_radio_policy.h"
 #include "../../include/hal_sleep_pm.h"
+#include "../../include/hal_video_stream.h"
+#include "../../include/latter_prof.h"
 #include "../../include/state/state_nvs_snapshot.h"
 #include "../../include/latter_rpc.h"
 #include "../../include/latter_actions.h"
@@ -1059,6 +1067,7 @@ void reset_runtime_state(bool preserve_hooks) {
   display_lifecycle().reset();
   v3_domain_reducer().reset();
   timer_alarm_controller().reset();
+  camera_supervisor_controller().reset();
 
   auto &rpc = latter_rpc::rpc_state();
   void *saved_sink_ctx = rpc.sink_ctx;
@@ -1073,6 +1082,327 @@ void reset_runtime_state(bool preserve_hooks) {
 #if !LATTER_HAS_ESP_PREFS
   reset_hibernate_snapshot_for_test();
 #endif
+}
+
+// ==============================================================================
+// 4. API Session Helpers, Remote Screen Brightness & Profiler Window Reset
+// ==============================================================================
+
+void apply_api_ha_connected_state(uint32_t now_ms) {
+  auto &r = runtime_state();
+  reset_all_v3_rev_guards();
+  reset_hello_sync_on_connect();
+  mark_hello_in_flight(true, now_ms);
+  link_state().ha_connected = true;
+  link_state().last_ha_connect_ms = now_ms;
+  r.alert.last_seen_alert_id = -1;
+  r.nav.last_pub_display_power_state = -1;
+  r.nav.last_pub_display_bri_pct = -1;
+}
+
+void apply_api_ha_disconnected_state(bool is_ha, uint32_t now_ms) {
+  if (is_ha) {
+    mark_hello_in_flight(false);
+  }
+  link_report_api_disconnected(is_ha, now_ms);
+  if (is_ha && link_report().ha_clients == 0U) {
+    link_state().ha_connected = false;
+    link_state().last_ha_disconnect_ms = now_ms;
+  }
+}
+
+bool apply_remote_screen_brightness_cmd(std::string_view sv_cmd,
+                                        uint32_t now_ms,
+                                        bool panel_is_on,
+                                        bool &out_need_wake) {
+  out_need_wake = false;
+  static constexpr std::string_view kPrefix = "set_screen_bri:";
+  if (sv_cmd.size() <= kPrefix.size() || !sv_cmd.starts_with(kPrefix)) {
+    return false;
+  }
+  const std::string_view pct_sv = sv_cmd.substr(kPrefix.size());
+  if (pct_sv.empty()) {
+    return false;
+  }
+  int parsed_pct = 0;
+  for (char ch : pct_sv) {
+    if (ch < '0' || ch > '9') {
+      return false;
+    }
+    if (parsed_pct <= 1000) {
+      parsed_pct = parsed_pct * 10 + (ch - '0');
+    }
+  }
+  const int pct = std::clamp(parsed_pct, 1, 100);
+  auto &r = runtime_state();
+  if (persisted_prefs().auto_brightness_enum() == AutoBrightnessMode::Disabled) {
+    r.nav.ambient_bri_override_pct = -1;
+    uint32_t bri_eff = 0U;
+    (void)record_local_pref_edit(
+        PrefKey::MANUAL_BRIGHTNESS, std::to_string(pct), now_ms, bri_eff);
+  } else {
+    r.nav.ambient_bri_override_pct = static_cast<int8_t>(pct);
+  }
+  r.nav.last_pub_display_power_state = -1;
+  r.nav.last_pub_display_bri_pct = -1;
+  out_need_wake = (r.nav.display_power_state != 0) || !panel_is_on;
+  return true;
+}
+
+void reset_flight_recorder_window(uint32_t now_ms) noexcept {
+  auto &fr = flight_recorder();
+  fr.window_frames = 0U;
+  fr.window_render_us = 0U;
+  fr.max_render_us = 0U;
+  fr.slow_frames = 0U;
+  fr.last_summary_ms = now_ms;
+}
+
+// ==============================================================================
+// 5. CameraSupervisorController — 250 ms Camera & Doorbell Popup Supervisor
+// ==============================================================================
+
+CameraSupervisorActions CameraSupervisorController::step_250ms(uint32_t now_ms,
+                                                                 bool touch_active) {
+  CameraSupervisorActions act{};
+  auto &rs = runtime_state();
+  const auto &prefs = persisted_prefs();
+  const auto &ac = area_ctx_state();
+  const bool cam_active_now = is_camera_view_active(rs);
+  const bool live_popup_now = rs.alert.active && rs.cameras.doorbell_live_popup_active;
+  const bool screen_ok = (rs.nav.display_power_state == 0) && !rs.nav.is_hibernating &&
+                         !rs.nav.ota_in_progress && !rs.alarms.ringing &&
+                         !rs.timers.ringing && !rs.alarms.find_my_active;
+
+  if (!screen_ok || (!cam_active_now && !live_popup_now)) {
+    if (video_client().is_active()) {
+      act.stop_video = true;
+    }
+    return act;
+  }
+
+  if (cam_active_now) {
+    if (!cam_intercom_status().empty() && rs.intercom.cam_status_ms > 0U &&
+        (now_ms - rs.intercom.cam_status_ms > 2500U)) {
+      cam_intercom_status().clear();
+      act.schedule_disp = true;
+    }
+
+    // 6 s auto-hide HUD on Single / Carousel (never hides while talking, listening, or quick-reply open)
+    if ((rs.cameras.tab == CamerasTab::SINGLE ||
+         rs.cameras.tab == CamerasTab::CAROUSEL) &&
+        rs.cameras.hud_active && !rs.cameras.quick_reply_open &&
+        !cam_call_active() && !cam_listen_active() &&
+        !rs.voice.intercom_turn && !touch_active &&
+        (now_ms - rs.cameras.hud_timer >= 6000U)) {
+      rs.cameras.hud_active = false;
+      act.mark_dirty_full = true;
+      act.schedule_disp = true;
+    }
+
+    // Automatic Carousel dwell rotation
+    if (rs.cameras.tab == CamerasTab::CAROUSEL &&
+        !rs.cameras.carousel_paused && !rs.cameras.quick_reply_open) {
+      CameraRecord cams[MAX_CAMERA_SLOTS]{};
+      const int c_cnt = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
+      int car_idx[MAX_CAMERA_SLOTS]{};
+      const int car_cnt = collect_carousel_camera_indices(cams, c_cnt, car_idx, MAX_CAMERA_SLOTS);
+      const uint32_t dwell_ms = prefs.camera_carousel_interval_ms();
+      if (car_cnt > 1 && (now_ms - rs.cameras.carousel_last_advance_ms >= dwell_ms)) {
+        rs.cameras.carousel_idx = (rs.cameras.carousel_idx + 1) % car_cnt;
+        rs.cameras.carousel_last_advance_ms = now_ms;
+        act.sync_stream = true;
+        if (prefs.camera_stream_mode == 2U || ac.camera_stream_url.empty()) {
+          act.release_snapshot_art = true;
+          rs.alert.loaded_camera_url.clear();
+          act.fetch_snapshot = true;
+        }
+        act.mark_dirty_full = true;
+        act.schedule_disp = true;
+      }
+    }
+
+    // IMU landscape auto-rotate on non-square rectangular panels
+    if constexpr (!LATTER_ROUND_DISPLAY && LATTER_HAS_IMU && (LATTER_SCREEN_W != LATTER_SCREEN_H)) {
+      if (rs.cameras.tab == CamerasTab::SINGLE && !rs.cameras.quick_reply_open) {
+        const float ax = rs.hw_accel_x;
+        const float ay = rs.hw_accel_y;
+        if (!std::isnan(ax) && !std::isnan(ay) && (std::abs(ax) > 0.15f || std::abs(ay) > 0.15f)) {
+          const bool want_land = (std::abs(ax) > 0.68f && std::abs(ay) < 0.42f);
+          const bool want_port = (std::abs(ay) > 0.68f && std::abs(ax) < 0.42f);
+          if ((want_land && !rs.cameras.landscape_mode) ||
+              (want_port && rs.cameras.landscape_mode)) {
+            rs.cameras.landscape_mode = want_land;
+            act.sync_stream = true;
+            if (prefs.camera_stream_mode == 2U || ac.camera_stream_url.empty()) {
+              act.release_snapshot_art = true;
+              act.fetch_snapshot = true;
+            }
+            act.mark_dirty_full = true;
+            act.schedule_disp = true;
+          }
+        }
+      }
+    }
+
+    // Keep live video stream synced (or fall back to paced snapshots ONLY in Snapshots mode)
+    const bool snap_only = (prefs.camera_stream_mode == 2U) || ac.camera_stream_url.empty();
+    if (!snap_only && rs.cameras.tab != CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
+      if (!video_client().is_active() && (now_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
+        act.sync_stream = true;
+      }
+    } else if (snap_only && rs.cameras.tab != CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
+#if LATTER_HAS_HW_JPEG
+      constexpr uint32_t kCamRefreshMs = 500U;
+#else
+      constexpr uint32_t kCamRefreshMs = 900U;
+#endif
+      const uint32_t elapsed_cam_ms = now_ms - last_cam_live_fetch_ms();
+      const uint32_t backoff_until = cam_error_backoff_until_ms();
+      const bool in_backoff =
+          (backoff_until != 0U) && (static_cast<int32_t>(now_ms - backoff_until) < 0);
+      if (!in_backoff &&
+          ((!cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
+           (elapsed_cam_ms >= 4500U))) {
+        last_cam_live_fetch_ms() = now_ms;
+        act.fetch_snapshot = true;
+      }
+    }
+  } else if (live_popup_now && !video_client().is_active() &&
+             (now_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
+    act.sync_stream = true;
+  }
+
+  return act;
+}
+
+CameraSupervisorController &camera_supervisor_controller() noexcept {
+  static CameraSupervisorController inst;
+  return inst;
+}
+
+// ==============================================================================
+// 6. 1 s Power Supervisor Evaluator (Games/Tools/RTH/DisplayLifecycle/Hibernate)
+// ==============================================================================
+
+PowerSupervisor1sActions evaluate_power_supervisor_1s(uint32_t now_ms,
+                                                      const PowerSupervisor1sInputs &in) {
+  PowerSupervisor1sActions act{};
+  auto &rs = runtime_state();
+  const auto &prefs = persisted_prefs();
+  const bool showcase_active_1s = rs.showcase.is_active(now_ms);
+  const uint32_t last_user_act_ms =
+      std::max<uint32_t>({last_screen_wake_ms(), in.last_touch_ms, in.ui_focus_last_ms});
+
+  if (rs.nav.display_power_state == 0 && !showcase_active_1s && (now_ms > last_user_act_ms)) {
+    const uint32_t touch_idle_ms = now_ms - last_user_act_ms;
+    if (rs.nav.active_game > 0 && touch_idle_ms >= 180000U) {
+      ESP_LOGD("power", "Game untouched for 3 min: exiting to launcher so screen can sleep");
+      rs.nav.active_game = 0;
+      act.stop_alarm_sound = true;
+      display_lifecycle().note_activity(now_ms);
+      act.note_activity = true;
+    }
+    if (!rs.hw_usb_connected &&
+        ((rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
+         is_camera_view_active(rs)) &&
+        touch_idle_ms >= 300000U) {
+      ESP_LOGD("power", "Tool/Camera untouched on battery for 5 min: exiting to idle");
+      if (is_camera_view_active(rs)) {
+        if (cam_call_active() || cam_intercom_ptt_active() || cam_listen_active()) {
+          intercom_session().stop_call_with_hw(now_ms);
+        }
+        cam_quick_reply_open() = false;
+        video_client().stop();
+        rs.alert.loaded_camera_url.clear();
+        act.exit_camera_home = true;
+      } else {
+        rs.nav.tools_subpage = 0;
+      }
+      act.sync_brightness = true;
+      display_lifecycle().note_activity(now_ms);
+      act.note_activity = true;
+    }
+  }
+
+  const uint32_t rth_ms = return_to_home_timeout_ms(prefs);
+  const bool media_playing_1s =
+      rs.audio.local_mp_playing() || (media_state().state == "playing");
+  const bool cam_busy_1s =
+      cam_call_active() || cam_listen_active() || cam_intercom_ptt_active();
+  if (!act.exit_camera_home && rs.nav.display_power_state != 2 && rth_ms > 0U &&
+      (now_ms > last_user_act_ms) &&
+      (now_ms - last_user_act_ms >= rth_ms) &&
+      should_return_to_home_on_idle(rs, prefs, media_playing_1s, cam_busy_1s)) {
+    ESP_LOGD("power", "Idle exceeded Return to Home timeout (%s): returning to Home",
+             pref_return_to_home_timeout_cstr(prefs));
+    act.navigate_home = true;
+    act.apply_power_policy = true;
+  }
+
+  const bool active_tool_awake =
+      !act.exit_camera_home && !act.navigate_home &&
+      ((rs.nav.gui_page == 8 && (rs.nav.tools_subpage == 5 || rs.nav.tools_subpage == 7)) ||
+       is_camera_view_active(rs));
+  const uint32_t since_touch_ms =
+      now_ms - std::max<uint32_t>(last_screen_wake_ms(), in.last_touch_ms);
+  const bool in_hand_hold =
+      (since_touch_ms < 90000U) &&
+      should_in_hand_block_sleep(
+          !rs.hw_usb_connected && !rs.audio.speaker_enabled() && rs.hw_pickup_detected);
+  const bool voice_or_announce_busy =
+      rs.voice.active || rs.audio.va_running() || rs.voice.tts_received ||
+      rs.audio.announcement_running();
+  const bool alert_or_stopwatch_busy =
+      rs.stopwatch.running || rs.timers.ringing || rs.alarms.ringing ||
+      rs.alarms.find_my_active || rs.alert.active;
+  const bool hibernate_blocked =
+      rs.nav.is_hibernating || rs.hw_usb_connected || rs.nav.ota_in_progress ||
+      showcase_active_1s ||
+      rs.audio.local_mp_playing() ||
+      rs.stopwatch.running || rs.timers.running || rs.timers.ringing ||
+      rs.alarms.ringing || rs.alarms.find_my_active || voice_or_announce_busy ||
+      cam_busy_1s || (rs.nav.active_game > 0);
+
+  DisplaySupervisorInputs dl_in{};
+  dl_in.is_stationary = (LATTER_IS_STATIONARY != 0);
+  dl_in.has_battery = (LATTER_HAS_BATTERY != 0);
+  dl_in.usb_connected = rs.hw_usb_connected;
+  dl_in.screensaver_mode = prefs.screensaver_mode;
+  dl_in.docked_timeout_opt = pref_docked_idle_timeout_cstr(prefs);
+  dl_in.battery_timeout_opt = pref_battery_screen_timeout_cstr(prefs);
+  dl_in.hibernate_timeout_opt = pref_battery_hibernate_timeout_cstr(prefs);
+  dl_in.wake_greeting_enabled = prefs.wake_greeting && !prefs.bedtime_active;
+  dl_in.bedtime_active = prefs.bedtime_active;
+  dl_in.panel_brightness_on = in.panel_brightness_on;
+  dl_in.is_hibernating = rs.nav.is_hibernating;
+  dl_in.ota_in_progress = rs.nav.ota_in_progress;
+  dl_in.voice_or_announce_busy = voice_or_announce_busy;
+  dl_in.alert_or_stopwatch_busy = alert_or_stopwatch_busy;
+  dl_in.in_hand_hold = in_hand_hold;
+  dl_in.active_tool_awake = active_tool_awake;
+  dl_in.active_game_running = (rs.nav.active_game != 0);
+  dl_in.hibernate_blocked = hibernate_blocked;
+  dl_in.showcase_active = showcase_active_1s;
+
+  const auto dl_act = display_lifecycle().evaluate_1s(
+      now_ms, dl_in, rs.nav.display_power_state, rs.nav.sleep_start_time,
+      rs.nav.standby_entered_ms, rs.nav.wake_greeting_pending);
+  if (dl_act.turn_screen_off_now) {
+    act.turn_screen_off = true;
+  } else if (dl_act.enter_standby_now) {
+    act.enter_standby = true;
+  }
+#if LATTER_HAS_BATTERY
+  if (dl_act.start_hibernate_countdown_now) {
+    ESP_LOGD("power", "Inactivity with screen off exceeded %s: starting hibernation countdown",
+             pref_battery_hibernate_timeout_cstr(prefs));
+    battery_model().hib_reason = HibernateReason::IDLE;
+    act.start_hibernate_countdown = true;
+  }
+#endif
+
+  return act;
 }
 
 }  // namespace latter_core

@@ -4,6 +4,13 @@
 // Latter First-Party Touch HAL: Protocol Decoders, Telemetry & Driver Interface
 // (include/hal_touch.h)
 // ==============================================================================
+// Thread affinity:
+//   - ISR/main-loop cross-thread atomics: `LatterTouchIrqStore` (`irq_pending`,
+//     `edge_count`) is written in IRAM GPIO ISR context and consumed on the main
+//     ESPHome loop(); `wake_isr_fn` is bound before attaching the interrupt.
+//   - Main-loop only: `LatterTouchscreen` methods, `TouchHalTelemetry`, and
+//     `touch_pump_bridge()` / `touch_control_bridge()` / `touch_wake_bridge()`.
+// ------------------------------------------------------------------------------
 // Unifies FocalTech (FT6336 / FT3168), Goodix (GT911), and Hynitron (CST9217 /
 // CST816S) capacitive touch controllers behind one deterministic state machine:
 //   - Trigger-pulse init (FT REG 0xA4=0x01, 0x88=0x06) + post-sleep restore
@@ -334,6 +341,11 @@ struct LatterTouchIrqStore {
   static void gpio_intr(LatterTouchIrqStore *store);
 #endif
 };
+
+static_assert(std::atomic<bool>::is_always_lock_free,
+              "LatterTouchIrqStore::irq_pending must be lock-free for IRAM ISR access");
+static_assert(std::atomic<uint32_t>::is_always_lock_free,
+              "LatterTouchIrqStore::edge_count must be lock-free for IRAM ISR access");
 
 class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::esphome::i2c::I2CDevice {
  public:

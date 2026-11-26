@@ -4,6 +4,8 @@
 // Latter Core: Pure C++20 State Enums, Capabilities & Protocol Primitives
 // (include/state/state_common.h)
 // ==============================================================================
+// Thread affinity: main-loop only (ESPHome loop() / API / script context).
+// ==============================================================================
 
 #include <algorithm>
 #include <cctype>

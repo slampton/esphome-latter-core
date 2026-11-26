@@ -163,11 +163,15 @@ void test_quick_actions_d074() {
   const std::string qa_cpp = read_repo_file("../../components/latter_ui/overlay_quick_actions.cpp");
   const std::string touch_cpp = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
   const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string disp_pipeline = read_repo_files({
+      "../../guis/universal/gui.yaml",
+      "../../components/latter_ui/ui_compositor.cpp",
+  });
 
   LATTER_CHECK(layout_h.find("top_edge_zone_y()") != std::string::npos);
   LATTER_CHECK(comp_cpp.find("render_quick_actions_overlay(") != std::string::npos);
   LATTER_CHECK(qa_cpp.find("void render_quick_actions_overlay(") != std::string::npos);
-  LATTER_CHECK(gui_yaml.find("quick_actions_only = (takeover_sig == (1U << 11))") != std::string::npos);
+  LATTER_CHECK(disp_pipeline.find("quick_actions_only = (out.takeover_sig == (1U << 11))") != std::string::npos);
 
   for (const std::string *src : {&state_h, &touch_h, &touch_cpp, &gui_yaml}) {
     LATTER_CHECK(src->find("hold_crown_power_off") == std::string::npos);

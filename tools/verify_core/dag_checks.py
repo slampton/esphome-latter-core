@@ -286,6 +286,26 @@ def _check_core_headers_manifest(failures: list[str]) -> None:
         )
 
 
+def _check_bridge_containment(failures: list[str]) -> None:
+    """Contain upstream private-member accessors (`BridgeRob`, `DispBufferAccessor`) to their bridge TUs."""
+    allowed_paths = {
+        "BridgeRob": "components/latter_core/esphome_bridge.cpp",
+        "DispBufferAccessor": "include/ui_esphome_display.h",
+    }
+    patterns = {tok: re.compile(rf"\b{tok}\b") for tok in allowed_paths}
+    for base in (ROOT / "include", ROOT / "components"):
+        for path in iter_repo_files(base):
+            if path.suffix.lower() not in {".h", ".hpp", ".cpp"}:
+                continue
+            rel = path.relative_to(ROOT).as_posix()
+            clean = strip_cpp_comments(path.read_text(encoding="utf-8"))
+            for tok, pat in patterns.items():
+                if rel != allowed_paths[tok] and pat.search(clean):
+                    failures.append(
+                        f"[BRIDGE CONTAINMENT] {rel} references '{tok}' (contained strictly to {allowed_paths[tok]})"
+                    )
+
+
 def verify_dag_and_layers(failures: list[str]) -> None:
     """Run all DAG cycle, flat-source, and coarse component/header boundary gates."""
     verify_flat_component_sources(failures)
@@ -293,5 +313,6 @@ def verify_dag_and_layers(failures: list[str]) -> None:
     _check_ui_header_boundaries(failures)
     _check_core_to_ui_inversion(failures)
     _check_ui_cpp_boundaries(failures)
+    _check_bridge_containment(failures)
     _check_core_headers_manifest(failures)
     _check_ui_headers_manifest(failures)

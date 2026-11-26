@@ -126,108 +126,25 @@ interval:
 
           // Dedicated Cameras App & P4 Live Doorbell Popup lifecycle supervisor (D-066)
           {
-            const uint32_t now_cam_ms = millis();
-            const auto &prefs = latter_core::persisted_prefs();
-            const auto &ac = latter_core::area_ctx_state();
-            const bool cam_active_now = latter_core::is_camera_view_active(rs);
-            const bool live_popup_now = rs.alert.active && rs.cameras.doorbell_live_popup_active;
-            const bool screen_ok = (rs.nav.display_power_state == 0) && !rs.nav.is_hibernating &&
-                                   !rs.nav.ota_in_progress && !rs.alarms.ringing &&
-                                   !rs.timers.ringing && !rs.alarms.find_my_active;
-
-            if (!screen_ok || (!cam_active_now && !live_popup_now)) {
-              if (latter_core::video_client().is_active()) {
-                latter_core::video_client().stop();
-              }
-            } else if (cam_active_now) {
-              if (!latter_core::cam_intercom_status().empty() && rs.intercom.cam_status_ms > 0 &&
-                  (now_cam_ms - rs.intercom.cam_status_ms > 2500U)) {
-                latter_core::cam_intercom_status() = "";
-                latter_ui::schedule_disp_update(&id(disp1));
-              }
-
-              // 6 s auto-hide HUD on Single / Carousel (never hides while talking, listening, or quick-reply open)
-              if ((rs.cameras.tab == latter_core::CamerasTab::SINGLE ||
-                   rs.cameras.tab == latter_core::CamerasTab::CAROUSEL) &&
-                  rs.cameras.hud_active && !rs.cameras.quick_reply_open &&
-                  !latter_core::cam_call_active() && !latter_core::cam_listen_active() &&
-                  !rs.voice.intercom_turn && !latter_ui::touch_gesture().active &&
-                  (now_cam_ms - rs.cameras.hud_timer >= 6000U)) {
-                rs.cameras.hud_active = false;
-                latter_ui::mark_dirty_full();
-                latter_ui::schedule_disp_update(&id(disp1));
-              }
-
-              // Automatic Carousel dwell rotation
-              if (rs.cameras.tab == latter_core::CamerasTab::CAROUSEL &&
-                  !rs.cameras.carousel_paused && !rs.cameras.quick_reply_open) {
-                latter_core::CameraRecord cams[latter_core::MAX_CAMERA_SLOTS]{};
-                const int c_cnt = latter_core::parse_cameras_records(ac.cameras_summary, cams, latter_core::MAX_CAMERA_SLOTS);
-                int car_idx[latter_core::MAX_CAMERA_SLOTS]{};
-                const int car_cnt = latter_core::collect_carousel_camera_indices(cams, c_cnt, car_idx, latter_core::MAX_CAMERA_SLOTS);
-                const uint32_t dwell_ms = prefs.camera_carousel_interval_ms();
-                if (car_cnt > 1 && (now_cam_ms - rs.cameras.carousel_last_advance_ms >= dwell_ms)) {
-                  rs.cameras.carousel_idx = (rs.cameras.carousel_idx + 1) % car_cnt;
-                  rs.cameras.carousel_last_advance_ms = now_cam_ms;
-                  id(sync_camera_stream).execute();
-                  if (prefs.camera_stream_mode == 2U || ac.camera_stream_url.empty()) {
-                    latter_ui::release_art(id(camera_snapshot_art));
-                    rs.alert.loaded_camera_url.clear();
-                    id(fetch_on_demand_camera).execute();
-                  }
-                  latter_ui::mark_dirty_full();
-                  latter_ui::schedule_disp_update(&id(disp1));
-                }
-              }
-
-              // IMU landscape auto-rotate on non-square rectangular panels
-              if (!LATTER_ROUND_DISPLAY && LATTER_HAS_IMU && (latter_ui::SCREEN_W != latter_ui::SCREEN_H) &&
-                  rs.cameras.tab == latter_core::CamerasTab::SINGLE && !rs.cameras.quick_reply_open) {
-                float ax = rs.hw_accel_x;
-                float ay = rs.hw_accel_y;
-                if (!std::isnan(ax) && !std::isnan(ay) && (std::abs(ax) > 0.15f || std::abs(ay) > 0.15f)) {
-                  bool want_land = (std::abs(ax) > 0.68f && std::abs(ay) < 0.42f);
-                  bool want_port = (std::abs(ay) > 0.68f && std::abs(ax) < 0.42f);
-                  if ((want_land && !rs.cameras.landscape_mode) ||
-                      (want_port && rs.cameras.landscape_mode)) {
-                    rs.cameras.landscape_mode = want_land;
-                    id(sync_camera_stream).execute();
-                    if (prefs.camera_stream_mode == 2U || ac.camera_stream_url.empty()) {
-                      latter_ui::release_art(id(camera_snapshot_art));
-                      id(fetch_on_demand_camera).execute();
-                    }
-                    latter_ui::mark_dirty_full();
-                    latter_ui::schedule_disp_update(&id(disp1));
-                  }
-                }
-              }
-
-              // Keep live video stream synced (or fall back to paced snapshots ONLY in Snapshots mode)
-              const bool snap_only = (prefs.camera_stream_mode == 2U) || ac.camera_stream_url.empty();
-              if (!snap_only && rs.cameras.tab != latter_core::CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
-                if (!latter_core::video_client().is_active() && (now_cam_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
-                  id(sync_camera_stream).execute();
-                }
-              } else if (snap_only && rs.cameras.tab != latter_core::CamerasTab::SETTINGS && !rs.cameras.quick_reply_open) {
-                #if LATTER_HAS_HW_JPEG
-                const uint32_t kCamRefreshMs = 500U;
-                #else
-                const uint32_t kCamRefreshMs = 900U;
-                #endif
-                const uint32_t elapsed_cam_ms = now_cam_ms - latter_core::last_cam_live_fetch_ms();
-                const uint32_t backoff_until = latter_core::cam_error_backoff_until_ms();
-                const bool in_backoff = (backoff_until != 0U) &&
-                                        (static_cast<int32_t>(now_cam_ms - backoff_until) < 0);
-                if (!in_backoff &&
-                    ((!latter_core::cam_download_in_progress() && elapsed_cam_ms >= kCamRefreshMs) ||
-                     (elapsed_cam_ms >= 4500U))) {
-                  latter_core::last_cam_live_fetch_ms() = now_cam_ms;
-                  id(fetch_on_demand_camera).execute();
-                }
-              }
-            } else if (live_popup_now && !latter_core::video_client().is_active() &&
-                       (now_cam_ms - rs.cameras.last_stream_sync_ms >= 1000U)) {
+            const auto cam_act = latter_core::camera_supervisor_controller().step_250ms(
+                millis(), latter_ui::touch_gesture().active);
+            if (cam_act.stop_video) {
+              latter_core::video_client().stop();
+            }
+            if (cam_act.sync_stream) {
               id(sync_camera_stream).execute();
+            }
+            if (cam_act.release_snapshot_art) {
+              latter_ui::release_art(id(camera_snapshot_art));
+            }
+            if (cam_act.fetch_snapshot) {
+              id(fetch_on_demand_camera).execute();
+            }
+            if (cam_act.mark_dirty_full) {
+              latter_ui::mark_dirty_full();
+            }
+            if (cam_act.schedule_disp) {
+              latter_ui::schedule_disp_update(&id(disp1));
             }
           }
 

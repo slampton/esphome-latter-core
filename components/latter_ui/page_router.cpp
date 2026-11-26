@@ -8,7 +8,7 @@ using namespace latter_core;
 // ==============================================================================
 
 void render_active_page(Rgb565Surface &it, const UiFrameContext &ctx) {
-  const int pg = runtime_state().nav.gui_page;
+  const int pg = ctx.state().nav.gui_page;
   if (pg != PageId::HOME) {
     home_activity_card_shown() = false;
     home_activity_rendered_rows() = -1;

@@ -91,11 +91,6 @@ display:
     auto_clear_enabled: false
     lambda: |-
       const auto &rs = latter_core::runtime_state();
-      latter_core::hal_touch_pump();
-      latter_ui::touch_engine().tick(millis());
-      const int prof_sub = latter_ui::compute_active_subpage_id();
-      latter_ui::FrameProfileScope prof_frame_scope(rs.nav.gui_page, prof_sub, rs.nav.display_power_state);
-
       latter_ui::UiFrameContext &ctx = latter_ui::acquire_frame_context();
       ctx.now = id(ha_time).now();
       if (!ctx.now.is_valid()) ctx.now = id(sntp_time).now();
@@ -104,7 +99,6 @@ display:
       ctx.cy = latter_ui::SCREEN_CY;
       ctx.friendly_name = "${friendly_name}";
       ctx.fw_version = "${version}";
-
       ctx.font_time = id(font_time);
       ctx.font_chrono_time = id(font_chrono_time);
       ctx.font_date = id(font_date);
@@ -112,7 +106,6 @@ display:
       ctx.font_small = id(font_small);
       ctx.font_micro = id(font_micro);
       ctx.font_games_title = id(font_games_title);
-
       {
         const uint16_t *la_px = nullptr;
         int la_w = 0, la_h = 0;
@@ -124,7 +117,6 @@ display:
       ctx.home_wallpaper_art = latter_ui::make_art_view(id(home_wallpaper_art));
       ctx.screensaver_photo_art = latter_ui::make_art_view(id(screensaver_photo_art));
       ctx.camera_snapshot_art = latter_ui::make_art_view(id(camera_snapshot_art));
-
       ctx.theme_primary = id(theme_primary);
       ctx.theme_secondary = id(theme_secondary);
       ctx.col_bg = id(col_bg);
@@ -142,26 +134,13 @@ display:
       ctx.col_orange = id(col_orange);
       ctx.col_red = id(col_red);
       ctx.col_magenta = id(col_magenta);
-
-      const auto &prefs = latter_core::persisted_prefs();
       ctx.panel_is_on = id(display_brightness).current_values.is_on();
       latter_ui::sync_ctx_link_health(ctx);
-      ctx.local_media_playing = rs.audio.local_mp_playing();
-      ctx.spk_vol_pct = static_cast<int>(std::round(rs.audio.local_mp_volume_or(0.0f) * 100.0f));
-      ctx.alert_vol_pct = (prefs.alert_volume < 20) ? latter_core::kPrefDefaultAlertVolume : static_cast<int>(prefs.alert_volume);
-      ctx.vol_step_pct = (prefs.volume_step_size < 1 || prefs.volume_step_size > 10)
-                             ? 5
-                             : static_cast<int>(prefs.volume_step_size);
       ctx.free_heap_kb = static_cast<int>(esp_get_free_heap_size() / 1024U);
       ctx.wifi_rssi = id(latter_wifi_signal).state;
       ctx.ip_addr = id(latter_ip_address).state;
       ctx.ble_active = id(ble_ctrl).is_active();
-      ctx.track_title = rs.music.last_sendspin_title;
-      ctx.track_artist = rs.music.last_sendspin_artist;
-      ctx.track_album = rs.music.last_sendspin_album;
-      std::string sys_fw_ver;
-      std::string sys_fw_sum;
-      std::string sys_wake_word;
+      std::string sys_fw_ver, sys_fw_sum, sys_wake_word;
       if (rs.nav.gui_page == 4) {
         sys_fw_ver = latter_core::fw_update_latest_version(&id(latter_firmware_update));
         sys_fw_sum = latter_core::fw_update_release_summary(&id(latter_firmware_update));
@@ -170,296 +149,4 @@ display:
       ctx.fw_latest_ver = sys_fw_ver;
       ctx.fw_release_summary = sys_fw_sum;
       ctx.primary_wake_word = sys_wake_word;
-
-      ctx.clock_face_style_opt = latter_core::effective_clock_face_cstr(prefs, rs, ctx.now_ms);
-      ctx.weather_sim_opt = latter_core::effective_weather_sim_cstr(latter_core::device_prefs_state(), rs, ctx.now_ms);
-      ctx.music_overlay_style_opt = latter_core::pref_music_overlay_style_cstr(prefs);
-      ctx.music_auto_open_opt = latter_core::pref_music_auto_open_cstr(prefs);
-      ctx.music_fullscreen_art_opt = latter_core::pref_album_art_style_cstr(prefs);
-      ctx.music_album_sort_opt = latter_core::pref_album_sort_order_cstr(prefs);
-      ctx.music_artist_album_sort_opt = latter_core::pref_artist_album_sort_order_cstr(prefs);
-      ctx.music_podcast_sort_opt = latter_core::pref_podcast_sort_order_cstr(prefs);
-      ctx.theme_palette_opt = latter_core::pref_color_profile_cstr(prefs);
-      ctx.glass_style_opt = latter_core::pref_glass_style_cstr(prefs);
-      ctx.tap_wake_opt = latter_core::pref_tap_to_wake_cstr(prefs);
-      ctx.pickup_wake_opt = latter_core::pref_pickup_to_wake_cstr(prefs);
-      ctx.display_off_timeout_opt = latter_core::pref_battery_screen_timeout_cstr(prefs);
-      ctx.screensaver_mode_opt = latter_core::pref_screensaver_mode_cstr(prefs);
-      ctx.screensaver_style_opt = latter_core::effective_screensaver_style_cstr(prefs, rs, ctx.now_ms);
-      ctx.screensaver_docked_timeout_opt = latter_core::pref_docked_idle_timeout_cstr(prefs);
-      ctx.hibernate_timeout_opt = latter_core::pref_battery_hibernate_timeout_cstr(prefs);
-      ctx.bedtime_display_opt = latter_core::pref_bedtime_display_cstr(prefs);
-      ctx.default_start_app_opt = latter_core::pref_start_screen_cstr(prefs);
-      ctx.auto_brightness_opt = latter_core::pref_auto_brightness_mode_cstr(prefs);
-      ctx.manual_brightness_pct = static_cast<int>(prefs.manual_brightness_pct());
-      ctx.day_brightness_pct = static_cast<int>(prefs.day_brightness_pct());
-      ctx.night_brightness_pct = static_cast<int>(prefs.night_brightness_pct());
-      ctx.va_wake_word_mode_opt = latter_core::pref_wake_word_mode_cstr(prefs);
-      ctx.va_visual_profile_opt = latter_core::effective_va_visual_profile_cstr(prefs, rs, ctx.now_ms);
-      ctx.ww_sens_okay_nabu_opt = latter_core::pref_ww_sens_cstr(prefs.ww_sens_okay_nabu);
-      ctx.ww_sens_hey_luna_opt = latter_core::pref_ww_sens_cstr(prefs.ww_sens_hey_luna);
-      ctx.ww_sens_hey_jarvis_opt = latter_core::pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis);
-      ctx.ww_sens_hey_mycroft_opt = latter_core::pref_ww_sens_cstr(prefs.ww_sens_hey_mycroft);
-      ctx.ww_sens_alexa_opt = latter_core::pref_ww_sens_cstr(prefs.ww_sens_alexa);
-
-      ctx.day_start_hr = static_cast<int>(prefs.day_start_hour);
-      ctx.night_start_hr = static_cast<int>(prefs.night_start_hour);
-      ctx.home_weather_bg = prefs.weather_background;
-      ctx.weather_app_bg = prefs.weather_app_background;
-      ctx.home_wake_greeting = prefs.wake_greeting;
-      ctx.home_sun_arc = prefs.home_sun;
-      ctx.home_moon_phase = prefs.home_moon;
-      ctx.game_sound_enabled = prefs.game_sound_effects;
-      ctx.va_wake_screen = prefs.wake_screen_on_assist;
-      ctx.screensaver_photo_clock = prefs.screensaver_photo_clock;
-      ctx.bedtime_active = prefs.bedtime_active;
-      ctx.do_not_disturb = prefs.do_not_disturb;
-
-      const auto &ac_wall = latter_core::area_ctx_state();
-      const bool has_day_night_sky = latter_core::is_day_night_sky_wallpaper_url(ac_wall.wallpaper_url);
-      const bool has_wallpaper = (!ac_wall.wallpaper_url.empty() &&
-                                  !has_day_night_sky &&
-                                  ac_wall.wallpaper_url == rs.music.loaded_wallpaper_url &&
-                                  ctx.home_wallpaper_art.width > 0);
-      const bool cam_live_canvas =
-          (rs.nav.gui_page == latter_core::PageId::CAMERAS &&
-           rs.cameras.tab != latter_core::CamerasTab::SETTINGS &&
-           !rs.cameras.quick_reply_open);
-      const bool tools_full_bleed =
-          (rs.nav.gui_page == latter_core::PageId::TOOLS &&
-           rs.nav.tools_subpage == latter_core::ToolsSubpage::FLASHLIGHT) ||
-          cam_live_canvas;
-      const bool weather_sim_active = (!ctx.weather_sim_opt.empty() && ctx.weather_sim_opt != "Live (Home Assistant)");
-      const latter_ui::BackdropMode bd_mode = latter_ui::resolve_backdrop_mode(
-          rs.nav.gui_page, rs.nav.home_subpage, ctx.home_weather_bg, ctx.weather_app_bg,
-          weather_sim_active, has_wallpaper, has_day_night_sky,
-          tools_full_bleed, ctx.music_fullscreen_art_opt == "None");
-      const bool weather_sky_active = (bd_mode == latter_ui::BackdropMode::LiveWeatherSky);
-      const auto &ws_cad = latter_core::weather_state();
-      const bool weather_ready_cad =
-          weather_sim_active ||
-          (!std::isnan(ws_cad.temperature) && !ws_cad.condition.empty() &&
-           !ws_cad.sun_state.empty() && ws_cad.sun_state != "unknown" && ws_cad.sun_state != "unavailable");
-      const uint32_t latest_input_ms = std::max(
-          latter_ui::touch_gesture().last_touch_ms, latter_ui::ui_focus_last_ms());
-      const bool motion_power_gui = rs.hw_usb_connected || rs.showcase.is_active(ctx.now_ms);
-      const bool on_home_main_gui =
-          (rs.nav.gui_page == latter_core::PageId::HOME &&
-           rs.nav.home_subpage == latter_ui::HomeSubpage::MAIN);
-      const bool w_has_motion =
-          weather_sky_active &&
-          latter_ui::evaluate_sky_has_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
-      const bool w_has_fast_motion =
-          w_has_motion &&
-          latter_ui::evaluate_sky_has_fast_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
-      const bool weather_sky_stepping_hint =
-          weather_sky_active && weather_ready_cad &&
-          latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion);
-      const bool weather_sky_full_hint =
-          weather_sky_stepping_hint && (w_has_fast_motion || !on_home_main_gui);
-
-      const bool clock_sweep_hint =
-          (rs.nav.gui_page == latter_core::PageId::CLOCK) &&
-          latter_ui::clock_smooth_sweep_active(
-              motion_power_gui, ctx.now_ms, latest_input_ms,
-              latter_core::effective_clock_face(prefs, rs, ctx.now_ms));
-      const bool time_sw_hint =
-          ((rs.nav.gui_page == latter_core::PageId::TIME &&
-            rs.nav.time_subpage == latter_ui::TimeSubpage::STOPWATCH) ||
-           (rs.nav.gui_page == latter_core::PageId::TOOLS &&
-            rs.nav.tools_subpage == latter_core::ToolsSubpage::STOPWATCH)) &&
-          rs.stopwatch.running;
-      const auto &takeover_st = latter_ui::acquire_takeover_state(ctx);
-      const uint32_t takeover_sig = latter_ui::compute_takeover_signature(takeover_st);
-      const bool photo_frame_art_ready =
-          latter_ui::resolve_photo_frame_art(
-              ctx.screensaver_photo_art, ctx.home_wallpaper_art,
-              ac_wall.screensaver_photo_url, rs.music.loaded_wallpaper_url).valid();
-      if (latter_ui::is_photo_frame_initial_load_pending(
-              takeover_sig, takeover_st.screensaver_style_opt,
-              ac_wall.screensaver_photo_url, photo_frame_art_ready,
-              rs.music.screensaver_photo_failed,
-              rs.nav.standby_entered_ms, ctx.now_ms)) {
-        prof_frame_scope.abort_idle();
-        return;
-      }
-      const bool dock_anim_now =
-          latter_ui::any_dock_anim_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
-      const bool page_horiz_bounce_now =
-          latter_ui::any_page_horiz_bounce_active(rs.nav.gui_page, rs.nav.home_subpage, ctx.now_ms);
-      const bool vert_bounce_now =
-          latter_ui::any_vert_bounce_active(rs.nav.gui_page, ctx.now_ms);
-      const bool lyrics_anim_now =
-          latter_ui::is_music_lyrics_anim_active(ctx.now_ms, ctx.local_media_playing);
-      const bool static_screensaver_only =
-          (takeover_sig == (1U << 3)) &&
-          (takeover_st.screensaver_style_opt == "Ambient Clock" ||
-           takeover_st.screensaver_style_opt == "Photo Frame");
-      const bool quick_actions_only = (takeover_sig == (1U << 11));
-      const bool anim_or_scroll =
-          ((takeover_sig != 0U) && !static_screensaver_only && !quick_actions_only) ||
-          (!quick_actions_only &&
-           (weather_sky_full_hint ||
-            clock_sweep_hint ||
-            time_sw_hint ||
-            lyrics_anim_now ||
-            latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting) ||
-            vert_bounce_now ||
-            page_horiz_bounce_now ||
-            rs.nav.menu_scroll_active ||
-            (rs.nav.gui_page == 3 && rs.nav.active_game > 0)));
-      const bool photo_frame_no_clock =
-          static_screensaver_only &&
-          (takeover_st.screensaver_style_opt == "Photo Frame") &&
-          !takeover_st.screensaver_photo_clock &&
-          photo_frame_art_ready;
-      const bool home_no_clock_or_date =
-          (takeover_sig == 0U) &&
-          (rs.nav.gui_page == latter_core::PageId::HOME) &&
-          (rs.nav.home_subpage == latter_ui::HomeSubpage::MAIN) &&
-          !prefs.home_show_date && !prefs.home_show_time;
-      const int hhmm_key = (photo_frame_no_clock || quick_actions_only || home_no_clock_or_date) ? -1 : latter_ui::compute_hhmm_key(ctx.now);
-      const uint32_t idle_state_sig = latter_ui::compute_idle_state_signature(ctx);
-      const bool live_sec_active = latter_ui::compute_live_sec_active(ctx);
-      const int home_clock_band_y1 =
-          (latter_ui::layout().home_clock_y + latter_ui::layout().home_weather_y) / 2 + latter_ui::dp_px(10);
-      if (!latter_ui::dirty_band().begin_frame(
-              rs.nav.gui_page, prof_sub, takeover_sig, anim_or_scroll,
-              hhmm_key, idle_state_sig, home_clock_band_y1, live_sec_active)) {
-        prof_frame_scope.abort_idle();
-        return;
-      }
-
-      // Latch full-width 2px-aligned horizontal dirty band [band_y0, band_y1] across MipiDsi and
-      // MipiSpiBuffer so MipiSpi always takes its contiguous full-width DMA fast path.
-      const int band_y0 = latter_ui::dirty_band().band_y0();
-      const int band_y1 = latter_ui::dirty_band().band_y1();
-      it.draw_pixel_at(0, band_y0, Color(8, 8, 8));
-      it.draw_pixel_at(0, band_y0, id(col_bg));
-      it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, Color(8, 8, 8));
-      it.draw_pixel_at(latter_ui::SCREEN_W - 1, band_y1, id(col_bg));
-      latter_ui::bind_frame_buffer(id(disp1), it);
-      latter_ui::frame_base_begin();
-
-      // System-owned global takeovers (OTA -> Hibernate -> Panel Off -> Alarm/Timer/Find-My ->
-      // Voice Assistant -> Security PIN Pad -> Push Notification -> Shortcut Confirm -> Quick Actions -> Docked Screensaver).
-      if (latter_ui::render_system_takeovers(it, ctx, takeover_st)) {
-        return;
-      }
-
-      if (rs.nav.gui_page != 1 && rs.nav.gui_page != 2) {
-        // Unified BackdropMode across System (4), Weather (5), Area (6), Remote (7), Tools (8),
-        // Home Hub (9), Time (10), Pinned (11), Calendar (12), Cameras (13)
-        // Skip P4 between-frames PPA clear while full-screen live video is active so DPI scanout keeps full PSRAM bandwidth!
-        if (cam_live_canvas) {
-          latter_ui::frame_base_skip();
-        } else if (bd_mode == latter_ui::BackdropMode::DayNightSky) {
-          const auto &ws_bd = latter_core::weather_state();
-          if (latter_core::has_known_day_night_phase(ws_bd.sun_state, ctx.now.is_valid(), ctx.now.hour)) {
-            const bool dns_night = latter_core::resolve_day_night_sky_is_night(
-                ws_bd.sun_state, ctx.now.is_valid(), ctx.now.hour);
-            latter_ui::render_static_day_night_sky_base(it, ctx.cx, ctx.cy, dns_night);
-          } else {
-            latter_ui::frame_base(it, ctx.col_bg);
-          }
-        } else {
-          const bool use_page_wallpaper = (bd_mode == latter_ui::BackdropMode::CustomWallpaper);
-          if (rs.nav.gui_page != 5 || use_page_wallpaper) {
-            latter_ui::render_page_wallpaper_base(it, ctx.home_wallpaper_art, use_page_wallpaper, ctx.cx, ctx.col_bg);
-          }
-        }
-      }
-
-      latter_ui::render_active_page(it, ctx);
-
-      const bool alert_ringing = rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
-                                 rs.showcase.has_silent_alert(ctx.now_ms);
-      const bool va_visible = latter_ui::should_va_takeover_preempt(
-          rs.voice.active, !rs.voice.status_text.empty(), rs.voice.intercom_turn,
-          rs.nav.gui_page, rs.cameras.doorbell_live_popup_active) ||
-          rs.showcase.has_va_preview(ctx.now_ms);
-      const bool cam_hud_hidden =
-          (rs.nav.gui_page == latter_core::PageId::CAMERAS &&
-           (rs.cameras.tab == latter_core::CamerasTab::SINGLE ||
-            rs.cameras.tab == latter_core::CamerasTab::CAROUSEL) &&
-           (!rs.cameras.hud_active || rs.voice.intercom_turn) &&
-           !latter_core::cam_call_active() && !latter_core::cam_listen_active());
-      const bool show_home_pill =
-          !rs.nav.is_hibernating && !rs.nav.ota_in_progress && !va_visible &&
-          !cam_hud_hidden && !rs.voice.intercom_turn &&
-          rs.nav.display_power_state == 0 &&
-          latter_ui::can_go_home(
-              rs.nav.gui_page, rs.nav.system_menu_mode, rs.nav.active_game,
-              rs.nav.area_subpage, rs.area.browse_mode == "areas", rs.nav.remote_subpage, rs.nav.tools_subpage,
-              rs.alarms.edit_idx, alert_ringing) &&
-          !latter_ui::music_art_only(rs.nav.gui_page, ctx.music_overlay_style_opt == "Always Visible",
-                                     rs.music.hud_active);
-
-      if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && !va_visible &&
-          rs.nav.display_power_state == 0 && !alert_ringing) {
-        latter_ui::render_active_focus_overlay(it, ctx.now_ms, ctx.theme_primary, ctx.col_white);
-      }
-
-      if (show_home_pill) {
-        latter_ui::render_home_indicator_bar(it, ctx.cx, latter_ui::layout().home_bar_y);
-      }
-
-      if (!rs.nav.is_hibernating && !rs.nav.ota_in_progress && rs.nav.display_power_state == 0) {
-        latter_ui::render_offline_pill(it, ctx);
-      }
-
-      const bool coin_toss_active =
-          (rs.nav.gui_page == latter_core::PageId::TOOLS) &&
-          (rs.nav.tools_subpage == latter_core::ToolsSubpage::COIN_FLIP) &&
-          latter_ui::coin_state().anim_active;
-      const bool greet_fading_now = latter_ui::is_wake_greeting_fading(ctx.now_ms, ctx.home_wake_greeting);
-      int act_y0 = 0, act_y1 = 0;
-      const bool has_act_band = latter_ui::home_activity_band(act_y0, act_y1);
-      const bool act_sliding_now = latter_ui::home_activity_slide_active(ctx.now_ms);
-      if (rs.nav.menu_scroll_active || vert_bounce_now || page_horiz_bounce_now ||
-          coin_toss_active || greet_fading_now || lyrics_anim_now) {
-        latter_ui::schedule_anim_disp_update(&id(disp1));
-      } else if (dock_anim_now) {
-        latter_ui::schedule_anim_band_disp_update(
-            &id(disp1), latter_ui::dock_dirty_band_y0(), latter_ui::SCREEN_H - 1);
-      } else if (weather_sky_active && !va_visible && !alert_ringing) {
-        if (act_sliding_now) {
-          latter_ui::schedule_anim_disp_update(&id(disp1));
-        } else if (latter_ui::weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion)) {
-          const bool spk_busy = rs.audio.speaker_busy();
-          const bool mww_busy = !spk_busy && !LATTER_CHIP_P4 && rs.audio.mww_running();
-          const uint32_t target_gap_ms = latter_ui::min_ambient_frame_gap_ms(spk_busy, false, false, mww_busy);
-          const uint32_t weather_gap_ms = latter_ui::weather_sky_frame_gap_ms(target_gap_ms, w_has_fast_motion);
-          latter_ui::record_ambient_frame_ms(ctx.now_ms);
-          if (on_home_main_gui && !w_has_fast_motion) {
-            latter_ui::schedule_weather_band_disp_update(
-                &id(disp1), weather_gap_ms,
-                0, latter_ui::calm_home_sky_band_y1(latter_ui::dock_dirty_band_y0()));
-          } else {
-            latter_ui::schedule_weather_disp_update(&id(disp1), weather_gap_ms);
-          }
-        }
-      } else if (act_sliding_now && has_act_band) {
-        latter_ui::schedule_anim_band_disp_update(&id(disp1), act_y0, act_y1);
-      }
-
-      if (rs.nav.gui_page == latter_core::PageId::HOME &&
-          rs.nav.home_subpage == latter_ui::HomeSubpage::MAIN &&
-          !va_visible && !alert_ringing) {
-        if (latter_ui::is_wake_greeting_visible(ctx.now_ms, ctx.home_wake_greeting) && !greet_fading_now &&
-            !latter_ui::DisplayUpdateScheduler::weather_step_pending(millis())) {
-          const uint32_t g_el = (ctx.now_ms >= latter_ui::wake_greeting_start_ms())
-                                    ? (ctx.now_ms - latter_ui::wake_greeting_start_ms())
-                                    : 0U;
-          if (g_el < latter_ui::kWakeGreetingHoldMs) {
-            latter_ui::schedule_weather_disp_update(&id(disp1), latter_ui::kWakeGreetingHoldMs - g_el);
-          }
-        }
-        const uint32_t rot_due_ms = latter_ui::home_activity_next_rotate_due_ms(ctx.now_ms);
-        if (rot_due_ms > 0U && has_act_band) {
-          latter_ui::schedule_activity_rotate_disp_update(&id(disp1), rot_due_ms, act_y0, act_y1);
-        }
-      }
-
-      latter_core::hal_touch_pump();
-      latter_ui::touch_engine().tick(millis());
+      latter_ui::render_esphome_display_frame(id(disp1), it, ctx);

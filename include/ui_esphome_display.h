@@ -28,6 +28,7 @@
 #include "hal_display_lifecycle.h"
 #include "hal_link_report.h"
 #include "hal_panel_power.h"
+#include "hal_touch.h"
 #include "ui_compositor.h"
 #include "ui_pages.h"
 #include "ui_touch_engine.h"
@@ -516,6 +517,73 @@ inline void dispatch_cadence_screensaver_20ms(uint32_t now_ms, DispT *disp,
   if (act.sync_disp_poller) {
     sync_disp_poller_for_anim(disp, act.sync_disp_poller_val);
   }
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void render_esphome_display_frame(DispT *disp, esphome::display::Display &it,
+                                         UiFrameContext &ctx) {
+  latter_core::hal_touch_pump();
+  touch_engine().tick(ctx.now_ms);
+  FrameProfileScope prof_frame_scope(
+      ctx.state().nav.gui_page, compute_active_subpage_id(ctx.state()),
+      ctx.state().nav.display_power_state);
+  populate_frame_context_state(ctx);
+  FrameRenderPlan plan{};
+  if (!prepare_frame_plan(ctx, plan)) {
+    prof_frame_scope.abort_idle();
+    return;
+  }
+
+  // Latch full-width 2px-aligned horizontal dirty band [band_y0, band_y1] across MipiDsi and
+  // MipiSpiBuffer so MipiSpi always takes its contiguous full-width DMA fast path.
+  const esphome::Color bg_c(ctx.col_bg.r, ctx.col_bg.g, ctx.col_bg.b);
+  it.draw_pixel_at(0, plan.band_y0, esphome::Color(8, 8, 8));
+  it.draw_pixel_at(0, plan.band_y0, bg_c);
+  it.draw_pixel_at(SCREEN_W - 1, plan.band_y1, esphome::Color(8, 8, 8));
+  it.draw_pixel_at(SCREEN_W - 1, plan.band_y1, bg_c);
+
+  Rgb565Surface surf = bind_frame_buffer(disp, it);
+  frame_base_begin();
+  render_composed_frame(surf, ctx, plan);
+
+  const PostFrameSchedule sched = compute_post_frame_schedule(ctx, plan);
+  if (sched.record_ambient_ms) {
+    record_ambient_frame_ms(ctx.now_ms);
+  }
+  if (sched.anim_full) {
+    schedule_anim_disp_update(disp);
+  } else if (sched.anim_band) {
+    schedule_anim_band_disp_update(disp, sched.anim_band_y0, sched.anim_band_y1);
+  } else if (sched.weather_band) {
+    schedule_weather_band_disp_update(disp, sched.weather_gap_ms,
+                                      sched.weather_band_y0, sched.weather_band_y1);
+  } else if (sched.weather_full) {
+    schedule_weather_disp_update(disp, sched.weather_gap_ms);
+  }
+  if (sched.wake_greeting_hold_ms > 0U) {
+    schedule_weather_disp_update(disp, sched.wake_greeting_hold_ms);
+  }
+  if (sched.activity_rotate_ms > 0U) {
+    schedule_activity_rotate_disp_update(disp, sched.activity_rotate_ms,
+                                         sched.activity_rotate_y0, sched.activity_rotate_y1);
+  }
+
+  latter_core::hal_touch_pump();
+  touch_engine().tick(::esphome::millis());
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
+inline void render_esphome_display_frame(DispT &disp, esphome::display::Display &it,
+                                         UiFrameContext &ctx) {
+  render_esphome_display_frame(&disp, it, ctx);
+}
+
+template <typename DispT>
+inline void render_esphome_display_frame(DispT *const *disp_ptr, esphome::display::Display &it,
+                                         UiFrameContext &ctx) {
+  if (disp_ptr != nullptr) render_esphome_display_frame(*disp_ptr, it, ctx);
 }
 
 }  // namespace latter_ui

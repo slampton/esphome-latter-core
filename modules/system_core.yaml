@@ -134,18 +134,11 @@ api:
       - lambda: |-
           const uint32_t now_ms = millis();
           const bool is_ha = client_info.find("Home Assistant") != std::string::npos;
-          auto &r = latter_core::runtime_state();
           if (is_ha) {
-            latter_core::reset_all_v3_rev_guards();
-            latter_core::reset_hello_sync_on_connect();
-            latter_core::mark_hello_in_flight(true, now_ms);
-            latter_core::link_state().ha_connected = true;
-            latter_core::link_state().last_ha_connect_ms = now_ms;
-            r.alert.last_seen_alert_id = -1;
-            r.nav.last_pub_display_power_state = -1;
-            r.nav.last_pub_display_bri_pct = -1;
+            latter_core::apply_api_ha_connected_state(now_ms);
           }
           latter_core::link_report_api_connected(is_ha, now_ms);
+          auto &r = latter_core::runtime_state();
           r.audio.notify_api_client_authenticated(
               client_info.empty() ? std::string_view{} : std::string_view(client_info.c_str(), client_info.size()),
               client_address.empty() ? std::string_view{} : std::string_view(client_address.c_str(), client_address.size()));
@@ -166,14 +159,7 @@ api:
       - lambda: |-
           const uint32_t now_ms = millis();
           const bool is_ha = client_info.find("Home Assistant") != std::string::npos;
-          if (is_ha) {
-            latter_core::mark_hello_in_flight(false);
-          }
-          latter_core::link_report_api_disconnected(is_ha, now_ms);
-          if (is_ha && latter_core::link_report().ha_clients == 0) {
-            latter_core::link_state().ha_connected = false;
-            latter_core::link_state().last_ha_disconnect_ms = now_ms;
-          }
+          latter_core::apply_api_ha_disconnected_state(is_ha, now_ms);
           auto &r = latter_core::runtime_state();
           if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
             latter_ui::schedule_disp_update(&id(disp1));
@@ -209,25 +195,7 @@ api:
         - lambda: |-
             const std::string_view sv_dom(domain.c_str(), domain.size());
             const std::string_view sv_pay(payload.c_str(), payload.size());
-            bool parsed = false;
-            if (sv_dom == "area_context") {
-              parsed = latter_core::parse_v3_area_ctx_payload(sv_pay, latter_core::area_ctx_state(), latter_core::home_hub_state());
-            } else if (sv_dom == "active_media") {
-              parsed = latter_core::parse_v3_media_payload(sv_pay, latter_core::media_state());
-            } else if (sv_dom == "remote_config") {
-              parsed = latter_core::parse_v3_remote_payload(sv_pay, latter_core::remote_state());
-            } else if (sv_dom == "weather_forecast") {
-              parsed = latter_core::parse_v3_weather_payload(sv_pay, latter_core::weather_state());
-            } else if (sv_dom == "calendar_agenda") {
-              parsed = latter_core::parse_v3_calendar_payload(sv_pay, latter_core::calendar_state());
-            } else if (sv_dom == "device_prefs") {
-              uint32_t eff_mask = 0;
-              parsed = latter_core::parse_v3_device_prefs_payload(sv_pay, eff_mask, millis());
-              latter_core::device_prefs_state().last_effects = eff_mask;
-            } else if (sv_dom == "shortcuts") {
-              parsed = latter_core::parse_v3_shortcuts_payload(sv_pay, latter_core::shortcuts_state());
-            }
-            if (parsed) {
+            if (latter_core::dispatch_v3_domain_push(sv_dom, sv_pay, ::esphome::millis())) {
               id(handle_v3_domain_pushed).execute(std::string(sv_dom));
             }
 
@@ -238,14 +206,7 @@ api:
       then:
         - lambda: |-
             const std::string_view sv_cmd(command.c_str(), command.size());
-            if (sv_cmd.size() > 12U && sv_cmd.substr(0, 12) == "set_pin_key:") {
-              const std::string_view rest = sv_cmd.substr(12);
-              const size_t sep = rest.find(':');
-              if (sep != std::string_view::npos) {
-                (void)latter_rpc::set_pin_session_key(rest.substr(0, sep), rest.substr(sep + 1U));
-              }
-              return;
-            }
+            if (latter_core::try_handle_pin_session_key_command(sv_cmd)) return;
             id(handle_device_command).execute(std::string(sv_cmd));
 
     # Reset to defaults (Latter Studio / latter.reset_device). Same panel hand-off as Restart Device:

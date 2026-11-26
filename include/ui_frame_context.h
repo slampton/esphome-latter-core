@@ -192,129 +192,11 @@ struct ParsedIsoTimestamp {
   int64_t utc_epoch_sec{0};
 };
 
-inline bool parse_iso_timestamp_components(
-    std::string_view raw, ParsedIsoTimestamp &out) noexcept {
-  while (!raw.empty() && (raw.front() == ' ' || raw.front() == '\t')) raw.remove_prefix(1);
-  while (!raw.empty() && (raw.back() == ' ' || raw.back() == '\t')) raw.remove_suffix(1);
-  if (raw.size() < 16U || raw == "unknown" || raw == "unavailable") return false;
-
-  auto parse_digits = [&](size_t pos, size_t n, int &val) noexcept -> bool {
-    if (pos + n > raw.size()) return false;
-    int acc = 0;
-    for (size_t i = 0; i < n; ++i) {
-      const char ch = raw[pos + i];
-      if (ch < '0' || ch > '9') return false;
-      acc = acc * 10 + (ch - '0');
-    }
-    val = acc;
-    return true;
-  };
-
-  int yr = 0, mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
-  if (!parse_digits(0, 4, yr) || raw[4] != '-' ||
-      !parse_digits(5, 2, mo) || raw[7] != '-' ||
-      !parse_digits(8, 2, dy)) {
-    return false;
-  }
-  const char sep = raw[10];
-  if (sep != 'T' && sep != 't' && sep != ' ') return false;
-  if (!parse_digits(11, 2, hr) || raw[13] != ':' || !parse_digits(14, 2, mn)) {
-    return false;
-  }
-  size_t idx = 16U;
-  if (idx < raw.size() && raw[idx] == ':') {
-    if (!parse_digits(idx + 1U, 2U, sc)) return false;
-    idx += 3U;
-  }
-  if (idx < raw.size() && (raw[idx] == '.' || raw[idx] == ',')) {
-    ++idx;
-    if (idx >= raw.size() || raw[idx] < '0' || raw[idx] > '9') return false;
-    while (idx < raw.size() && raw[idx] >= '0' && raw[idx] <= '9') ++idx;
-  }
-
-  bool has_tz = false;
-  int tz_off_sec = 0;
-  if (idx < raw.size()) {
-    const char zc = raw[idx];
-    if (zc == 'Z' || zc == 'z') {
-      if (idx + 1U != raw.size()) return false;
-      has_tz = true;
-    } else if (zc == '+' || zc == '-') {
-      const int sign = (zc == '-') ? -1 : 1;
-      ++idx;
-      int oh = 0, om = 0;
-      if (!parse_digits(idx, 2U, oh)) return false;
-      idx += 2U;
-      if (idx < raw.size() && raw[idx] == ':') ++idx;
-      if (idx < raw.size()) {
-        if (!parse_digits(idx, 2U, om)) return false;
-        idx += 2U;
-      }
-      if (idx != raw.size() || oh > 23 || om > 59) return false;
-      has_tz = true;
-      tz_off_sec = sign * (oh * 3600 + om * 60);
-    } else {
-      return false;
-    }
-  }
-
-  if (mo < 1 || mo > 12 || dy < 1 || dy > 31 || hr < 0 || hr > 23 ||
-      mn < 0 || mn > 59 || sc < 0 || sc > 60) {
-    return false;
-  }
-
-  const int y = yr - (mo <= 2 ? 1 : 0);
-  const int era = (y >= 0 ? y : y - 399) / 400;
-  const int yoe = y - era * 400;
-  const int doy = (153 * (mo > 2 ? mo - 3 : mo + 9) + 2) / 5 + dy - 1;
-  const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-  const int64_t days = static_cast<int64_t>(era) * 146097LL + static_cast<int64_t>(doe) - 719468LL;
-  const int64_t wall_sec = days * 86400LL + static_cast<int64_t>(hr) * 3600LL +
-                           static_cast<int64_t>(mn) * 60LL + static_cast<int64_t>(sc);
-
-  out.year = yr;
-  out.month = mo;
-  out.day = dy;
-  out.hour = hr;
-  out.minute = mn;
-  out.second = sc;
-  out.has_tz = has_tz;
-  out.tz_offset_sec = tz_off_sec;
-  out.utc_epoch_sec = wall_sec - static_cast<int64_t>(tz_off_sec);
-  return true;
-}
-
-inline void format_hhmm_clock_to(int hr, int mn, bool is_24h, char *out, size_t out_sz) noexcept {
-  if (out == nullptr || out_sz == 0U) return;
-  const int h = ((hr % 24) + 24) % 24;
-  const int m = std::clamp(mn, 0, 59);
-  if (is_24h) {
-    std::snprintf(out, out_sz, "%02d:%02d", h, m);
-  } else {
-    int h12 = h % 12;
-    if (h12 == 0) h12 = 12;
-    std::snprintf(out, out_sz, "%d:%02d %s", h12, m, (h >= 12) ? "PM" : "AM");
-  }
-}
-
-inline bool format_iso_time_with_offset(
+bool parse_iso_timestamp_components(std::string_view raw, ParsedIsoTimestamp &out) noexcept;
+void format_hhmm_clock_to(int hr, int mn, bool is_24h, char *out, size_t out_sz) noexcept;
+bool format_iso_time_with_offset(
     std::string_view iso_str, bool is_24h, int local_utc_offset_min,
-    char *out, size_t out_sz) noexcept {
-  if (out == nullptr || out_sz == 0U) return false;
-  ParsedIsoTimestamp ts{};
-  if (!parse_iso_timestamp_components(iso_str, ts)) {
-    std::snprintf(out, out_sz, "%s", latter_core::kUnknownGlyph);
-    return false;
-  }
-  if (!ts.has_tz) {
-    format_hhmm_clock_to(ts.hour, ts.minute, is_24h, out, out_sz);
-    return true;
-  }
-  const int64_t local_sec = ts.utc_epoch_sec + static_cast<int64_t>(local_utc_offset_min) * 60LL;
-  const int rem = static_cast<int>(((local_sec % 86400LL) + 86400LL) % 86400LL);
-  format_hhmm_clock_to(rem / 3600, (rem % 3600) / 60, is_24h, out, out_sz);
-  return true;
-}
+    char *out, size_t out_sz) noexcept;
 
 // Concrete Per-Frame Render Context (pure C++20; passed to all compiled page_*.cpp & host tests)
 struct UiFrameContext {
@@ -426,6 +308,16 @@ struct UiFrameContext {
   bool screensaver_photo_clock{false};
   bool bedtime_active{false};
   bool do_not_disturb{false};
+
+  const latter_core::DeviceRuntimeState *rs_ptr{nullptr};
+  const latter_core::PersistedDevicePrefs *prefs_ptr{nullptr};
+
+  inline const latter_core::DeviceRuntimeState &state() const noexcept {
+    return rs_ptr ? *rs_ptr : latter_core::runtime_state();
+  }
+  inline const latter_core::PersistedDevicePrefs &prefs() const noexcept {
+    return prefs_ptr ? *prefs_ptr : latter_core::persisted_prefs();
+  }
 };
 
 struct SystemTakeoverState {
@@ -474,86 +366,7 @@ struct SystemTakeoverState {
   UiColor col_red{};
   UiColor col_solaris_gold{};
 
-  static inline SystemTakeoverState from_context(const UiFrameContext &ctx) {
-    const auto &rs = latter_core::runtime_state();
-    const auto &prefs = latter_core::persisted_prefs();
-    SystemTakeoverState st{};
-    st.cx = ctx.cx;
-    st.cy = ctx.cy;
-    st.now_ms = ctx.now_ms;
-    st.is_24h_format = prefs.is_24h_format;
-    st.ota_in_progress = rs.nav.ota_in_progress;
-    st.ota_progress_pct = rs.nav.ota_progress_pct;
-    st.is_hibernating = rs.nav.is_hibernating;
-    st.hibernate_countdown_val = rs.nav.hibernate_countdown_val;
-    st.panel_is_on = ctx.panel_is_on;
-    st.display_power_state = rs.nav.display_power_state;
-    const bool sc_on = rs.showcase.is_active(ctx.now_ms);
-    st.alarm_ringing = rs.alarms.ringing || (sc_on && rs.showcase.silent_alarm);
-    st.alarm_ringing_idx = rs.alarms.ringing_idx;
-    st.alarm1_recurrence = prefs.alarms[0].recurrence;
-    st.alarm2_recurrence = prefs.alarms[1].recurrence;
-    st.alarm3_recurrence = prefs.alarms[2].recurrence;
-    st.timer_ringing = rs.timers.ringing;
-    st.find_my_active = rs.alarms.find_my_active || (sc_on && rs.showcase.silent_find_my);
-    st.va_timer_name = rs.timers.va_timer_name;
-    st.va_active = rs.voice.active;
-    st.va_status_text = rs.voice.status_text;
-    st.va_tts_received = rs.voice.tts_received;
-    st.va_vad_active = rs.voice.vad_active;
-    st.va_intercom_turn = rs.voice.intercom_turn;
-    if (!rs.voice.active && rs.voice.status_text.empty()) {
-      const uint8_t sc_va = rs.showcase.effective_va_phase(ctx.now_ms);
-      if (sc_va != 0U) {
-        st.va_active = true;
-        st.va_vad_active = (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::VAD));
-        st.va_tts_received = (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::SPEAKING));
-        if (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::THINKING)) {
-          st.va_status_text = UiStrView("Thinking...");
-        } else if (sc_va == static_cast<uint8_t>(latter_core::ShowcaseVaStage::SPEAKING)) {
-          st.va_status_text = UiStrView("Responding...");
-        } else {
-          st.va_status_text = UiStrView("Listening...");
-        }
-      }
-    }
-    st.va_visual_profile_opt =
-        (sc_on && rs.showcase.va_profile_override >= 0 &&
-         rs.showcase.va_profile_override < static_cast<int>(latter_core::kPrefOptsVaVisualProfile.size()))
-            ? UiStrView(latter_core::pref_opt_cstr(
-                  latter_core::kPrefOptsVaVisualProfile,
-                  static_cast<uint8_t>(rs.showcase.va_profile_override)))
-            : ctx.va_visual_profile_opt;
-    st.notif_active = rs.alert.active;
-    st.notif_title = rs.alert.title;
-    st.notif_message = rs.alert.message;
-    st.notif_priority = rs.alert.priority;
-    st.notif_camera_url = rs.alert.camera_url;
-    st.notif_camera_entity = rs.alert.camera_entity;
-    st.current_loaded_camera_url = rs.alert.loaded_camera_url;
-    const bool sc_ss_override =
-        sc_on && rs.showcase.screensaver_style_override >= 0 &&
-        rs.showcase.screensaver_style_override < static_cast<int>(latter_core::kPrefOptsScreensaverStyle.size());
-    st.screensaver_style_opt =
-        sc_ss_override
-            ? UiStrView(latter_core::pref_opt_cstr(
-                  latter_core::kPrefOptsScreensaverStyle,
-                  static_cast<uint8_t>(rs.showcase.screensaver_style_override)))
-            : (prefs.bedtime_active ? UiStrView("Ambient Clock") : ctx.screensaver_style_opt);
-    st.screensaver_photo_clock = (!prefs.bedtime_active || sc_ss_override) && prefs.screensaver_photo_clock;
-    st.quick_actions_open = rs.nav.quick_actions_open;
-    st.theme_primary = ctx.theme_primary;
-    st.theme_secondary = ctx.theme_secondary;
-    st.col_bg = ctx.col_bg;
-    st.col_black = ctx.col_black;
-    st.col_white = ctx.col_white;
-    st.col_slate = ctx.col_slate;
-    st.col_dark_gray = ctx.col_dark_gray;
-    st.col_gold = ctx.col_gold;
-    st.col_red = ctx.col_red;
-    st.col_solaris_gold = ctx.col_solaris_gold;
-    return st;
-  }
+  static SystemTakeoverState from_context(const UiFrameContext &ctx);
 };
 
 UiFrameContext &acquire_frame_context();

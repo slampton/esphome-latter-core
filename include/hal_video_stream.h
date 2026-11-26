@@ -3,6 +3,14 @@
 // ==============================================================================
 // Latter Core Tiered Live Video Streaming Engine (include/hal_video_stream.h)
 // ==============================================================================
+// Thread affinity:
+//   - Worker-task only: `MjpegFrameParser` and `LatterVideoClient` internal HTTP
+//     / JPEG decode callbacks (`video_detail::*`).
+//   - Main-loop only: `LatterVideoClient::start()`, `stop()`, `poll_release_if_idle()`,
+//     `acquire_frame()`, `release_frame()`, `consume_frame_dirty()`, `active_url()`.
+//   - Worker-task/main-loop cross-thread atomics: `LatterVideoClient::state_`,
+//     `frame_seq_`, `has_frame_`, `frame_dirty_`, `stop_requested_`, `generation_`.
+// ------------------------------------------------------------------------------
 // Hardware-tiered MJPEG-over-HTTP live camera streaming client (`LatterVideoClient`)
 // and pure C++20 incremental `MjpegFrameParser` (compiles standalone on host).
 //
@@ -221,6 +229,13 @@ class LatterVideoClient {
   std::atomic<bool> frame_dirty_{false};
   std::atomic<bool> stop_requested_{true};
   std::atomic<uint32_t> generation_{0U};
+
+  static_assert(std::atomic<uint8_t>::is_always_lock_free,
+                "LatterVideoClient::state_ must be lock-free across worker/main threads");
+  static_assert(std::atomic<uint32_t>::is_always_lock_free,
+                "LatterVideoClient counters must be lock-free across worker/main threads");
+  static_assert(std::atomic<bool>::is_always_lock_free,
+                "LatterVideoClient flags must be lock-free across worker/main threads");
 
 #if !defined(USE_ESP32) || defined(LATTER_HOST_TEST)
   const uint16_t *host_frame_data_{nullptr};

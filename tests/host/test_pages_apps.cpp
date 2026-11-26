@@ -25,7 +25,10 @@ void test_music_remote_override_and_volume_feedback() {
 
   const std::string music_cpp = read_repo_file("../../components/latter_ui/page_music.cpp");
   const std::string remote_cpp = read_repo_file("../../components/latter_ui/page_remote.cpp");
-  const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string gui_yaml = read_repo_files({
+      "../../guis/universal/gui.yaml",
+      "../../components/latter_ui/ui_compositor.cpp",
+  });
   const std::string state_h = read_repo_glob("../../include/state", "", ".h");
   LATTER_CHECK(music_cpp.find("art_mode == \"None\"") != std::string::npos);
   LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
@@ -110,9 +113,15 @@ void test_phase3_weather_sky_backdrop_and_home_scene() {
       "../../include/ui_compositor.h",
   });
   const std::string comp_cpp = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
-  const std::string weather_cpp = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string weather_cpp = read_repo_files({
+      "../../components/latter_ui/page_weather.cpp",
+      "../../components/latter_ui/weather_sky_fx.cpp",
+  });
   const std::string home_cpp = read_repo_file("../../components/latter_ui/page_home.cpp");
-  const std::string gui_yaml = read_repo_file("../../guis/universal/gui.yaml");
+  const std::string gui_yaml = read_repo_files({
+      "../../guis/universal/gui.yaml",
+      "../../components/latter_ui/ui_compositor.cpp",
+  });
 
   LATTER_CHECK(comp_h.find("struct UiStrView") != std::string::npos);
   LATTER_CHECK(comp_h.find("resolve_backdrop_mode(") != std::string::npos);
@@ -191,7 +200,10 @@ void test_home_hub_v6_alarm_caps_and_tools_pagination() {
   static_assert(tools_launcher_page_count(6) == 1);
   static_assert(tools_launcher_page_count(7) == 2);
 
-  const std::string wx_src = read_repo_file("../../components/latter_ui/page_weather.cpp");
+  const std::string wx_src = read_repo_files({
+      "../../components/latter_ui/page_weather.cpp",
+      "../../components/latter_ui/weather_sky_fx.cpp",
+  });
   LATTER_CHECK(wx_src.find("enum class RainTier") != std::string::npos);
   LATTER_CHECK(wx_src.find("draw_soft_snowflake_q8(") != std::string::npos);
 }
@@ -313,6 +325,47 @@ void test_cameras_app_and_live_video_d066() {
   LATTER_CHECK(should_va_takeover_preempt(true, true, false, PageId::CAMERAS, false));
 }
 
+void test_compiled_compositor_and_frame_ctx() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  reset_runtime_state();
+  auto &rs = runtime_state();
+  auto &prefs = persisted_prefs();
+  prefs = PersistedDevicePrefs{};
+  rs.nav.gui_page = PageId::HOME;
+  rs.nav.home_subpage = 0;
+  rs.nav.display_power_state = 0;
+  rs.music.last_sendspin_title = "Compiled Track";
+
+  HostSurfaceFixture fix{};
+  LATTER_CHECK(&fix.ctx.state() == &rs);
+  LATTER_CHECK(&fix.ctx.prefs() == &prefs);
+
+  populate_frame_context_state(fix.ctx);
+  LATTER_CHECK(fix.ctx.rs_ptr == &rs && fix.ctx.prefs_ptr == &prefs);
+  LATTER_CHECK(fix.ctx.track_title == "Compiled Track");
+
+  DeviceRuntimeState ro_rs{};
+  ro_rs.nav.gui_page = PageId::CLOCK;
+  PersistedDevicePrefs ro_prefs{};
+  ro_prefs.is_24h_format = true;
+  fix.ctx.rs_ptr = &ro_rs;
+  fix.ctx.prefs_ptr = &ro_prefs;
+  LATTER_CHECK(fix.ctx.state().nav.gui_page == PageId::CLOCK);
+  LATTER_CHECK(fix.ctx.prefs().is_24h_format);
+
+  fix.ctx.rs_ptr = &rs;
+  fix.ctx.prefs_ptr = &prefs;
+  FrameRenderPlan plan{};
+  dirty_band().mark_full();
+  LATTER_CHECK(prepare_frame_plan(fix.ctx, plan));
+  fix.fill();
+  render_composed_frame(fix.surf, fix.ctx, plan);
+  const auto sched = compute_post_frame_schedule(fix.ctx, plan);
+  LATTER_CHECK(!sched.anim_full);
+}
+
 }  // namespace
 
 void run_pages_apps_tests() {
@@ -322,6 +375,7 @@ void run_pages_apps_tests() {
   test_home_hub_v6_alarm_caps_and_tools_pagination();
   test_calendar_app_d058();
   test_cameras_app_and_live_video_d066();
+  test_compiled_compositor_and_frame_ctx();
 }
 
 }  // namespace latter_test

@@ -26,89 +26,8 @@ namespace latter_ui {
 // ==============================================================================
 // 1. Canonical Touch Context Fingerprint (kept in UI headers, out of core state PODs)
 // ==============================================================================
-inline int compute_touch_context(const latter_core::DeviceRuntimeState &rs = latter_core::runtime_state()) noexcept {
-  const int gp = rs.nav.gui_page;
-  int sub = 0;
-  int drill = 0;
-  switch (gp) {
-    case 1:
-      sub = rs.nav.home_subpage;
-      break;
-    case 2:
-      sub = ((static_cast<int>(rs.music.view) & 0x0F) << 4) |
-            ((static_cast<int>(rs.music.drilldown) & 0x03) << 2) |
-            (static_cast<int>(rs.music.takeover) & 0x03);
-      if ((rs.music.view == latter_core::MusicView::LIBRARY &&
-           rs.music.drilldown == latter_core::MusicDrilldown::LIB_LIST) ||
-          rs.music.view == latter_core::MusicView::ALBUM_TRACKS) {
-        for (char ch : rs.music.selected_category_mode) {
-          drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0x7F;
-        }
-      } else if (rs.music.view == latter_core::MusicView::SETTINGS) {
-        drill = ((rs.music.mode_bar_win_start & 0x07) << 3) | (rs.music.settings_page & 0x07);
-      } else {
-        drill = rs.music.mode_bar_win_start & 0x7F;
-      }
-      break;
-    case 3:
-      sub = rs.nav.active_game;
-      break;
-    case 4:
-      sub = rs.nav.system_menu_mode;
-      break;
-    case 5:
-      sub = rs.nav.sky_weather_subpage;
-      break;
-    case 6:
-      sub = rs.nav.area_subpage;
-      drill = (rs.area.browse_mode == "areas" || rs.area.browse_mode == "area_areas") ? 1 : 0;
-      break;
-    case 7:
-      sub = rs.nav.remote_subpage;
-      break;
-    case 8:
-      sub = rs.nav.tools_subpage;
-      break;
-    case 9:
-      sub = latter_core::home_hub_tab();
-      drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
-              (((sub == latter_core::HomeHubTab::INTERCOM ? latter_core::home_hub_state().broadcast_page
-                                                          : latter_core::home_hub_state().entry_page) & 0x0F) << 3);
-      break;
-    case 10:
-      sub = rs.nav.time_subpage;
-      if (sub == 1 && rs.timers.view_slot > 0) {
-        drill = rs.timers.view_slot;
-      } else if (sub == 2 && rs.alarms.edit_idx > 0) {
-        drill = rs.alarms.edit_idx;
-      }
-      break;
-    case 11:
-      sub = rs.nav.pinned_menu_page;
-      break;
-    case 12:
-      sub = rs.cal.subpage;
-      drill = (rs.cal.drilldown & 0x1F) | (rs.cal.delete_confirm_open ? 0x40 : 0);
-      break;
-    case 13:
-      sub = rs.cameras.tab;
-      drill = (rs.cameras.hud_active ? 1 : 0) |
-              (rs.cameras.quick_reply_open ? 2 : 0) |
-              (((sub == latter_core::CamerasTab::SETTINGS ? rs.cameras.settings_page
-                                                          : rs.cameras.grid_page) & 0x07) << 2);
-      break;
-    default:
-      break;
-  }
-  if (rs.nav.shortcut_confirm.open) {
-    drill = (drill & 0x7F) | 0x80;
-  }
-  int ctx = ((gp & 0xFF) << 16) | ((sub & 0xFF) << 8) | (drill & 0xFF);
-  if (rs.nav.quick_actions_open) {
-    ctx |= (1 << 24);
-  }
-  return ctx;
-}
+int compute_touch_context(
+    const latter_core::DeviceRuntimeState &rs = latter_core::runtime_state()) noexcept;
 
 // ==============================================================================
 // 2. Music App v3 Multi-Geometry Layout & Synced LRC Smooth-Scroll Engine
@@ -742,7 +661,7 @@ class TouchGestureEngine {
   DeviceUiCommandEffects clear_showcase(uint32_t now_ms);
   DeviceUiCommandEffects tick_showcase(uint32_t now_ms);
 
-  // Internal cross-TU helpers (implemented in touch_engine.cpp / touch_dispatch.cpp / showcase_engine.cpp)
+  // Internal cross-TU helpers (implemented in touch_engine.cpp / touch_dispatch_*.cpp / showcase_engine.cpp)
   void teardown_before_remote_nav_(latter_core::DeviceRuntimeState &rs, uint32_t now_ms, bool target_is_camera);
   DeviceUiCommandEffects execute_device_ui_command_impl_(std::string_view cmd, uint32_t now_ms, bool from_reel);
   bool try_commit_long_press_(uint32_t now_ms);

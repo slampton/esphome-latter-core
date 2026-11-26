@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ast
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Final
 
@@ -16,9 +18,10 @@ from .common import (
     strip_cpp_strings_and_comments,
     strip_yaml_comments,
 )
+from .subprocess_gates import FIVE_GEOM_CONFIGS
 
 MIN_LATCH_CALLS: Final[int] = 2
-MAX_LATCH_CALLS: Final[int] = 4
+MAX_LATCH_CALLS: Final[int] = 5  # 2..4 DMA band latch calls + 1 probe_frame_buffer_endian call
 CARD_BOX_RAD_ARG_IDX: Final[int] = 7
 MIN_CONTRAST_RATIO: Final[float] = 4.5
 MIN_SMALL_FONT_MM: Final[float] = 1.95
@@ -26,6 +29,15 @@ MIN_MICRO_FONT_MM: Final[float] = 1.64
 SRGB_LINEAR_CUTOFF: Final[float] = 0.04045
 WEARABLE_DEFAULT_CORNER_R: Final[int] = 98
 RECT_DEFAULT_CORNER_R: Final[int] = 0
+FONT_SUB_MAP: Final[tuple[tuple[str, str], ...]] = (
+    ("font_time_size", "font_time"),
+    ("font_chrono_size", "font_chrono_time"),
+    ("font_date_size", "font_date"),
+    ("font_btn_bold_size", "font_btn_bold"),
+    ("font_small_size", "font_small"),
+    ("font_micro_size", "font_micro"),
+    ("font_games_size", "font_games_title"),
+)
 
 LOW_LEVEL_GFX_FILES: Final[frozenset[str]] = frozenset(
     {
@@ -125,25 +137,14 @@ def _page_family(filename: str) -> str:
     return filename.removesuffix(".cpp").removeprefix("page_")
 
 
-def _check_gui_yaml_and_fast_primitives(gui_uncommented: str, failures: list[str]) -> None:
-    if not re.search(r"(?m)^\s*auto_clear_enabled:\s*false\b", gui_uncommented):
-        failures.append("[FRAME BASE] guis/universal/gui.yaml must set auto_clear_enabled: false")
-    draw_pix_calls = re.findall(r"(?<![\w.>])it\.draw_pixel_at\s*\(", gui_uncommented)
-    if (
-        "dirty_band()" not in gui_uncommented
-        or ".begin_frame(" not in gui_uncommented
-        or "frame_base_begin()" not in gui_uncommented
-        or "render_system_takeovers(" not in gui_uncommented
-        or "touch_engine()" not in gui_uncommented
-        or not (MIN_LATCH_CALLS <= len(draw_pix_calls) <= MAX_LATCH_CALLS)
-    ):
-        failures.append(
-            "[DIRTY BAND / COMPOSITOR] guis/universal/gui.yaml must wire dirty_band().begin_frame, "
-            "frame_base_begin(), render_system_takeovers, touch_engine(), and 2..4 it.draw_pixel_at latch calls"
-        )
-    if not (ROOT / "components" / "latter_ui" / "touch_engine.cpp").is_file():
-        failures.append("[TOUCH ENGINE] components/latter_ui/touch_engine.cpp missing")
+def _read_display_pipeline(gui_uncommented: str) -> tuple[str, str]:
+    """Return `(disp_bridge_clean, combined_pipeline)` across gui.yaml, ui_esphome_display.h, and ui_compositor.cpp."""
+    disp_bridge = strip_cpp_comments(_read_opt(ROOT / "include" / "ui_esphome_display.h"))
+    compositor = strip_cpp_comments(_read_opt(ROOT / "components" / "latter_ui" / "ui_compositor.cpp"))
+    return disp_bridge, f"{gui_uncommented}\n{disp_bridge}\n{compositor}"
 
+
+def _check_ui_source_primitives(failures: list[str]) -> None:
     for path in list((ROOT / "include").glob("ui_*.h")) + list((ROOT / "components" / "latter_ui").glob("*.cpp")):
         rel = path.relative_to(ROOT).as_posix()
         raw = path.read_text(encoding="utf-8")
@@ -158,6 +159,32 @@ def _check_gui_yaml_and_fast_primitives(gui_uncommented: str, failures: list[str
         clean = strip_cpp_comments(raw)
         if RAW_IT_DRAW_RE.search(clean) or re.search(r"(?<![\w.>])it\.draw_pixel_at\s*\(", clean):
             failures.append(f"[FAST PRIMITIVES] {rel} calls raw ESPHome it.* drawing primitive outside ui_gfx.cpp")
+
+
+def _check_gui_yaml_and_fast_primitives(gui_uncommented: str, failures: list[str]) -> None:
+    if not re.search(r"(?m)^\s*auto_clear_enabled:\s*false\b", gui_uncommented):
+        failures.append("[FRAME BASE] guis/universal/gui.yaml must set auto_clear_enabled: false")
+    if "render_esphome_display_frame(" not in gui_uncommented:
+        failures.append("[DISPLAY PIPELINE] guis/universal/gui.yaml must call render_esphome_display_frame(")
+    disp_bridge, pipeline = _read_display_pipeline(gui_uncommented)
+    draw_pix_calls = re.findall(r"(?<![\w.>])it\.draw_pixel_at\s*\(", gui_uncommented + "\n" + disp_bridge)
+    if (
+        "dirty_band()" not in pipeline
+        or ".begin_frame(" not in pipeline
+        or "frame_base_begin()" not in pipeline
+        or "render_system_takeovers(" not in pipeline
+        or "touch_engine()" not in pipeline
+        or not (MIN_LATCH_CALLS <= len(draw_pix_calls) <= MAX_LATCH_CALLS)
+    ):
+        failures.append(
+            "[DIRTY BAND / COMPOSITOR] Display pipeline (gui.yaml + ui_esphome_display.h + ui_compositor.cpp) "
+            "must wire dirty_band().begin_frame, frame_base_begin(), render_system_takeovers, touch_engine(), "
+            f"and {MIN_LATCH_CALLS}..{MAX_LATCH_CALLS} it.draw_pixel_at latch/probe calls"
+        )
+    if not (ROOT / "components" / "latter_ui" / "touch_engine.cpp").is_file():
+        failures.append("[TOUCH ENGINE] components/latter_ui/touch_engine.cpp missing")
+
+    _check_ui_source_primitives(failures)
     if RAW_IT_DRAW_RE.search(gui_uncommented):
         failures.append("[FAST PRIMITIVES] guis/universal/gui.yaml calls raw ESPHome it.* primitive")
 
@@ -192,8 +219,9 @@ def _check_takeover_and_touch_tokens(gui_uncommented: str, failures: list[str]) 
         failures.append("[TOUCH MM] Millimetre conversion helpers (mm_to_px_for / mm_to_px) missing in UI headers")
     if "allow_tap(" not in (hit_h + touch_h + touch_cpps) or "TOUCH_DEBOUNCE_" not in (hit_h + touch_h + touch_cpps):
         failures.append("[TOUCH DEBOUNCE] touch_router().allow_tap(..., TOUCH_DEBOUNCE_*) missing in touch engine")
-    if "can_go_home(" not in gui_uncommented or "can_go_home(" not in (layout_h + touch_cpps):
-        failures.append("[HOME PREDICATE] Shared can_go_home() predicate must gate both gui.yaml and touch_*.cpp")
+    _, render_pipeline = _read_display_pipeline(gui_uncommented)
+    if "can_go_home(" not in render_pipeline or "can_go_home(" not in (layout_h + touch_cpps):
+        failures.append("[HOME PREDICATE] Shared can_go_home() predicate must gate both display pipeline and touch_*.cpp")
     failures.extend(
         f"[UI COLOR TOKENS] {tok} missing from include/ui_color.h"
         for tok in ("kChromeShadow", "kChromeHomePill", "kChromeTrack", "kChromeCardBorder", "kChromeBackLabel", "kChromeGlassTint")
@@ -368,6 +396,164 @@ def _verify_ui_design_doc_table(board_metrics: dict[str, dict[str, int]], failur
             failures.append(f"[DEVICE UI DOC] docs/device-ui-design.md out of sync with {bname}: {got} != {want}")
 
 
+def _load_python_auto_font_fn(failures: list[str]) -> Callable[..., dict[str, int]] | None:
+    init_py = ROOT / "components" / "latter_core" / "__init__.py"
+    if not init_py.is_file():
+        failures.append("[FONT PARITY] components/latter_core/__init__.py missing")
+        return None
+    tree = ast.parse(init_py.read_text(encoding="utf-8"), filename="components/latter_core/__init__.py")
+    fn_node = next(
+        (n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "compute_auto_font_sizes"),
+        None,
+    )
+    if fn_node is None:
+        failures.append("[FONT PARITY] compute_auto_font_sizes() missing in components/latter_core/__init__.py")
+        return None
+    mod = ast.Module(body=[fn_node], type_ignores=[])
+    ast.fix_missing_locations(mod)
+    ns: dict[str, object] = {}
+    exec(compile(mod, str(init_py), "exec"), ns)  # noqa: S102, RUF100
+    fn = ns.get("compute_auto_font_sizes")
+    if not callable(fn):
+        failures.append("[FONT PARITY] extracted compute_auto_font_sizes is not callable")
+        return None
+    return fn
+
+
+def _parse_cpp_auto_font_constants(failures: list[str]) -> dict[str, int] | None:
+    scale_h = ROOT / "include" / "ui_scale.h"
+    if not scale_h.is_file():
+        failures.append("[FONT PARITY] include/ui_scale.h missing")
+        return None
+    clean = strip_cpp_comments(scale_h.read_text(encoding="utf-8"))
+    pats: dict[str, str] = {
+        "s_min_stat": r"s_min\s*=\s*\(is_stationary\s*\|\|\s*eff_vs\s*>=\s*120\)\s*\?\s*(\d+)\s*:",
+        "s_min_hand": r"s_min\s*=\s*\(is_stationary\s*\|\|\s*eff_vs\s*>=\s*120\)\s*\?\s*\d+\s*:\s*(\d+);",
+        "s_num": r"raw\s*=\s*\(eff_ppi\s*\*\s*eff_vs\s*\*\s*(\d+)\s*\+",
+        "s_bias": r"raw\s*=\s*\(eff_ppi\s*\*\s*eff_vs\s*\*\s*\d+\s*\+\s*(\d+)\)\s*/",
+        "s_den": r"raw\s*=\s*\(eff_ppi\s*\*\s*eff_vs\s*\*\s*\d+\s*\+\s*\d+\)\s*/\s*(\d+);",
+        "micro_dp": r"raw_micro\s*=\s*dp_px_for\((\d+),\s*s\);",
+        "micro_mm_num": r"floor_micro\s*=\s*\((\d+)\s*\*\s*eff_ppi\s*\+",
+        "micro_mm_bias": r"floor_micro\s*=\s*\(\d+\s*\*\s*eff_ppi\s*\+\s*(\d+)\)\s*/",
+        "micro_mm_den": r"floor_micro\s*=\s*\(\d+\s*\*\s*eff_ppi\s*\+\s*\d+\)\s*/\s*(\d+);",
+        "micro_min": r"micro\s*=\s*std::max\((\d+),",
+        "small_dp": r"raw_small\s*=\s*dp_px_for\((\d+),\s*s\);",
+        "small_mm": r"floor_small\s*=\s*mm_ceil_px_for\((\d+),\s*eff_ppi\);",
+        "small_min": r"small\s*=\s*std::max\((\d+),",
+        "btn_cap_pm": r"cap_btn\s*=\s*\(eff_w\s*\*\s*(\d+)\)\s*/\s*1000;",
+        "btn_dp": r"raw_btn\s*=\s*dp_px_for\((\d+),\s*s\);",
+        "btn_step": r"btn_bold\s*=\s*std::max\(small\s*\+\s*(\d+),",
+        "date_cap_pm": r"cap_date\s*=\s*\(eff_w\s*\*\s*(\d+)\s*\+",
+        "date_cap_bias": r"cap_date\s*=\s*\(eff_w\s*\*\s*\d+\s*\+\s*(\d+)\)\s*/\s*1000;",
+        "date_dp": r"raw_date\s*=\s*dp_px_for\((\d+),\s*s\);",
+        "date_step": r"date\s*=\s*std::max\(btn_bold\s*\+\s*(\d+),",
+        "chrono_cap_pm": r"cap_chrono\s*=\s*\(eff_w\s*\*\s*(\d+)\)\s*/\s*1000;",
+        "chrono_dp": r"raw_chrono\s*=\s*dp_px_for\((\d+),\s*s\);",
+        "chrono_step": r"chrono\s*=\s*std::max\(date\s*\+\s*(\d+),",
+        "time_pm_stat": r"clock_pm\s*=\s*\(eff_vs\s*>=\s*120\)\s*\?\s*(\d+)\s*:",
+        "time_pm_hand": r"clock_pm\s*=\s*\(eff_vs\s*>=\s*120\)\s*\?\s*\d+\s*:\s*(\d+);",
+        "time_cap_bias": r"cap_time\s*=\s*\(eff_w\s*\*\s*clock_pm\s*\+\s*(\d+)\)\s*/\s*1000;",
+        "time_dp": r"raw_time\s*=\s*dp_px_for\((\d+),\s*s\);",
+        "time_step": r"time_px\s*=\s*std::max\(chrono\s*\+\s*(\d+),",
+    }
+    out: dict[str, int] = {}
+    for key, pat in pats.items():
+        m = re.search(pat, clean)
+        if not m:
+            failures.append(f"[FONT PARITY] include/ui_scale.h missing expected auto-font constant '{key}'")
+            return None
+        out[key] = int(m.group(1))
+    return out
+
+
+def _eval_cpp_auto_font_sizes(
+    c: dict[str, int],
+    width: int,
+    ppi: int,
+    view_scale_pct: int,
+    is_stationary: bool,
+) -> dict[str, int]:
+    eff_w = width if width > 120 else 466
+    eff_ppi = ppi if ppi > 50 else 266
+    eff_vs = max(75, min(200, view_scale_pct)) if view_scale_pct > 0 else (145 if is_stationary else 100)
+    s_min = c["s_min_stat"] if (is_stationary or eff_vs >= 120) else c["s_min_hand"]
+    s = max(s_min, (eff_ppi * eff_vs * c["s_num"] + c["s_bias"]) // c["s_den"])
+
+    def _dp(v: int) -> int:
+        return (v * s + 500) // 1000
+
+    micro = max(c["micro_min"], (c["micro_mm_num"] * eff_ppi + c["micro_mm_bias"]) // c["micro_mm_den"], _dp(c["micro_dp"]))
+    small = max(c["small_min"], (c["small_mm"] * eff_ppi + 253) // 254, _dp(c["small_dp"]))
+    btn_bold = max(small + c["btn_step"], min(_dp(c["btn_dp"]), (eff_w * c["btn_cap_pm"]) // 1000))
+    date = max(btn_bold + c["date_step"], min(_dp(c["date_dp"]), (eff_w * c["date_cap_pm"] + c["date_cap_bias"]) // 1000))
+    chrono = max(date + c["chrono_step"], min(_dp(c["chrono_dp"]), (eff_w * c["chrono_cap_pm"]) // 1000))
+    clock_pm = c["time_pm_stat"] if eff_vs >= 120 else c["time_pm_hand"]
+    time_px = max(chrono + c["time_step"], min(_dp(c["time_dp"]), (eff_w * clock_pm + c["time_cap_bias"]) // 1000))
+    return {
+        "font_time": time_px,
+        "font_chrono_time": chrono,
+        "font_date": date,
+        "font_btn_bold": btn_bold,
+        "font_small": small,
+        "font_micro": micro,
+        "font_games_title": chrono,
+    }
+
+
+def _check_board_auto_font_parity(
+    auto_font_fn: Callable[..., dict[str, int]],
+    failures: list[str],
+) -> None:
+    for bf in sorted((ROOT / "boards").glob("*.yaml")):
+        bflags = parse_latter_core_flags(bf.read_text(encoding="utf-8"))
+        if not all(k in bflags for k in ("LATTER_PANEL_PPI", "LATTER_SCREEN_W", "LATTER_SCREEN_H")):
+            continue
+        dev = _device_yaml_for_board(bf.stem)
+        bsubs = extract_substitutions(collect_yaml_include_chain(dev) if dev else [bf])
+        want = auto_font_fn(
+            int(bflags["LATTER_SCREEN_W"]),
+            int(bflags["LATTER_SCREEN_H"]),
+            int(bflags["LATTER_PANEL_PPI"]),
+            view_scale_pct=int(bflags.get("LATTER_VIEW_SCALE_PCT", "0")),
+            is_stationary=int(bflags.get("LATTER_IS_STATIONARY", "0")) != 0,
+        )
+        for sub_key, fn_key in FONT_SUB_MAP:
+            if sub_key not in bsubs:
+                failures.append(f"[FONT PARITY] {bf.name}: missing '{sub_key}' substitution")
+            elif int(bsubs[sub_key]) != want[fn_key]:
+                failures.append(
+                    f"[FONT PARITY] {bf.name}: {sub_key}={bsubs[sub_key]} != Python compute_auto_font_sizes()['{fn_key}']={want[fn_key]}"
+                )
+
+
+def _check_geom_auto_font_parity(
+    auto_font_fn: Callable[..., dict[str, int]],
+    cpp_consts: dict[str, int],
+    failures: list[str],
+) -> None:
+    for geom_lbl, defs in FIVE_GEOM_CONFIGS:
+        kv = dict(d.split("=", 1) for d in defs if "=" in d)
+        w = int(kv["LATTER_SCREEN_W"])
+        h = int(kv["LATTER_SCREEN_H"])
+        ppi = int(kv["LATTER_PANEL_PPI"])
+        vs = int(kv.get("LATTER_VIEW_SCALE_PCT", "0"))
+        stat = int(kv.get("LATTER_IS_STATIONARY", "0")) != 0
+        py_res = auto_font_fn(w, h, ppi, view_scale_pct=vs, is_stationary=stat)
+        cpp_res = _eval_cpp_auto_font_sizes(cpp_consts, w, ppi, vs, stat)
+        if py_res != cpp_res:
+            failures.append(f"[FONT PARITY] {geom_lbl}: Python {py_res} != C++ ui_scale.h {cpp_res}")
+
+
+def _check_auto_font_python_parity(failures: list[str]) -> None:
+    auto_font_fn = _load_python_auto_font_fn(failures)
+    if auto_font_fn is None:
+        return
+    _check_board_auto_font_parity(auto_font_fn, failures)
+    cpp_consts = _parse_cpp_auto_font_constants(failures)
+    if cpp_consts is not None:
+        _check_geom_auto_font_parity(auto_font_fn, cpp_consts, failures)
+
+
 def verify_device_ui_and_accessibility(failures: list[str]) -> None:
     """Enforce Device UI compositing, fast primitives, D-070/D-072/D-073 tokens, contrast, and mm sizing."""
     gui_yaml_path = ROOT / "guis" / "universal" / "gui.yaml"
@@ -379,3 +565,4 @@ def verify_device_ui_and_accessibility(failures: list[str]) -> None:
     _check_takeover_and_touch_tokens(gui_uncommented, failures)
     _check_pages_d070_d072(failures)
     _check_contrast_fonts_and_ui_doc(gui_uncommented, failures)
+    _check_auto_font_python_parity(failures)

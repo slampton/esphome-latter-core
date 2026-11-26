@@ -4,6 +4,10 @@
 // Latter [PROF:*] Flight Recorder, Memory Watch & Render Section Profiler
 // (latter_prof.h)
 // ==============================================================================
+// Thread affinity: main-loop only (FlightRecorderStats, LoopProbeStats,
+// ProfilerTimerState, profiler_enabled(), prof_sect_us()). prof_now_us() and
+// hal_millis_now() are thread-safe read-only timer queries.
+// ------------------------------------------------------------------------------
 // [PROF:*] diagnostics log at INFO only while Telemetry Profiler is on (auto-disabling after 24 h),
 // so a device at the default INFO level stays quiet in steady state. Use LATTER_PROF_LOGI(fmt, ...)
 // for every [PROF:*] INFO line (including [PROF:BOOT] and [PROF:LINK]; zero always-on exemptions).
@@ -152,6 +156,8 @@ inline FlightRecorderStats &flight_recorder() {
   static FlightRecorderStats st;
   return st;
 }
+
+void reset_flight_recorder_window(uint32_t now_ms) noexcept;
 
 inline uint64_t prof_now_us() {
 #ifdef USE_ESP32

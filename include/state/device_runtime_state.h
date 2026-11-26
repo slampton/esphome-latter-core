@@ -4,6 +4,13 @@
 // Latter Core: Complete DeviceRuntimeState POD Umbrella & Controller APIs
 // (include/state/device_runtime_state.h)
 // ==============================================================================
+// Thread affinity: main-loop only. DeviceRuntimeState, runtime_state(), and all
+// core controllers (V3DomainReducer, TimerAlarmController,
+// CameraSupervisorController, evaluate_power_supervisor_1s) execute exclusively
+// on the main ESPHome loop() / API / script thread without locks. Cross-thread
+// ISR/worker-task communication goes through dedicated lock-free atomic bridges
+// (hal_touch.h, hal_video_stream.h, audio_router.h, hal_link_report.h).
+// ==============================================================================
 
 #include "state/state_common.h"
 #include "state/state_prefs.h"
@@ -1149,5 +1156,57 @@ std::string resolve_active_carousel_camera_id(const std::string &cameras_summary
 std::string build_carousel_camera_url(const std::string &base_cam_url,
                                       const std::string &cameras_summary,
                                       uint32_t now_ms);
+
+bool dispatch_v3_domain_push(std::string_view domain, std::string_view payload, uint32_t now_ms = 0U);
+bool try_handle_pin_session_key_command(std::string_view cmd);
+
+void apply_api_ha_connected_state(uint32_t now_ms);
+void apply_api_ha_disconnected_state(bool is_ha, uint32_t now_ms);
+bool apply_remote_screen_brightness_cmd(std::string_view sv_cmd,
+                                        uint32_t now_ms,
+                                        bool panel_is_on,
+                                        bool &out_need_wake);
+
+// ==============================================================================
+// 250 ms Camera/Doorbell Supervisor & 1 s Power Supervisor Controllers
+// (Implemented in components/latter_core/runtime_controllers.cpp)
+// ==============================================================================
+struct CameraSupervisorActions {
+  bool stop_video{false};
+  bool sync_stream{false};
+  bool release_snapshot_art{false};
+  bool fetch_snapshot{false};
+  bool mark_dirty_full{false};
+  bool schedule_disp{false};
+};
+
+class CameraSupervisorController {
+ public:
+  void reset() noexcept {}
+  CameraSupervisorActions step_250ms(uint32_t now_ms, bool touch_active);
+};
+
+CameraSupervisorController &camera_supervisor_controller() noexcept;
+
+struct PowerSupervisor1sInputs {
+  bool panel_brightness_on{true};
+  uint32_t last_touch_ms{0U};
+  uint32_t ui_focus_last_ms{0U};
+};
+
+struct PowerSupervisor1sActions {
+  bool stop_alarm_sound{false};
+  bool exit_camera_home{false};
+  bool sync_brightness{false};
+  bool note_activity{false};
+  bool navigate_home{false};
+  bool apply_power_policy{false};
+  bool turn_screen_off{false};
+  bool enter_standby{false};
+  bool start_hibernate_countdown{false};
+};
+
+PowerSupervisor1sActions evaluate_power_supervisor_1s(uint32_t now_ms,
+                                                      const PowerSupervisor1sInputs &in);
 
 }  // namespace latter_core

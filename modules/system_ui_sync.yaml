@@ -161,33 +161,11 @@ script:
           } else if (sv_cmd == "screen_off") {
             latter_core::runtime_state().nav.last_pub_display_power_state = -1;
             id(turn_screen_off).execute();
-          } else if (sv_cmd.size() > 15U && sv_cmd.substr(0, 15) == "set_screen_bri:") {
-            int parsed_pct = 0;
-            bool ok_pct = true;
-            const std::string_view pct_sv = sv_cmd.substr(15);
-            for (char ch : pct_sv) {
-              if (ch < '0' || ch > '9') {
-                ok_pct = false;
-                break;
-              }
-              parsed_pct = parsed_pct * 10 + (ch - '0');
-              if (parsed_pct > 1000) break;
-            }
-            if (ok_pct && !pct_sv.empty()) {
-              const int pct = std::clamp(parsed_pct, 1, 100);
-              auto &r = latter_core::runtime_state();
-              if (latter_core::persisted_prefs().auto_brightness_enum() ==
-                  latter_core::AutoBrightnessMode::Disabled) {
-                r.nav.ambient_bri_override_pct = -1;
-                uint32_t bri_eff = 0U;
-                (void)latter_core::record_local_pref_edit(
-                    latter_core::PrefKey::MANUAL_BRIGHTNESS, std::to_string(pct), now_ms, bri_eff);
-              } else {
-                r.nav.ambient_bri_override_pct = static_cast<int8_t>(pct);
-              }
-              r.nav.last_pub_display_power_state = -1;
-              r.nav.last_pub_display_bri_pct = -1;
-              if (r.nav.display_power_state != 0 || !id(display_brightness).current_values.is_on()) {
+          } else if (sv_cmd.starts_with("set_screen_bri:")) {
+            bool need_wake = false;
+            if (latter_core::apply_remote_screen_brightness_cmd(
+                    sv_cmd, now_ms, id(display_brightness).current_values.is_on(), need_wake)) {
+              if (need_wake) {
                 latter_core::note_wake_reason(latter_core::WakeReason::NOTIFY);
                 id(wake_to_active_state).execute();
               } else {
@@ -198,12 +176,7 @@ script:
           } else if (sv_cmd == "set_profiler_on") {
             latter_core::profiler_start(now_ms);
             id(ble_ctrl).set_profile_logging(true);
-            auto &fr = latter_core::flight_recorder();
-            fr.window_frames = 0;
-            fr.window_render_us = 0;
-            fr.max_render_us = 0;
-            fr.slow_frames = 0;
-            fr.last_summary_ms = now_ms;
+            latter_core::reset_flight_recorder_window(now_ms);
             LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '${name}' (screen=%dx%d, auto_off=24h)",
                              latter_ui::SCREEN_W, latter_ui::SCREEN_H);
             latter_core::log_boot_summary();

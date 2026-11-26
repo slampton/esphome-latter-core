@@ -284,8 +284,14 @@ void test_music_app_v3_d059() {
 
     const std::string te_src = read_repo_glob("../../components/latter_ui", "touch_", ".cpp");
     const std::string comp_src = read_repo_file("../../components/latter_ui/ui_compositor.cpp");
-    const std::string gfx_art_src = read_repo_file("../../components/latter_ui/ui_gfx.cpp");
-    const std::string wid_chr_src = read_repo_file("../../components/latter_ui/ui_widgets.cpp");
+    const std::string gfx_art_src = read_repo_files({
+        "../../components/latter_ui/ui_gfx.cpp",
+        "../../components/latter_ui/ui_gfx_text_art.cpp",
+    });
+    const std::string wid_chr_src = read_repo_files({
+        "../../components/latter_ui/ui_widgets.cpp",
+        "../../components/latter_ui/ui_widgets_icons_chrome.cpp",
+    });
     const std::string &wid_txt_src = wid_chr_src;
     const std::string lay_src = read_repo_file("../../include/ui_layout.h");
     const std::string sys_yaml = read_repo_files({

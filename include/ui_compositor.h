@@ -36,8 +36,9 @@ uint32_t compute_takeover_signature(bool ota_in_progress, bool is_hibernating, b
                                     bool shortcut_confirm_open = false,
                                     bool quick_actions_open = false);
 
-inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
-  const auto &rs = latter_core::runtime_state();
+inline uint32_t compute_takeover_signature(
+    const SystemTakeoverState &st,
+    const latter_core::DeviceRuntimeState &rs = latter_core::runtime_state()) {
   const bool va_preempt = should_va_takeover_preempt(
       st.va_active, !st.va_status_text.empty(), st.va_intercom_turn,
       rs.nav.gui_page, rs.cameras.doorbell_live_popup_active);
@@ -47,12 +48,12 @@ inline uint32_t compute_takeover_signature(const SystemTakeoverState &st) {
       st.alarm_ringing || st.timer_ringing || st.find_my_active,
       va_preempt,
       ui::pin_pad_state().open, st.notif_active,
-      latter_core::shortcut_confirm_state().open,
+      rs.nav.shortcut_confirm.open,
       st.quick_actions_open);
 }
 
-inline int compute_active_subpage_id() {
-  const auto &rs = latter_core::runtime_state();
+inline int compute_active_subpage_id(
+    const latter_core::DeviceRuntimeState &rs = latter_core::runtime_state()) {
   const int hub_drill = (rs.intercom.broadcast_dictation_active ? 4 : 0) |
                         ((latter_core::home_hub_tab() == latter_core::HomeHubTab::INTERCOM
                               ? latter_core::home_hub_state().broadcast_page
@@ -119,5 +120,51 @@ void render_docked_screensaver(Rgb565Surface &it, const UiFrameContext &ctx,
 //   PIN Pad Modal -> Push Notification -> Shortcut Confirm -> Quick Actions -> Docked Screensaver.
 bool render_system_takeovers(Rgb565Surface &it, const UiFrameContext &ctx,
                              const SystemTakeoverState &st);
+
+// Compiled per-frame pipeline (implemented in ui_compositor.cpp)
+struct FrameRenderPlan {
+  BackdropMode bd_mode{BackdropMode::SolidBlack};
+  bool cam_live_canvas{false};
+  bool weather_sky_active{false};
+  bool weather_sky_stepping{false};
+  bool w_has_fast_motion{false};
+  bool on_home_main{false};
+  bool dock_anim_now{false};
+  bool page_horiz_bounce_now{false};
+  bool vert_bounce_now{false};
+  bool lyrics_anim_now{false};
+  bool greet_fading_now{false};
+  bool has_act_band{false};
+  int act_y0{0};
+  int act_y1{0};
+  bool va_visible{false};
+  bool alert_ringing{false};
+  uint32_t takeover_sig{0};
+  SystemTakeoverState takeover_st{};
+  int band_y0{0};
+  int band_y1{0};
+};
+
+struct PostFrameSchedule {
+  bool anim_full{false};
+  bool anim_band{false};
+  int anim_band_y0{0};
+  int anim_band_y1{0};
+  bool record_ambient_ms{false};
+  bool weather_full{false};
+  bool weather_band{false};
+  uint32_t weather_gap_ms{0};
+  int weather_band_y0{0};
+  int weather_band_y1{0};
+  uint32_t wake_greeting_hold_ms{0};
+  uint32_t activity_rotate_ms{0};
+  int activity_rotate_y0{0};
+  int activity_rotate_y1{0};
+};
+
+void populate_frame_context_state(UiFrameContext &ctx);
+bool prepare_frame_plan(const UiFrameContext &ctx, FrameRenderPlan &out);
+void render_composed_frame(Rgb565Surface &it, const UiFrameContext &ctx, const FrameRenderPlan &plan);
+PostFrameSchedule compute_post_frame_schedule(const UiFrameContext &ctx, const FrameRenderPlan &plan);
 
 }  // namespace latter_ui
