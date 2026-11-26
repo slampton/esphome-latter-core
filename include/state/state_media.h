@@ -183,9 +183,10 @@ struct MediaState {
 };
 
 
-inline MediaState &media_state() {
-  static MediaState st;
-  return st;
+extern MediaState g_media_state;
+
+inline MediaState &media_state() noexcept {
+  return g_media_state;
 }
 
 inline constexpr size_t kMaxMusicLyricLines = 128;

@@ -293,6 +293,44 @@ inline void sync_ctx_link_health(UiFrameContext &ctx) {
   ctx.ha_disconnect_ms = ls.last_ha_disconnect_ms;
 }
 
+inline void sync_touch_runtime_fast(bool panel_is_on) noexcept {
+  const auto &rs = latter_core::runtime_state();
+  auto &rt = touch_engine().runtime();
+  rt.usb_connected = rs.hw_usb_connected;
+  rt.panel_is_on = panel_is_on;
+  rt.local_mp_playing = rs.audio.local_mp_playing();
+  rt.local_mp_volume = rs.audio.local_mp_volume_or(0.0f);
+}
+
+template <typename TimeT>
+inline void sync_touch_runtime_snapshot(const char *friendly_name,
+                                        const char *fw_version,
+                                        std::string fw_latest,
+                                        bool panel_is_on,
+                                        const TimeT &now_t) {
+  const auto &rs = latter_core::runtime_state();
+  auto &rt = touch_engine().runtime();
+  rt.friendly_name = friendly_name;
+  rt.fw_version = fw_version;
+  rt.fw_latest_version = std::move(fw_latest);
+  rt.usb_connected = rs.hw_usb_connected;
+  rt.panel_is_on = panel_is_on;
+  rt.local_mp_playing = rs.audio.local_mp_playing();
+  rt.local_mp_volume = rs.audio.local_mp_volume_or(0.0f);
+  rt.album_art_w = rs.audio.local_album_art_w();
+  rt.track_title = rs.music.last_sendspin_title;
+  rt.track_artist = rs.music.last_sendspin_artist;
+  rt.track_album = rs.music.last_sendspin_album;
+  rt.time_valid = now_t.is_valid();
+  rt.time_year = rt.time_valid ? now_t.year : 2026;
+  rt.time_month = rt.time_valid ? now_t.month : 1;
+  rt.time_day = rt.time_valid ? now_t.day_of_month : 1;
+  rt.time_hour = rt.time_valid ? now_t.hour : -1;
+  rt.time_minute = rt.time_valid ? now_t.minute : -1;
+  rt.time_day_of_week = rt.time_valid ? now_t.day_of_week : -1;
+  rt.time_epoch = rt.time_valid ? static_cast<uint32_t>(now_t.timestamp) : 0U;
+}
+
 // Thin Display& convenience overloads forwarding to Rgb565Surface
 inline bool render_system_takeovers(esphome::display::Display &it, const UiFrameContext &ctx,
                                     const SystemTakeoverState &st) {

@@ -301,9 +301,10 @@ struct DeviceRuntimeState {
   int slot_total_pages_for(latter_rpc::SlotChannel ch) const { return slot_total_pages[static_cast<size_t>(ch)]; }
 };
 
-inline DeviceRuntimeState &runtime_state() {
-  static DeviceRuntimeState st;
-  return st;
+extern DeviceRuntimeState g_runtime_state;
+
+inline DeviceRuntimeState &runtime_state() noexcept {
+  return g_runtime_state;
 }
 
 inline MultiTimerSlot *timer_slots() {
@@ -1208,5 +1209,85 @@ struct PowerSupervisor1sActions {
 
 PowerSupervisor1sActions evaluate_power_supervisor_1s(uint32_t now_ms,
                                                       const PowerSupervisor1sInputs &in);
+
+// ==============================================================================
+// Compiled Device Command, Prefs-Effects, Brightness, Alert & Scroll Controllers
+// (Implemented in components/latter_core/device_sync_controllers.cpp)
+// ==============================================================================
+struct DeviceCommandDispatch {
+  bool restart{false};
+  bool toggle_find_my{false};
+  bool activate_screensaver{false};
+  bool wake_to_active{false};
+  bool turn_screen_off{false};
+  bool sync_brightness{false};
+  bool publish_display_state{false};
+  bool publish_device_telemetry{false};
+  bool set_ble_prof_log{false};
+  bool ble_prof_log_val{false};
+  bool start_va{false};
+  bool dismiss_notification{false};
+  bool stop_alarm_sound{false};
+  bool apply_power_policy{false};
+  bool mark_dirty_full{false};
+  bool schedule_disp{false};
+  bool forward_ui_cmd{false};
+};
+
+DeviceCommandDispatch evaluate_device_command(std::string_view sv_cmd,
+                                              uint32_t now_ms,
+                                              bool panel_is_on,
+                                              bool ble_active,
+                                              const char *device_name,
+                                              int screen_w,
+                                              int screen_h);
+
+struct DevicePrefsEffectsPlan {
+  bool sync_wake_word{false};
+  bool media_idle_finish{false};
+  bool apply_ww_sens{false};
+  bool apply_theme_preset{false};
+  bool sync_display_brightness{false};
+  bool wake_to_active{false};
+  bool turn_screen_off{false};
+  bool enter_standby{false};
+  bool apply_power_policy{false};
+  bool fetch_screensaver_photo{false};
+  bool navigate_to_start_screen{false};
+  bool sync_camera_stream{false};
+  bool weather_sim_dirty{false};
+  bool ensure_anim_poller{false};
+  bool mark_dirty_full{false};
+  bool schedule_disp{false};
+};
+
+DevicePrefsEffectsPlan evaluate_device_prefs_effects(uint32_t now_ms,
+                                                     uint32_t last_touch_ms,
+                                                     bool on_anchor_root);
+
+struct DisplayBrightnessPlan {
+  bool apply_call{false};
+  float target_bri{1.0f};
+  uint32_t transition_ms{0U};
+};
+
+DisplayBrightnessPlan evaluate_display_brightness_sync(uint32_t now_ms,
+                                                       bool time_valid,
+                                                       int hour,
+                                                       bool photo_frame_art_active,
+                                                       bool cur_panel_on,
+                                                       float cur_panel_bri);
+
+bool publish_display_state_if_changed(bool time_valid, int hour);
+bool dismiss_active_alert_banner(uint32_t now_ms);
+void commit_menu_scroll_target();
+
+struct CoreStoreFootprint {
+  size_t pod_bytes;
+  size_t dynamic_bytes;
+  size_t total_bytes;
+};
+
+CoreStoreFootprint core_store_footprint() noexcept;
 
 }  // namespace latter_core

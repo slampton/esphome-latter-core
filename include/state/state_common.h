@@ -275,9 +275,10 @@ struct BrowseSlotItem {
 using MusicBrowseSlot = BrowseSlotItem;
 
 
-inline LinkState &link_state() {
-  static LinkState st;
-  return st;
+extern constinit LinkState g_link_state;
+
+inline LinkState &link_state() noexcept {
+  return g_link_state;
 }
 
 inline constexpr std::string_view utf8_safe_prefix(std::string_view sv, size_t max_bytes) noexcept {
@@ -454,9 +455,10 @@ inline bool apply_if_newer(uint32_t &cur_epoch, uint32_t &cur_rev, uint32_t in_e
   return false;
 }
 
-inline uint32_t &v3_mismatch_warn_count() {
-  static uint32_t cnt = 0;
-  return cnt;
+extern constinit uint32_t g_v3_mismatch_warn_count;
+
+inline uint32_t &v3_mismatch_warn_count() noexcept {
+  return g_v3_mismatch_warn_count;
 }
 
 

@@ -1063,6 +1063,7 @@ void reset_runtime_state(bool preserve_hooks) {
 
   audio_session().reset();
   audio_arbitrator().reset();
+  audio_1s_supervisor().reset();
   intercom_session().reset();
   display_lifecycle().reset();
   v3_domain_reducer().reset();

@@ -1,5 +1,6 @@
 #if __has_include("audio_router.h")
 #include "audio_router.h"
+#include "hal_display_lifecycle.h"
 #include "hal_radio_policy.h"
 #include "hal_sleep_pm.h"
 #include "state/device_runtime_state.h"
@@ -7,6 +8,7 @@
 #include "latter_actions.h"
 #else
 #include "../../include/audio_router.h"
+#include "../../include/hal_display_lifecycle.h"
 #include "../../include/hal_radio_policy.h"
 #include "../../include/hal_sleep_pm.h"
 #include "../../include/state/device_runtime_state.h"
@@ -727,6 +729,299 @@ void speaker_unjoin_target(std::string_view friendly_name, uint32_t now_ms) {
     m.loaded_art_url.clear();
   }
   latter_core::emit_set_active_speaker(m.active_speaker_entity, false);
+}
+
+// ==============================================================================
+// 5. Compiled Audio Lifecycle, Wake Word & 1s Supervisor Helpers
+// ==============================================================================
+
+namespace {
+
+uint8_t map_ww_cutoff(std::string_view opt, uint8_t low_c, uint8_t med_c, uint8_t high_c) noexcept {
+  if (opt == "Slightly sensitive") return low_c;
+  if (opt == "Very sensitive") return high_c;
+  return med_c;
+}
+
+bool is_media_busy_for_ww(const AudioHwSnapshot &hw) noexcept {
+  return audio_arbitrator().media_idle_debounce_active() ||
+         runtime_state().voice.resume_music_after ||
+         hw.media_mix_running ||
+         hw.sendspin_playing ||
+         hw.mp_playing ||
+         hw.mp_announcing;
+}
+
+bool is_alert_or_tool_busy_for_ww(bool include_dictation) noexcept {
+  const auto &rs = runtime_state();
+  if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active ||
+      (rs.nav.active_game > 0) ||
+      cam_call_active() || cam_listen_active() || cam_intercom_ptt_active()) {
+    return true;
+  }
+  if (include_dictation && (cal_dictation_active() || broadcast_dictation_active())) {
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+WakeWordCutoffs resolve_wake_word_cutoffs() noexcept {
+  const auto &prefs = persisted_prefs();
+  WakeWordCutoffs out{};
+  out.okay_nabu = map_ww_cutoff(pref_ww_sens_cstr(prefs.ww_sens_okay_nabu), 247U, 237U, 224U);
+  out.hey_luna = map_ww_cutoff(pref_ww_sens_cstr(prefs.ww_sens_hey_luna), 248U, 239U, 226U);
+  out.hey_jarvis = map_ww_cutoff(pref_ww_sens_cstr(prefs.ww_sens_hey_jarvis), 247U, 237U, 224U);
+  out.hey_mycroft = map_ww_cutoff(pref_ww_sens_cstr(prefs.ww_sens_hey_mycroft), 248U, 239U, 226U);
+  out.alexa = map_ww_cutoff(pref_ww_sens_cstr(prefs.ww_sens_alexa), 247U, 237U, 224U);
+  return out;
+}
+
+bool should_wake_word_run(uint32_t now_ms, const AudioHwSnapshot &hw) noexcept {
+  const auto &rs = runtime_state();
+  const bool va_busy = rs.voice.active || hw.va_running || !rs.voice.status_text.empty() ||
+                       rs.voice.tts_received || hw.ann_mix_running;
+  const bool media_busy = is_media_busy_for_ww(hw);
+  const bool alert_or_tool_busy = is_alert_or_tool_busy_for_ww(true);
+  const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress ||
+                        !hw.wifi_connected || (now_ms < 12000U);
+  return wake_word_should_run(
+      pref_wake_word_mode_cstr(), rs.hw_usb_connected, va_busy, media_busy,
+      alert_or_tool_busy, sys_busy);
+}
+
+bool should_audio_codecs_standby(bool usb_connected, bool local_audio_busy) noexcept {
+  if (local_audio_busy) return false;
+  const std::string_view ww_mode = pref_wake_word_mode_cstr();
+  const bool ww_active = (ww_mode == "Always On") || (ww_mode == "Docked Only" && usb_connected);
+  return !ww_active;
+}
+
+Audio1sSupervisorActions Audio1sSupervisorController::step_1s(
+    uint32_t now_ms, const AudioHwSnapshot &hw) noexcept {
+  Audio1sSupervisorActions act{};
+  const auto &rs = runtime_state();
+
+  if (!ww_model_initialized_ && now_ms > 12000U && hw.wifi_connected) {
+    ww_model_initialized_ = true;
+    act.init_ww = true;
+  } else if (now_ms > 12500U && !rs.voice.active && !rs.voice.tts_received) {
+    const bool va_busy = hw.va_running || !rs.voice.status_text.empty() || hw.ann_mix_running;
+    const bool media_busy = is_media_busy_for_ww(hw);
+    const bool alert_or_tool_busy = is_alert_or_tool_busy_for_ww(false);
+    const bool sys_busy = rs.nav.is_hibernating || rs.nav.ota_in_progress || !hw.wifi_connected;
+    const bool should_ww_run = wake_word_should_run(
+        pref_wake_word_mode_cstr(), rs.hw_usb_connected, va_busy, media_busy,
+        alert_or_tool_busy, sys_busy);
+    if (should_ww_run != hw.mww_running) {
+      act.sync_ww = true;
+    }
+  }
+
+  // Voice Assistant stuck-open watchdog (auto-recovers mic/speaker if HA drops >35s).
+  if (rs.voice.active || !rs.voice.status_text.empty()) {
+    if (va_stuck_since_ms_ == 0U) {
+      va_stuck_since_ms_ = (now_ms == 0U) ? 1U : now_ms;
+    } else if ((now_ms - va_stuck_since_ms_ > 35000U) &&
+               !hw.va_running && !hw.ann_mix_running) {
+      ESP_LOGW("va", "Voice Assistant watchdog triggered (>35s idle): resetting session & mic");
+      va_stuck_since_ms_ = 0U;
+      act.cancel_va_watchdog = true;
+    }
+  } else {
+    va_stuck_since_ms_ = 0U;
+  }
+
+  return act;
+}
+
+Audio1sSupervisorController &audio_1s_supervisor() noexcept {
+  static Audio1sSupervisorController inst{};
+  return inst;
+}
+
+bool begin_va_session_state(uint32_t now_ms, bool panel_is_on, bool mark_active) noexcept {
+  auto &rs = runtime_state();
+  audio_arbitrator().cancel_echo_gate();
+  request_radio_boost(now_ms, 15000U);
+  va_display_restore().capture(rs.nav.display_power_state, panel_is_on, now_ms, true);
+  bool wake_screen = false;
+  if (rs.nav.display_power_state != 0 || !panel_is_on) {
+    if (persisted_prefs().wake_screen_on_assist) {
+      note_wake_reason(WakeReason::VOICE);
+      wake_screen = true;
+    }
+  } else {
+    display_lifecycle().note_activity(now_ms);
+  }
+  if (mark_active && !rs.voice.active) {
+    rs.voice.return_page = rs.nav.gui_page;
+    rs.voice.active = true;
+  }
+  rs.voice.tts_received = false;
+  return wake_screen;
+}
+
+bool finish_va_tts_drain_state() noexcept {
+  auto &rs = runtime_state();
+  log_audio_profile("VA_DRAIN_FINISH");
+  audio_arbitrator().cancel_echo_gate();
+  const bool was_va_session = rs.voice.active;
+  rs.voice.vad_active = false;
+  rs.voice.status_text.clear();
+  rs.voice.tts_received = false;
+  rs.voice.active = false;
+  audio_session().note_va_phase(AudioSessionPhase::Idle);
+  if (was_va_session) {
+    rs.nav.gui_page = rs.voice.return_page;
+  }
+  radio_boost_until_ms() = 0U;
+  return rs.nav.gui_page == PageId::MUSIC;
+}
+
+bool preempt_va_for_alert_state(uint32_t now_ms, bool va_running) noexcept {
+  auto &rs = runtime_state();
+  audio_arbitrator().cancel_echo_gate();
+  audio_arbitrator().cancel_media_idle_debounce();
+  audio_arbitrator().cancel_announce_stall_check();
+  audio_session().preempt_for_alert(now_ms);
+  audio_session().set_paused_for_va(false, now_ms);
+  va_display_restore().armed = false;
+  if (broadcast_dictation_active()) {
+    cancel_broadcast_dictation("", now_ms);
+  }
+  if (rs.voice.active || va_running || rs.voice.tts_received || !rs.voice.status_text.empty()) {
+    rs.voice.intercom_turn = false;
+    rs.voice.was_cancelled = true;
+    rs.voice.status_text.clear();
+    rs.voice.tts_received = false;
+    rs.voice.vad_active = false;
+    rs.voice.active = false;
+    rs.nav.gui_page = (rs.voice.return_page >= 0) ? rs.voice.return_page : rs.nav.gui_page;
+    radio_boost_until_ms() = 0U;
+    return true;
+  }
+  return false;
+}
+
+void cancel_va_session_state(bool clear_radio_boost) noexcept {
+  auto &rs = runtime_state();
+  audio_arbitrator().cancel_echo_gate();
+  audio_arbitrator().cancel_media_idle_debounce();
+  audio_arbitrator().cancel_announce_stall_check();
+  if (!clear_radio_boost) {
+    audio_session().note_va_phase(AudioSessionPhase::Idle);
+  }
+  rs.voice.intercom_turn = false;
+  rs.voice.was_cancelled = true;
+  rs.voice.status_text.clear();
+  rs.voice.tts_received = false;
+  rs.voice.vad_active = false;
+  rs.voice.active = false;
+  rs.nav.gui_page = rs.voice.return_page;
+  if (clear_radio_boost) {
+    radio_boost_until_ms() = 0U;
+  }
+}
+
+bool can_finish_media_idle(const AudioHwSnapshot &hw) noexcept {
+  const auto &rs = runtime_state();
+  return !hw.mp_playing &&
+         !hw.mp_announcing &&
+         !hw.sendspin_playing &&
+         !hw.media_mix_running &&
+         !hw.va_running &&
+         !rs.voice.active &&
+         !rs.voice.tts_received &&
+         !hw.ann_mix_running &&
+         !cam_call_active() &&
+         !cam_listen_active() &&
+         !rs.alarms.ringing &&
+         !rs.timers.ringing &&
+         !rs.alarms.find_my_active &&
+         (rs.nav.active_game == 0);
+}
+
+MediaIdleFinishActions apply_media_idle_finish_state(uint32_t now_ms) noexcept {
+  auto &rs = runtime_state();
+  audio_session().note_local_playback_stopped();
+  MediaIdleFinishActions act{};
+  act.codecs_standby = should_audio_codecs_standby(rs.hw_usb_connected, false);
+  if (rs.nav.display_power_state == 2 && !rs.hw_usb_connected) {
+    if (rs.nav.sleep_start_time == 0U) {
+      rs.nav.sleep_start_time = now_ms;
+    }
+  }
+  const auto &ac = area_ctx_state();
+  if (rs.nav.display_power_state == 0 &&
+      !ac.wallpaper_url.empty() &&
+      ac.wallpaper_url != rs.music.loaded_wallpaper_url) {
+    act.fetch_wallpaper = true;
+  }
+  return act;
+}
+
+bool prepare_pause_all_music_for_va(bool local_mp_playing, uint32_t now_ms) noexcept {
+  auto &rs = runtime_state();
+  const auto &ms = media_state();
+  const bool remote_active =
+      (!rs.music.active_speaker_entity.empty() && !ms.is_local && (ms.state == "playing"));
+  if (local_mp_playing || remote_active) {
+    rs.voice.resume_music_after = true;
+    audio_session().set_paused_for_va(true, now_ms);
+  }
+  ESP_LOGD("audio", "pause_all_music: local=%d, remote=%d -> va_resume_music_after=%d",
+           local_mp_playing ? 1 : 0, remote_active ? 1 : 0, rs.voice.resume_music_after ? 1 : 0);
+  return rs.voice.resume_music_after;
+}
+
+ResumeMusicBranch prepare_resume_music_after_va(bool local_mp_playing, uint32_t now_ms) noexcept {
+  auto &rs = runtime_state();
+  auto set_res = [&](ResumeMusicBranch b) noexcept {
+    audio_session().set_last_resume_branch(b);
+    return b;
+  };
+  if (rs.alarms.ringing || rs.timers.ringing || rs.alarms.find_my_active) {
+    return set_res(ResumeMusicBranch::RingingAbort);
+  }
+  if (rs.voice.resume_music_after) {
+    audio_arbitrator().arm_media_idle_debounce(now_ms);
+    rs.voice.resume_music_after = false;
+    audio_session().set_play_intent(MusicPlayIntent::AutoResumeAfterVa, now_ms);
+    audio_session().set_paused_for_va(false, now_ms);
+    ESP_LOGD("audio", "resume_music_after_va: restoring playback for %s (cancelled=%d)",
+             rs.music.active_speaker_entity.c_str(), rs.voice.was_cancelled ? 1 : 0);
+    if (!rs.music.active_speaker_entity.empty() && !media_state().is_local) {
+      rs.voice.was_cancelled = false;
+      emit_media_command("play");
+      return set_res(ResumeMusicBranch::ResumeRemote);
+    }
+    return set_res(ResumeMusicBranch::ResumeLocal);
+  }
+  audio_session().set_paused_for_va(false, now_ms);
+  rs.voice.was_cancelled = false;
+  if (local_mp_playing) {
+    return set_res(ResumeMusicBranch::RestoreActiveLocal);
+  }
+  if (!cam_call_active() && !cam_listen_active()) {
+    return set_res(ResumeMusicBranch::IdleMute);
+  }
+  return set_res(ResumeMusicBranch::IdleNoMute);
+}
+
+bool begin_dictation_session_state(bool is_broadcast, bool va_ready, uint32_t now_ms) {
+  if (!va_ready) {
+    if (is_broadcast) {
+      cancel_broadcast_dictation("Assist pipeline offline", now_ms);
+    } else {
+      cancel_calendar_dictation("Assist pipeline offline", now_ms);
+    }
+    return false;
+  }
+  runtime_state().voice.intercom_turn = true;
+  request_radio_boost(now_ms, 12000U);
+  return true;
 }
 
 }  // namespace latter_core

@@ -51,14 +51,15 @@ struct CalendarState {
 };
 
 
-inline WeatherState &weather_state() {
-  static WeatherState st;
-  return st;
+extern WeatherState g_weather_state;
+extern CalendarState g_calendar_state;
+
+inline WeatherState &weather_state() noexcept {
+  return g_weather_state;
 }
 
-inline CalendarState &calendar_state() {
-  static CalendarState st;
-  return st;
+inline CalendarState &calendar_state() noexcept {
+  return g_calendar_state;
 }
 
 struct CalendarUiState {

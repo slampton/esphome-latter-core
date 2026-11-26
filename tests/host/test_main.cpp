@@ -297,6 +297,7 @@ void test_music_app_v3_d059() {
     const std::string sys_yaml = read_repo_files({
         "../../modules/system_core.yaml",
         "../../modules/system_ui_sync.yaml",
+        "../../components/latter_core/device_sync_controllers.cpp",
     });
 
     LATTER_CHECK(mu_src.find("render_progress_arc_r224") == std::string::npos);
@@ -317,7 +318,7 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(te_src.find("MUSIC_ROW_PLAY_BASE") != std::string::npos);
 
     LATTER_CHECK(lay_src.find("std::abs(new_start - target_start) > 9") != std::string::npos);
-    LATTER_CHECK(sys_yaml.find("rs.music.view == latter_core::MusicView::SETTINGS") != std::string::npos);
+    LATTER_CHECK(sys_yaml.find("rs.music.view == MusicView::SETTINGS") != std::string::npos);
     LATTER_CHECK(wid_chr_src.find("draw_icon_play_pause(") != std::string::npos);
     LATTER_CHECK(wid_chr_src.find("draw_icon_hamburger(") != std::string::npos);
 

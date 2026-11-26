@@ -160,6 +160,10 @@ inline float media_dac_volume(float player_volume) noexcept {
   return kMediaVolumeMin + v * (kMediaVolumeMax - kMediaVolumeMin);
 }
 
+inline float safe_media_dac_volume(float player_volume) noexcept {
+  return media_dac_volume((std::isnan(player_volume) || player_volume <= 0.0f) ? 0.60f : player_volume);
+}
+
 inline float alarm_output_volume(float alert_vol_pct, float media_volume) noexcept {
   float a = alert_vol_pct;
   if (std::isnan(a) || a <= 0.0f) a = 80.0f;
@@ -193,6 +197,15 @@ enum class MusicPlayIntent : uint8_t {
   AutoResumeAfterVa = 1,
   HomeQuickToggle = 2,
   TrackAdvanceOrSeek = 3,
+};
+
+enum class ResumeMusicBranch : uint8_t {
+  RingingAbort = 0,
+  ResumeRemote = 1,
+  ResumeLocal = 2,
+  RestoreActiveLocal = 3,
+  IdleMute = 4,
+  IdleNoMute = 5,
 };
 
 struct AudioSessionController {
@@ -229,10 +242,13 @@ struct AudioSessionController {
   void note_va_phase(AudioSessionPhase p) noexcept { phase_ = p; }
   void preempt_for_alert(uint32_t now_ms) noexcept;
   AudioSessionPhase phase() const noexcept { return phase_; }
+  ResumeMusicBranch last_resume_branch() const noexcept { return last_resume_branch_; }
+  void set_last_resume_branch(ResumeMusicBranch b) noexcept { last_resume_branch_ = b; }
 
  private:
   AudioSessionPhase phase_ = AudioSessionPhase::Idle;
   MusicPlayIntent play_intent_ = MusicPlayIntent::ExternalOrUserExplicit;
+  ResumeMusicBranch last_resume_branch_ = ResumeMusicBranch::IdleNoMute;
   uint32_t intent_set_ms_ = 0U;
   uint32_t last_live_pause_ms_ = 0U;
   std::string last_speaker_id_{};
@@ -402,6 +418,70 @@ bool speaker_activate_selected(bool transfer_queue,
                                uint32_t now_ms);
 bool speaker_join_target(uint32_t now_ms);
 void speaker_unjoin_target(std::string_view friendly_name, uint32_t now_ms);
+
+// ------------------------------------------------------------------------------
+// Compiled Audio Lifecycle, Wake Word & 1s Supervisor Helpers
+// (Implemented in components/latter_core/audio_session.cpp)
+// ------------------------------------------------------------------------------
+struct AudioHwSnapshot {
+  bool va_running{false};
+  bool mww_running{false};
+  bool mp_playing{false};
+  bool mp_paused{false};
+  bool mp_announcing{false};
+  bool sendspin_playing{false};
+  bool media_mix_running{false};
+  bool ann_mix_running{false};
+  bool snd_mix_running{false};
+  bool speaker_enabled{false};
+  bool wifi_connected{false};
+};
+
+struct WakeWordCutoffs {
+  uint8_t okay_nabu{237U};
+  uint8_t hey_luna{239U};
+  uint8_t hey_jarvis{237U};
+  uint8_t hey_mycroft{239U};
+  uint8_t alexa{237U};
+};
+
+WakeWordCutoffs resolve_wake_word_cutoffs() noexcept;
+bool should_wake_word_run(uint32_t now_ms, const AudioHwSnapshot &hw) noexcept;
+bool should_audio_codecs_standby(bool usb_connected, bool local_audio_busy) noexcept;
+
+struct Audio1sSupervisorActions {
+  bool init_ww{false};
+  bool sync_ww{false};
+  bool cancel_va_watchdog{false};
+};
+
+class Audio1sSupervisorController {
+ public:
+  void reset() noexcept { *this = Audio1sSupervisorController{}; }
+  Audio1sSupervisorActions step_1s(uint32_t now_ms, const AudioHwSnapshot &hw) noexcept;
+
+ private:
+  bool ww_model_initialized_{false};
+  uint32_t va_stuck_since_ms_{0U};
+};
+
+Audio1sSupervisorController &audio_1s_supervisor() noexcept;
+
+bool begin_va_session_state(uint32_t now_ms, bool panel_is_on, bool mark_active) noexcept;
+bool finish_va_tts_drain_state() noexcept;
+bool preempt_va_for_alert_state(uint32_t now_ms, bool va_running) noexcept;
+void cancel_va_session_state(bool clear_radio_boost) noexcept;
+
+bool can_finish_media_idle(const AudioHwSnapshot &hw) noexcept;
+struct MediaIdleFinishActions {
+  bool codecs_standby{false};
+  bool fetch_wallpaper{false};
+};
+MediaIdleFinishActions apply_media_idle_finish_state(uint32_t now_ms) noexcept;
+
+bool prepare_pause_all_music_for_va(bool local_mp_playing, uint32_t now_ms) noexcept;
+ResumeMusicBranch prepare_resume_music_after_va(bool local_mp_playing, uint32_t now_ms) noexcept;
+bool begin_dictation_session_state(bool is_broadcast, bool va_ready, uint32_t now_ms);
 
 #ifdef USE_I2C
 void hal_set_es8311_es7210_standby(esphome::i2c::I2CBus *bus, bool standby, bool has_es7210 = true);

@@ -195,19 +195,20 @@ struct RemoteRuntimeState {
 
 inline constexpr int MAX_REMOTE_SLOTS = RemoteRuntimeState::kMaxSlots;
 
-inline HomeHubState &home_hub_state() {
-  static HomeHubState st;
-  return st;
+extern HomeHubState g_home_hub_state;
+extern AreaContextState g_area_ctx_state;
+extern RemoteState g_remote_state;
+
+inline HomeHubState &home_hub_state() noexcept {
+  return g_home_hub_state;
 }
 
-inline AreaContextState &area_ctx_state() {
-  static AreaContextState st;
-  return st;
+inline AreaContextState &area_ctx_state() noexcept {
+  return g_area_ctx_state;
 }
 
-inline RemoteState &remote_state() {
-  static RemoteState st;
-  return st;
+inline RemoteState &remote_state() noexcept {
+  return g_remote_state;
 }
 
 inline const char *resolve_area_dock_icon(const AreaContextState &ac) noexcept {

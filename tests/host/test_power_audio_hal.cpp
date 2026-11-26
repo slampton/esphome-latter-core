@@ -1106,7 +1106,10 @@ void test_profiler_timer_and_logging_policy() {
   const std::string disp_only_yaml = read_repo_file("../../modules/latter_display_only_firmware.yaml");
   const std::string disp_fw_yaml = read_repo_file("../../modules/latter_display_firmware.yaml");
   const std::string sys_core_yaml = read_repo_file("../../modules/system_core.yaml");
-  const std::string sys_sync_yaml = read_repo_file("../../modules/system_ui_sync.yaml");
+  const std::string sys_sync_src = read_repo_files({
+      "../../modules/system_ui_sync.yaml",
+      "../../components/latter_core/device_sync_controllers.cpp",
+  });
   const std::string pwr_yaml = read_repo_file("../../modules/power_policy.yaml");
   const std::string sleep_yaml = read_repo_file("../../modules/sleep_lifecycle.yaml");
   const std::string axp_yaml = read_repo_file("../../modules/hal/pmu_axp2101.yaml");
@@ -1120,8 +1123,8 @@ void test_profiler_timer_and_logging_policy() {
   LATTER_CHECK(disp_fw_yaml.find("!include latter_display_only_firmware.yaml") != std::string::npos);
   LATTER_CHECK(disp_fw_yaml.find("logger:") == std::string::npos);
   LATTER_CHECK(disp_fw_yaml.find("safe_mode:") == std::string::npos);
-  LATTER_CHECK(sys_sync_yaml.find("profiler_start(") != std::string::npos);
-  LATTER_CHECK(sys_sync_yaml.find("log_heap_summary()") != std::string::npos);
+  LATTER_CHECK(sys_sync_src.find("profiler_start(") != std::string::npos);
+  LATTER_CHECK(sys_sync_src.find("log_heap_summary()") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("profiler_is_expired(") != std::string::npos);
   LATTER_CHECK(pwr_yaml.find("profiler_stop()") != std::string::npos);
   LATTER_CHECK(sleep_yaml.find("Entering hibernate (reason=%s") != std::string::npos);
@@ -1162,6 +1165,87 @@ void test_compiled_camera_and_power_supervisors() {
   const auto p_act = evaluate_power_supervisor_1s(182000U, p_in);
   LATTER_CHECK(rs.nav.active_game == 0);
   LATTER_CHECK(p_act.stop_alarm_sound && p_act.note_activity);
+
+  // Extracted audio lifecycle & 1s supervisor helpers
+  reset_runtime_state();
+  auto &r_au = runtime_state();
+  auto &p_au = persisted_prefs();
+  p_au = PersistedDevicePrefs{};
+  p_au.ww_sens_okay_nabu = 2;  // Very sensitive
+  p_au.ww_sens_hey_luna = 0;   // Slightly sensitive
+  const auto cutoffs = resolve_wake_word_cutoffs();
+  LATTER_CHECK(cutoffs.okay_nabu == 224U && cutoffs.hey_luna == 248U && cutoffs.hey_jarvis == 237U);
+
+  p_au.wake_word_mode = 1;  // Docked Only (opts: Disabled=0, Docked Only=1, Always On=2 -> check helper with explicit strings via pref index)
+  // Verify should_audio_codecs_standby & should_wake_word_run under active wake word mode
+  {
+    uint32_t eff = 0U;
+    PrefMask cm{};
+    (void)set_pref_by_key_str(p_au, PrefKey::WAKE_WORD_MODE, "Docked Only", cm, eff);
+    LATTER_CHECK(!should_audio_codecs_standby(true, false));
+    LATTER_CHECK(should_audio_codecs_standby(false, false));
+    LATTER_CHECK(!should_audio_codecs_standby(false, true));
+
+    AudioHwSnapshot hw{};
+    hw.wifi_connected = true;
+    r_au.hw_usb_connected = true;
+    LATTER_CHECK(!should_wake_word_run(11000U, hw));  // <12s boot holdoff
+    LATTER_CHECK(should_wake_word_run(13000U, hw));
+
+    const auto a_init = audio_1s_supervisor().step_1s(13000U, hw);
+    LATTER_CHECK(a_init.init_ww && !a_init.cancel_va_watchdog);
+    const auto a_sync = audio_1s_supervisor().step_1s(14000U, hw);
+    LATTER_CHECK(a_sync.sync_ww && !a_sync.cancel_va_watchdog);
+
+    // Stuck VA watchdog (>35s idle with va_running == false)
+    r_au.voice.active = true;
+    LATTER_CHECK(!audio_1s_supervisor().step_1s(15000U, hw).cancel_va_watchdog);
+    LATTER_CHECK(audio_1s_supervisor().step_1s(51000U, hw).cancel_va_watchdog);
+    r_au.voice.active = false;
+  }
+
+  // VA session start, TTS drain finish, preempt, cancel, pause/resume & dictation
+  r_au.nav.gui_page = PageId::MUSIC;
+  r_au.nav.display_power_state = 2;
+  p_au.wake_screen_on_assist = true;
+  LATTER_CHECK(begin_va_session_state(60000U, false, true));
+  LATTER_CHECK(r_au.voice.active && r_au.voice.return_page == PageId::MUSIC);
+  r_au.nav.gui_page = PageId::HOME;
+  LATTER_CHECK(finish_va_tts_drain_state());  // restored return_page == MUSIC -> fetch_remote_art
+  LATTER_CHECK(!r_au.voice.active && r_au.nav.gui_page == PageId::MUSIC);
+
+  r_au.voice.status_text = "Listening";
+  r_au.voice.return_page = PageId::HOME;
+  LATTER_CHECK(preempt_va_for_alert_state(62000U, false));
+  LATTER_CHECK(r_au.voice.was_cancelled && r_au.nav.gui_page == PageId::HOME);
+
+  r_au.voice.active = true;
+  r_au.voice.return_page = PageId::WEATHER;
+  cancel_va_session_state(true);
+  LATTER_CHECK(!r_au.voice.active && r_au.voice.was_cancelled && r_au.nav.gui_page == PageId::WEATHER);
+
+  // Pause & Resume music branches
+  LATTER_CHECK(prepare_pause_all_music_for_va(true, 63000U));
+  LATTER_CHECK(r_au.voice.resume_music_after);
+  media_state().is_local = true;
+  r_au.music.active_speaker_entity.clear();
+  LATTER_CHECK(prepare_resume_music_after_va(false, 64000U) == ResumeMusicBranch::ResumeLocal);
+  LATTER_CHECK(audio_session().last_resume_branch() == ResumeMusicBranch::ResumeLocal);
+  LATTER_CHECK(prepare_resume_music_after_va(false, 65000U) == ResumeMusicBranch::IdleMute);
+  r_au.alarms.ringing = true;
+  LATTER_CHECK(prepare_resume_music_after_va(false, 66000U) == ResumeMusicBranch::RingingAbort);
+  r_au.alarms.ringing = false;
+
+  // Media idle finish + dictation start
+  AudioHwSnapshot idle_hw{};
+  LATTER_CHECK(can_finish_media_idle(idle_hw));
+  r_au.nav.display_power_state = 2;
+  r_au.hw_usb_connected = false;
+  r_au.nav.sleep_start_time = 0U;
+  (void)apply_media_idle_finish_state(67000U);
+  LATTER_CHECK(r_au.nav.sleep_start_time == 67000U);
+  LATTER_CHECK(!begin_dictation_session_state(true, false, 68000U));
+  LATTER_CHECK(begin_dictation_session_state(true, true, 69000U) && r_au.voice.intercom_turn);
 }
 
 }  // namespace

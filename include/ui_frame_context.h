@@ -141,6 +141,16 @@ inline bool can_reuse_wallpaper_for_photo_frame(
          screensaver_photo_url == loaded_wallpaper_url;
 }
 
+inline bool has_screensaver_photo_frame_art(
+    bool photo_art_loaded,
+    bool wallpaper_loaded,
+    const latter_core::DeviceRuntimeState &rs = latter_core::runtime_state(),
+    const latter_core::AreaContextState &ac = latter_core::area_ctx_state()) noexcept {
+  return (photo_art_loaded && !ac.screensaver_photo_url.empty()) ||
+         can_reuse_wallpaper_for_photo_frame(
+             ac.screensaver_photo_url, rs.music.loaded_wallpaper_url, wallpaper_loaded);
+}
+
 inline bool is_photo_frame_initial_load_pending(
     uint32_t takeover_sig, std::string_view screensaver_style_opt,
     std::string_view screensaver_photo_url, bool has_photo_art,

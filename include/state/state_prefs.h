@@ -393,18 +393,19 @@ struct DevicePrefsState {
   uint32_t nvs_dirty_since_ms = 0;
 };
 
-inline DevicePrefsState &device_prefs_state() {
-  static DevicePrefsState st{};
-  return st;
+extern constinit DevicePrefsState g_device_prefs_state;
+extern constinit PersistedDevicePrefs g_persisted_prefs;
+
+inline DevicePrefsState &device_prefs_state() noexcept {
+  return g_device_prefs_state;
 }
 
-inline PersistedDevicePrefs &persisted_prefs() {
-  static PersistedDevicePrefs prefs{};
-  return prefs;
+inline PersistedDevicePrefs &persisted_prefs() noexcept {
+  return g_persisted_prefs;
 }
 
-inline PersistedDevicePrefs &device_prefs() {
-  return persisted_prefs();
+inline PersistedDevicePrefs &device_prefs() noexcept {
+  return g_persisted_prefs;
 }
 
 inline constexpr uint8_t kStartScreenTimeAppIdx =
@@ -510,9 +511,10 @@ struct BedtimeScheduleTracker {
   }
 };
 
+extern constinit BedtimeScheduleTracker g_bedtime_schedule_tracker;
+
 inline BedtimeScheduleTracker &bedtime_schedule_tracker() noexcept {
-  static BedtimeScheduleTracker tr{};
-  return tr;
+  return g_bedtime_schedule_tracker;
 }
 inline constexpr float resolve_screensaver_brightness(float active_bri,
                                                       bool photo_frame = false) noexcept {

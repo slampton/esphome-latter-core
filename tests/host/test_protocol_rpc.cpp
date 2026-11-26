@@ -817,6 +817,52 @@ void test_wave2_v3_wire_escaping_and_base_fold() {
     emit_media_command("play");
     LATTER_CHECK(!default_box.published.empty());
     LATTER_CHECK(default_box.published[0].find("\"s\":\"media_command\"") != std::string::npos);
+
+    // Extracted device_sync_controllers helpers
+    reset_runtime_state();
+    latter_rpc::bind_sensor_sink(&default_box);
+    auto &rs = runtime_state();
+    auto &dp = persisted_prefs();
+    dp = PersistedDevicePrefs{};
+
+    const auto cmd_rst = evaluate_device_command("restart", 7000U, true, false, "test", 466, 466);
+    LATTER_CHECK(cmd_rst.restart);
+    const auto cmd_nav = evaluate_device_command("nav:music", 7100U, true, false, "test", 466, 466);
+    LATTER_CHECK(cmd_nav.forward_ui_cmd);
+    const auto cmd_prof_on = evaluate_device_command("set_profiler_on", 7200U, true, true, "test", 466, 466);
+    LATTER_CHECK(cmd_prof_on.set_ble_prof_log && cmd_prof_on.ble_prof_log_val && profiler_enabled());
+    const auto cmd_prof_off = evaluate_device_command("set_profiler_off", 7300U, true, true, "test", 466, 466);
+    LATTER_CHECK(cmd_prof_off.set_ble_prof_log && !cmd_prof_off.ble_prof_log_val && !profiler_enabled());
+
+    rs.nav.display_power_state = 0;
+    rs.nav.gui_page = PageId::HOME;
+    dp.bedtime_active = true;
+    device_prefs_state().last_effects = kPrefEffectBedtime | kPrefEffectThemePreset | kPrefEffectRedraw;
+    const auto fx = evaluate_device_prefs_effects(25000U, 5000U, true);
+    LATTER_CHECK(fx.apply_theme_preset && fx.sync_display_brightness && fx.enter_standby && fx.schedule_disp);
+    LATTER_CHECK(device_prefs_state().last_effects == 0U);
+
+    rs.nav.ambient_bri_ramp_pending = true;
+    const auto bri_plan = evaluate_display_brightness_sync(26000U, true, 12, false, false, 0.0f);
+    LATTER_CHECK(bri_plan.apply_call && !rs.nav.ambient_bri_ramp_pending);
+
+    link_state().ha_connected = true;
+    rs.nav.last_pub_display_power_state = -1;
+    default_box.published.clear();
+    LATTER_CHECK(publish_display_state_if_changed(true, 12));
+    LATTER_CHECK(!publish_display_state_if_changed(true, 12));
+
+    rs.alert.active = true;
+    rs.voice.resume_music_after = true;
+    LATTER_CHECK(dismiss_active_alert_banner(27000U));
+    LATTER_CHECK(!rs.alert.active);
+
+    rs.nav.gui_page = 4;
+    rs.nav.system_menu_mode = 2;
+    rs.nav.menu_scroll_active = true;
+    rs.nav.menu_scroll_target_page = 3;
+    commit_menu_scroll_target();
+    LATTER_CHECK(!rs.nav.menu_scroll_active && rs.nav.display_menu_page == 3);
   }
 }
 

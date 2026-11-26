@@ -112,9 +112,10 @@ struct ShortcutConfirmState {
 };
 
 
-inline ShortcutsState &shortcuts_state() {
-  static ShortcutsState st;
-  return st;
+extern ShortcutsState g_shortcuts_state;
+
+inline ShortcutsState &shortcuts_state() noexcept {
+  return g_shortcuts_state;
 }
 
 // ==============================================================================

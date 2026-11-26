@@ -657,6 +657,7 @@ void test_tools_games_launcher_prefs_and_stopwatch_commands() {
   const std::string sys_yaml = read_repo_files({
       "../../modules/system_core.yaml",
       "../../modules/system_ui_sync.yaml",
+      "../../components/latter_core/device_sync_controllers.cpp",
   });
   const std::string tools_cpp = read_repo_file("../../components/latter_ui/page_tools.cpp");
   const std::string games_cpp = read_repo_file("../../components/latter_ui/page_games.cpp");
@@ -1489,6 +1490,36 @@ void test_wave2_reconnect_dirty_prefs_and_contract_wiring() {
   hello_sync_state() = HelloSyncState{};
 }
 
+void test_core_store_consolidation() {
+  LATTER_CHECK(&latter_core::link_state() == &latter_core::g_link_state);
+  LATTER_CHECK(&latter_core::v3_mismatch_warn_count() == &latter_core::g_v3_mismatch_warn_count);
+  LATTER_CHECK(&latter_core::device_prefs_state() == &latter_core::g_device_prefs_state);
+  LATTER_CHECK(&latter_core::persisted_prefs() == &latter_core::g_persisted_prefs);
+  LATTER_CHECK(&latter_core::device_prefs() == &latter_core::g_persisted_prefs);
+  LATTER_CHECK(&latter_core::bedtime_schedule_tracker() == &latter_core::g_bedtime_schedule_tracker);
+  LATTER_CHECK(&latter_core::runtime_state() == &latter_core::g_runtime_state);
+  LATTER_CHECK(&latter_core::media_state() == &latter_core::g_media_state);
+  LATTER_CHECK(&latter_core::home_hub_state() == &latter_core::g_home_hub_state);
+  LATTER_CHECK(&latter_core::area_ctx_state() == &latter_core::g_area_ctx_state);
+  LATTER_CHECK(&latter_core::remote_state() == &latter_core::g_remote_state);
+  LATTER_CHECK(&latter_core::weather_state() == &latter_core::g_weather_state);
+  LATTER_CHECK(&latter_core::calendar_state() == &latter_core::g_calendar_state);
+  LATTER_CHECK(&latter_core::shortcuts_state() == &latter_core::g_shortcuts_state);
+
+  const latter_core::CoreStoreFootprint fp = latter_core::core_store_footprint();
+  LATTER_CHECK(fp.pod_bytes > 0U);
+  LATTER_CHECK(fp.dynamic_bytes > 0U);
+  LATTER_CHECK(fp.total_bytes == fp.pod_bytes + fp.dynamic_bytes);
+
+  const uint32_t prev_seq = latter_core::g_persisted_prefs.prefs_seq;
+  latter_core::g_persisted_prefs.prefs_seq = 777U;
+  LATTER_CHECK(latter_core::persisted_prefs().prefs_seq == 777U);
+  latter_core::g_persisted_prefs.prefs_seq = prev_seq;
+
+  latter_core::reset_runtime_state(true);
+  LATTER_CHECK(&latter_core::runtime_state() == &latter_core::g_runtime_state);
+}
+
 }  // namespace
 
 void run_state_prefs_nvs_tests() {
@@ -1501,6 +1532,7 @@ void run_state_prefs_nvs_tests() {
   test_music_auto_open_and_lyrics_fallback_d080();
   test_wave2_overhaul_contracts();
   test_wave2_reconnect_dirty_prefs_and_contract_wiring();
+  test_core_store_consolidation();
 }
 
 }  // namespace latter_test
