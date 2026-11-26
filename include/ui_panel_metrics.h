@@ -233,6 +233,17 @@ struct UiPanelLayout {
 
 using PanelLayoutMetrics = UiPanelLayout;
 
+inline constexpr bool resolve_is_stationary_for(int w, int h, int ppi, bool is_round,
+                                                int is_stationary_override) noexcept {
+  if (is_stationary_override >= 0) return is_stationary_override != 0;
+#if defined(LATTER_IS_STATIONARY) && defined(LATTER_SCREEN_W) && defined(LATTER_SCREEN_H) && defined(LATTER_PANEL_PPI)
+  if (w == LATTER_SCREEN_W && h == LATTER_SCREEN_H && ppi == LATTER_PANEL_PPI) {
+    return LATTER_IS_STATIONARY != 0;
+  }
+#endif
+  return !is_round && (w >= 600 && h >= 400);
+}
+
 inline constexpr int resolve_view_scale_pct_for(int w, int h, int ppi, bool is_round,
                                                 int view_scale_pct, bool is_stationary) noexcept {
   if (view_scale_pct > 0) return effective_view_scale_pct(view_scale_pct, is_stationary);
@@ -253,9 +264,10 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
                                                     bool is_wearable, int ppi,
                                                     int corner_r = -1,
                                                     int view_scale_pct = 0,
-                                                    bool is_stationary = false) {
+                                                    int is_stationary_override = -1) {
   UiPanelLayout L{};
   const int cr = (corner_r >= 0) ? corner_r : default_corner_r_for(w, is_round, is_wearable);
+  const bool is_stationary = resolve_is_stationary_for(w, h, ppi, is_round, is_stationary_override);
   const int eff_vs = resolve_view_scale_pct_for(w, h, ppi, is_round, view_scale_pct, is_stationary);
   const UiDisplaySpec spec{w, h, ppi, is_round, cr, eff_vs, is_stationary};
   const SafeFrame sf = SafeFrame::for_spec(spec);
@@ -383,7 +395,8 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   const int list_top = L.hdr_y + dp_px_for(28, s);
   const int list_bot = L.back_y - dp_px_for(18, s);
   const int list_avail_h = std::max(160, list_bot - list_top);
-  const int target_stride = std::max(dp_px_for(58, s), fonts.small + dp_px_for(30, s));
+  const int target_stride = std::max({dp_px_for(58, s), fonts.small + dp_px_for(30, s),
+                                      L.list_h + compute_list_row_gap(spec)});
   L.slot5_stride = std::min(target_stride, list_avail_h / 5);
   if (L.slot5_stride < 36) L.slot5_stride = 36;
   const int target_slot_h = std::max(L.list_h, fonts.small + dp_px_for(18, s));

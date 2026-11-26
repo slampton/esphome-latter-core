@@ -310,9 +310,10 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
 
   // Pack rows symmetrically inside [content_top .. content_bot], expanding gaps naturally up to
   // compute_list_row_max_gap() so peer-tab and full-height lists stay airy and aligned on every geometry.
+  const bool eff_stat = resolve_is_stationary_for(w, h, ppi, round, -1);
   const UiDisplaySpec spec{
       w, h, ppi, round, ly.corner_r,
-      resolve_view_scale_pct_for(w, h, ppi, round, 0, false), false};
+      resolve_view_scale_pct_for(w, h, ppi, round, 0, eff_stat), eff_stat};
   const int avail_h = std::max(rows * g.card_h, content_bot - content_top);
   const int max_gap = compute_list_row_max_gap(spec);
   const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, max_gap) : 0;

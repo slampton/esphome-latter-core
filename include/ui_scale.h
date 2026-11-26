@@ -450,13 +450,18 @@ inline constexpr HomeActivityMetrics compute_home_activity_metrics(
 
 // ==============================================================================
 // Viewport-Solved List Row Metrics & Capacity (3..8 rows from font, 5.5 mm floor & viewport)
+// Stationary arm's-length wall/desk panels (is_stationary == true) use bolder >= 7.0 mm
+// rows (54 dp) and wider gaps (14..16 dp) for quick, forgiving reach-across taps, while
+// handheld/wearable devices keep compact up-close density (47 dp, 11..16 dp).
 // ==============================================================================
 inline constexpr int compute_list_row_h(const UiDisplaySpec &spec, int font_small_h) noexcept {
   const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
   const int min_5_5mm = static_cast<int>((5.5f * static_cast<float>((spec.ppi > 50) ? spec.ppi : 266)) / 25.4f + 0.5f);
-  const int by_dp = dp_px_for(47, s);
-  const int by_font = font_small_h + dp_px_for(22, s);
-  const int by_ergo = std::min(min_5_5mm, dp_px_for(48, s));
+  const int row_dp = spec.is_stationary ? 54 : 47;
+  const int font_pad_dp = spec.is_stationary ? 26 : 22;
+  const int by_dp = dp_px_for(row_dp, s);
+  const int by_font = font_small_h + dp_px_for(font_pad_dp, s);
+  const int by_ergo = std::min(min_5_5mm, dp_px_for(row_dp + 1, s));
   int h = (by_dp > by_font) ? by_dp : by_font;
   if (by_ergo > h) h = by_ergo;
   return (h > 30) ? h : 30;
@@ -464,7 +469,8 @@ inline constexpr int compute_list_row_h(const UiDisplaySpec &spec, int font_smal
 
 inline constexpr int compute_list_row_gap(const UiDisplaySpec &spec) noexcept {
   const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
-  return std::max(6, dp_px_for(11, s));
+  const int gap_dp = spec.is_stationary ? 14 : 11;
+  return std::max(6, dp_px_for(gap_dp, s));
 }
 
 inline constexpr int compute_list_row_max_gap(const UiDisplaySpec &spec) noexcept {

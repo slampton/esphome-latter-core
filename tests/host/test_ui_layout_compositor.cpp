@@ -1237,12 +1237,14 @@ void test_clean_sheet_scaling_9geom() {
     }
     LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[dm.slot_count - 1] + dm.dock_r < p.w);
     // Comfortable viewport-solved list density & airy gaps:
-    // Remote & Desk fit 6 mode-bar rows / 7 full-height rows; Pocket/Mobile/Wrist fit 4 / 5 with generous gaps.
-    if (e.idx == 0 || e.idx == 4) {
+    // Stationary Desk uses bold >= 7 mm arm's-length rows (5 mode-bar / 6 full-height);
+    // Handheld Remote keeps 6 / 7; Pocket/Mobile/Wrist keep 4 / 5 with generous gaps.
+    if (e.idx == 4) {
+      LATTER_CHECK(ly.peer_list_rows == 5 && ly.list_rows == 6);
+      LATTER_CHECK(ly.list_h >= 74 && (ly.peer_list_stride - ly.list_h) >= 20);
+      LATTER_CHECK(ly.slot5_h == ly.list_h);
+    } else if (e.idx == 0) {
       LATTER_CHECK(ly.peer_list_rows == 6 && ly.list_rows == 7);
-      if (e.idx == 4) {
-        LATTER_CHECK(ly.list_h >= 64 && (ly.peer_list_stride - ly.list_h) >= 15);
-      }
     } else {
       LATTER_CHECK(ly.peer_list_rows == 4 && ly.list_rows == 5);
     }
