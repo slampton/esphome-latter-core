@@ -485,6 +485,74 @@ void test_tile_grid_render_and_horizontal_touch() {
   eng.on_touch_down(tool0->cx(), tool0->cy(), 17000U);
   eng.on_touch_up(17035U);
   LATTER_CHECK(rs.nav.tools_subpage == tool0->param);
+
+  // 6. System Root Menu (system_menu_mode == 0) shares the adaptive tile-grid renderer & horizontal paging
+  rs.nav.gui_page = PageId::SYSTEM;
+  rs.nav.system_menu_mode = SystemMenuMode::DASHBOARD;
+  rs.nav.system_dashboard_page = 0;
+  rs.nav.menu_scroll_active = false;
+  dirty_band() = DirtyBandTracker{};
+  (void)dirty_band().begin_frame(PageId::SYSTEM, 0, 0U, true);
+  frame_hits().clear();
+  render_active_page(fix.surf, fix.ctx);
+
+  const HitRegion *sys0 = frame_hits().find_by_id(WidgetId::SYSTEM_CARD_BASE + 0);
+  LATTER_CHECK(sys0 != nullptr && sys0->param == 0);
+  const int sys_total_pages = system_dashboard_page_count();
+  if (cols * rows >= kSystemDashboardItemCount) {
+    LATTER_CHECK(sys_total_pages == 1);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_RIGHT) == nullptr);
+  } else {
+    LATTER_CHECK(sys_total_pages >= 2);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::CHEVRON_RIGHT) != nullptr);
+  }
+
+  // Horizontal swipe RIGHT on page 0 -> boundary edge bounce (Horizontal) & full-frame bounce flag
+  edge_bounce().clear();
+  s_cmds.clear();
+  eng.on_touch_down(SCREEN_CX - swipe_dx / 2, SCREEN_CY, 18000U);
+  eng.on_touch_move(SCREEN_CX + swipe_dx / 2 + 4, SCREEN_CY, 18040U);
+  eng.on_touch_up(18060U);
+  LATTER_CHECK(!rs.nav.menu_scroll_active);
+  LATTER_CHECK(edge_bounce().is_active(PageId::SYSTEM, GestureAxisLock::Horizontal, 18080U));
+  LATTER_CHECK(any_page_horiz_bounce_active(PageId::SYSTEM, 0, 18080U));
+
+  if (sys_total_pages > 1) {
+    // Horizontal swipe LEFT on page 0 -> advances to page 1 via MENU_SCROLL_TRANSITION
+    s_cmds.clear();
+    eng.on_touch_down(SCREEN_CX + swipe_dx / 2, SCREEN_CY, 19000U);
+    eng.on_touch_move(SCREEN_CX - swipe_dx / 2 - 4, SCREEN_CY, 19040U);
+    eng.on_touch_up(19060U);
+    LATTER_CHECK(rs.nav.menu_scroll_active);
+    LATTER_CHECK(rs.nav.menu_scroll_dir == 1);
+    LATTER_CHECK(rs.nav.menu_scroll_target_page == 1);
+
+    rs.nav.menu_scroll_active = false;
+    rs.nav.system_dashboard_page = 1;
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::SYSTEM, 0, 0U, true);
+    frame_hits().clear();
+    render_active_page(fix.surf, fix.ctx);
+    const HitRegion *sys_chev_l = frame_hits().find_by_id(WidgetId::CHEVRON_LEFT);
+    LATTER_CHECK(sys_chev_l != nullptr);
+    eng.on_touch_down(sys_chev_l->cx(), sys_chev_l->cy(), 19500U);
+    eng.on_touch_up(19535U);
+    LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_dir == -1 && rs.nav.menu_scroll_target_page == 0);
+
+    rs.nav.menu_scroll_active = false;
+    rs.nav.system_dashboard_page = 0;
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::SYSTEM, 0, 0U, true);
+    frame_hits().clear();
+    render_active_page(fix.surf, fix.ctx);
+    sys0 = frame_hits().find_by_id(WidgetId::SYSTEM_CARD_BASE + 0);
+    LATTER_CHECK(sys0 != nullptr && sys0->param == 0);
+  }
+
+  // Tapping Display tile launches SystemMenuMode::DISPLAY
+  eng.on_touch_down(sys0->cx(), sys0->cy(), 20000U);
+  eng.on_touch_up(20035U);
+  LATTER_CHECK(rs.nav.system_menu_mode == SystemMenuMode::DISPLAY);
 }
 
 }  // namespace

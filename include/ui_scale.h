@@ -449,14 +449,14 @@ inline constexpr HomeActivityMetrics compute_home_activity_metrics(
 }
 
 // ==============================================================================
-// Viewport-Solved List Row Metrics & Capacity (4..8 rows from font, 5.5 mm floor & viewport)
+// Viewport-Solved List Row Metrics & Capacity (3..8 rows from font, 5.5 mm floor & viewport)
 // ==============================================================================
 inline constexpr int compute_list_row_h(const UiDisplaySpec &spec, int font_small_h) noexcept {
   const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
   const int min_5_5mm = static_cast<int>((5.5f * static_cast<float>((spec.ppi > 50) ? spec.ppi : 266)) / 25.4f + 0.5f);
-  const int by_dp = dp_px_for(42, s);
-  const int by_font = font_small_h + dp_px_for(18, s);
-  const int by_ergo = std::min(min_5_5mm, dp_px_for(44, s));
+  const int by_dp = dp_px_for(47, s);
+  const int by_font = font_small_h + dp_px_for(22, s);
+  const int by_ergo = std::min(min_5_5mm, dp_px_for(48, s));
   int h = (by_dp > by_font) ? by_dp : by_font;
   if (by_ergo > h) h = by_ergo;
   return (h > 30) ? h : 30;
@@ -464,17 +464,26 @@ inline constexpr int compute_list_row_h(const UiDisplaySpec &spec, int font_smal
 
 inline constexpr int compute_list_row_gap(const UiDisplaySpec &spec) noexcept {
   const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
-  return std::max(6, dp_px_for(8, s));
+  return std::max(6, dp_px_for(11, s));
+}
+
+inline constexpr int compute_list_row_max_gap(const UiDisplaySpec &spec) noexcept {
+  const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
+  const int min_gap = compute_list_row_gap(spec);
+  return std::max(min_gap + 2, dp_px_for(16, s));
 }
 
 inline constexpr int compute_viewport_list_rows(const UiDisplaySpec &spec, int avail_h,
-                                                int font_small_h) noexcept {
+                                                int font_small_h, int min_rows = 4) noexcept {
+  const int s = compute_ui_scale_milli(spec.ppi, spec.view_scale_pct, spec.is_stationary);
   const int row_h = compute_list_row_h(spec, font_small_h);
   const int gap = compute_list_row_gap(spec);
   const int stride = row_h + gap;
-  if (stride <= 0 || avail_h <= 0) return 4;
-  const int raw = (avail_h + gap) / stride;
-  return std::clamp(raw, 4, kMaxListSlots);
+  const int lo = std::clamp(min_rows, 1, kMaxListSlots);
+  if (stride <= 0 || avail_h <= 0) return lo;
+  const int eff_avail = std::max(0, avail_h - dp_px_for(6, s));
+  const int raw = (eff_avail + gap) / stride;
+  return std::clamp(raw, lo, kMaxListSlots);
 }
 
 }  // namespace latter_ui

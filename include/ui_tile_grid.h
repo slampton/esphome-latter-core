@@ -4,7 +4,7 @@
 // Latter UI Unified Variable-Span Tile-Grid Geometry & Renderer
 // (include/ui_tile_grid.h)
 // Pure C++20 UI header — zero ESPHome or HAL includes.
-// Shared by PageId::PINNED and PageId::TOOLS (ToolsSubpage::LAUNCHER).
+// Shared by PageId::PINNED, PageId::TOOLS (ToolsSubpage::LAUNCHER), and PageId::SYSTEM (SystemMenuMode::DASHBOARD).
 // ==============================================================================
 
 #include "state/state_tile_grid.h"

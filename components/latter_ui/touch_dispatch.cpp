@@ -102,7 +102,7 @@ inline void reset_common_nav_fields(DeviceRuntimeState &rs, uint32_t now_ms) {
   rs.music.clear_lyrics_auto_state();
   rs.nav.sleep_menu_page = 1;
   rs.nav.display_menu_page = 1;
-  rs.nav.system_dashboard_page = 1;
+  rs.nav.system_dashboard_page = 0;
   rs.nav.menu_scroll_active = false;
   rs.music.hud_active = false;
   rs.nav.remote_subpage = 0;
@@ -512,7 +512,7 @@ void TouchGestureEngine::launch_dock_app_(int chosen_app, DeviceRuntimeState &rs
     rs.nav.menu_scroll_active = false;
   } else if (chosen_app == PageId::SYSTEM) {
     rs.nav.system_menu_mode = 0;
-    rs.nav.system_dashboard_page = 1;
+    rs.nav.system_dashboard_page = 0;
     rs.nav.sleep_menu_page = 1;
     rs.nav.display_menu_page = 1;
     rs.nav.menu_scroll_active = false;
@@ -2759,7 +2759,7 @@ bool TouchGestureEngine::handle_tap_music_(
     } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int q_cap = std::clamp(layout().queue_list_rows, 4, kMaxListSlots);
+      const int q_cap = std::clamp(layout().queue_list_rows, 3, kMaxListSlots);
       const int si = std::clamp(static_cast<int>(hit->param), 0, q_cap - 1);
       const auto &sl = rs.music_slots()[si];
       if (!sl.queue_item_id.empty()) {
@@ -4400,25 +4400,23 @@ bool TouchGestureEngine::handle_tap_system_tools_(
 
   if (rs.nav.gui_page == PageId::SYSTEM) {
     const int mode = rs.nav.system_menu_mode;
-    if (!rs.nav.menu_scroll_active && (mode == 0 || mode == 1 || mode == 2)) {
-      const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
-      const int cur_pg = (mode == 0) ? rs.nav.system_dashboard_page
-                                     : ((mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page);
-      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+    if (!rs.nav.menu_scroll_active && mode == 0) {
+      const int total_pages = std::max(1, system_dashboard_page_count());
+      if ((wid == WidgetId::CHEVRON_LEFT || wid == WidgetId::CHEVRON_RIGHT) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int max_pg = (mode == 0) ? ((per_pg >= 8) ? 1 : 2)
-                                       : ((mode == 1) ? std::max(1, (10 + per_pg - 1) / per_pg)
-                                                      : std::max(1, (11 + per_pg - 1) / per_pg));
-        const int target_pg = (wid == WidgetId::CHEVRON_DOWN)
-                                  ? std::min(max_pg, cur_pg + 1)
-                                  : std::max(1, cur_pg - 1);
-        if (target_pg != cur_pg) {
-          rs.nav.menu_scroll_active = true;
-          rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
-          rs.nav.menu_scroll_target_page = target_pg;
-          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        if (total_pages > 1) {
+          const int cur_pg = std::clamp(rs.nav.system_dashboard_page, 0, total_pages - 1);
+          rs.nav.system_dashboard_page = cur_pg;
+          const int target_pg =
+              std::clamp(cur_pg + ((wid == WidgetId::CHEVRON_RIGHT) ? 1 : -1), 0, total_pages - 1);
+          if (target_pg != cur_pg) {
+            rs.nav.menu_scroll_active = true;
+            rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
+            rs.nav.menu_scroll_target_page = target_pg;
+            rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+          }
         }
-      } else if (mode == 0 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
+      } else if (wid >= WidgetId::SYSTEM_CARD_BASE && wid < WidgetId::SYSTEM_CARD_BASE + 16 &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int item_idx = hit->param;
         if (item_idx == 0) { rs.nav.system_menu_mode = 2; rs.nav.display_menu_page = 1; }
@@ -4435,6 +4433,23 @@ bool TouchGestureEngine::handle_tap_system_tools_(
         else if (item_idx == 7) { rs.nav.system_menu_mode = 8; }
         mark_dirty_full();
         rt_.schedule_disp();
+      }
+    } else if (!rs.nav.menu_scroll_active && (mode == 1 || mode == 2)) {
+      const int per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+      const int cur_pg = (mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page;
+      if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
+          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+        const int max_pg = (mode == 1) ? std::max(1, (10 + per_pg - 1) / per_pg)
+                                       : std::max(1, (11 + per_pg - 1) / per_pg);
+        const int target_pg = (wid == WidgetId::CHEVRON_DOWN)
+                                  ? std::min(max_pg, cur_pg + 1)
+                                  : std::max(1, cur_pg - 1);
+        if (target_pg != cur_pg) {
+          rs.nav.menu_scroll_active = true;
+          rs.nav.menu_scroll_dir = (target_pg > cur_pg) ? 1 : -1;
+          rs.nav.menu_scroll_target_page = target_pg;
+          rt_.cmd(UiHostCmd::MENU_SCROLL_TRANSITION);
+        }
       } else if (mode == 1 && wid >= WidgetId::SYS_TOGGLE_ROW && wid < WidgetId::SYS_TOGGLE_ROW + kMaxListSlots &&
                  touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         const int idx = hit->param;

@@ -760,7 +760,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
   const int min_hit = mm_to_px(7.0f);
   const int mode_bar_bot_limit = ly.mode_bar_zone_top() - dp_px(8);
-  const int full_list_bot_limit = ly.back_y - dp_px(26);
+  const int full_list_bot_limit = ly.back_y - dp_px(24);
 
   render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
                                      /*has_metadata_scrim=*/true, kArtDimMenu);
@@ -868,7 +868,7 @@ void render_music_browse_views(Rgb565Surface &it, const UiFrameContext &ctx) {
                     WidgetId::MUSIC_QUEUE_CLEAR, kHitTap | kHitFocusSlot, 0, q_hit_h);
 
     const int content_top = sy0 + strip_h + dp_px(6);
-    const int vis_rows = std::clamp(ly.queue_list_rows, 4, kMaxListSlots);
+    const int vis_rows = std::clamp(ly.queue_list_rows, 3, kMaxListSlots);
     const int pg = rs.slot_page_for(latter_rpc::SlotChannel::MUSIC);
     const int tot = rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC);
     const bool has_pips = (pg > 1) || (pg < tot);

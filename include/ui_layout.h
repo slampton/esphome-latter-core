@@ -88,6 +88,7 @@ struct UiLayout {
   int queue_list_rows = base.queue_list_rows;
   int list_h = base.list_h;
   int list_stride = base.list_stride;
+  int peer_list_stride = base.peer_list_stride;
   int list_top_cy = base.list_top_cy;
   int peer_list_top_cy = base.peer_list_top_cy;
   constexpr int list_row_y(int idx) const { return base.list_row_y(idx); }

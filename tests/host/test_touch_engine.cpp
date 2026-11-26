@@ -685,17 +685,16 @@ void test_rotary_navigation_and_glass_style_display_setting() {
 
   rs.nav.gui_page = PageId::SYSTEM;
   rs.nav.system_menu_mode = SystemMenuMode::DISPLAY;
-  rs.nav.display_menu_page = 1;
+  const int disp_per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+  rs.nav.display_menu_page = 1 + (4 / disp_per_pg);
   rs.nav.menu_scroll_active = false;
   frame_hits().clear();
   frame_base_begin();
   render_active_page(surf, ctx);
 
   const HitRegion *back_btn = frame_hits().find_by_id(WidgetId::BACK_BUTTON);
-  const HitRegion *chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
-  const HitRegion *glass_row = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + 4));
+  const HitRegion *glass_row = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + (4 % disp_per_pg)));
   LATTER_CHECK(back_btn != nullptr && (back_btn->flags & kHitFocusSlot) != 0U);
-  LATTER_CHECK(chev_dn != nullptr && (chev_dn->flags & kHitFocusSlot) != 0U);
   LATTER_CHECK(glass_row != nullptr && (glass_row->flags & kHitFocusSlot) != 0U && glass_row->param == 4);
 
   // Cycle Glass Style: Auto -> Clear -> Dark -> Auto
@@ -713,8 +712,14 @@ void test_rotary_navigation_and_glass_style_display_setting() {
   LATTER_CHECK(prefs.glass_style_enum() == GlassStyle::Auto);
   LATTER_CHECK(build_hello_dirty_prefs(prefs).find("glass_style=Auto") != std::string::npos);
 
-  // Chevron pagination reaches every viewport-solved Display page cleanly (2 pages when list_rows >= 6, 3 when == 5)
-  const int disp_per_pg = std::clamp(layout().list_rows, 4, kMaxListSlots);
+  // Chevron pagination reaches every viewport-solved Display page cleanly (2 pages when list_rows >= 6, 3 when <= 5)
+  rs.nav.display_menu_page = 1;
+  rs.nav.menu_scroll_active = false;
+  frame_hits().clear();
+  frame_base_begin();
+  render_active_page(surf, ctx);
+  const HitRegion *chev_dn = frame_hits().find_by_id(WidgetId::CHEVRON_DOWN);
+  LATTER_CHECK(chev_dn != nullptr && (chev_dn->flags & kHitFocusSlot) != 0U);
   const int disp_total_pages = std::max(1, (11 + disp_per_pg - 1) / disp_per_pg);
   tap_region(chev_dn, 8000U);
   LATTER_CHECK(rs.nav.menu_scroll_active && rs.nav.menu_scroll_target_page == 2);

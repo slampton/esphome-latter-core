@@ -1,4 +1,5 @@
 #include "ui_pages.h"
+#include "ui_tile_grid.h"
 
 #include <algorithm>
 #include <cmath>
@@ -43,6 +44,28 @@ bool is_newer_semver_local(std::string_view lat_sv, const char *cur_cstr) {
   if (l_maj != c_maj) return l_maj > c_maj;
   if (l_min != c_min) return l_min > c_min;
   return l_pat > c_pat;
+}
+
+struct SysDashboardTileSpec {
+  const char *label;
+  RouteId route;
+};
+
+static constexpr SysDashboardTileSpec kSysDashboardTiles[kSystemDashboardItemCount] = {
+    {"Display",      RouteId::SETTINGS_DISPLAY},
+    {"Sleep & Wake", RouteId::SETTINGS_SLEEP},
+    {"Sound",        RouteId::SETTINGS_SOUND},
+    {"Voice",        RouteId::SETTINGS_VOICE},
+    {"Music",        RouteId::SETTINGS_MUSIC},
+    {"Home",         RouteId::SETTINGS_HOME},
+    {"Actions",      RouteId::SETTINGS_ACTIONS},
+    {"Info",         RouteId::SETTINGS_INFO},
+};
+
+void draw_system_tile_icon(Rgb565Surface &it, int ix, int iy, int ir,
+                           UiColor col, bool shadow, void *user_ctx) {
+  const auto route = static_cast<RouteId>(static_cast<uint8_t>(reinterpret_cast<uintptr_t>(user_ctx)));
+  ui::draw_route_icon(it, route, ix, iy, ir, col, kChromeGlassTint, shadow);
 }
 
 }  // namespace
@@ -175,44 +198,49 @@ void render_system_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   char buf[64];
 
   if (system_menu_mode == 0) {
-    const int total_pages = (per_pg >= 8) ? 1 : 2;
-    const int step_rows = (total_pages > 1) ? std::max(1, 8 - per_pg) : 0;
-    const int clamped_pg = std::clamp(system_dashboard_page, 1, total_pages);
-    const int current_offset = compute_scroll_offset(clamped_pg, step_rows);
-    static constexpr const char *kSysLabels[8] = {
-        "Display", "Sleep & Wake", "Sound", "Voice",
-        "Music",   "Home",         "Actions", "Info"};
-    int vis_row = 0;
-    for (int i = 0; i < 8; i++) {
-      const int y = row0_y + i * row_s - current_offset;
-      const bool vis = menu_scroll_active
-                           ? (y >= min_vis_y && y <= max_vis_y)
-                           : (y >= row0_y - 10 && y <= row_last_y + 10);
-      if (vis) {
-        const bool row_en = (i != 5) || prefs.home_screen_enabled;
-        render_card_box(it, cx - row_w / 2, y - row_h / 2, row_w, row_h,
-                        row_en ? card_bg_on : card_bg_off,
-                        row_en ? card_brd_on : card_brd_off, kRadiusCardPx());
-        ui::shadow_print(it, cx, y, font_small, row_en ? col_white : col_slate,
-                         TextAlign::CENTER, kSysLabels[i]);
-        if (!menu_scroll_active && vis_row < per_pg) {
-          add_row_hit(y, static_cast<uint16_t>(WidgetId::SYS_TOGGLE_ROW + vis_row),
-                      kHitTap | kHitFocusSlot, static_cast<int16_t>(i));
-          vis_row++;
-        }
-      }
+    const int cols = tile_grid_cols_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+    const int rows = tile_grid_rows_for(SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0);
+    const int per_page = std::max(1, cols * rows);
+    const int total_pages = system_dashboard_page_count();
+    const int cur_pg = std::clamp(system_dashboard_page, 0, total_pages - 1);
+    if (rs.nav.system_dashboard_page != cur_pg) {
+      rs.nav.system_dashboard_page = cur_pg;
     }
 
-    if (menu_scroll_active && !backdrop_active()) {
-      fill_rect_row_major(it, 0, 0, SCREEN_W, mask_top_h, col_bg);
-      fill_rect_row_major(it, 0, mask_btm_y, SCREEN_W, SCREEN_H - mask_btm_y, col_bg);
+    ui::TileGridEntry entries[kSystemDashboardItemCount]{};
+    for (int i = 0; i < kSystemDashboardItemCount; ++i) {
+      const int pg = i / per_page;
+      const int local = i % per_page;
+      const bool row_en = (i != 5) || prefs.home_screen_enabled;
+      ui::TileGridEntry e{};
+      e.label = kSysDashboardTiles[i].label;
+      e.active = false;
+      e.disabled = !row_en;
+      e.state = -1;
+      e.inverted_badge = false;
+      e.has_accent = false;
+      e.accent_c = theme_primary;
+      e.text_c = row_en ? col_white : col_slate;
+      e.draw_icon_fn = draw_system_tile_icon;
+      e.icon_ctx = reinterpret_cast<void *>(static_cast<uintptr_t>(static_cast<uint8_t>(kSysDashboardTiles[i].route)));
+      e.widget_param = static_cast<int16_t>(i);
+      e.col_span = 1U;
+      e.row_span = 1U;
+      e.col = static_cast<int8_t>(local % cols);
+      e.row = static_cast<int8_t>(local / cols);
+      e.visual_page = static_cast<int8_t>(pg);
+      entries[i] = e;
     }
-    render_page_header(it, cx, "SYSTEM", font_small, col_white);
 
-    if (total_pages > 1) {
-      const int active_page = menu_scroll_active ? std::clamp(menu_scroll_target_page, 1, total_pages) : clamped_pg;
-      draw_right_chevrons(active_page > 1, active_page < total_pages);
-    }
+    ui::TileGridPageSpec spec{};
+    spec.page_id = PageId::SYSTEM;
+    spec.card_widget_base = WidgetId::SYSTEM_CARD_BASE;
+    spec.cur_page = cur_pg;
+    spec.total_pages = total_pages;
+    spec.page_title_upper = "SYSTEM";
+    spec.entries = entries;
+    spec.entry_count = kSystemDashboardItemCount;
+    ui::render_tile_grid_page(it, ctx, spec);
 
   } else if (system_menu_mode == 1) {
     const int total_pages = std::max(1, (10 + per_pg - 1) / per_pg);

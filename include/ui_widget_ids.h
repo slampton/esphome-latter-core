@@ -249,9 +249,10 @@ namespace WidgetId {
   static constexpr uint16_t GAME_MODE_2P               = 1017;
   static constexpr uint16_t GAME_COL_BASE              = 1020; // 1020..1026 (param = col 0..6)
 
-  // Unified Variable-Span Tile-Grid Engine (Pinned + Tools Launcher — D-086)
+  // Unified Variable-Span Tile-Grid Engine (Pinned, Tools Launcher & System Root — D-086)
   static constexpr uint16_t PINNED_CARD_BASE           = 1040; // 1040..1055 (16 slots; param = global pinned item idx)
   static constexpr uint16_t TOOLS_CARD_BASE            = 1060; // 1060..1075 (16 slots; param = tool subpage)
+  static constexpr uint16_t SYSTEM_CARD_BASE           = 1090; // 1090..1105 (16 slots; param = system menu item idx 0..7)
 }  // namespace WidgetId
 
 }  // namespace latter_ui

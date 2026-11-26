@@ -1236,12 +1236,19 @@ void test_clean_sheet_scaling_9geom() {
       LATTER_CHECK(dm.slot_count == 4 && ly.dock_slot_count == 4);
     }
     LATTER_CHECK(dm.slot_xs[0] - dm.dock_r >= 0 && dm.slot_xs[dm.slot_count - 1] + dm.dock_r < p.w);
-    // Remote & Desk fit all 7 Music Library items on 1 page and all 8 System root options on 1 page.
+    // Comfortable viewport-solved list density & airy gaps:
+    // Remote & Desk fit 6 mode-bar rows / 7 full-height rows; Pocket/Mobile/Wrist fit 4 / 5 with generous gaps.
     if (e.idx == 0 || e.idx == 4) {
-      LATTER_CHECK(ly.peer_list_rows >= 7 && ly.list_rows >= 8);
+      LATTER_CHECK(ly.peer_list_rows == 6 && ly.list_rows == 7);
+      if (e.idx == 4) {
+        LATTER_CHECK(ly.list_h >= 64 && (ly.peer_list_stride - ly.list_h) >= 15);
+      }
+    } else {
+      LATTER_CHECK(ly.peer_list_rows == 4 && ly.list_rows == 5);
     }
-    // Pocket peer-list row 0 aligns cleanly under header without excessive top gap (matches Speakers).
+    // Pocket peer-list row 0 aligns cleanly under header with airy spacing (zero clumping, matches Speakers).
     if (e.idx == 2) {
+      LATTER_CHECK(ly.list_h >= 47 && (ly.peer_list_stride - ly.list_h) >= 15);
       LATTER_CHECK(ly.peer_list_row_y(0) - ly.list_h / 2 <= ly.hdr_y + 48);
     }
     // Universal dock spacing parity: every flagship converges to >= 40% diameter gap.

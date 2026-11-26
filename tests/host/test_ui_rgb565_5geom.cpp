@@ -224,6 +224,7 @@ bool is_dense_grid_or_gutter_widget(uint16_t wid) noexcept {
          (wid >= WidgetId::CLIMATE_MODE_BASE && wid < WidgetId::CLIMATE_MODE_BASE + 6) ||
          (wid >= WidgetId::TOOLS_CARD_BASE && wid < WidgetId::TOOLS_CARD_BASE + 16) ||
          (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 16) ||
+         (wid >= WidgetId::SYSTEM_CARD_BASE && wid < WidgetId::SYSTEM_CARD_BASE + 16) ||
          (wid >= WidgetId::CAL_WEEK_DAY_BASE && wid < WidgetId::CAL_WEEK_DAY_BASE + 7) ||
          (wid >= WidgetId::CAL_MONTH_WEEK_BASE && wid < WidgetId::CAL_MONTH_WEEK_BASE + 6) ||
          (wid >= WidgetId::CAL_MONTH_CELL_BASE && wid < WidgetId::CAL_MONTH_CELL_BASE + 42) ||
@@ -247,6 +248,7 @@ int sibling_family_key(uint16_t wid) noexcept {
   if (wid >= WidgetId::CALC_KEY_BASE && wid < WidgetId::CALC_KEY_BASE + 20) return 12;
   if (wid >= WidgetId::PINNED_CARD_BASE && wid < WidgetId::PINNED_CARD_BASE + 16) return 13;
   if (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) return 14;
+  if (wid >= WidgetId::SYSTEM_CARD_BASE && wid < WidgetId::SYSTEM_CARD_BASE + 16) return 15;
   return 0;
 }
 
@@ -370,7 +372,8 @@ void assert_rendered_frame_invariants(const HostSurfaceFixture &fix, const char 
         std::exit(1);
       }
     } else if ((r.widget_id >= WidgetId::TOOLS_CARD_BASE && r.widget_id < WidgetId::TOOLS_CARD_BASE + 16) ||
-               (r.widget_id >= WidgetId::PINNED_CARD_BASE && r.widget_id < WidgetId::PINNED_CARD_BASE + 16)) {
+               (r.widget_id >= WidgetId::PINNED_CARD_BASE && r.widget_id < WidgetId::PINNED_CARD_BASE + 16) ||
+               (r.widget_id >= WidgetId::SYSTEM_CARD_BASE && r.widget_id < WidgetId::SYSTEM_CARD_BASE + 16)) {
       // Adaptive 2x2 / 2x3 / 3x3 / 4x2 / 4x3 variable-span tile-grid cards strictly >= 7.0 mm (D-086 / D-087).
       LATTER_CHECK(pw >= min_7mm && ph >= min_7mm);
     } else if (!is_dense_grid_or_gutter_widget(r.widget_id)) {

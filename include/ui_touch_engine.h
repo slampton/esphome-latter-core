@@ -268,7 +268,7 @@ inline constexpr int music_browse_page_size_for(
         LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0)) noexcept {
   if (mode == "bio" || mode == "track_info") return std::clamp(ly.list_rows, 4, kMaxListSlots);
   if (drilldown == latter_core::MusicDrilldown::LIB_LIST) return std::clamp(ly.list_rows, 4, kMaxListSlots);
-  if (view == latter_core::MusicView::QUEUE) return std::clamp(ly.queue_list_rows, 4, kMaxListSlots);
+  if (view == latter_core::MusicView::QUEUE) return std::clamp(ly.queue_list_rows, 3, kMaxListSlots);
   return std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
 }
 
@@ -308,11 +308,14 @@ inline constexpr MusicListRowGeom compute_music_list_row_geom(
   g.card_h = ly.list_h;
   g.card_x0 = ly.cx - (g.card_w / 2);
 
-  // Pack rows symmetrically inside [content_top .. content_bot] using canonical list_h & list_stride.
-  // Eliminates top-gap drift between peer-tab views (Speakers / Library / Queue / Settings) on all shapes.
+  // Pack rows symmetrically inside [content_top .. content_bot], expanding gaps naturally up to
+  // compute_list_row_max_gap() so peer-tab and full-height lists stay airy and aligned on every geometry.
+  const UiDisplaySpec spec{
+      w, h, ppi, round, ly.corner_r,
+      resolve_view_scale_pct_for(w, h, ppi, round, 0, false), false};
   const int avail_h = std::max(rows * g.card_h, content_bot - content_top);
-  const int std_gap = std::max(4, ly.list_stride - g.card_h);
-  const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, std_gap) : 0;
+  const int max_gap = compute_list_row_max_gap(spec);
+  const int gap = (rows > 1) ? std::clamp((avail_h - rows * g.card_h) / (rows - 1), 4, max_gap) : 0;
   const int block_h = rows * g.card_h + (rows - 1) * gap;
   const int start_y0 = content_top + std::max(0, (avail_h - block_h) / 2);
   g.cy_row = start_y0 + idx * (g.card_h + gap) + g.card_h / 2;

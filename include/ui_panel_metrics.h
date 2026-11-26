@@ -201,9 +201,10 @@ struct UiPanelLayout {
   int dock_slot_count{4};
   int list_rows{5};
   int peer_list_rows{4};
-  int queue_list_rows{4};
-  int list_h{44};
-  int list_stride{52};
+  int queue_list_rows{3};
+  int list_h{48};
+  int list_stride{64};
+  int peer_list_stride{64};
   int list_top_cy{110};
   int peer_list_top_cy{96};
   int scale_milli{1000};
@@ -217,7 +218,7 @@ struct UiPanelLayout {
     return list_top_cy + idx * list_stride;
   }
   constexpr int peer_list_row_y(int idx) const {
-    return peer_list_top_cy + idx * list_stride;
+    return peer_list_top_cy + idx * peer_list_stride;
   }
   constexpr int area_card3_y(int idx_0_to_2) const {
     return area_card3_cy + (idx_0_to_2 - 1) * area_card3_stride;
@@ -346,7 +347,7 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
 
   // Dynamic viewport-solved list geometry (full-height hdr..back, mode-bar hdr..mode_bar, and Queue w/ control strip)
   const int dyn_list_top = L.hdr_y + dp_px_for(24, s);
-  const int dyn_list_bot = L.back_y - dp_px_for(18, s);
+  const int dyn_list_bot = L.back_y - dp_px_for(24, s);
   const int dyn_list_avail_h = std::max(140, dyn_list_bot - dyn_list_top);
   const int peer_zone_top = L.app_dock_y - L.dock_r - dp_px_for(14, s);
   const int peer_list_bot = peer_zone_top - dp_px_for(8, s);
@@ -356,17 +357,25 @@ inline constexpr UiPanelLayout compute_panel_layout(int w, int h, bool is_round,
   const int q_avail_h = std::max(100, peer_list_bot - q_top);
 
   L.list_h = compute_list_row_h(spec, fonts.small);
-  const int dyn_gap = compute_list_row_gap(spec);
-  L.list_stride = L.list_h + dyn_gap;
-  L.list_rows = compute_viewport_list_rows(spec, dyn_list_avail_h, fonts.small);
-  L.peer_list_rows = compute_viewport_list_rows(spec, peer_avail_h, fonts.small);
-  L.queue_list_rows = compute_viewport_list_rows(spec, q_avail_h, fonts.small);
+  const int max_gap = compute_list_row_max_gap(spec);
+  L.list_rows = compute_viewport_list_rows(spec, dyn_list_avail_h, fonts.small, 4);
+  L.peer_list_rows = compute_viewport_list_rows(spec, peer_avail_h, fonts.small, 4);
+  L.queue_list_rows = compute_viewport_list_rows(spec, q_avail_h, fonts.small, 3);
 
-  const int full_block_h = L.list_rows * L.list_h + (L.list_rows - 1) * dyn_gap;
+  const int full_gap = (L.list_rows > 1)
+                           ? std::clamp((dyn_list_avail_h - L.list_rows * L.list_h) / (L.list_rows - 1), 4, max_gap)
+                           : 0;
+  const int peer_gap = (L.peer_list_rows > 1)
+                           ? std::clamp((peer_avail_h - L.peer_list_rows * L.list_h) / (L.peer_list_rows - 1), 4, max_gap)
+                           : 0;
+  L.list_stride = L.list_h + full_gap;
+  L.peer_list_stride = L.list_h + peer_gap;
+
+  const int full_block_h = L.list_rows * L.list_h + (L.list_rows - 1) * full_gap;
   const int full_y0 = dyn_list_top + std::max(0, (dyn_list_avail_h - full_block_h) / 2);
   L.list_top_cy = full_y0 + L.list_h / 2;
 
-  const int peer_block_h = L.peer_list_rows * L.list_h + (L.peer_list_rows - 1) * dyn_gap;
+  const int peer_block_h = L.peer_list_rows * L.list_h + (L.peer_list_rows - 1) * peer_gap;
   const int peer_y0 = dyn_list_top + std::max(0, (peer_avail_h - peer_block_h) / 2);
   L.peer_list_top_cy = peer_y0 + L.list_h / 2;
 

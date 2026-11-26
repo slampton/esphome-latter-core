@@ -78,6 +78,18 @@ inline int active_tools_launcher_page_count(const PersistedDevicePrefs &p = pers
   return (cnt <= per_page) ? 1 : ((cnt + per_page - 1) / per_page);
 }
 
+inline constexpr int kSystemDashboardItemCount = 8;
+
+inline constexpr int system_dashboard_page_count() noexcept {
+  const int per_page = std::max(
+      1,
+      tile_grid_cols_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0) *
+          tile_grid_rows_for(LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0));
+  return (kSystemDashboardItemCount <= per_page)
+             ? 1
+             : ((kSystemDashboardItemCount + per_page - 1) / per_page);
+}
+
 inline int collect_enabled_games_for(std::string_view csv,
                                      bool has_imu,
                                      int *out_game_ids,
@@ -175,7 +187,7 @@ struct NavRuntimeState {
   std::string pending_shortcut_action = "";
   std::string pending_shortcut_label = "";
   int display_menu_page = 1;
-  int system_dashboard_page = 1;
+  int system_dashboard_page = 0;
   int system_menu_mode = 0;
   int sleep_menu_page = 1;
   bool menu_scroll_active = false;

@@ -1103,19 +1103,21 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     return false;
   }
 
-  // 5. Page 4: System Animated Multi-Page Vertical Menus (Modes 0, 1, 2) & Music Settings (Mode 9)
+  // 5. Page 4: System Root Tile-Grid Horizontal Paging (Mode 0, D-086) & Animated Vertical Submenus (Modes 1, 2, 9)
   if (rs.nav.gui_page == PageId::SYSTEM && !rs.nav.menu_scroll_active &&
-      (rs.nav.system_menu_mode == 0 || rs.nav.system_menu_mode == 1 || rs.nav.system_menu_mode == 2) &&
+      rs.nav.system_menu_mode == 0 && h_dir != 0) {
+    const int total_pages = std::max(1, system_dashboard_page_count());
+    rs.nav.system_dashboard_page = std::clamp(rs.nav.system_dashboard_page, 0, total_pages - 1);
+    return step_anim_h_pager(rs.nav.system_dashboard_page, 0, total_pages - 1, PageId::SYSTEM);
+  }
+  if (rs.nav.gui_page == PageId::SYSTEM && !rs.nav.menu_scroll_active &&
+      (rs.nav.system_menu_mode == 1 || rs.nav.system_menu_mode == 2) &&
       v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
     const int per_pg = std::clamp(ly.list_rows, 4, kMaxListSlots);
-    const int cur_pg = (rs.nav.system_menu_mode == 0)
-                           ? rs.nav.system_dashboard_page
-                           : ((rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page);
-    const int max_pg = (rs.nav.system_menu_mode == 0)
-                           ? ((per_pg >= 8) ? 1 : 2)
-                           : ((rs.nav.system_menu_mode == 1)
-                                  ? std::max(1, (10 + per_pg - 1) / per_pg)
-                                  : std::max(1, (11 + per_pg - 1) / per_pg));
+    const int cur_pg = (rs.nav.system_menu_mode == 1) ? rs.nav.sleep_menu_page : rs.nav.display_menu_page;
+    const int max_pg = (rs.nav.system_menu_mode == 1)
+                           ? std::max(1, (10 + per_pg - 1) / per_pg)
+                           : std::max(1, (11 + per_pg - 1) / per_pg);
     return step_anim_v_pager(cur_pg, 1, max_pg, PageId::SYSTEM);
   }
   if (rs.nav.gui_page == PageId::SYSTEM && rs.nav.system_menu_mode == 9 &&
