@@ -1080,17 +1080,60 @@ FrameProfileScope::~FrameProfileScope() {
 // ------------------------------------------------------------------------------
 // 3. WCAG 4.5:1 Frosted Glass Backdrop Sampling, Luminance LUT & Adaptive Fill Solver
 // ------------------------------------------------------------------------------
+static constexpr float kSrgbLinearLut[256] = {
+    0.0f, 0.00030352698f, 0.00060705397f, 0.00091058095f, 0.0012141079f, 0.0015176349f, 0.0018211619f, 0.0021246889f,
+    0.0024282159f, 0.0027317429f, 0.0030352698f, 0.0033465358f, 0.0036765073f, 0.004024717f, 0.004391442f, 0.0047769535f,
+    0.0051815167f, 0.0056053916f, 0.006048833f, 0.0065120908f, 0.0069954102f, 0.007499032f, 0.008023193f, 0.0085681256f,
+    0.0091340587f, 0.0097212173f, 0.010329823f, 0.010960094f, 0.011612245f, 0.012286488f, 0.012983032f, 0.013702083f,
+    0.014443844f, 0.015208514f, 0.015996293f, 0.016807376f, 0.017641954f, 0.01850022f, 0.019382361f, 0.020288563f,
+    0.02121901f, 0.022173885f, 0.023153366f, 0.024157632f, 0.02518686f, 0.026241222f, 0.027320892f, 0.02842604f,
+    0.029556834f, 0.030713444f, 0.031896033f, 0.033104767f, 0.034339807f, 0.035601315f, 0.03688945f, 0.038204372f,
+    0.039546235f, 0.040915197f, 0.042311411f, 0.043735029f, 0.045186204f, 0.046665086f, 0.048171824f, 0.049706566f,
+    0.051269458f, 0.052860647f, 0.054480276f, 0.05612849f, 0.05780543f, 0.059511238f, 0.061246054f, 0.063010018f,
+    0.064803267f, 0.066625939f, 0.06847817f, 0.070360096f, 0.072271851f, 0.074213568f, 0.076185381f, 0.078187422f,
+    0.08021982f, 0.082282707f, 0.084376212f, 0.086500462f, 0.088655586f, 0.090841711f, 0.093058963f, 0.095307467f,
+    0.097587347f, 0.099898728f, 0.10224173f, 0.10461648f, 0.1070231f, 0.10946171f, 0.11193243f, 0.11443537f,
+    0.11697067f, 0.11953843f, 0.12213877f, 0.12477182f, 0.12743768f, 0.13013648f, 0.13286832f, 0.13563333f,
+    0.13843162f, 0.14126329f, 0.14412847f, 0.14702727f, 0.14995979f, 0.15292615f, 0.15592646f, 0.15896084f,
+    0.16202938f, 0.16513219f, 0.1682694f, 0.1714411f, 0.1746474f, 0.17788842f, 0.18116424f, 0.18447499f,
+    0.18782077f, 0.19120168f, 0.19461783f, 0.19806932f, 0.20155625f, 0.20507874f, 0.20863687f, 0.21223076f,
+    0.2158605f, 0.2195262f, 0.22322796f, 0.22696587f, 0.23074005f, 0.23455058f, 0.23839757f, 0.24228112f,
+    0.24620133f, 0.25015828f, 0.25415209f, 0.25818285f, 0.26225066f, 0.2663556f, 0.27049779f, 0.27467731f,
+    0.27889426f, 0.28314874f, 0.28744084f, 0.29177065f, 0.29613827f, 0.30054379f, 0.30498731f, 0.30946892f,
+    0.31398871f, 0.31854678f, 0.32314321f, 0.3277781f, 0.33245154f, 0.33716362f, 0.34191442f, 0.34670406f,
+    0.3515326f, 0.35640014f, 0.36130678f, 0.3662526f, 0.37123768f, 0.37626212f, 0.38132601f, 0.38642943f,
+    0.39157248f, 0.39675523f, 0.40197778f, 0.40724021f, 0.41254261f, 0.41788507f, 0.42326767f, 0.4286905f,
+    0.43415364f, 0.43965717f, 0.44520119f, 0.45078578f, 0.45641102f, 0.462077f, 0.4677838f, 0.4735315f,
+    0.47932018f, 0.48514994f, 0.49102085f, 0.496933f, 0.50288646f, 0.50888132f, 0.51491767f, 0.52099557f,
+    0.52711513f, 0.5332764f, 0.53947949f, 0.54572446f, 0.5520114f, 0.55834039f, 0.56471151f, 0.57112483f,
+    0.57758044f, 0.58407842f, 0.59061884f, 0.59720179f, 0.60382734f, 0.61049557f, 0.61720656f, 0.62396039f,
+    0.63075714f, 0.63759687f, 0.64447968f, 0.65140564f, 0.65837482f, 0.6653873f, 0.67244316f, 0.67954247f,
+    0.68668531f, 0.69387176f, 0.70110189f, 0.70837578f, 0.7156935f, 0.72305513f, 0.73046074f, 0.73791041f,
+    0.74540421f, 0.75294222f, 0.7605245f, 0.76815115f, 0.77582222f, 0.78353779f, 0.79129794f, 0.79910274f,
+    0.80695226f, 0.81484657f, 0.82278575f, 0.83076988f, 0.83879901f, 0.84687323f, 0.85499261f, 0.86315721f,
+    0.87136712f, 0.8796224f, 0.88792312f, 0.89626935f, 0.90466117f, 0.91309865f, 0.92158186f, 0.93011086f,
+    0.93868573f, 0.94730654f, 0.95597335f, 0.96468625f, 0.97344529f, 0.98225055f, 0.9911021f, 1.0f,
+};
+
+static constexpr uint16_t kLumR5Q15[32] = {
+    0, 17, 36, 64, 106, 154, 214, 285, 380, 477, 588, 712, 869, 1024, 1194, 1380,
+    1607, 1827, 2063, 2316, 2621, 2911, 3219, 3545, 3934, 4300, 4685, 5089, 5567, 6013, 6480, 6966,
+};
+
+static constexpr uint16_t kLumG6Q15[64] = {
+    0, 28, 57, 86, 121, 164, 214, 272, 339, 413, 497, 590, 693, 805, 927, 1059,
+    1239, 1395, 1561, 1739, 1928, 2129, 2341, 2565, 2801, 3050, 3311, 3584, 3870, 4169, 4481, 4806,
+    5231, 5587, 5956, 6339, 6736, 7148, 7573, 8013, 8467, 8937, 9421, 9920, 10434, 10963, 11507, 12067,
+    12789, 13385, 13996, 14623, 15266, 15926, 16601, 17293, 18002, 18728, 19470, 20229, 21005, 21798, 22608, 23436,
+};
+
+static constexpr uint16_t kLumB5Q15[32] = {
+    0, 6, 12, 22, 36, 52, 73, 97, 129, 162, 200, 242, 295, 348, 406, 469,
+    546, 620, 701, 787, 890, 989, 1093, 1204, 1336, 1460, 1591, 1728, 1891, 2042, 2201, 2366,
+};
+
 const float *srgb_linear_lut() {
-  static float lut[256];
-  static bool ready = false;
-  if (!ready) {
-    for (int i = 0; i < 256; i++) {
-      const float c = static_cast<float>(i) / 255.0f;
-      lut[i] = (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
-    }
-    ready = true;
-  }
-  return lut;
+  return kSrgbLinearLut;
 }
 
 float relative_luminance(UiColor c) {
@@ -1118,47 +1161,39 @@ uint8_t active_glass_style_raw() noexcept {
   return static_cast<uint8_t>(latter_core::persisted_prefs().glass_style_enum());
 }
 
-GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
+namespace {
+
+template <int Mode>
+GlassBackdrop sample_glass_backdrop_mode(const uint16_t *fb, int xs, int xe, int ys, int ye, int w, int h) {
   GlassBackdrop out;
-  if (!backdrop_active() || w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
-  const uint16_t *fb = active_frame_buf16();
-  const int xs = std::max(0, x0);
-  const int xe = std::min(SCREEN_W, x0 + w);
-  const int ys = std::max(0, std::max(clip_y0(), y0));
-  const int ye = std::min(SCREEN_H, std::min(clip_y1() + 1, y0 + h));
-  if (fb == nullptr || xe <= xs || ye <= ys) return out;
-  const float *lut = srgb_linear_lut();
-  const int mode = active_frame_endian_mode();
   const int step_x = std::max(4, w / 12);
   const int step_y = std::max(3, h / 12);
   const int x_start = xs + std::min(step_x / 2, (xe - xs - 1) / 2);
   const int y_start = ys + std::min(step_y / 2, (ye - ys - 1) / 2);
-  uint32_t cnt[32] = {0}, sr[32] = {0}, sg[32] = {0}, sb[32] = {0};
+  uint16_t cnt[32] = {0};
+  uint32_t sr[32] = {0}, sg[32] = {0}, sb[32] = {0};
   uint32_t tr = 0, tg = 0, tb = 0, n = 0;
   for (int y = y_start; y < ye; y += step_y) {
     const uint16_t *row = fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
     for (int x = x_start; x < xe; x += step_x) {
-      const uint16_t hw = row[x];
-      const uint16_t p = (mode == 1 || mode < 0)
-                             ? decode_hw_rgb565_mode<1>(hw)
-                             : ((mode == 2) ? decode_hw_rgb565_mode<2>(hw)
-                                            : ((mode == 4) ? decode_hw_rgb565_mode<4>(hw)
-                                                           : decode_hw_rgb565_mode<3>(hw)));
-      const int r5 = (p >> 11) & 0x1F;
-      const int g6 = (p >> 5) & 0x3F;
-      const int b5 = p & 0x1F;
-      const int r = (r5 << 3) | (r5 >> 2);
-      const int g = (g6 << 2) | (g6 >> 4);
-      const int b = (b5 << 3) | (b5 >> 2);
-      const float lum = 0.2126f * lut[r] + 0.7152f * lut[g] + 0.0722f * lut[b];
-      const int bin = std::min(31, static_cast<int>(lum * 32.0f));
+      const uint16_t p = decode_hw_rgb565_mode<Mode>(row[x]);
+      const uint32_t r5 = (p >> 11) & 0x1FU;
+      const uint32_t g6 = (p >> 5) & 0x3FU;
+      const uint32_t b5 = p & 0x1FU;
+      const uint32_t r = (r5 << 3) | (r5 >> 2);
+      const uint32_t g = (g6 << 2) | (g6 >> 4);
+      const uint32_t b = (b5 << 3) | (b5 >> 2);
+      const uint32_t lum_q15 = static_cast<uint32_t>(kLumR5Q15[r5]) +
+                               static_cast<uint32_t>(kLumG6Q15[g6]) +
+                               static_cast<uint32_t>(kLumB5Q15[b5]);
+      const uint32_t bin = std::min<uint32_t>(31U, lum_q15 >> 10);
       cnt[bin]++;
-      sr[bin] += static_cast<uint32_t>(r);
-      sg[bin] += static_cast<uint32_t>(g);
-      sb[bin] += static_cast<uint32_t>(b);
-      tr += static_cast<uint32_t>(r);
-      tg += static_cast<uint32_t>(g);
-      tb += static_cast<uint32_t>(b);
+      sr[bin] += r;
+      sg[bin] += g;
+      sb[bin] += b;
+      tr += r;
+      tg += g;
+      tb += b;
       n++;
     }
   }
@@ -1186,27 +1221,15 @@ GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
   return out;
 }
 
-GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h) {
+template <int Mode>
+GlassBackdrop sample_glass_mean_mode(const uint16_t *fb, int xs, int xe, int ys, int ye, int w, int h) {
   GlassBackdrop out;
-  if (!backdrop_active() || w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
-  const uint16_t *fb = active_frame_buf16();
-  const int xs = std::max(0, x0);
-  const int xe = std::min(SCREEN_W, x0 + w);
-  const int ys = std::max(0, std::max(clip_y0(), y0));
-  const int ye = std::min(SCREEN_H, std::min(clip_y1() + 1, y0 + h));
-  if (fb == nullptr || xe <= xs || ye <= ys) return out;
-  const int mode = active_frame_endian_mode();
   const int step = std::max(4, std::max(w, h) / 6);
   uint32_t tr = 0, tg = 0, tb = 0, n = 0;
   for (int y = ys + step / 2; y < ye; y += step) {
     const uint16_t *row = fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
     for (int x = xs + step / 2; x < xe; x += step) {
-      const uint16_t hw = row[x];
-      const uint16_t p = (mode == 1 || mode < 0)
-                             ? decode_hw_rgb565_mode<1>(hw)
-                             : ((mode == 2) ? decode_hw_rgb565_mode<2>(hw)
-                                            : ((mode == 4) ? decode_hw_rgb565_mode<4>(hw)
-                                                           : decode_hw_rgb565_mode<3>(hw)));
+      const uint16_t p = decode_hw_rgb565_mode<Mode>(row[x]);
       const uint32_t r5 = (p >> 11) & 0x1FU;
       const uint32_t g6 = (p >> 5) & 0x3FU;
       const uint32_t b5 = p & 0x1FU;
@@ -1226,6 +1249,40 @@ GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h) {
   out.sample_count = static_cast<uint16_t>(std::min<uint32_t>(n, 65535U));
   out.valid = true;
   return out;
+}
+
+}  // namespace
+
+GlassBackdrop sample_glass_backdrop(int x0, int y0, int w, int h) {
+  GlassBackdrop out;
+  if (!backdrop_active() || w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
+  const uint16_t *fb = active_frame_buf16();
+  const int xs = std::max(0, x0);
+  const int xe = std::min(SCREEN_W, x0 + w);
+  const int ys = std::max(0, std::max(clip_y0(), y0));
+  const int ye = std::min(SCREEN_H, std::min(clip_y1() + 1, y0 + h));
+  if (fb == nullptr || xe <= xs || ye <= ys) return out;
+  const int mode = active_frame_endian_mode();
+  if (mode == 1 || mode < 0) return sample_glass_backdrop_mode<1>(fb, xs, xe, ys, ye, w, h);
+  if (mode == 2) return sample_glass_backdrop_mode<2>(fb, xs, xe, ys, ye, w, h);
+  if (mode == 4) return sample_glass_backdrop_mode<4>(fb, xs, xe, ys, ye, w, h);
+  return sample_glass_backdrop_mode<3>(fb, xs, xe, ys, ye, w, h);
+}
+
+GlassBackdrop sample_glass_mean(int x0, int y0, int w, int h) {
+  GlassBackdrop out;
+  if (!backdrop_active() || w <= 0 || h <= 0 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return out;
+  const uint16_t *fb = active_frame_buf16();
+  const int xs = std::max(0, x0);
+  const int xe = std::min(SCREEN_W, x0 + w);
+  const int ys = std::max(0, std::max(clip_y0(), y0));
+  const int ye = std::min(SCREEN_H, std::min(clip_y1() + 1, y0 + h));
+  if (fb == nullptr || xe <= xs || ye <= ys) return out;
+  const int mode = active_frame_endian_mode();
+  if (mode == 1 || mode < 0) return sample_glass_mean_mode<1>(fb, xs, xe, ys, ye, w, h);
+  if (mode == 2) return sample_glass_mean_mode<2>(fb, xs, xe, ys, ye, w, h);
+  if (mode == 4) return sample_glass_mean_mode<4>(fb, xs, xe, ys, ye, w, h);
+  return sample_glass_mean_mode<3>(fb, xs, xe, ys, ye, w, h);
 }
 
 bool is_semantic_glass_color(UiColor c) {
@@ -1493,9 +1550,12 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
     const uint16_t bg = decode_hw_rgb565_mode<Mode>(dst);
     const uint32_t ia = static_cast<uint32_t>(256 - a);
     const uint32_t ua = static_cast<uint32_t>(a);
-    uint32_t r = ((tr * ua) / 256U + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
-    uint32_t g = ((tg * ua) / 256U + ((bg >> 5) & 0x3FU) * ia + static_cast<uint32_t>(t)) >> 8;
-    uint32_t b = ((tb * ua) / 256U + (bg & 0x1FU) * ia + static_cast<uint32_t>(t)) >> 8;
+    uint32_t r = ((tr * ua) >> 8) + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t);
+    uint32_t g = ((tg * ua) >> 8) + ((bg >> 5) & 0x3FU) * ia + static_cast<uint32_t>(t);
+    uint32_t b = ((tb * ua) >> 8) + (bg & 0x1FU) * ia + static_cast<uint32_t>(t);
+    r >>= 8;
+    g >>= 8;
+    b >>= 8;
     if (r > 31U) r = 31U;
     if (g > 63U) g = 63U;
     if (b > 31U) b = 31U;
@@ -1509,6 +1569,15 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
     if (a <= 0) continue;
     const uint8_t *th = kBayer4[py & 3];
     uint16_t *row = fb + static_cast<size_t>(py) * SCREEN_W;
+    if (hole == 1 && has_hole && dy == 0.0f && py > y0 && py < (y0 + h - 1)) {
+      if (x0 >= 0 && x0 < SCREEN_W) {
+        mix(row[x0], a, th[x0 & 3] * 16 + 8);
+      }
+      if (o.x_last >= 0 && o.x_last < SCREEN_W && o.x_last != x0) {
+        mix(row[o.x_last], a, th[o.x_last & 3] * 16 + 8);
+      }
+      continue;
+    }
     const uint32_t ua = static_cast<uint32_t>(a);
     const uint32_t ia = static_cast<uint32_t>(256 - a);
     const uint32_t tr_a = (tr * ua) >> 8;
@@ -1529,13 +1598,15 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
       if (px < 0 || px >= SCREEN_W) return;
       const int cov = o.coverage(px, dy);
       if (cov <= 0) return;
-      mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
+      const int ae = (a * (cov + (cov >> 7)) + 128) >> 8;
+      if (ae > 0) mix(row[px], std::min(256, ae), th[px & 3] * 16 + 8);
     };
     auto inner_edge = [&](int px, float idy) {
       if (px < 0 || px >= SCREEN_W) return;
       const int cov = 255 - in.coverage(px, idy);
       if (cov <= 0) return;
-      mix(row[px], (a * cov + 127) / 255, th[px & 3] * 16 + 8);
+      const int ae = (a * (cov + (cov >> 7)) + 128) >> 8;
+      if (ae > 0) mix(row[px], std::min(256, ae), th[px & 3] * 16 + 8);
     };
     if (s1 >= s0) {
       int hs0 = 1, hs1 = 0;
@@ -1685,11 +1756,12 @@ bool frame_base_impl(Rgb565Surface &it, UiColor c) {
         const int x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw_span);
         if (x0 > x1) continue;
         const int len = x1 - x0 + 1;
+        uint16_t *const row_dst =
+            fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
         if (byte_uniform) {
-          std::memset(fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0),
-                      static_cast<int>(hw & 0xFFU), static_cast<size_t>(len) * sizeof(uint16_t));
+          std::memset(row_dst, static_cast<int>(hw & 0xFFU), static_cast<size_t>(len) * sizeof(uint16_t));
         } else {
-          fast_hline(it, x0, y, len, c);
+          fill_hw16_span(row_dst, len, hw);
         }
       }
 #else
@@ -1699,7 +1771,9 @@ bool frame_base_impl(Rgb565Surface &it, UiColor c) {
             static_cast<size_t>(cy1 - cy0 + 1) * static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
         std::memset(fb + off, static_cast<int>(hw & 0xFFU), nbytes);
       } else {
-        fill_rect_row_major(it, 0, cy0, SCREEN_W, cy1 - cy0 + 1, c);
+        const size_t off = static_cast<size_t>(cy0) * static_cast<size_t>(SCREEN_W);
+        const int npx = (cy1 - cy0 + 1) * SCREEN_W;
+        fill_hw16_span(fb + off, npx, hw);
       }
 #endif
     } else {

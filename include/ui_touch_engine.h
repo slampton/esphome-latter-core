@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace latter_ui {
 
@@ -760,10 +761,11 @@ class TouchGestureEngine {
   static void do_fetch_area_list_browse_();
   static void enter_home_hub_tab_(int target_tab, latter_core::DeviceRuntimeState &rs,
                                   const UiTouchRuntime &rt, uint32_t now_ms);
-  static const HomeActivityItem *resolve_home_activities_(uint32_t now_ms,
-                                                          const latter_core::DeviceRuntimeState &rs,
-                                                          const latter_core::PersistedDevicePrefs &prefs,
-                                                          const UiTouchRuntime &rt, int &out_count);
+  static const HomeActivityItem *resolve_home_activities_(
+      uint32_t now_ms, const latter_core::DeviceRuntimeState &rs,
+      const latter_core::PersistedDevicePrefs &prefs,
+      const UiTouchRuntime &rt, int &out_count,
+      std::vector<HomeActivityItem> &fallback_buf);
   static int remote_key_for_widget_(uint16_t wid) noexcept;
   static void do_remote_send_key_(int key_idx, int target_slot, bool long_press = false,
                                   uint32_t now_override_ms = 0U);

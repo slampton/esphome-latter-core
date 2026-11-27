@@ -235,7 +235,6 @@ script:
                   if (new_vol > 0.0f) {
                     au.sync_local_volume(new_vol, /*update_player=*/true, /*un_duck=*/true);
                   }
-                  latter_ui::schedule_disp_update(&id(disp1));
                   break;
                 }
                 case C::PLAY_MUSIC_SLOT:
@@ -302,8 +301,19 @@ script:
                 case C::SET_LOCAL_SPEAKER_VOL_PCT: {
                   const float target_v = static_cast<float>(std::clamp(arg0, 10, 100)) * 0.01f;
                   au.sync_local_volume(target_v, /*update_player=*/true, /*un_duck=*/false);
-                  if (latter_core::runtime_state().nav.display_power_state == 0) {
-                    latter_ui::schedule_disp_update(&id(disp1));
+                  const auto &rs_v = latter_core::runtime_state();
+                  if (rs_v.nav.display_power_state == 0) {
+                    if (!rs_v.nav.quick_actions_open &&
+                        rs_v.nav.gui_page == latter_core::PageId::MUSIC &&
+                        rs_v.music.view == latter_core::MusicView::AUDIO &&
+                        rs_v.music.drilldown == latter_core::MusicDrilldown::NONE &&
+                        rs_v.music.takeover == latter_core::MusicTakeover::NONE) {
+                      int vy0 = 0, vy1 = 0;
+                      latter_ui::music_volume_dirty_band(vy0, vy1);
+                      latter_ui::schedule_band_disp_update(&id(disp1), vy0, vy1);
+                    } else {
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    }
                   }
                   break;
                 }

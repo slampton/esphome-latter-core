@@ -16,7 +16,7 @@ UiColor render_card_box(Rgb565Surface &it, int x0, int y0, int w, int h,
                         UiColor bg_c, UiColor border_c, int r,
                         GlassVariant variant, UiColor ref_text,
                         bool sample_surface) {
-  if (w <= 4 || h <= 4) return bg_c;
+  if (w <= 4 || h <= 4 || (y0 + h) <= clip_y0() || y0 > clip_y1()) return bg_c;
   if (r > h / 2) r = h / 2;
   if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
@@ -47,7 +47,7 @@ UiColor render_glass_circle(Rgb565Surface &it, int cx_btn, int cy_btn, int r,
                             int inner_hole_r, GlassVariant variant,
                             UiColor ref_text,
                             bool sample_surface) {
-  if (r <= 1) return bg_c;
+  if (r <= 1 || (cy_btn + r) < clip_y0() || (cy_btn - r) > clip_y1()) return bg_c;
   const int d = 2 * r + 1;
   const uint8_t g_style = active_glass_style_raw();
   GlassVariant eff_var =
@@ -293,30 +293,32 @@ void action_pill(Rgb565Surface &it, int x0, int w, int y_mid, int h,
   const int eff_h = std::max(24, h);
   const int r = std::min(eff_h / 2, eff_w / 2);
   const int y0 = y_mid - eff_h / 2;
-
-  render_card_box(it, x0, y0, eff_w, eff_h, bg_c, border_c, r, GlassVariant::Clear, text_c);
-
   const int cx = x0 + eff_w / 2;
-  const bool has_lbl = (label != nullptr && label[0] != '\0' && font != nullptr);
-  const bool has_mdi = (leading_mdi != nullptr && leading_mdi[0] != '\0');
-  if (has_mdi && has_lbl) {
-    const int icon_px = std::clamp(eff_h - dp_px(14), 14, dp_px(20));
-    const int icon_gap = dp_px(6);
-    const int max_txt_w = std::max(24, eff_w - icon_px - icon_gap - dp_px(18));
-    const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
-    int tw = 0, x_off = 0, base = 0, th = 0;
-    font->measure(fit.c_str(), &tw, &x_off, &base, &th);
-    const int total_w = icon_px + icon_gap + tw;
-    const int start_x = cx - total_w / 2;
-    render_mdi_icon(it, leading_mdi, start_x + icon_px / 2, y_mid, icon_px, text_c, true);
-    shadow_print(it, start_x + icon_px + icon_gap, y_mid, font, text_c, UiTextAlign::CENTER_LEFT, fit.c_str());
-  } else if (has_mdi) {
-    const int icon_px = std::clamp(eff_h - dp_px(12), 14, dp_px(22));
-    render_mdi_icon(it, leading_mdi, cx, y_mid, icon_px, text_c, true);
-  } else if (has_lbl) {
-    const int max_txt_w = std::max(24, eff_w - dp_px(14));
-    const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
-    shadow_print(it, cx, y_mid, font, text_c, UiTextAlign::CENTER, fit.c_str());
+
+  if ((y0 + eff_h) > clip_y0() && y0 <= clip_y1()) {
+    render_card_box(it, x0, y0, eff_w, eff_h, bg_c, border_c, r, GlassVariant::Clear, text_c);
+
+    const bool has_lbl = (label != nullptr && label[0] != '\0' && font != nullptr);
+    const bool has_mdi = (leading_mdi != nullptr && leading_mdi[0] != '\0');
+    if (has_mdi && has_lbl) {
+      const int icon_px = std::clamp(eff_h - dp_px(14), 14, dp_px(20));
+      const int icon_gap = dp_px(6);
+      const int max_txt_w = std::max(24, eff_w - icon_px - icon_gap - dp_px(18));
+      const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+      int tw = 0, x_off = 0, base = 0, th = 0;
+      font->measure(fit.c_str(), &tw, &x_off, &base, &th);
+      const int total_w = icon_px + icon_gap + tw;
+      const int start_x = cx - total_w / 2;
+      render_mdi_icon(it, leading_mdi, start_x + icon_px / 2, y_mid, icon_px, text_c, true);
+      shadow_print(it, start_x + icon_px + icon_gap, y_mid, font, text_c, UiTextAlign::CENTER_LEFT, fit.c_str());
+    } else if (has_mdi) {
+      const int icon_px = std::clamp(eff_h - dp_px(12), 14, dp_px(22));
+      render_mdi_icon(it, leading_mdi, cx, y_mid, icon_px, text_c, true);
+    } else if (has_lbl) {
+      const int max_txt_w = std::max(24, eff_w - dp_px(14));
+      const std::string fit = fit_text_to_width_font(std::string(label), max_txt_w, font);
+      shadow_print(it, cx, y_mid, font, text_c, UiTextAlign::CENTER, fit.c_str());
+    }
   }
 
   if (widget_id != WidgetId::NONE) {

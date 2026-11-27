@@ -1300,6 +1300,12 @@ void render_audio_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
 
 }  // namespace
 
+void music_volume_dirty_band(int &out_y0, int &out_y1) noexcept {
+  const MusicVolumeGeom g = compute_music_volume_geom(
+      SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+  compute_music_volume_dirty_band(g, layout().base.scale_milli, out_y0, out_y1);
+}
+
 void render_music_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &m = runtime_state().music;
 

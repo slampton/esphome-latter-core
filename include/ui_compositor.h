@@ -163,6 +163,7 @@ struct PostFrameSchedule {
 };
 
 void populate_frame_context_state(UiFrameContext &ctx);
+void music_volume_dirty_band(int &out_y0, int &out_y1) noexcept;
 bool prepare_frame_plan(const UiFrameContext &ctx, FrameRenderPlan &out);
 void render_composed_frame(Rgb565Surface &it, const UiFrameContext &ctx, const FrameRenderPlan &plan);
 PostFrameSchedule compute_post_frame_schedule(const UiFrameContext &ctx, const FrameRenderPlan &plan);

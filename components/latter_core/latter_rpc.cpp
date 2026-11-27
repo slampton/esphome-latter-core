@@ -589,6 +589,9 @@ uint32_t outbox_next_delay_ms(uint32_t now_ms) noexcept {
   if (elapsed < kMinInterFrameMs) {
     return kMinInterFrameMs - elapsed;
   }
+  if (elapsed >= kSleepBypassPassesMs && st.passes_since_publish >= 1U) {
+    return 0U;
+  }
   return (st.passes_since_publish < 2U) ? 1U : 0U;
 }
 
@@ -604,8 +607,11 @@ bool step_outbox_loop(uint32_t now_ms) {
     ++st.passes_since_publish;
   }
   if (!has_pending_frames() || st.sink_fn == nullptr || st.sink_ctx == nullptr) return false;
-  if (st.passes_since_publish < 2U) return true;
-  if (st.last_publish_ms != 0 && static_cast<uint32_t>(now_ms - st.last_publish_ms) < kMinInterFrameMs) {
+  const uint32_t elapsed =
+      (st.last_publish_ms != 0U) ? static_cast<uint32_t>(now_ms - st.last_publish_ms) : 0U;
+  const bool sleep_gap_ready = (st.last_publish_ms != 0U) && (elapsed >= kSleepBypassPassesMs);
+  if (st.passes_since_publish < 2U && !sleep_gap_ready) return true;
+  if (st.last_publish_ms != 0U && elapsed < kMinInterFrameMs) {
     return true;
   }
   std::string next_frame = std::move(st.ring[st.head]);

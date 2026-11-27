@@ -105,6 +105,31 @@ inline void fast_pixel(DisplayT &it, int x, int y, UiColor c) {
   it.draw_pixel_at(x, y, c);
 }
 
+inline void fill_hw16_span(uint16_t *dst, int len, uint16_t hw) noexcept {
+  if (len <= 0) return;
+  if ((reinterpret_cast<uintptr_t>(dst) & 2U) != 0U) {
+    *dst++ = hw;
+    --len;
+  }
+  const uint32_t pair = static_cast<uint32_t>(hw) | (static_cast<uint32_t>(hw) << 16);
+  uint32_t *d32 = reinterpret_cast<uint32_t *>(dst);
+  int pairs = len >> 1;
+  while (pairs >= 4) {
+    d32[0] = pair;
+    d32[1] = pair;
+    d32[2] = pair;
+    d32[3] = pair;
+    d32 += 4;
+    pairs -= 4;
+  }
+  while (pairs-- > 0) {
+    *d32++ = pair;
+  }
+  if ((len & 1) != 0) {
+    *reinterpret_cast<uint16_t *>(d32) = hw;
+  }
+}
+
 template <typename DisplayT>
 inline void fast_hline(DisplayT &it, int x, int y, int w, UiColor c) {
   if (w <= 0 || !row_in_clip_band(y)) return;
@@ -119,22 +144,7 @@ inline void fast_hline(DisplayT &it, int x, int y, int w, UiColor c) {
   uint16_t *fb = active_frame_buf16();
   if (fb != nullptr) {
     const uint16_t px = encode_hw_rgb565(c);
-    uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
-    int i = 0;
-    if ((reinterpret_cast<uintptr_t>(dst) & 2U) != 0U) {
-      dst[0] = px;
-      i = 1;
-    }
-    const uint32_t pair = static_cast<uint32_t>(px) | (static_cast<uint32_t>(px) << 16);
-    uint32_t *dst32 = reinterpret_cast<uint32_t *>(dst + i);
-    const int pairs = (w - i) >> 1;
-    for (int p = 0; p < pairs; p++) {
-      dst32[p] = pair;
-    }
-    i += pairs << 1;
-    if (i < w) {
-      dst[i] = px;
-    }
+    fill_hw16_span(fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x), w, px);
     return;
   }
   it.horizontal_line(x, y, w, c);
@@ -411,7 +421,33 @@ inline void fast_hline_dither(DisplayT &it, int x, int y, int w, uint32_t r88, u
   uint16_t pat[4];
   for (int k = 0; k < 4; k++) pat[k] = encode_hw_rgb565_raw(dither_rgb565(r88, g88, b88, th[k]));
   uint16_t *dst = fb + static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
-  for (int i = 0; i < w; i++) dst[i] = pat[(x + i) & 3];
+  int i = 0;
+  if ((reinterpret_cast<uintptr_t>(dst) & 2U) != 0U) {
+    dst[0] = pat[x & 3];
+    i = 1;
+  }
+  const int phase = (x + i) & 3;
+  const uint32_t p0 = static_cast<uint32_t>(pat[phase]) |
+                      (static_cast<uint32_t>(pat[(phase + 1) & 3]) << 16);
+  const uint32_t p1 = static_cast<uint32_t>(pat[(phase + 2) & 3]) |
+                      (static_cast<uint32_t>(pat[(phase + 3) & 3]) << 16);
+  uint32_t *d32 = reinterpret_cast<uint32_t *>(dst + i);
+  int pairs = (w - i) >> 1;
+  while (pairs >= 2) {
+    d32[0] = p0;
+    d32[1] = p1;
+    d32 += 2;
+    pairs -= 2;
+    i += 4;
+  }
+  if (pairs == 1) {
+    *d32 = p0;
+    i += 2;
+  }
+  while (i < w) {
+    dst[i] = pat[(x + i) & 3];
+    ++i;
+  }
 }
 
 template <typename DisplayT>
@@ -430,9 +466,11 @@ inline void fast_pixel_blend(DisplayT &it, int x, int y, UiColor c, int a) {
   const uint16_t bg = decode_hw_rgb565_raw(dst);
   const int r5 = (bg >> 11) & 0x1F, g6 = (bg >> 5) & 0x3F, b5 = bg & 0x1F;
   const int br = (r5 << 3) | (r5 >> 2), bgc = (g6 << 2) | (g6 >> 4), bb = (b5 << 3) | (b5 >> 2);
-  const int rr = br + (((static_cast<int>(c.r) - br) * a + 127) / 255);
-  const int rg = bgc + (((static_cast<int>(c.g) - bgc) * a + 127) / 255);
-  const int rb = bb + (((static_cast<int>(c.b) - bb) * a + 127) / 255);
+  const int a_q8 = a + (a >> 7);
+  const int ia = 256 - a_q8;
+  const int rr = std::min(255, (br * ia + static_cast<int>(c.r) * a_q8 + 128) >> 8);
+  const int rg = std::min(255, (bgc * ia + static_cast<int>(c.g) * a_q8 + 128) >> 8);
+  const int rb = std::min(255, (bb * ia + static_cast<int>(c.b) * a_q8 + 128) >> 8);
   const UiColor blended{static_cast<uint8_t>(rr), static_cast<uint8_t>(rg), static_cast<uint8_t>(rb)};
   dst = encode_hw_rgb565(blended);
 }

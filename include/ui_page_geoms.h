@@ -326,6 +326,18 @@ inline constexpr MusicVolumeGeom compute_music_volume_geom(
   return g;
 }
 
+inline constexpr void compute_music_volume_dirty_band(
+    const MusicVolumeGeom &g, int scale_milli, int &out_y0, int &out_y1) noexcept {
+  const int top_pad = dp_px_for(18, scale_milli);
+  const int content_bot = std::max(g.slider_y0 + g.slider_h, g.mute_y0 + g.btn_h) + 4;
+  out_y0 = std::max(0, g.hdr_pct_y - top_pad);
+  out_y1 = std::min(g.h - 1, std::min(g.mode_bar_top - 1, content_bot));
+  if (out_y1 < out_y0) {
+    out_y0 = 0;
+    out_y1 = std::max(0, g.h - 1);
+  }
+}
+
 inline void register_music_volume_hits(FrameHitTable &ht, const MusicVolumeGeom &g) {
   ht.add_rect(g.spk_hdr_x0, g.spk_hdr_y0, g.spk_hdr_w, g.spk_hdr_h,
               WidgetId::MUSIC_SPEAKER_PICKER_BTN, kHitTap | kHitFocusSlot, 0, g.spk_hdr_pad);

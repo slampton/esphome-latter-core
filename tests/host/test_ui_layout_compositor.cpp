@@ -1394,6 +1394,19 @@ void test_aa_font_live_fb_blending_no_halo() {
     const int al3 = luma(decode_px(fix.pixels[static_cast<size_t>(y0) * SCREEN_W + static_cast<size_t>(x0 + 3)]));
     LATTER_CHECK(al1 >= sky_l && al1 < al3 && al3 < fg_l);
   }
+
+  // 4. Music volume dirty band encloses percent header, slider, and buttons cleanly above mode bar across all 9 panels.
+  for (const auto &p : kAllNinePanels) {
+    const auto ly = compute_panel_layout(p.w, p.h, p.round, p.wearable, p.ppi, p.corner_r, p.view_scale_pct, p.stationary);
+    const auto g = compute_music_volume_geom(p.w, p.h, p.round, p.wearable, p.ppi);
+    int vy0 = -1, vy1 = -1;
+    compute_music_volume_dirty_band(g, ly.scale_milli, vy0, vy1);
+    LATTER_CHECK(vy0 >= 0 && vy0 < vy1 && vy1 < g.mode_bar_top);
+    LATTER_CHECK(vy0 <= g.hdr_pct_y);
+    LATTER_CHECK(vy0 <= g.slider_y0);
+    LATTER_CHECK(vy1 >= std::min(g.mode_bar_top - 1, g.slider_y0 + g.slider_h));
+    LATTER_CHECK(vy1 >= std::min(g.mode_bar_top - 1, g.mute_y0 + g.btn_h));
+  }
 }
 
 }  // namespace

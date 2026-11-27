@@ -610,8 +610,8 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
                            src, src_w, src_h, crop_x0, crop_y0, crop_w, crop_h)) {
     return true;
   }
-  // Dynamically sized scanline buffer (zero 1024 px ceiling so 1280x800+ never clips).
-  static uint16_t s_small_row_buf[512];
+  // Dynamically sized PSRAM scanline buffer (evictable via global PSRAM cache evictor;
+  // zero internal SRAM .bss and no 1024 px ceiling so 1280x800+ never clips).
   static uint16_t *s_dyn_row_buf = nullptr;
   static int s_dyn_row_cap = 0;
   static const bool s_cam_row_evictor_reg = register_psram_cache_evictor([]() noexcept {
@@ -623,9 +623,9 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
   });
   (void)s_cam_row_evictor_reg;
 
-  uint16_t *row_buf = s_small_row_buf;
+  uint16_t *row_buf = nullptr;
   int span_w = fit_r.w;
-  if (!one_to_one && fit_r.w > 512) {
+  if (!one_to_one) {
     if (s_dyn_row_cap < fit_r.w) {
       uint16_t *nb = static_cast<uint16_t *>(
           ui_psram_malloc(static_cast<size_t>(fit_r.w) * sizeof(uint16_t)));
@@ -635,13 +635,12 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
         s_dyn_row_cap = fit_r.w;
       }
     }
-    if (s_dyn_row_buf != nullptr && s_dyn_row_cap >= fit_r.w) {
-      row_buf = s_dyn_row_buf;
-    } else if (s_dyn_row_buf != nullptr && s_dyn_row_cap > 512) {
-      row_buf = s_dyn_row_buf;
+    if (s_dyn_row_buf == nullptr || s_dyn_row_cap <= 0) {
+      return false;
+    }
+    row_buf = s_dyn_row_buf;
+    if (s_dyn_row_cap < fit_r.w) {
       span_w = s_dyn_row_cap;
-    } else {
-      span_w = 512;
     }
   }
 

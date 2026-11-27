@@ -21,11 +21,6 @@ using namespace touch_detail;
 
 namespace {
 
-inline HomeActivityItem *touch_activity_fallback_scratch() {
-  static std::vector<HomeActivityItem> s_buf(static_cast<size_t>(kMaxHomeActivity));
-  return s_buf.data();
-}
-
 inline void do_send_intercom_broadcast() {
   latter_core::emit_intercom_broadcast(runtime_state().intercom.broadcast_message);
 }
@@ -254,11 +249,13 @@ void TouchGestureEngine::enter_home_hub_tab_(int target_tab, DeviceRuntimeState 
 
 const HomeActivityItem *TouchGestureEngine::resolve_home_activities_(uint32_t now_ms, const DeviceRuntimeState &rs,
                                                 const PersistedDevicePrefs &prefs,
-                                                const UiTouchRuntime &rt, int &out_count) {
+                                                const UiTouchRuntime &rt, int &out_count,
+                                                std::vector<HomeActivityItem> &fallback_buf) {
   out_count = 0;
   const HomeActivityItem *act_items = home_activity_rendered_items(out_count);
   if (out_count > 0) return act_items;
-  HomeActivityItem *fallback_items = touch_activity_fallback_scratch();
+  fallback_buf.resize(static_cast<size_t>(kMaxHomeActivity));
+  HomeActivityItem *fallback_items = fallback_buf.data();
   const auto &ms_hm = media_state();
   const bool m_play = is_music_playing_effective(
       !ms_hm.is_local, rt.local_mp_playing, ms_hm.state, now_ms);
@@ -295,8 +292,9 @@ bool TouchGestureEngine::handle_tap_home_area_(
   if (rs.nav.gui_page == PageId::HOME) {
     if (rs.nav.home_subpage == 0) {
       int act_count = 0;
+      std::vector<HomeActivityItem> act_fallback;
       const HomeActivityItem *act_items =
-          TouchGestureEngine::resolve_home_activities_(now_rel, rs, prefs, rt_, act_count);
+          TouchGestureEngine::resolve_home_activities_(now_rel, rs, prefs, rt_, act_count, act_fallback);
       if (wid == WidgetId::HOME_QUICK_BTN && touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         rs.nav.gui_page = PageId::WEATHER;
         const bool tapped_moon = (hit != nullptr) ? (hit->param != 0)

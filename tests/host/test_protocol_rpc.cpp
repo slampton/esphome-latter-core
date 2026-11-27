@@ -898,6 +898,42 @@ void test_wave2_v3_wire_escaping_and_base_fold() {
       latter_rpc::bind_sensor_sink(&default_box);
     }
 
+    // Sleep-gap bypass (> kSleepBypassPassesMs): awake 2-pass delay stays active at 36 ms,
+    // while screen-off sleep (>= 200 ms) publishes the next frame immediately on pass 1.
+    {
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      latter_rpc::rpc_state().boot_id = 0xec1b416eU;
+      latter_rpc::rpc_state().next_seq = 21U;
+      std::string link_p(240, 'b');
+      const std::string tel_json = latter_rpc::build_rpc_json("device_telemetry", {
+          {"link_json", link_p},
+          {"int_ram_free_kb", "80"},
+          {"int_ram_min_kb", "40"},
+          {"int_ram_largest_kb", "38"},
+          {"psram_min_kb", "553"},
+          {"ble_active", "1"},
+          {"profiler_on", "1"},
+      });
+      LATTER_CHECK(latter_rpc::enqueue_chunked_json(tel_json));
+      LATTER_CHECK(latter_rpc::rpc_state().count == 2U);
+
+      latter_rpc::bind_sensor_sink(&default_box);
+      default_box.published.clear();
+      latter_rpc::step_outbox_loop(1000U);
+      LATTER_CHECK(default_box.published.size() == 1U);
+      latter_rpc::step_outbox_loop(1036U);
+      LATTER_CHECK(default_box.published.size() == 1U);
+      LATTER_CHECK(latter_rpc::outbox_next_delay_ms(1036U) == 1U);
+      LATTER_CHECK(latter_rpc::outbox_next_delay_ms(1250U) == 0U);
+      latter_rpc::rpc_state().passes_since_publish = 0U;
+      latter_rpc::step_outbox_loop(2000U);
+      LATTER_CHECK(default_box.published.size() == 2U);
+
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      latter_rpc::bind_sensor_sink(&default_box);
+      default_box.published.clear();
+    }
+
     rs.nav.display_power_state = 0;
     rs.nav.gui_page = PageId::HOME;
     dp.bedtime_active = true;

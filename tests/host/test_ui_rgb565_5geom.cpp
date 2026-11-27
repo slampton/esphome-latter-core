@@ -1567,6 +1567,137 @@ void test_weather_forecast_and_music_lyrics_invariants_9geom() {
   }
 }
 
+void test_wave2_rodata_lut_spans_blend_glass_and_clipped_pill() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // 1. Flash .rodata srgb_linear_lut() matches exact IEC 61966-2-1 formula across [0..255].
+  {
+    const float *lut = srgb_linear_lut();
+    LATTER_CHECK(lut != nullptr);
+    for (int i = 0; i < 256; ++i) {
+      const float c = static_cast<float>(i) / 255.0f;
+      const float ref = (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
+      LATTER_CHECK(std::fabs(lut[i] - ref) <= 1e-5f);
+    }
+  }
+
+  HostSurfaceFixture fix{};
+  auto decode_ch = [](uint16_t raw, int &r, int &g, int &b) {
+    const int r5 = (raw >> 11) & 0x1F;
+    const int g6 = (raw >> 5) & 0x3F;
+    const int b5 = raw & 0x1F;
+    r = (r5 << 3) | (r5 >> 2);
+    g = (g6 << 2) | (g6 >> 4);
+    b = (b5 << 3) | (b5 >> 2);
+  };
+
+  // 2. Unrolled fast_hline / fast_hline_dither alignment + sentinel safety across widths 1..33.
+  {
+    const uint16_t bg_hw = encode_hw_rgb565(UiColor{12, 24, 36});
+    const UiColor fg{210, 130, 50};
+    const uint16_t fg_hw = encode_hw_rgb565(fg);
+    for (int x0 : {1, 2, 3, 4}) {
+      for (int w = 1; w <= 33; ++w) {
+        fix.fill(bg_hw);
+        const int y = 20;
+        fast_hline(fix.surf, x0, y, w, fg);
+        const size_t row = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+        LATTER_CHECK(fix.pixels[row + static_cast<size_t>(x0 - 1)] == bg_hw);
+        LATTER_CHECK(fix.pixels[row + static_cast<size_t>(x0 + w)] == bg_hw);
+        for (int x = x0; x < x0 + w; ++x) {
+          LATTER_CHECK(fix.pixels[row + static_cast<size_t>(x)] == fg_hw);
+        }
+
+        fix.fill(bg_hw);
+        fast_hline_dither(fix.surf, x0, y, w, 180U << 8, 90U << 8, 220U << 8);
+        LATTER_CHECK(fix.pixels[row + static_cast<size_t>(x0 - 1)] == bg_hw);
+        LATTER_CHECK(fix.pixels[row + static_cast<size_t>(x0 + w)] == bg_hw);
+        const uint8_t *th = kBayer4[y & 3];
+        for (int x = x0; x < x0 + w; ++x) {
+          const uint16_t ref_px = encode_hw_rgb565_raw(dither_rgb565(180U << 8, 90U << 8, 220U << 8, th[x & 3]));
+          LATTER_CHECK(fix.pixels[row + static_cast<size_t>(x)] == ref_px);
+        }
+      }
+    }
+  }
+
+  // 3. fast_pixel_blend Q8 shift matches exact /255 reference within +/-1 RGB565 quantization step.
+  {
+    const UiColor bg{40, 100, 200};
+    const UiColor fg{220, 40, 90};
+    const uint16_t bg_hw = encode_hw_rgb565(bg);
+    const int saved_endian = active_frame_endian_mode();
+    active_frame_endian_mode() = 1;
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+    for (int a : {0, 1, 64, 128, 192, 254, 255}) {
+      fix.fill(bg_hw);
+      fast_pixel_blend(fix.surf, 16, 16, fg, a);
+      const uint16_t got_raw = decode_hw_rgb565_raw(
+          fix.pixels[16U * static_cast<size_t>(SCREEN_W) + 16U]);
+      int gr = 0, gg = 0, gb = 0;
+      decode_ch(got_raw, gr, gg, gb);
+      int bdr = 0, bdg = 0, bdb = 0;
+      decode_ch(decode_hw_rgb565_raw(bg_hw), bdr, bdg, bdb);
+      const UiColor ref{
+          static_cast<uint8_t>(bdr + (((static_cast<int>(fg.r) - bdr) * a + 127) / 255)),
+          static_cast<uint8_t>(bdg + (((static_cast<int>(fg.g) - bdg) * a + 127) / 255)),
+          static_cast<uint8_t>(bdb + (((static_cast<int>(fg.b) - bdb) * a + 127) / 255)),
+      };
+      int rr = 0, rg = 0, rb = 0;
+      decode_ch(decode_hw_rgb565_raw(encode_hw_rgb565(ref)), rr, rg, rb);
+      LATTER_CHECK(std::abs(gr - rr) <= 8);
+      LATTER_CHECK(std::abs(gg - rg) <= 4);
+      LATTER_CHECK(std::abs(gb - rb) <= 8);
+    }
+    active_frame_endian_mode() = saved_endian;
+  }
+
+  // 4. fill_round_rect_glass(hole=1) renders vertical rim pixels on straight middle rows & leaves interior untouched.
+  {
+    const uint16_t bg_hw = encode_hw_rgb565(UiColor{18, 24, 34});
+    const UiColor rim_c{240, 245, 255};
+    const int rx = 40, ry = 40, rw = 64, rh = 44;
+    const int saved_endian = active_frame_endian_mode();
+    for (int mode : {1, 2, 3, 4}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, mode);
+      fix.fill(bg_hw);
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::HOME, 0, 0U, true);
+      frame_base_begin();
+      fill_round_rect_glass(fix.surf, rx, ry, rw, rh, 10.0f, rim_c, 160, 120, 1);
+      const int mid_y = ry + rh / 2;
+      const size_t row = static_cast<size_t>(mid_y) * static_cast<size_t>(SCREEN_W);
+      LATTER_CHECK(fix.pixels[row + static_cast<size_t>(rx)] != bg_hw);
+      LATTER_CHECK(fix.pixels[row + static_cast<size_t>(rx + rw - 1)] != bg_hw);
+      LATTER_CHECK(fix.pixels[row + static_cast<size_t>(rx + 2)] == bg_hw);
+      LATTER_CHECK(fix.pixels[row + static_cast<size_t>(rx + rw / 2)] == bg_hw);
+      LATTER_CHECK(fix.pixels[row + static_cast<size_t>(rx + rw - 3)] == bg_hw);
+    }
+    active_frame_endian_mode() = saved_endian;
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+  }
+
+  // 5. Clipped-out ui::action_pill skips drawing while still registering its FrameHitTable region.
+  {
+    const uint16_t bg_hw = encode_hw_rgb565(UiColor{10, 12, 16});
+    fix.fill(bg_hw);
+    frame_hits().clear();
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::MUSIC, 3, 0U, false);
+    frame_base_begin();
+    set_clip_y_band(0, 60);
+    const int pill_y_mid = SCREEN_H - 48;
+    ui::action_pill(fix.surf, 40, 120, pill_y_mid, 36, ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
+                    "Test", fix.ctx.col_white, fix.ctx.font_small, WidgetId::MUSIC_VOL_MUTE_BTN,
+                    kHitTap | kHitFocusSlot, 0, 48, "mdi:volume-mute");
+    const HitRegion *hit = frame_hits().hit_test(100, pill_y_mid, kHitTap);
+    LATTER_CHECK(hit != nullptr && hit->widget_id == WidgetId::MUSIC_VOL_MUTE_BTN);
+    LATTER_CHECK(fix.pixels[static_cast<size_t>(pill_y_mid) * static_cast<size_t>(SCREEN_W) + 100U] == bg_hw);
+    reset_clip_y_band();
+  }
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
@@ -1577,6 +1708,7 @@ void run_ui_rgb565_5geom_tests() {
   test_rotated_fallback_print_and_adaptive_glass_style();
   test_additive_cold_boot_sky_and_celestial_d085();
   test_weather_forecast_and_music_lyrics_invariants_9geom();
+  test_wave2_rodata_lut_spans_blend_glass_and_clipped_pill();
 }
 
 }  // namespace latter_test

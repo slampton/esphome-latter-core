@@ -23,8 +23,21 @@ using namespace touch_detail;
 namespace {
 
 inline CalendarSourceMeta *touch_cal_sources_scratch() {
-  static std::vector<CalendarSourceMeta> s_buf(static_cast<size_t>(kMaxCalendarSources));
-  return s_buf.data();
+  static_assert(std::is_trivially_copyable_v<CalendarSourceMeta>,
+                "CalendarSourceMeta must stay POD for evictable PSRAM scratch");
+  static CalendarSourceMeta *s_buf = nullptr;
+  static const bool s_touch_cal_evictor_reg = register_psram_cache_evictor([]() noexcept {
+    if (s_buf != nullptr) {
+      ui_psram_free(s_buf);
+      s_buf = nullptr;
+    }
+  });
+  (void)s_touch_cal_evictor_reg;
+  if (s_buf == nullptr) {
+    s_buf = static_cast<CalendarSourceMeta *>(
+        ui_psram_calloc(static_cast<size_t>(kMaxCalendarSources), sizeof(CalendarSourceMeta)));
+  }
+  return s_buf;
 }
 
 inline void open_calendar_composer(DeviceRuntimeState &rs,
@@ -51,8 +64,9 @@ inline void submit_calendar_draft_event(DeviceRuntimeState &rs,
                                         const PersistedDevicePrefs &prefs,
                                         uint32_t now_ms) {
   CalendarSourceMeta *writable_sources = touch_cal_sources_scratch();
-  const int writable_cnt = collect_writable_calendar_sources(
-      calendar_state().calendars_meta, writable_sources, nullptr);
+  const int writable_cnt = (writable_sources != nullptr)
+      ? collect_writable_calendar_sources(calendar_state().calendars_meta, writable_sources, nullptr)
+      : 0;
   std::string_view cal_ent{};
   if (writable_cnt > 0) {
     const int w_idx = std::clamp<int>(rs.cal.draft_cal_idx, 0, writable_cnt - 1);

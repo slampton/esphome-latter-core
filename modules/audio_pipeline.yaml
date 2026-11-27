@@ -261,7 +261,17 @@ media_player:
               if (vol_valid) last_mp_vol = v;
               if ((rs.nav.gui_page == 2 || (state_changed && rs.nav.gui_page == 1)) &&
                   rs.nav.display_power_state == 0 && !rs.voice.active) {
-                id(throttled_disp_update).execute();
+                if (!state_changed && vol_changed && !rs.nav.quick_actions_open &&
+                    rs.nav.gui_page == latter_core::PageId::MUSIC &&
+                    rs.music.view == latter_core::MusicView::AUDIO &&
+                    rs.music.drilldown == latter_core::MusicDrilldown::NONE &&
+                    rs.music.takeover == latter_core::MusicTakeover::NONE) {
+                  int vy0 = 0, vy1 = 0;
+                  latter_ui::music_volume_dirty_band(vy0, vy1);
+                  latter_ui::schedule_anim_band_disp_update(&id(disp1), vy0, vy1);
+                } else {
+                  id(throttled_disp_update).execute();
+                }
               }
             }
     on_announcement:

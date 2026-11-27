@@ -25,6 +25,7 @@ static constexpr size_t kMaxRpcFrameBytes = 230;
 static constexpr size_t kMaxRpcSlices = 32;
 static constexpr size_t kRpcQueueCapacity = 64;
 static constexpr uint32_t kMinInterFrameMs = 35U;
+static constexpr uint32_t kSleepBypassPassesMs = 200U;
 inline constexpr uint32_t kTimeoutRpcDrainId = 0x4C410011U;
 
 static constexpr size_t kPinSessionKeyBytes = 32;

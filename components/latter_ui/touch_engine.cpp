@@ -540,7 +540,8 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
     }
     if (rs.nav.home_subpage == 2) {
       int act_count = 0;
-      (void)TouchGestureEngine::resolve_home_activities_(now_touch, rs, prefs, rt_, act_count);
+      std::vector<HomeActivityItem> act_fallback;
+      (void)TouchGestureEngine::resolve_home_activities_(now_touch, rs, prefs, rt_, act_count, act_fallback);
       if (wid == WidgetId::BACK_BUTTON) {
         if (touch_router().allow_tap(now_touch, TOUCH_DEBOUNCE_BUTTON, tkey)) {
           rs.nav.home_subpage = 0;
@@ -770,16 +771,28 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
       const int min_v = ms.is_local ? 10 : 0;
       const int next_pct = std::clamp(
           static_cast<int>(std::lround((1.0f - start_vslider->norm_y(tp.y)) * 100.0f)), min_v, 100);
+      const bool was_muted = ms.muted;
       if (ms.muted && next_pct > 0) ms.muted = false;
       last_local_vol_tap_ms() = now_rel;
       if (ms.is_local) {
         rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
+        if (was_muted) {
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
       } else {
         remote_vol_pct() = next_pct;
         latter_core::emit_media_volume(TouchGestureEngine::resolve_music_speaker_entity_(rs), "set", next_pct);
+        if (!was_muted) {
+          int vy0 = 0, vy1 = SCREEN_H - 1;
+          music_volume_dirty_band(vy0, vy1);
+          rt_.schedule_band_disp(vy0, vy1);
+        } else {
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
       }
       gest.tap_cancelled = true;
-      rt_.schedule_disp();
     } else if (!gest.swipe_committed && start_slider != nullptr) {
       if (start_slider->widget_id == WidgetId::MUSIC_SCRUB_BAR &&
           rs.nav.gui_page == PageId::MUSIC && rs.music.takeover == MusicTakeover::SCRUB) {
@@ -1667,17 +1680,31 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     const int min_v = ms.is_local ? 10 : 0;
     const int next_pct = std::clamp(
         static_cast<int>(std::lround((1.0f - vsl_hit->norm_y(ty)) * 100.0f)), min_v, 100);
+    const bool was_muted = ms.muted;
     if (ms.muted && next_pct > 0) ms.muted = false;
     last_local_vol_tap_ms() = now_u;
     if (ms.is_local) {
       rt_.set_num_val(UiNumberId::SPEAKER_VOLUME, static_cast<float>(next_pct));
+      if (was_muted) {
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
     } else {
       remote_vol_pct() = next_pct;
       if (now_u - last_music_vol_drag_ms_ >= 120U) {
         last_music_vol_drag_ms_ = now_u;
         latter_core::emit_media_volume(TouchGestureEngine::resolve_music_speaker_entity_(rs), "set", next_pct);
       }
-      if (now_u - last_disp_update_ms() >= 42U) rt_.schedule_disp();
+      if (now_u - last_disp_update_ms() >= 42U) {
+        if (!was_muted) {
+          int vy0 = 0, vy1 = SCREEN_H - 1;
+          music_volume_dirty_band(vy0, vy1);
+          rt_.schedule_band_disp(vy0, vy1);
+        } else {
+          mark_dirty_full();
+          rt_.schedule_disp();
+        }
+      }
     }
     return;
   }

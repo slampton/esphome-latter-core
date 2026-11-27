@@ -660,12 +660,20 @@ bool TouchGestureEngine::handle_tap_music_(
     } else if ((wid == WidgetId::MUSIC_VOL_UP_STEP || wid == WidgetId::MUSIC_VOL_DOWN_STEP) &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       const int dir = (wid == WidgetId::MUSIC_VOL_UP_STEP) ? 1 : -1;
+      const bool was_muted = ms.muted;
       if (ms.muted && dir > 0) ms.muted = false;
       step_music_volume_feedback(dir, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
                                  ms.is_local, rt_.local_mp_volume, now_rel, m);
       m.hud_timer = now_rel;
       rt_.cmd(UiHostCmd::MUSIC_STEP_VOLUME, dir);
-      rt_.schedule_disp();
+      if (!was_muted) {
+        int vy0 = 0, vy1 = SCREEN_H - 1;
+        music_volume_dirty_band(vy0, vy1);
+        rt_.schedule_band_disp(vy0, vy1);
+      } else {
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
     } else if (wid == WidgetId::MUSIC_VOL_MUTE_BTN &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       ms.muted = !ms.muted;

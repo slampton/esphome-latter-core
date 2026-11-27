@@ -1107,13 +1107,35 @@ void render_calendar_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       ? (static_cast<int>(ctx.now.hour) * 60 + static_cast<int>(ctx.now.minute))
       : -1;
 
-  static std::vector<CalendarSourceMeta> s_sources(static_cast<size_t>(kMaxCalendarSources));
-  static std::vector<CalendarSourceMeta> s_writable(static_cast<size_t>(kMaxCalendarSources));
-  CalendarSourceMeta *sources = s_sources.data();
+  static_assert(std::is_trivially_copyable_v<CalendarSourceMeta>,
+                "CalendarSourceMeta must stay POD for evictable PSRAM scratch");
+  static CalendarSourceMeta *s_sources = nullptr;
+  static CalendarSourceMeta *s_writable = nullptr;
+  static const bool s_cal_scratch_evictor_reg = register_psram_cache_evictor([]() noexcept {
+    if (s_sources != nullptr) {
+      ui_psram_free(s_sources);
+      s_sources = nullptr;
+    }
+    if (s_writable != nullptr) {
+      ui_psram_free(s_writable);
+      s_writable = nullptr;
+    }
+  });
+  (void)s_cal_scratch_evictor_reg;
+  if (s_sources == nullptr) {
+    s_sources = static_cast<CalendarSourceMeta *>(
+        ui_psram_calloc(static_cast<size_t>(kMaxCalendarSources), sizeof(CalendarSourceMeta)));
+  }
+  if (s_writable == nullptr) {
+    s_writable = static_cast<CalendarSourceMeta *>(
+        ui_psram_calloc(static_cast<size_t>(kMaxCalendarSources), sizeof(CalendarSourceMeta)));
+  }
+  CalendarSourceMeta *sources = s_sources;
   const int source_cnt = parse_calendar_sources_meta(calendar_state().calendars_meta, sources);
-  CalendarSourceMeta *writable_sources = s_writable.data();
-  const int writable_cnt = collect_writable_calendar_sources(
-      calendar_state().calendars_meta, writable_sources, nullptr);
+  CalendarSourceMeta *writable_sources = s_writable;
+  const int writable_cnt = (writable_sources != nullptr)
+      ? collect_writable_calendar_sources(calendar_state().calendars_meta, writable_sources, nullptr)
+      : 0;
 
   if (rs.cal.drilldown == CalDrilldown::DETAIL) {
     render_calendar_detail_drilldown(it, ctx, rs, prefs, today_ymd, store, sources, source_cnt);
