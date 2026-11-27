@@ -1041,6 +1041,7 @@ void test_audio_path_and_intercom_arbitrator() {
   });
   LATTER_CHECK(av_yaml.find("id: va_echo_gate") == std::string::npos);
   LATTER_CHECK(av_yaml.find("id: send_doorbell_intercom_cmd") == std::string::npos);
+  LATTER_CHECK(av_yaml.find("codecs: [FLAC, PCM]") != std::string::npos);
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
 }
 
