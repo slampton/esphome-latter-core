@@ -252,6 +252,11 @@ struct MusicVolumeGeom {
   int hdr_title_y{44};
   int hdr_pct_y{66};
   int hdr_max_w{258};
+  int spk_hdr_x0{93};
+  int spk_hdr_y0{20};
+  int spk_hdr_w{280};
+  int spk_hdr_h{28};
+  int spk_hdr_pad{22};
   int mode_bar_top{328};
   int slider_x0{325};
   int slider_y0{85};
@@ -307,10 +312,23 @@ inline constexpr MusicVolumeGeom compute_music_volume_geom(
   g.slider_x0 = span_x0 + span_w - g.slider_w;
   g.btn_x0 = span_x0;
   g.btn_w = std::max(g.min_hit, g.slider_x0 - col_gap - g.btn_x0);
+
+  const int spk_bot_max = g.slider_y0 - 2;
+  const int spk_top_min = std::max(6, ly.hdr_y - dp_px_for(18, s));
+  g.spk_hdr_h = std::clamp(dp_px_for(28, s), 20, std::max(20, spk_bot_max - spk_top_min));
+  g.spk_hdr_y0 = std::clamp(g.hdr_title_y - g.spk_hdr_h / 2, spk_top_min, std::max(spk_top_min, spk_bot_max - g.spk_hdr_h));
+  const int spk_cy = g.spk_hdr_y0 + g.spk_hdr_h / 2;
+  const int spk_safe = band_safe_span_for(spk_cy, g.spk_hdr_h, w, h, round, wearable, 14, ly.corner_r);
+  g.spk_hdr_w = std::max(g.min_hit, std::min(dp_px_for(300, s), spk_safe));
+  if (g.spk_hdr_w > w - 8) g.spk_hdr_w = w - 8;
+  g.spk_hdr_x0 = g.cx - g.spk_hdr_w / 2;
+  g.spk_hdr_pad = std::max(0, (g.min_hit - g.spk_hdr_h + 1) / 2);
   return g;
 }
 
 inline void register_music_volume_hits(FrameHitTable &ht, const MusicVolumeGeom &g) {
+  ht.add_rect(g.spk_hdr_x0, g.spk_hdr_y0, g.spk_hdr_w, g.spk_hdr_h,
+              WidgetId::MUSIC_SPEAKER_PICKER_BTN, kHitTap | kHitFocusSlot, 0, g.spk_hdr_pad);
   ht.add_rect(g.slider_x0, g.slider_y0, g.slider_w, g.slider_h,
               WidgetId::MUSIC_VOL_SLIDER, kHitTap | kHitVertSlider | kHitFocusSlot);
   ht.add_rect(g.btn_x0, g.up_y0, g.btn_w, g.btn_h,

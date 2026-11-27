@@ -427,7 +427,12 @@ void test_live_touch_engine_end_to_end_5geom() {
     const HitRegion *prev_r = frame_hits().find_by_id(WidgetId::MUSIC_PREV_BTN);
     const HitRegion *play_r = frame_hits().find_by_id(WidgetId::MUSIC_PLAY_PAUSE);
     const HitRegion *next_r = frame_hits().find_by_id(WidgetId::MUSIC_NEXT_BTN);
+    const auto np_chk = compute_music_now_playing_geom(
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
     LATTER_CHECK(prev_r != nullptr && play_r != nullptr && next_r != nullptr);
+    LATTER_CHECK(play_r->cx() == np_chk.play_cx && play_r->cy() == np_chk.transport_cy);
+    LATTER_CHECK(prev_r->cx() == np_chk.prev_cx && prev_r->cy() == np_chk.transport_cy);
+    LATTER_CHECK(next_r->cx() == np_chk.next_cx && next_r->cy() == np_chk.transport_cy);
 
     // Tap Play/Pause with a small vertical finger wobble (> drag_start, < tap_max):
     // must NOT start lyrics scroll and must fire TOGGLE_HA_MUSIC cleanly.
@@ -474,27 +479,136 @@ void test_live_touch_engine_end_to_end_5geom() {
     eng.on_touch_up(14330U);
     LATTER_CHECK(!rs.music.hud_active);
 
-    // 6. Mode-bar horizontal swipe with initial vertical thumb jitter on Music SPEAKERS -> advances to VOLUME
-    rs.nav.gui_page = PageId::MUSIC;
-    rs.music.view = MusicView::SPEAKERS;
-    rs.music.drilldown = MusicDrilldown::NONE;
-    rs.music.takeover = MusicTakeover::NONE;
-    dirty_band() = DirtyBandTracker{};
-    (void)dirty_band().begin_frame(PageId::MUSIC, compute_active_subpage_id(), 0U, true);
-    frame_hits().clear();
-    render_active_page(fix.surf, fix.ctx);
+    // 6. Mode-bar horizontal swipe vs canvas swipe + MODE_BAR_RIGHT/LEFT chevrons across Music, Area & Home Hub
+    {
+      const KinematicMetrics km_cur = KinematicMetrics::for_ppi(LATTER_PANEL_PPI);
+      const int mb_y = std::min(layout().home_zone_y() - 6, layout().app_dock_y + layout().dock_r / 2);
+      const int canvas_y = std::max(layout().hdr_y + 40, layout().mode_bar_zone_top() - 40);
+      const int start_x = std::min(SCREEN_W - 24, SCREEN_CX + km_cur.swipe_live_px * 2);
 
-    const KinematicMetrics km_cur = KinematicMetrics::for_ppi(LATTER_PANEL_PPI);
-    const int mb_y = std::min(layout().home_zone_y() - 6, layout().app_dock_y + layout().dock_r / 2);
-    const int start_x = std::min(SCREEN_W - 24, SCREEN_CX + km_cur.swipe_live_px * 2);
-    eng.on_touch_down(start_x, mb_y, 15000U);
-    eng.on_touch_move(start_x - 2, mb_y - km_cur.axis_lock_px - 2, 15025U);
-    eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), mb_y, 15110U);
-    eng.on_touch_up(15140U);
-    LATTER_CHECK(rs.music.view == MusicView::VOLUME);
+      // Music: canvas swipe advances active tab 1-by-1 (LYRICS -> LIBRARY)
+      rs.nav.gui_page = PageId::MUSIC;
+      rs.music.view = MusicView::LYRICS;
+      rs.music.drilldown = MusicDrilldown::NONE;
+      rs.music.takeover = MusicTakeover::NONE;
+      rs.music.hud_active = true;
+      rs.music.hud_timer = 15000U;
+      rs.music.mode_bar_win_start = 0;
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::MUSIC, compute_active_subpage_id(), 0U, true);
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+
+      eng.on_touch_down(start_x, canvas_y, 15000U);
+      eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 2), canvas_y, 15055U);
+      eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), canvas_y, 15110U);
+      eng.on_touch_up(15140U);
+      LATTER_CHECK(rs.music.view == MusicView::LIBRARY);
+
+      // Music: on 4-slot geometries (kMusicPeerTabCount > dock_slot_count), mode-bar swipe & chevrons
+      // page mode_bar_win_start without changing rs.music.view.
+      const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+      if (kMusicPeerTabCount > vis_cap) {
+        rs.music.view = MusicView::LYRICS;
+        rs.music.mode_bar_win_start = 0;
+        rs.music.hud_active = true;
+        rs.music.hud_timer = 15200U;
+        frame_hits().clear();
+        render_active_page(fix.surf, fix.ctx);
+
+        eng.on_touch_down(start_x, mb_y, 15200U);
+        eng.on_touch_move(start_x - 2, mb_y - km_cur.axis_lock_px - 2, 15225U);
+        eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), mb_y, 15310U);
+        eng.on_touch_up(15340U);
+        LATTER_CHECK(rs.music.view == MusicView::LYRICS);
+        LATTER_CHECK(rs.music.mode_bar_win_start == kMusicPeerTabCount - vis_cap);
+
+        frame_hits().clear();
+        render_active_page(fix.surf, fix.ctx);
+        const HitRegion *mb_l = frame_hits().find_by_id(WidgetId::MODE_BAR_LEFT);
+        LATTER_CHECK(mb_l != nullptr);
+        eng.on_touch_down(mb_l->cx(), mb_l->cy(), 15500U);
+        eng.on_touch_up(15520U);
+        LATTER_CHECK(rs.music.view == MusicView::LYRICS);
+        LATTER_CHECK(rs.music.mode_bar_win_start == 0);
+      }
+
+      // Music AUDIO header speaker pill -> SPEAKER_PICKER -> Back -> AUDIO; TRACK hub -> TRACK_INFO -> Back -> TRACK
+      activate_music_peer_tab(MusicView::AUDIO, 15600U);
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+      const HitRegion *spk_btn = frame_hits().find_by_id(WidgetId::MUSIC_SPEAKER_PICKER_BTN);
+      LATTER_CHECK(spk_btn != nullptr);
+      eng.on_touch_down(spk_btn->cx(), spk_btn->cy(), 15650U);
+      eng.on_touch_up(15670U);
+      LATTER_CHECK(rs.music.view == MusicView::AUDIO && rs.music.drilldown == MusicDrilldown::SPEAKER_PICKER);
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+      const HitRegion *back_spk = frame_hits().find_by_id(WidgetId::BACK_BUTTON);
+      LATTER_CHECK(back_spk != nullptr);
+      eng.on_touch_down(back_spk->cx(), back_spk->cy(), 15800U);
+      eng.on_touch_up(15820U);
+      LATTER_CHECK(rs.music.view == MusicView::AUDIO && rs.music.drilldown == MusicDrilldown::NONE);
+
+      activate_music_peer_tab(MusicView::TRACK, 15900U);
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+      const HitRegion *info_row = frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::LIST_SLOT_BASE + 2));
+      LATTER_CHECK(info_row != nullptr);
+      eng.on_touch_down(info_row->cx(), info_row->cy(), 15950U);
+      eng.on_touch_up(15970U);
+      LATTER_CHECK(rs.music.view == MusicView::TRACK && rs.music.drilldown == MusicDrilldown::TRACK_INFO);
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+      const HitRegion *back_trk = frame_hits().find_by_id(WidgetId::BACK_BUTTON);
+      LATTER_CHECK(back_trk != nullptr);
+      eng.on_touch_down(back_trk->cx(), back_trk->cy(), 16100U);
+      eng.on_touch_up(16120U);
+      LATTER_CHECK(rs.music.view == MusicView::TRACK && rs.music.drilldown == MusicDrilldown::NONE);
+
+      // Area Control: mode-bar swipe pages window without switching active category (7 categories > max 6 slots)
+      area_ctx_state().epoch = 1U;
+      area_available_domains_csv() = "scene,light,cover,fan,switch,climate,media";
+      rs.nav.gui_page = PageId::AREA;
+      rs.nav.area_subpage = AreaSubpage::OVERVIEW;
+      rs.area.browse_mode = "entities";
+      rs.area.domain_filter = "scene";
+      area_cat_dock_page() = 0;
+      frame_hits().clear();
+      render_active_page(fix.surf, fix.ctx);
+      eng.on_touch_down(start_x, mb_y, 16200U);
+      eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), mb_y, 16290U);
+      eng.on_touch_up(16310U);
+      LATTER_CHECK(rs.area.domain_filter == "scene");
+      LATTER_CHECK(area_cat_dock_page() > 0);
+      // Area Control: canvas swipe advances active category 1-by-1
+      eng.on_touch_down(start_x, canvas_y, 16350U);
+      eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), canvas_y, 16440U);
+      eng.on_touch_up(16460U);
+      LATTER_CHECK(rs.area.domain_filter == "light");
+
+      // Home Hub: on <=4-slot displays (5 tabs > 4 slots), mode-bar swipe pages window without changing tab
+      area_ctx_state().home_categories = "alarm,intercom,thermostat,entry,vacuum";
+      rs.nav.gui_page = PageId::HOME_HUB;
+      home_hub_tab() = HomeHubTab::ALARM;
+      home_hub_mode_bar_page() = 0;
+      if (5 > vis_cap) {
+        frame_hits().clear();
+        render_active_page(fix.surf, fix.ctx);
+        eng.on_touch_down(start_x, mb_y, 16480U);
+        eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), mb_y, 16560U);
+        eng.on_touch_up(16580U);
+        LATTER_CHECK(home_hub_tab() == HomeHubTab::ALARM);
+        LATTER_CHECK(home_hub_mode_bar_page() > 0);
+      }
+      eng.on_touch_down(start_x, canvas_y, 16600U);
+      eng.on_touch_move(std::max(12, start_x - km_cur.swipe_live_px * 3), canvas_y, 16680U);
+      eng.on_touch_up(16700U);
+      LATTER_CHECK(home_hub_tab() == HomeHubTab::INTERCOM);
+    }
 
     // 7. Peer-tab browse debouncing: rapid tab traversal cancels intermediate RPCs and emits only
-    // the settled tab once the 380 ms debounce fires, without latching lyrics.track_key on pass-through.
+    // zero pass-through fetches (even across TRACK & LYRICS), latching lyrics.track_key only when settled.
     {
       struct DebounceSink {
         uint32_t armed_id{0};
@@ -532,35 +646,25 @@ void test_live_touch_engine_end_to_end_5geom() {
       media_state().album = "13 Songs";
       media_state().active_speaker = "media_player.pocket_assistant_music";
 
-      activate_music_peer_tab(MusicView::SPEAKERS, 16000U);
-      activate_music_peer_tab(MusicView::QUEUE, 16050U);
-      activate_music_peer_tab(MusicView::LYRICS, 16100U);
-      activate_music_peer_tab(MusicView::ALBUM_TRACKS, 16150U);
+      activate_music_peer_tab(MusicView::NOW_PLAYING, 16500U);
+      activate_music_peer_tab(MusicView::LYRICS, 16550U);
+      activate_music_peer_tab(MusicView::LIBRARY, 16600U);
+      activate_music_peer_tab(MusicView::AUDIO, 16650U);
+      activate_music_peer_tab(MusicView::TRACK, 16700U);
 
       // Zero RPCs emitted during rapid traversal; lyrics.track_key stayed empty on pass-through.
-      uint32_t pump_t = 16200U;
+      uint32_t pump_t = 16750U;
       while (latter_rpc::has_pending_frames()) {
         latter_rpc::step_outbox_loop(pump_t += 40U);
       }
       LATTER_CHECK(deb_box.published.empty());
       LATTER_CHECK(rs.music.lyrics.track_key.empty());
-      LATTER_CHECK(d_sink.armed_id == kTimeoutMusicPeerBrowseId && d_sink.armed_delay == 380U && d_sink.pending);
-
-      // Settle on ALBUM_TRACKS -> fires single-chunk current_album_tracks RPC only.
-      auto cb = std::move(d_sink.pending);
-      cb();
-      while (latter_rpc::has_pending_frames()) {
-        latter_rpc::step_outbox_loop(pump_t += 40U);
-      }
-      LATTER_CHECK(deb_box.published.size() == 1U);
-      LATTER_CHECK(deb_box.published[0].find(":1/1|") != std::string::npos);
-      LATTER_CHECK(deb_box.published[0].find("\"mode\":\"current_album_tracks\"") != std::string::npos);
+      LATTER_CHECK(!d_sink.pending);
 
       // Returning to LYRICS and settling must still fetch lyrics cleanly (not stuck from pass-through).
-      deb_box.published.clear();
-      activate_music_peer_tab(MusicView::LYRICS, 16600U);
-      LATTER_CHECK(d_sink.pending);
-      cb = std::move(d_sink.pending);
+      activate_music_peer_tab(MusicView::LYRICS, 16900U);
+      LATTER_CHECK(d_sink.armed_id == kTimeoutMusicPeerBrowseId && d_sink.armed_delay == 380U && d_sink.pending);
+      auto cb = std::move(d_sink.pending);
       cb();
       while (latter_rpc::has_pending_frames()) {
         latter_rpc::step_outbox_loop(pump_t += 40U);

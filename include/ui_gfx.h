@@ -780,8 +780,10 @@ struct ArtCanvasCache {
   int16_t row_len[SCREEN_H];
 };
 
+inline constexpr int kArtDimMusicHud = 1;
 inline constexpr int kArtDimMenu = 2;
 inline constexpr int kArtDimLyrics = 3;
+inline constexpr int kArtDimLyricsHud = 4;
 inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 
 // PSRAM byte-budgeted cache sizing so large landscape displays (e.g. 1280x800 = 2 MB/frame)
@@ -833,7 +835,8 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
                                   bool is_standard, bool is_letterbox, bool apply_scrim,
                                   bool show_metadata, int dim_level = 0);
 bool render_lyrics_art_backdrop_view(Rgb565Surface &it, ArtImageView target_art, int cx,
-                                     UiColor theme_primary, UiColor col_bg = kChromeShadow);
+                                     UiColor theme_primary, UiColor col_bg = kChromeShadow,
+                                     int dim_level = kArtDimLyrics);
 bool render_page_wallpaper_base_view(Rgb565Surface &it, ArtImageView wallpaper_img,
                                      bool has_wallpaper, int cx, UiColor col_bg, int dim_level = 0);
 
@@ -854,9 +857,10 @@ inline bool render_album_art_canvas(DisplayT &it, ArtImageView target_art, int c
 
 template <typename DisplayT>
 inline bool render_lyrics_art_backdrop(DisplayT &it, ArtImageView target_art, int cx,
-                                       UiColor theme_primary, UiColor col_bg = kChromeShadow) {
+                                       UiColor theme_primary, UiColor col_bg = kChromeShadow,
+                                       int dim_level = kArtDimLyrics) {
   Rgb565Surface surf(it);
-  return render_lyrics_art_backdrop_view(surf, target_art, cx, theme_primary, col_bg);
+  return render_lyrics_art_backdrop_view(surf, target_art, cx, theme_primary, col_bg, dim_level);
 }
 
 template <typename DisplayT>

@@ -632,16 +632,22 @@ int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int 
     if (yy >= y_b) return v_b;
     return v_a + ((v_b - v_a) * (yy - y_a)) / (y_b - y_a);
   };
+  if (dim_level == kArtDimLyricsHud) return 64;
   if (dim_level == kArtDimLyrics) {
     const int top_y0 = dp_px(52);
     const int top_y1 = dp_px(104);
     const int bot_y0 = SCREEN_H - dp_px(104);
     const int bot_y1 = SCREEN_H - dp_px(52);
-    if (y < top_y1) return ramp(y, top_y0, 108, top_y1, 132);
-    if (y > bot_y0) return ramp(y, bot_y0, 132, bot_y1, 108);
-    return 132;
+    if (y < top_y1) return ramp(y, top_y0, 64, top_y1, 84);
+    if (y > bot_y0) return ramp(y, bot_y0, 84, bot_y1, 64);
+    return 84;
   }
   if (dim_level >= kArtDimMenu) return 64;
+  if (dim_level == kArtDimMusicHud) {
+    if (show_controls) return 96;
+    if (show_metadata) return ramp(y, dp_px(104), 96, dp_px(148), 256);
+    return 256;
+  }
   if (show_controls) return 140;
   if (show_metadata) return ramp(y, dp_px(104), 140, dp_px(148), 256);
   return 256;
@@ -846,9 +852,15 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
     const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
     const int step_x = (src_w << 12) / r.w;
     const int step_y = (src_h << 12) / r.h;
-    const int mul_q8 = (dim_level == kArtDimLyrics)
-                           ? 132
-                           : ((dim_level >= kArtDimMenu) ? 64 : (apply_scrim ? 140 : 256));
+    const int mul_q8 = (dim_level == kArtDimLyricsHud)
+                           ? 64
+                           : ((dim_level == kArtDimLyrics)
+                                  ? 84
+                                  : ((dim_level >= kArtDimMenu)
+                                         ? 64
+                                         : ((dim_level == kArtDimMusicHud)
+                                                ? (apply_scrim ? 96 : 256)
+                                                : (apply_scrim ? 140 : 256))));
     int curr_y = 0;
     for (int y = 0; y < r.h; y++) {
       const int sy = std::min(src_h - 1, curr_y >> 12);
@@ -1246,10 +1258,10 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
 }
 
 bool render_lyrics_art_backdrop_view(Rgb565Surface &it, ArtImageView target_art, int cx,
-                                     UiColor theme_primary, UiColor col_bg) {
+                                     UiColor theme_primary, UiColor col_bg, int dim_level) {
   if (target_art.valid() &&
       render_album_art_canvas_view(it, target_art, cx, /*is_standard=*/false, /*is_letterbox=*/false,
-                                   /*apply_scrim=*/true, /*show_metadata=*/false, kArtDimLyrics)) {
+                                   /*apply_scrim=*/true, /*show_metadata=*/false, dim_level)) {
     return true;
   }
   frame_base_claim();

@@ -273,5 +273,18 @@ inline void sync_mode_bar_window(int &win_start, int active_idx, int total_count
   win_start = std::max(0, std::min(total_count - cap, win_start));
 }
 
+inline bool step_mode_bar_window_page(int &win_start, int h_dir, int total_count, int vis_slots = 4) noexcept {
+  const int cap = (vis_slots > 1) ? vis_slots : 1;
+  if (total_count <= cap || h_dir == 0) {
+    win_start = 0;
+    return false;
+  }
+  const int max_start = total_count - cap;
+  const int cur = get_mode_bar_start_index(total_count, win_start, cap);
+  const int next = std::clamp(cur + ((h_dir > 0) ? cap : -cap), 0, max_start);
+  win_start = next;
+  return next != cur;
+}
+
 
 }  // namespace latter_core

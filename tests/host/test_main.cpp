@@ -87,15 +87,23 @@ void test_music_app_v3_d059() {
                       static_cast<int16_t>(i), np.mode_bar_pad);
       }
       check_zero_aabb_overlaps(ht, p.w, p.h);
+      LATTER_CHECK(lg.transport_cy == np.transport_cy);
+      LATTER_CHECK(lg.prev_cx == np.prev_cx);
+      LATTER_CHECK(lg.play_cx == np.play_cx);
+      LATTER_CHECK(lg.next_cx == np.next_cx);
+      LATTER_CHECK(lg.play_r == np.play_r);
+      LATTER_CHECK(lg.side_r == np.side_r);
+      LATTER_CHECK(lg.play_hit_r == np.play_hit_r);
+      LATTER_CHECK(lg.side_hit_r == np.side_hit_r);
       for (uint16_t wid : {WidgetId::MUSIC_PREV_BTN, WidgetId::MUSIC_PLAY_PAUSE, WidgetId::MUSIC_NEXT_BTN}) {
         const HitRegion *r = ht.find_by_id(wid);
         LATTER_CHECK(r != nullptr && pad_w(r) >= min_hit && pad_h(r) >= min_hit);
         LATTER_CHECK(is_inside_bezel_for(r->cx(), r->cy(), p.w, p.h, p.round, p.wearable, 1));
-        LATTER_CHECK(lg.vp_bot < (r->y0 - static_cast<int>(r->hit_pad)));
         LATTER_CHECK((r->y1 + static_cast<int>(r->hit_pad)) < (np.mode_bar_cy - np.mode_bar_r - np.mode_bar_pad));
       }
       LATTER_CHECK((lg.prev_cx + lg.side_hit_r) < (lg.play_cx - lg.play_hit_r));
       LATTER_CHECK((lg.play_cx + lg.play_hit_r) < (lg.next_cx - lg.side_hit_r));
+      LATTER_CHECK(lg.vp_bot <= (np.mode_bar_cy - np.mode_bar_r - np.mode_bar_pad));
       const int anchor_y = (p.h * 38) / 100;
       LATTER_CHECK(anchor_y <= lg.vp_bot - 28);
       if (p.w > 520) {
@@ -108,6 +116,8 @@ void test_music_app_v3_d059() {
       const auto vg = compute_music_volume_geom(p.w, p.h, p.round, p.wearable, p.ppi);
       register_music_volume_hits(ht, vg);
       check_zero_aabb_overlaps(ht, p.w, p.h);
+      const HitRegion *spk_h = ht.find_by_id(WidgetId::MUSIC_SPEAKER_PICKER_BTN);
+      LATTER_CHECK(spk_h != nullptr && pad_w(spk_h) >= min_hit && pad_h(spk_h) >= min_hit);
       const HitRegion *vsl = ht.find_by_id(WidgetId::MUSIC_VOL_SLIDER);
       LATTER_CHECK(vsl != nullptr && (vsl->flags & kHitVertSlider) != 0U);
       LATTER_CHECK(vsl->width() >= min_hit && vsl->height() >= min_hit);
@@ -163,7 +173,8 @@ void test_music_app_v3_d059() {
     const auto np_self = compute_music_now_playing_geom(
         SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
     const int min_hit_self = mm_to_px_for(7.0f, LATTER_PANEL_PPI);
-    const int max_ws_self = std::max(0, kMusicPeerTabCount - np_self.mode_slot_count);
+    const int vis_slots_self = std::min(np_self.mode_slot_count, kMusicPeerTabCount);
+    const int max_ws_self = std::max(0, kMusicPeerTabCount - vis_slots_self);
     for (int win_start = 0; win_start <= max_ws_self; ++win_start) {
       fix.fill(0U);
       frame_hits().clear();
@@ -172,7 +183,7 @@ void test_music_app_v3_d059() {
                    UiColor::WHITE, UiColor::WHITE,
                    [](Rgb565Surface &, int, int, int, int, UiColor, bool, void *) {});
       check_zero_aabb_overlaps(frame_hits(), SCREEN_W, SCREEN_H);
-      for (int i = 0; i < np_self.mode_slot_count; ++i) {
+      for (int i = 0; i < vis_slots_self; ++i) {
         const HitRegion *slot_r =
             frame_hits().find_by_id(static_cast<uint16_t>(WidgetId::MODE_BAR_SLOT_BASE + i));
         LATTER_CHECK(slot_r != nullptr && slot_r->param == win_start + i);
@@ -181,21 +192,34 @@ void test_music_app_v3_d059() {
       if (win_start > 0 && (np_self.mode_slot_xs[0] - np_self.mode_bar_r) >= 8) {
         LATTER_CHECK(frame_hits().find_by_id(WidgetId::MODE_BAR_LEFT) != nullptr);
       }
-      if (win_start + np_self.mode_slot_count < kMusicPeerTabCount &&
-          (SCREEN_W - (np_self.mode_slot_xs[np_self.mode_slot_count - 1] + np_self.mode_bar_r + 1)) >= 8) {
+      if (win_start + vis_slots_self < kMusicPeerTabCount &&
+          (SCREEN_W - (np_self.mode_slot_xs[vis_slots_self - 1] + np_self.mode_bar_r + 1)) >= 8) {
         LATTER_CHECK(frame_hits().find_by_id(WidgetId::MODE_BAR_RIGHT) != nullptr);
       }
     }
+    const auto vg_self = compute_music_volume_geom(
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+    frame_hits().clear();
+    register_music_volume_hits(frame_hits(), vg_self);
+    check_zero_aabb_overlaps(frame_hits(), SCREEN_W, SCREEN_H);
   }
 
   {
-    static_assert(kMusicPeerTabCount == 9);
-    static_assert(static_cast<int>(MusicView::SETTINGS) == 8);
-    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, +1) == MusicView::LIBRARY);
-    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, -1) == MusicView::SETTINGS);
+    static_assert(kMusicPeerTabCount == 5);
+    static_assert(static_cast<int>(MusicView::TRACK) == 4);
+    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, +1) == MusicView::LYRICS);
+    LATTER_CHECK(step_music_peer_tab(MusicView::NOW_PLAYING, -1) == MusicView::TRACK);
+
+    int mb_win = 0;
+    LATTER_CHECK(step_mode_bar_window_page(mb_win, +1, kMusicPeerTabCount, 4));
+    LATTER_CHECK(mb_win == 1);
+    LATTER_CHECK(!step_mode_bar_window_page(mb_win, +1, kMusicPeerTabCount, 4));
+    LATTER_CHECK(step_mode_bar_window_page(mb_win, -1, kMusicPeerTabCount, 4));
+    LATTER_CHECK(mb_win == 0);
+    LATTER_CHECK(!step_mode_bar_window_page(mb_win, +1, kMusicPeerTabCount, 5));
 
     MusicRuntimeState m{};
-    m.view = MusicView::VOLUME;
+    m.view = MusicView::AUDIO;
     m.hud_active = true;
     m.hud_timer = 1000U;
     LATTER_CHECK(step_music_hud_auto_fade(m, 6000U, "Art Only").sprung_back_to_now_playing);
@@ -331,18 +355,20 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(mu_src.find("MusicDrilldown::SETTINGS") == std::string::npos);
     LATTER_CHECK(mu_src.find("ui::draw_icon_play_pause(") != std::string::npos);
     LATTER_CHECK(mu_src.find("ui::draw_icon_hamburger(") != std::string::npos);
-    LATTER_CHECK(mu_src.find("ui::draw_icon_gear(") != std::string::npos);
     LATTER_CHECK(mu_src.find("render_lyrics_art_backdrop(") != std::string::npos);
     LATTER_CHECK(mu_src.find("register_music_list_row_hits(") != std::string::npos);
-    LATTER_CHECK(mu_src.find("case MusicView::SETTINGS:") != std::string::npos);
+    LATTER_CHECK(mu_src.find("case MusicView::SETTINGS:") == std::string::npos);
+    LATTER_CHECK(mu_src.find("case MusicView::AUDIO:") != std::string::npos);
+    LATTER_CHECK(mu_src.find("case MusicView::TRACK:") != std::string::npos);
 
     LATTER_CHECK(te_src.find("MUSIC_ROW_MORE_BASE") == std::string::npos);
     LATTER_CHECK(te_src.find("MusicDrilldown::SETTINGS") == std::string::npos);
     LATTER_CHECK(te_src.find("activate_music_peer_tab(") != std::string::npos);
+    LATTER_CHECK(te_src.find("enter_music_drilldown(") != std::string::npos);
     LATTER_CHECK(te_src.find("MUSIC_ROW_PLAY_BASE") != std::string::npos);
 
     LATTER_CHECK(lay_src.find("std::abs(new_start - target_start) > 9") != std::string::npos);
-    LATTER_CHECK(sys_yaml.find("rs.music.view == MusicView::SETTINGS") != std::string::npos);
+    LATTER_CHECK(sys_yaml.find("rs.music.view == MusicView::SETTINGS") == std::string::npos);
     LATTER_CHECK(wid_chr_src.find("draw_icon_play_pause(") != std::string::npos);
     LATTER_CHECK(wid_chr_src.find("draw_icon_hamburger(") != std::string::npos);
 
@@ -355,6 +381,8 @@ void test_music_app_v3_d059() {
     const size_t art_e = gfx_art_src.find("void art_letterbox_bounds(", art_s);
     LATTER_CHECK(art_s != std::string::npos && art_e != std::string::npos);
     const std::string art_fn = gfx_art_src.substr(art_s, art_e - art_s);
+    LATTER_CHECK(art_fn.find("return 96;") != std::string::npos);
+    LATTER_CHECK(art_fn.find("ramp(y, dp_px(104), 96, dp_px(148), 256)") != std::string::npos);
     LATTER_CHECK(art_fn.find("return 140;") != std::string::npos);
     LATTER_CHECK(art_fn.find("ramp(y, dp_px(104), 140, dp_px(148), 256)") != std::string::npos);
 
@@ -370,11 +398,11 @@ void test_music_app_v3_d059() {
 
     const std::string lyr_fn = slice_in(mu_src, "void render_music_lyrics_view(", "void render_music_info_view(");
     const std::string info_fn = slice_in(mu_src, "void render_music_info_view(", "int compute_two_line_half_gap(");
-    const std::string sheet_fn = slice_in(mu_src, "void render_music_action_sheet_takeover(", "void render_music_settings_view(");
-    const std::string set_fn = slice_in(mu_src, "void render_music_settings_view(", "void render_music_browse_views(");
+    const std::string sheet_fn = slice_in(mu_src, "void render_music_action_sheet_takeover(", "void render_music_track_root_view(");
+    const std::string trk_fn = slice_in(mu_src, "void render_music_track_root_view(", "void render_music_browse_views(");
     const std::string scrub_fn = slice_in(mu_src, "void render_scrub_takeover(", "void render_now_playing_view(");
-    const std::string np_fn = slice_in(mu_src, "void render_now_playing_view(", "void render_volume_peer_tab(");
-    const std::string vol_fn = slice_in(mu_src, "void render_volume_peer_tab(", "void render_music_page(");
+    const std::string np_fn = slice_in(mu_src, "void render_now_playing_view(", "void render_audio_peer_tab(");
+    const std::string vol_fn = slice_in(mu_src, "void render_audio_peer_tab(", "void render_music_page(");
     const std::string page_fn = slice_in(mu_src, "void render_music_page(", "");
 
     LATTER_CHECK(scrub_fn.find("render_card_box(") == std::string::npos);
@@ -383,10 +411,10 @@ void test_music_app_v3_d059() {
                  sheet_fn.find("render_card_box(", first_sheet_card + 1U) == std::string::npos);
     LATTER_CHECK(lyr_fn.find("render_card_box(") == std::string::npos);
     LATTER_CHECK(info_fn.find("render_card_box(") == std::string::npos);
-    LATTER_CHECK(set_fn.find("render_music_stadium_mode_bar(") != std::string::npos);
-    LATTER_CHECK(set_fn.find("render_back_button(") == std::string::npos);
-    LATTER_CHECK(np_fn.find("/*dim_level=*/0") != std::string::npos);
-    LATTER_CHECK(vol_fn.find("/*dim_level=*/0") != std::string::npos);
+    LATTER_CHECK(trk_fn.find("render_music_stadium_mode_bar(") != std::string::npos);
+    LATTER_CHECK(trk_fn.find("render_back_button(") == std::string::npos);
+    LATTER_CHECK(np_fn.find("kArtDimMusicHud") != std::string::npos);
+    LATTER_CHECK(vol_fn.find("kArtDimMusicHud") != std::string::npos);
 
     const size_t sheet_guard = page_fn.find("m.takeover == MusicTakeover::ACTION_SHEET");
     const size_t browse_call = page_fn.find("render_music_browse_views(");

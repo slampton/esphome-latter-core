@@ -181,7 +181,8 @@ int TouchGestureEngine::fetch_music_browse_for_current_view_(const DeviceRuntime
 bool TouchGestureEngine::open_music_row_action_sheet_(int slot_idx, DeviceRuntimeState &rs, uint32_t now_ms) {
   if (slot_idx < 0 || slot_idx >= LATTER_SLOT_COUNT) return false;
   const auto &sl = rs.music_slots()[slot_idx];
-  const bool is_queue = (rs.music.view == MusicView::QUEUE);
+  const bool is_queue = (rs.music.view == MusicView::TRACK &&
+                         rs.music.drilldown == MusicDrilldown::TRACK_QUEUE);
   if (sl.name.empty() || sl.type == "text") return false;
   if (!is_queue && sl.id.empty()) return false;
   if (is_queue && sl.id.empty() && sl.queue_item_id.empty()) return false;
@@ -211,8 +212,37 @@ bool TouchGestureEngine::handle_music_back_step_(DeviceRuntimeState &rs, const U
     return true;
   }
   if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS) {
+    m.drilldown = MusicDrilldown::SPEAKER_PICKER;
+    m.target_speaker_id.clear();
+    m.target_speaker_name.clear();
+    m.hud_active = true;
+    m.hud_timer = now_ms;
+    mark_dirty_full();
+    rt.schedule_disp();
+    return true;
+  }
+  if (m.drilldown == MusicDrilldown::SPEAKER_PICKER ||
+      m.drilldown == MusicDrilldown::TRACK_QUEUE ||
+      m.drilldown == MusicDrilldown::TRACK_ALBUM ||
+      m.drilldown == MusicDrilldown::TRACK_INFO) {
+    cancel_core_timeout(kTimeoutMusicPeerBrowseId);
+    if (m.direct_nav) {
+      m.direct_nav = false;
+      reset_music_to_now_playing(rs, now_ms, true);
+      if (TouchGestureEngine::return_from_shortcut_origin_(rs, rt, now_ms)) return true;
+      mark_dirty_full();
+      rt.schedule_disp();
+      return true;
+    }
     m.drilldown = MusicDrilldown::NONE;
     m.target_speaker_id.clear();
+    m.target_speaker_name.clear();
+    if (m.view == MusicView::AUDIO) {
+      m.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
+    } else {
+      m.selected_category_mode = "track_menu";
+      m.selected_category_title = "TRACK";
+    }
     m.hud_active = true;
     m.hud_timer = now_ms;
     mark_dirty_full();
@@ -280,6 +310,58 @@ void request_music_lyrics_refresh(const std::string &track_key, const std::strin
   latter_core::emit_music_lyrics_fetch(track_key, speaker_entity, now_ms);
 }
 
+void enter_music_drilldown(MusicView tab, MusicDrilldown drill, uint32_t now_ms) {
+  cancel_core_timeout(kTimeoutMusicPeerBrowseId);
+  auto &rs = runtime_state();
+  const auto &rt = touch_engine().runtime();
+  auto &m = rs.music;
+
+  m.reset_overlays();
+  m.clear_lyrics_auto_state();
+  m.hud_active = true;
+  m.hud_timer = now_ms;
+  rs.nav.menu_scroll_active = false;
+  m.view = tab;
+  m.drilldown = drill;
+  m.sync_carousel_for_view(layout().dock_slot_count);
+
+  std::string t_title, t_artist, t_album;
+  bool is_speech = false;
+  resolve_music_track_strings(rs, rt, t_title, t_artist, t_album, is_speech);
+
+  auto fetch_now = [&](const char *mode, std::string title, const char *loading_msg) {
+    m.selected_category_mode = mode;
+    m.selected_category_title = std::move(title);
+    rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
+    rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
+    reset_music_loading_slots(rs, loading_msg);
+    TouchGestureEngine::fetch_music_browse_for_current_view_(rs, now_ms);
+  };
+
+  switch (drill) {
+    case MusicDrilldown::SPEAKER_PICKER:
+      fetch_now("speakers", "SPEAKERS", "Loading...");
+      break;
+    case MusicDrilldown::TRACK_QUEUE:
+      fetch_now("active_queue", "PLAYBACK QUEUE", "Loading queue...");
+      break;
+    case MusicDrilldown::TRACK_ALBUM:
+      m.drilldown_album_id = !t_album.empty() ? t_album : t_artist;
+      fetch_now(
+          is_speech ? "podcast_episodes" : "current_album_tracks",
+          t_album.empty() ? std::string(is_speech ? "EPISODES" : "ALBUM TRACKS") : t_album,
+          is_speech ? "Loading episodes..." : "Loading album tracks...");
+      break;
+    case MusicDrilldown::TRACK_INFO:
+      m.info_scroll_px = 0;
+      m.drilldown_album_id = t_title + "|" + t_artist + "|" + t_album;
+      fetch_now("bio", "TRACK INFO", "Loading...");
+      break;
+    default:
+      break;
+  }
+}
+
 void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
   static constexpr uint32_t kMusicPeerBrowseDebounceMs = 380U;
   cancel_core_timeout(kTimeoutMusicPeerBrowseId);
@@ -287,10 +369,8 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
   const auto &rt = touch_engine().runtime();
   auto &m = rs.music;
 
-  m.drilldown = MusicDrilldown::NONE;
-  m.takeover = MusicTakeover::NONE;
+  m.reset_overlays();
   m.clear_lyrics_auto_state();
-  m.target_speaker_id.clear();
   m.hud_active = true;
   m.hud_timer = now_ms;
   rs.nav.menu_scroll_active = false;
@@ -301,47 +381,8 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
   bool is_speech = false;
   resolve_music_track_strings(rs, rt, t_title, t_artist, t_album, is_speech);
 
-  auto prime_browse = [&](const char *mode, std::string title, const char *loading_msg) {
-    m.selected_category_mode = mode;
-    m.selected_category_title = std::move(title);
-    rs.slot_page_for(latter_rpc::SlotChannel::MUSIC) = 1;
-    rs.slot_total_pages_for(latter_rpc::SlotChannel::MUSIC) = 1;
-    reset_music_loading_slots(rs, loading_msg);
-    if (core_timeout_bridge().schedule_fn != nullptr) {
-      const MusicView expected_view = target;
-      schedule_core_timeout(kTimeoutMusicPeerBrowseId, kMusicPeerBrowseDebounceMs, [expected_view]() {
-        const auto &rs_now = runtime_state();
-        if (rs_now.nav.gui_page != PageId::MUSIC ||
-            rs_now.music.view != expected_view ||
-            rs_now.music.drilldown != MusicDrilldown::NONE ||
-            rs_now.music.takeover != MusicTakeover::NONE) {
-          return;
-        }
-        TouchGestureEngine::fetch_music_browse_for_current_view_(
-            rs_now, TouchGestureEngine::now_or_hal_ms_(last_user_touch_ms()));
-      });
-    } else {
-      TouchGestureEngine::fetch_music_browse_for_current_view_(rs, now_ms);
-    }
-  };
-
   switch (target) {
     case MusicView::NOW_PLAYING:
-      break;
-    case MusicView::LIBRARY:
-      m.selected_category_mode = "categories";
-      m.selected_category_title = "LIBRARY";
-      m.category_page = 1;
-      m.drilldown_parent_mode.clear();
-      break;
-    case MusicView::SPEAKERS:
-      prime_browse("speakers", "SPEAKERS", "Loading...");
-      break;
-    case MusicView::VOLUME:
-      m.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
-      break;
-    case MusicView::QUEUE:
-      prime_browse("active_queue", "PLAYBACK QUEUE", "Loading queue...");
       break;
     case MusicView::LYRICS: {
       auto &lyr = m.lyrics;
@@ -376,23 +417,19 @@ void activate_music_peer_tab(MusicView target, uint32_t now_ms) {
       }
       break;
     }
-    case MusicView::ALBUM_TRACKS:
-      m.drilldown_album_id = !t_album.empty() ? t_album : t_artist;
-      prime_browse(
-          is_speech ? "podcast_episodes" : "current_album_tracks",
-          t_album.empty() ? std::string(is_speech ? "EPISODES" : "ALBUM TRACKS") : t_album,
-          is_speech ? "Loading episodes..." : "Loading album tracks...");
+    case MusicView::LIBRARY:
+      m.selected_category_mode = "categories";
+      m.selected_category_title = "LIBRARY";
+      m.category_page = 1;
+      m.drilldown_parent_mode.clear();
       break;
-    case MusicView::INFO:
-      m.info_scroll_px = 0;
-      m.drilldown_album_id = t_title + "|" + t_artist + "|" + t_album;
-      prime_browse("bio", "TRACK INFO", "Loading...");
+    case MusicView::AUDIO:
+      m.takeover_interacted_ms = (now_ms == 0U) ? 1U : now_ms;
       break;
-    case MusicView::SETTINGS:
+    case MusicView::TRACK:
     default:
-      m.settings_page = 1;
-      m.selected_category_mode = "settings";
-      m.selected_category_title = "MUSIC SETTINGS";
+      m.selected_category_mode = "track_menu";
+      m.selected_category_title = "TRACK";
       break;
   }
 }
@@ -524,10 +561,13 @@ bool TouchGestureEngine::handle_tap_music_(
   if (m.drilldown == MusicDrilldown::NONE &&
       (wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT)) {
     if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-      m.direct_nav = false;
-      activate_music_peer_tab(step_music_peer_tab(m.view, (wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1), now_rel);
-      mark_dirty_full();
-      rt_.schedule_disp();
+      const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
+      if (step_mode_bar_window_page(
+              m.mode_bar_win_start, (wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1,
+              kMusicPeerTabCount, vis_cap)) {
+        m.hud_timer = now_rel;
+        rt_.schedule_disp();
+      }
     }
     return true;
   }
@@ -590,6 +630,12 @@ bool TouchGestureEngine::handle_tap_music_(
       m.hud_timer = now_rel;
       mark_dirty_full();
       rt_.schedule_disp();
+    } else if (controls_shown && wid == WidgetId::MUSIC_SPEAKER_PICKER_BTN &&
+               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      m.direct_nav = false;
+      enter_music_drilldown(MusicView::AUDIO, MusicDrilldown::SPEAKER_PICKER, now_rel);
+      mark_dirty_full();
+      rt_.schedule_disp();
     } else if (controls_shown && handle_transport_tap()) {
       return true;
     } else if ((wid == WidgetId::NONE || wid == WidgetId::MUSIC_ART_TAP) &&
@@ -604,9 +650,15 @@ bool TouchGestureEngine::handle_tap_music_(
     return true;
   }
 
-  if (m.view == MusicView::VOLUME) {
-    if ((wid == WidgetId::MUSIC_VOL_UP_STEP || wid == WidgetId::MUSIC_VOL_DOWN_STEP) &&
-        touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+  if (m.view == MusicView::AUDIO && m.drilldown == MusicDrilldown::NONE) {
+    if (wid == WidgetId::MUSIC_SPEAKER_PICKER_BTN &&
+        touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      m.direct_nav = false;
+      enter_music_drilldown(MusicView::AUDIO, MusicDrilldown::SPEAKER_PICKER, now_rel);
+      mark_dirty_full();
+      rt_.schedule_disp();
+    } else if ((wid == WidgetId::MUSIC_VOL_UP_STEP || wid == WidgetId::MUSIC_VOL_DOWN_STEP) &&
+               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
       const int dir = (wid == WidgetId::MUSIC_VOL_UP_STEP) ? 1 : -1;
       if (ms.muted && dir > 0) ms.muted = false;
       step_music_volume_feedback(dir, rt_.num_val(UiNumberId::VOLUME_STEP_SIZE),
@@ -623,7 +675,8 @@ bool TouchGestureEngine::handle_tap_music_(
     }
     return true;
   }
-  if (m.view == MusicView::LYRICS || m.view == MusicView::INFO) {
+
+  if (m.view == MusicView::LYRICS) {
     if (!m.hud_active) {
       if (wid == WidgetId::MUSIC_ART_TAP || wid == WidgetId::NONE) {
         m.hud_active = true;
@@ -634,36 +687,34 @@ bool TouchGestureEngine::handle_tap_music_(
       }
       return true;
     }
-    if (m.view == MusicView::LYRICS) {
-      if (handle_transport_tap()) return true;
-      if (wid == WidgetId::MUSIC_LYRIC_SYNC_BTN &&
-          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+    if (handle_transport_tap()) return true;
+    if (wid == WidgetId::MUSIC_LYRIC_SYNC_BTN &&
+        touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      m.lyrics.manual_override_until_ms = 0U;
+      m.lyrics.target_scroll_px = -1;
+      m.hud_timer = now_rel;
+      rt_.schedule_disp();
+      return true;
+    }
+    if (wid >= WidgetId::MUSIC_LYRIC_LINE_BASE && wid < WidgetId::MUSIC_LYRIC_LINE_BASE + 8 &&
+        touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
+      const int li = static_cast<int>(hit->param);
+      if (li >= 0 && static_cast<size_t>(li) < m.lyrics.lines.size() &&
+          m.lyrics.lines[static_cast<size_t>(li)].t_ms >= 0) {
+        const int32_t t_ms = m.lyrics.lines[static_cast<size_t>(li)].t_ms;
+        const float seek_s = static_cast<float>(t_ms) * 0.001f;
+        ms.position = seek_s;
+        ms.position_updated_ms = now_rel;
+        m.pos_base = seek_s;
+        m.pos_sync_time = now_rel;
         m.lyrics.manual_override_until_ms = 0U;
         m.lyrics.target_scroll_px = -1;
         m.hud_timer = now_rel;
+        audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, now_rel);
+        latter_core::emit_media_seek(static_cast<int>(t_ms / 1000));
         rt_.schedule_disp();
-        return true;
       }
-      if (wid >= WidgetId::MUSIC_LYRIC_LINE_BASE && wid < WidgetId::MUSIC_LYRIC_LINE_BASE + 8 &&
-          touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        const int li = static_cast<int>(hit->param);
-        if (li >= 0 && static_cast<size_t>(li) < m.lyrics.lines.size() &&
-            m.lyrics.lines[static_cast<size_t>(li)].t_ms >= 0) {
-          const int32_t t_ms = m.lyrics.lines[static_cast<size_t>(li)].t_ms;
-          const float seek_s = static_cast<float>(t_ms) * 0.001f;
-          ms.position = seek_s;
-          ms.position_updated_ms = now_rel;
-          m.pos_base = seek_s;
-          m.pos_sync_time = now_rel;
-          m.lyrics.manual_override_until_ms = 0U;
-          m.lyrics.target_scroll_px = -1;
-          m.hud_timer = now_rel;
-          audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, now_rel);
-          latter_core::emit_media_seek(static_cast<int>(t_ms / 1000));
-          rt_.schedule_disp();
-        }
-        return true;
-      }
+      return true;
     }
     if (wid == WidgetId::NONE && m.hud_active &&
         (now_rel - m.hud_timer >= TOUCH_GUARD_DISMISS) &&
@@ -676,20 +727,31 @@ bool TouchGestureEngine::handle_tap_music_(
     return true;
   }
 
-  if (m.view == MusicView::SETTINGS) {
-    const int per_pg = std::clamp(layout().peer_list_rows, 4, kMaxListSlots);
-    const int max_pg = std::max(1, (6 + per_pg - 1) / per_pg);
-    if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
-        touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-      m.settings_page = std::clamp(m.settings_page + ((wid == WidgetId::CHEVRON_UP) ? -1 : 1), 1, max_pg);
-      m.hud_timer = now_rel;
-      rt_.schedule_disp();
-    } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
-               touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      cycle_music_pref_slot(rt_, static_cast<int>(hit->param));
-      m.hud_timer = now_rel;
-      rt_.schedule_disp();
+  if (m.view == MusicView::TRACK && m.drilldown == MusicDrilldown::NONE) {
+    if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
+        touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
+      const int idx = static_cast<int>(hit->param);
+      if (idx == 0) {
+        m.direct_nav = false;
+        enter_music_drilldown(MusicView::TRACK, MusicDrilldown::TRACK_QUEUE, now_rel);
+        mark_dirty_full();
+        rt_.schedule_disp();
+      } else if (idx == 1) {
+        m.direct_nav = false;
+        enter_music_drilldown(MusicView::TRACK, MusicDrilldown::TRACK_ALBUM, now_rel);
+        mark_dirty_full();
+        rt_.schedule_disp();
+      } else if (idx == 2) {
+        m.direct_nav = false;
+        enter_music_drilldown(MusicView::TRACK, MusicDrilldown::TRACK_INFO, now_rel);
+        mark_dirty_full();
+        rt_.schedule_disp();
+      }
     }
+    return true;
+  }
+
+  if (m.view == MusicView::TRACK && m.drilldown == MusicDrilldown::TRACK_INFO) {
     return true;
   }
 
@@ -705,7 +767,7 @@ bool TouchGestureEngine::handle_tap_music_(
     }
   };
 
-  if (m.view == MusicView::SPEAKERS) {
+  if (m.view == MusicView::AUDIO) {
     if (m.drilldown == MusicDrilldown::SPEAKER_ACTIONS && !m.target_speaker_id.empty()) {
       if (touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
         if (wid == WidgetId::MUSIC_SPK_CONTROL_BTN) {
@@ -726,8 +788,8 @@ bool TouchGestureEngine::handle_tap_music_(
     } else if (wid >= WidgetId::LIST_SLOT_BASE && wid < WidgetId::LIST_SLOT_BASE + kMaxListSlots &&
                now_rel >= music_scroll_tap_lockout_until_ms() &&
                touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
-      const int peer_cap = std::clamp(layout().peer_list_rows, 4, kMaxListSlots);
-      const int si = std::clamp(static_cast<int>(hit->param), 0, peer_cap - 1);
+      const int spk_cap = std::clamp(layout().list_rows, 4, kMaxListSlots);
+      const int si = std::clamp(static_cast<int>(hit->param), 0, spk_cap - 1);
       const auto &sl = rs.music_slots()[si];
       if (!sl.name.empty() && !sl.id.empty() && sl.type != "text") {
         m.target_speaker_id = sl.id;
@@ -740,7 +802,7 @@ bool TouchGestureEngine::handle_tap_music_(
     return true;
   }
 
-  if (m.view == MusicView::QUEUE) {
+  if (m.view == MusicView::TRACK && m.drilldown == MusicDrilldown::TRACK_QUEUE) {
     if (wid == WidgetId::MUSIC_SHUFFLE_BTN && (ms.media_caps & kMediaCapShuffleSet) != 0U &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_BUTTON, tkey)) {
       ms.shuffle = !ms.shuffle;
@@ -786,7 +848,8 @@ bool TouchGestureEngine::handle_tap_music_(
     return true;
   }
 
-  if (m.view == MusicView::LIBRARY || m.view == MusicView::ALBUM_TRACKS) {
+  if (m.view == MusicView::LIBRARY ||
+      (m.view == MusicView::TRACK && m.drilldown == MusicDrilldown::TRACK_ALBUM)) {
     const bool on_cat_root = (m.view == MusicView::LIBRARY) && (m.drilldown == MusicDrilldown::NONE);
     if ((wid == WidgetId::CHEVRON_UP || wid == WidgetId::CHEVRON_DOWN) &&
         touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {

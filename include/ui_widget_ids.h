@@ -206,6 +206,7 @@ namespace WidgetId {
   static constexpr uint16_t MUSIC_SCRUB_STEP_BACK     = 955;
   static constexpr uint16_t MUSIC_SCRUB_STEP_FWD      = 956;
   static constexpr uint16_t MUSIC_FAVORITE_BTN        = 957;
+  static constexpr uint16_t MUSIC_SPEAKER_PICKER_BTN  = 958;
   static constexpr uint16_t MUSIC_ROW_PLAY_BASE       = 1080; // 1080..1087 (leading 1-tap Play Now orb, param = slot 0..7)
 
   static constexpr uint16_t MUSIC_ACTION_PLAY_NOW      = 965;

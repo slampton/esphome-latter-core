@@ -227,8 +227,20 @@ void test_device_prefs_v2_and_event_timer_sync() {
   rs.music.view = latter_core::MusicView::NOW_PLAYING;
   LATTER_CHECK(!latter_core::should_return_to_home_on_idle(rs, p, true));
   LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, false));
-  rs.music.view = latter_core::MusicView::SPEAKERS;
+  rs.music.view = latter_core::MusicView::AUDIO;
   LATTER_CHECK(latter_core::should_return_to_home_on_idle(rs, p, true));
+  {
+    latter_core::MusicView rv = latter_core::MusicView::NOW_PLAYING;
+    latter_core::MusicDrilldown rd = latter_core::MusicDrilldown::NONE;
+    LATTER_CHECK(latter_core::resolve_music_route_target(latter_core::RouteId::MUSIC_SPEAKERS, rv, rd) &&
+                 rv == latter_core::MusicView::AUDIO && rd == latter_core::MusicDrilldown::SPEAKER_PICKER);
+    LATTER_CHECK(latter_core::resolve_music_route_target(latter_core::RouteId::MUSIC_QUEUE, rv, rd) &&
+                 rv == latter_core::MusicView::TRACK && rd == latter_core::MusicDrilldown::TRACK_QUEUE);
+    LATTER_CHECK(latter_core::resolve_music_route_target(latter_core::RouteId::MUSIC_ALBUM_TRACKS, rv, rd) &&
+                 rv == latter_core::MusicView::TRACK && rd == latter_core::MusicDrilldown::TRACK_ALBUM);
+    LATTER_CHECK(latter_core::resolve_music_route_target(latter_core::RouteId::MUSIC_INFO, rv, rd) &&
+                 rv == latter_core::MusicView::TRACK && rd == latter_core::MusicDrilldown::TRACK_INFO);
+  }
   rs.nav.gui_page = 10;
   rs.nav.time_subpage = 1;
   rs.timers.running = true;

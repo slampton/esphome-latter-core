@@ -60,6 +60,11 @@ struct MusicNowPlayingGeom {
   int side_hit_r{37};
 
   int spk_caption_y{352};
+  int spk_btn_x0{93};
+  int spk_btn_y0{338};
+  int spk_btn_w{280};
+  int spk_btn_h{28};
+  int spk_btn_pad{22};
   int mode_bar_cy{398};
   int mode_bar_r{28};
   int mode_bar_pad{10};
@@ -123,13 +128,25 @@ inline constexpr MusicNowPlayingGeom compute_music_now_playing_geom(
 
   g.mode_slot_count = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
   compute_mode_bar_slot_xs(g.mode_slot_count, w, round, g.mode_slot_xs, h, ppi, ly.corner_r);
+
+  const int spk_top_min = g.transport_cy + g.play_hit_r + 2;
+  const int spk_bot_max = (g.mode_bar_cy - g.mode_bar_r - dp_px_for(12, s)) - 2;
+  g.spk_btn_h = std::clamp(dp_px_for(28, s), 0, std::max(0, spk_bot_max - spk_top_min));
+  g.spk_btn_y0 = std::clamp(g.spk_caption_y - g.spk_btn_h / 2, spk_top_min,
+                            std::max(spk_top_min, spk_bot_max - g.spk_btn_h));
+  const int spk_cy = g.spk_btn_y0 + g.spk_btn_h / 2;
+  const int spk_safe = band_safe_span_for(spk_cy, g.spk_btn_h, w, h, round, wearable, 14, ly.corner_r);
+  g.spk_btn_w = std::max(0, std::min(dp_px_for(280, s), std::min(spk_safe, w - 16)));
+  g.spk_btn_x0 = g.cx - g.spk_btn_w / 2;
+  g.spk_btn_pad = std::max(0, (g.min_hit - g.spk_btn_h + 1) / 2);
   return g;
 }
 
 inline void register_music_now_playing_hits(
     FrameHitTable &ht, const MusicNowPlayingGeom &g,
     bool show_metadata, bool show_controls,
-    latter_core::MusicTakeover takeover) {
+    latter_core::MusicTakeover takeover,
+    bool allow_speaker_picker = true) {
   if (takeover != latter_core::MusicTakeover::NONE) return;
   if (!show_metadata && !show_controls) {
     ht.add_rect(0, 0, g.w, g.h, WidgetId::MUSIC_ART_TAP, kHitTap);
@@ -140,6 +157,12 @@ inline void register_music_now_playing_hits(
                 WidgetId::MUSIC_SCRUB_OPEN_BTN, kHitTap | kHitFocusSlot);
   }
   if (show_controls) {
+    if (allow_speaker_picker && g.spk_btn_h >= 16 && g.spk_btn_w >= g.min_hit &&
+        g.spk_btn_y0 >= (g.transport_cy + g.play_hit_r + 1) &&
+        (g.spk_btn_y0 + g.spk_btn_h) <= (g.mode_bar_cy - g.mode_bar_r - 1)) {
+      ht.add_rect(g.spk_btn_x0, g.spk_btn_y0, g.spk_btn_w, g.spk_btn_h,
+                  WidgetId::MUSIC_SPEAKER_PICKER_BTN, kHitTap | kHitFocusSlot, 0, g.spk_btn_pad);
+    }
     ht.add_circle(g.prev_cx, g.transport_cy, g.side_hit_r,
                   WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
     ht.add_circle(g.play_cx, g.transport_cy, g.play_hit_r,
@@ -156,9 +179,17 @@ inline constexpr int music_browse_page_size_for(
         LATTER_SCREEN_W, LATTER_SCREEN_H, LATTER_ROUND_DISPLAY != 0,
         LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, LATTER_CORNER_R,
         LATTER_VIEW_SCALE_PCT, LATTER_IS_STATIONARY != 0)) noexcept {
-  if (mode == "bio" || mode == "track_info") return std::clamp(ly.list_rows, 4, kMaxListSlots);
-  if (drilldown == latter_core::MusicDrilldown::LIB_LIST) return std::clamp(ly.list_rows, 4, kMaxListSlots);
-  if (view == latter_core::MusicView::QUEUE) return std::clamp(ly.queue_list_rows, 3, kMaxListSlots);
+  (void)view;
+  if (mode == "bio" || mode == "track_info" ||
+      drilldown == latter_core::MusicDrilldown::LIB_LIST ||
+      drilldown == latter_core::MusicDrilldown::SPEAKER_PICKER ||
+      drilldown == latter_core::MusicDrilldown::TRACK_ALBUM ||
+      drilldown == latter_core::MusicDrilldown::TRACK_INFO) {
+    return std::clamp(ly.list_rows, 4, kMaxListSlots);
+  }
+  if (drilldown == latter_core::MusicDrilldown::TRACK_QUEUE) {
+    return std::clamp(ly.queue_list_rows, 3, kMaxListSlots);
+  }
   return std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
 }
 
@@ -275,55 +306,34 @@ inline constexpr MusicLyricsTransportGeom compute_music_lyrics_transport_geom(
     int w, int h, bool round, bool wearable, int ppi) noexcept {
   MusicLyricsTransportGeom g{};
   const auto ly = compute_panel_layout(w, h, round, wearable, ppi);
+  const auto np = compute_music_now_playing_geom(w, h, round, wearable, ppi);
   const int s = ly.scale_milli;
-  g.cx = ly.cx;
-  g.min_hit = mm_to_px_for(7.0f, ppi);
+  g.cx = np.cx;
+  g.min_hit = np.min_hit;
+  g.transport_cy = np.transport_cy;
+  g.prev_cx = np.prev_cx;
+  g.play_cx = np.play_cx;
+  g.next_cx = np.next_cx;
+  g.play_r = np.play_r;
+  g.side_r = np.side_r;
+  g.play_hit_r = np.play_hit_r;
+  g.side_hit_r = np.side_hit_r;
+  g.play_hit_pad = std::max(0, np.play_hit_r - np.play_r);
+  g.side_hit_pad = std::max(0, np.side_hit_r - np.side_r);
 
-  g.play_r = std::clamp(dp_px_for(28, s), 22, 42);
-  g.side_r = std::clamp(dp_px_for(22, s), 18, 34);
-  g.play_hit_pad = std::max(0, (g.min_hit - (2 * g.play_r + 1) + 1) / 2);
-  g.side_hit_pad = std::max(0, (g.min_hit - (2 * g.side_r + 1) + 1) / 2);
-  g.play_hit_r = g.play_r + g.play_hit_pad;
-  g.side_hit_r = g.side_r + g.side_hit_pad;
-
-  const int max_hit_r = std::max(g.play_hit_r, g.side_hit_r);
-  const int r_track = ly.dock_r + dp_px_for(3, s);
-  const int mode_bar_vis_top = ly.app_dock_y - r_track;
-  const int mode_bar_hit_top = std::min(
-      ly.app_dock_y - ly.dock_hit_r,
-      ly.app_dock_y - ly.dock_r - dp_px_for(12, s));
-  const int vis_gap = std::max(10, dp_px_for(14, s));
-  const int cy_from_vis = mode_bar_vis_top - vis_gap - g.play_r;
-  const int cy_from_hit = mode_bar_hit_top - 2 - max_hit_r;
-  g.transport_cy = std::min(cy_from_vis, cy_from_hit);
-
-  const int min_dx = g.play_hit_r + g.side_hit_r + std::max(6, dp_px_for(8, s));
-  const int safe_half = band_safe_span_for(
-                            g.transport_cy, 2 * g.side_r, w, h, round, wearable, 14, ly.corner_r) /
-                        2;
-  const int col_half = dp_px_for(230, s);
-  const int max_half = std::min(safe_half, col_half);
-  const int max_dx = std::max(min_dx, max_half - g.side_r);
-  const int dx = std::clamp(std::max(min_dx, dp_px_for(96, s)), min_dx, max_dx);
-  g.play_cx = g.cx;
-  g.prev_cx = g.cx - dx;
-  g.next_cx = g.cx + dx;
-
-  g.vp_bot = (g.transport_cy - max_hit_r) - std::max(4, dp_px_for(4, s));
+  const int mode_bar_top = ly.app_dock_y - ly.dock_r - dp_px_for(14, s);
+  g.vp_bot = std::max(ly.hdr_y + dp_px_for(84, s), mode_bar_top - dp_px_for(8, s));
   return g;
 }
 
 inline void register_music_lyrics_transport_hits(
     FrameHitTable &ht, const MusicLyricsTransportGeom &g) {
-  ht.add_circle(g.prev_cx, g.transport_cy, g.side_r,
-                WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                0, g.side_hit_pad);
-  ht.add_circle(g.play_cx, g.transport_cy, g.play_r,
-                WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                0, g.play_hit_pad);
-  ht.add_circle(g.next_cx, g.transport_cy, g.side_r,
-                WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle,
-                0, g.side_hit_pad);
+  ht.add_circle(g.prev_cx, g.transport_cy, g.side_hit_r,
+                WidgetId::MUSIC_PREV_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
+  ht.add_circle(g.play_cx, g.transport_cy, g.play_hit_r,
+                WidgetId::MUSIC_PLAY_PAUSE, kHitTap | kHitFocusSlot | kHitFocusCircle);
+  ht.add_circle(g.next_cx, g.transport_cy, g.side_hit_r,
+                WidgetId::MUSIC_NEXT_BTN, kHitTap | kHitFocusSlot | kHitFocusCircle);
 }
 
 inline void step_music_lyrics_auto_scroll(
@@ -612,6 +622,7 @@ struct DeviceUiCommandEffects {
 };
 
 void activate_music_peer_tab(latter_core::MusicView target, uint32_t now_ms);
+void enter_music_drilldown(latter_core::MusicView tab, latter_core::MusicDrilldown drill, uint32_t now_ms);
 
 class TouchGestureEngine {
  public:
@@ -654,6 +665,7 @@ class TouchGestureEngine {
  private:
   friend struct UiTouchRuntime;
   friend void activate_music_peer_tab(latter_core::MusicView target, uint32_t now_ms);
+  friend void enter_music_drilldown(latter_core::MusicView tab, latter_core::MusicDrilldown drill, uint32_t now_ms);
 
   static uint32_t now_or_hal_ms_(uint32_t fallback_ms = 0U) noexcept {
     const uint32_t h = latter_core::hal_millis_now();
@@ -772,6 +784,7 @@ class TouchGestureEngine {
 
 TouchGestureEngine &touch_engine();
 void activate_music_peer_tab(latter_core::MusicView target, uint32_t now_ms);
+void enter_music_drilldown(latter_core::MusicView tab, latter_core::MusicDrilldown drill, uint32_t now_ms);
 void request_music_lyrics_refresh(const std::string &track_key, const std::string &speaker_entity,
                                   uint32_t now_ms);
 

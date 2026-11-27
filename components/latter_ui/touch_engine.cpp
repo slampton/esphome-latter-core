@@ -384,17 +384,16 @@ int compute_touch_context(const DeviceRuntimeState &rs) noexcept {
       sub = rs.nav.home_subpage;
       break;
     case 2:
-      sub = ((static_cast<int>(rs.music.view) & 0x0F) << 4) |
-            ((static_cast<int>(rs.music.drilldown) & 0x03) << 2) |
+      sub = ((static_cast<int>(rs.music.view) & 0x07) << 5) |
+            ((static_cast<int>(rs.music.drilldown) & 0x07) << 2) |
             (static_cast<int>(rs.music.takeover) & 0x03);
       if ((rs.music.view == MusicView::LIBRARY &&
            rs.music.drilldown == MusicDrilldown::LIB_LIST) ||
-          rs.music.view == MusicView::ALBUM_TRACKS) {
+          (rs.music.view == MusicView::TRACK &&
+           rs.music.drilldown == MusicDrilldown::TRACK_ALBUM)) {
         for (char ch : rs.music.selected_category_mode) {
           drill = ((drill * 31) + static_cast<unsigned char>(ch)) & 0x7F;
         }
-      } else if (rs.music.view == MusicView::SETTINGS) {
-        drill = ((rs.music.mode_bar_win_start & 0x07) << 3) | (rs.music.settings_page & 0x07);
       } else {
         drill = rs.music.mode_bar_win_start & 0x7F;
       }
@@ -581,7 +580,7 @@ void TouchGestureEngine::on_touch_down(int tx, int ty, uint32_t now_touch) {
       }
       return;
     }
-    if (rs.music.view == MusicView::VOLUME && rs.music.drilldown == MusicDrilldown::NONE) {
+    if (rs.music.view == MusicView::AUDIO && rs.music.drilldown == MusicDrilldown::NONE) {
       const HitRegion *v_hit = frame_hits().hit_test(touch.x, touch.y, kHitVertSlider);
       if (v_hit != nullptr && v_hit->widget_id == WidgetId::MUSIC_VOL_SLIDER) {
         rs.music.hud_timer = now_touch;
@@ -762,7 +761,7 @@ void TouchGestureEngine::on_touch_up(uint32_t now_rel) {
     if (!gest.swipe_committed && start_vslider != nullptr &&
         start_vslider->widget_id == WidgetId::MUSIC_VOL_SLIDER &&
         rs.nav.gui_page == PageId::MUSIC &&
-        rs.music.view == MusicView::VOLUME &&
+        rs.music.view == MusicView::AUDIO &&
         rs.music.drilldown == MusicDrilldown::NONE &&
         rs.music.takeover == MusicTakeover::NONE) {
       rs.music.hud_timer = now_rel;
@@ -1096,32 +1095,43 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
     if (rs.music.drilldown == MusicDrilldown::NONE) {
       if (h_dir != 0) {
         commit_swipe();
+        const int vis_cap = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
+        const bool always_vis = (rt_.select_opt(UiSelectId::MUSIC_OVERLAY_STYLE) == "Always Visible");
+        const bool mode_bar_visible =
+            (rs.music.view != MusicView::NOW_PLAYING && rs.music.view != MusicView::LYRICS) ||
+            rs.music.hud_active ||
+            (rs.music.view == MusicView::NOW_PLAYING && always_vis);
+        if (mode_bar_visible && kMusicPeerTabCount > vis_cap && gest.start_y >= ly.mode_bar_zone_top()) {
+          step_mode_bar_window_page(rs.music.mode_bar_win_start, h_dir, kMusicPeerTabCount, vis_cap);
+          rs.music.hud_timer = now_ms;
+          rt_.schedule_disp();
+          return true;
+        }
         rs.music.direct_nav = false;
         activate_music_peer_tab(step_music_peer_tab(rs.music.view, h_dir), now_ms);
         mark_dirty_full();
         rt_.schedule_disp();
         return true;
       }
-      if (v_dir != 0 && gest.start_y < ly.mode_bar_zone_top()) {
-        if (rs.music.view == MusicView::LIBRARY || rs.music.view == MusicView::SETTINGS) {
-          music_scroll_tap_lockout_until_ms() = now_ms + 160U;
-          const int peer_per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
-          const int item_tot = (rs.music.view == MusicView::LIBRARY) ? 7 : 6;
-          const int max_pg = std::max(1, (item_tot + peer_per_pg - 1) / peer_per_pg);
-          bool changed = false;
-          int &pg = (rs.music.view == MusicView::LIBRARY) ? rs.music.category_page : rs.music.settings_page;
-          pg = step_v_pager(std::clamp(pg, 1, max_pg), 1, max_pg, false, PageId::MUSIC, changed);
-          rs.music.hud_timer = now_ms;
-          rt_.schedule_disp();
-          return true;
-        }
-        if (rs.music.view == MusicView::SPEAKERS ||
-            rs.music.view == MusicView::QUEUE ||
-            rs.music.view == MusicView::ALBUM_TRACKS) {
-          return step_music_slots(false, true);
-        }
+      if (v_dir != 0 && gest.start_y < ly.mode_bar_zone_top() &&
+          rs.music.view == MusicView::LIBRARY) {
+        music_scroll_tap_lockout_until_ms() = now_ms + 160U;
+        const int peer_per_pg = std::clamp(ly.peer_list_rows, 4, kMaxListSlots);
+        const int max_pg = std::max(1, (7 + peer_per_pg - 1) / peer_per_pg);
+        bool changed = false;
+        rs.music.category_page = step_v_pager(
+            std::clamp(rs.music.category_page, 1, max_pg), 1, max_pg, false, PageId::MUSIC, changed);
+        rs.music.hud_timer = now_ms;
+        rt_.schedule_disp();
+        return true;
       }
       return false;
+    }
+    if ((rs.music.drilldown == MusicDrilldown::SPEAKER_PICKER ||
+         rs.music.drilldown == MusicDrilldown::TRACK_QUEUE ||
+         rs.music.drilldown == MusicDrilldown::TRACK_ALBUM) &&
+        v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
+      return step_music_slots(false, false);
     }
     if (rs.music.drilldown == MusicDrilldown::LIB_LIST && v_dir != 0 && gest.start_y < ly.chin_guard_y()) {
       return step_music_slots(
@@ -1244,6 +1254,12 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
         commit_swipe();
         std::string cats[8];
         const int cat_cnt = collect_area_categories(cats);
+        const int vis_cap = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
+        if (cat_cnt > vis_cap && gest.start_y >= ly.mode_bar_zone_top()) {
+          step_mode_bar_window_page(area_cat_dock_page(), h_dir, cat_cnt, vis_cap);
+          rt_.schedule_disp();
+          return true;
+        }
         if (cat_cnt > 1) {
           int cur_c = 0;
           for (int i = 0; i < cat_cnt; ++i) {
@@ -1313,6 +1329,12 @@ bool TouchGestureEngine::try_commit_kinematic_swipe_(bool is_release, uint32_t n
       commit_swipe();
       int hh_tabs[kMaxHomeHubTabs]{};
       const int hh_cnt = collect_home_hub_tabs(hh_tabs);
+      const int vis_cap = std::clamp(ly.dock_slot_count, 1, kMaxDockSlots);
+      if (hh_cnt > vis_cap && gest.start_y >= ly.mode_bar_zone_top()) {
+        step_mode_bar_window_page(home_hub_mode_bar_page(), h_dir, hh_cnt, vis_cap);
+        rt_.schedule_disp();
+        return true;
+      }
       if (hh_cnt > 1) {
         int cur_slot = 0;
         for (int i = 0; i < hh_cnt; ++i) {
@@ -1631,7 +1653,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
   const HitRegion *vsl_hit = frame_hits().hit_test(gest.start_x, gest.start_y, kHitVertSlider);
   if (vsl_hit != nullptr && vsl_hit->widget_id == WidgetId::MUSIC_VOL_SLIDER &&
       rs.nav.gui_page == PageId::MUSIC &&
-      rs.music.view == MusicView::VOLUME &&
+      rs.music.view == MusicView::AUDIO &&
       rs.music.drilldown == MusicDrilldown::NONE &&
       rs.music.takeover == MusicTakeover::NONE &&
       (gest.axis_lock == GestureAxisLock::Slider ||
@@ -1660,17 +1682,31 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     return;
   }
 
+  const HitRegion *lyr_start_hit =
+      (rs.nav.gui_page == PageId::MUSIC && rs.music.view == MusicView::LYRICS && rs.music.hud_active)
+          ? frame_hits().hit_test(gest.start_x, gest.start_y, kHitTap)
+          : nullptr;
+  const bool started_on_lyrics_ctrl =
+      (lyr_start_hit != nullptr &&
+       (lyr_start_hit->widget_id == WidgetId::MUSIC_PREV_BTN ||
+        lyr_start_hit->widget_id == WidgetId::MUSIC_PLAY_PAUSE ||
+        lyr_start_hit->widget_id == WidgetId::MUSIC_NEXT_BTN ||
+        lyr_start_hit->widget_id == WidgetId::MUSIC_LYRIC_SYNC_BTN));
+
+  const bool is_lyrics_scroll =
+      (rs.music.view == MusicView::LYRICS && rs.music.drilldown == MusicDrilldown::NONE &&
+       (!rs.music.hud_active ||
+        gest.start_y < compute_music_lyrics_transport_geom(
+                           SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
+                           LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI)
+                           .vp_bot));
+  const bool is_info_scroll =
+      (rs.music.view == MusicView::TRACK && rs.music.drilldown == MusicDrilldown::TRACK_INFO &&
+       gest.start_y < ly.chin_guard_y());
   if (rs.nav.gui_page == PageId::MUSIC &&
-      rs.music.drilldown == MusicDrilldown::NONE &&
       rs.music.takeover == MusicTakeover::NONE &&
-      (rs.music.view == MusicView::LYRICS || rs.music.view == MusicView::INFO) &&
-      (!rs.music.hud_active ||
-       gest.start_y < ((rs.music.view == MusicView::LYRICS)
-                           ? compute_music_lyrics_transport_geom(
-                                 SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0,
-                                 LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI)
-                                 .vp_bot
-                           : ly.mode_bar_zone_top())) &&
+      (is_lyrics_scroll || is_info_scroll) &&
+      !started_on_lyrics_ctrl &&
       !(gest.axis_lock != GestureAxisLock::Slider && gest.start_y <= ly.top_edge_zone_y() && dy > 0) &&
       (gest.axis_lock == GestureAxisLock::Slider ||
        (gest.axis_lock != GestureAxisLock::Horizontal &&
@@ -1681,7 +1717,7 @@ void TouchGestureEngine::on_touch_move(int tx, int ty, uint32_t now_u) {
     music_scroll_last_y_ = ty;
     if (rs.music.hud_active) rs.music.hud_timer = now_u;
     if (step_px != 0) {
-      if (rs.music.view == MusicView::LYRICS) {
+      if (is_lyrics_scroll) {
         auto &lyr = rs.music.lyrics;
         lyr.scroll_px = std::max(0, lyr.scroll_px + step_px);
         lyr.target_scroll_px = lyr.scroll_px;

@@ -357,8 +357,6 @@ void commit_menu_scroll_target() {
   } else if (rs.nav.gui_page == 4 && rs.nav.system_menu_mode == 0) {
     const int s_pgs = std::max(1, system_dashboard_page_count());
     rs.nav.system_dashboard_page = std::clamp(rs.nav.menu_scroll_target_page, 0, s_pgs - 1);
-  } else if (rs.nav.gui_page == 2 && rs.music.view == MusicView::SETTINGS) {
-    rs.music.settings_page = rs.nav.menu_scroll_target_page;
   } else if (rs.nav.gui_page == 3 && rs.nav.active_game == 0) {
     const int g_cnt = active_games_launcher_count(persisted_prefs());
     rs.nav.game_carousel_idx =

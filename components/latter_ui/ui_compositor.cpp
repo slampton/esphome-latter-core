@@ -1213,7 +1213,7 @@ MusicHudAutoFadeResult step_music_hud_auto_fade(
     return {};
   }
 
-  if (m.view == MusicView::LYRICS || m.view == MusicView::INFO) {
+  if (m.view == MusicView::LYRICS) {
     if (elapsed_ms >= 6000U) {
       m.hud_active = false;
       return {true, false};
@@ -1221,8 +1221,9 @@ MusicHudAutoFadeResult step_music_hud_auto_fade(
     return {};
   }
 
-  const uint32_t timeout_ms = (m.view == MusicView::VOLUME) ? 5000U : 10000U;
+  const uint32_t timeout_ms = (m.view == MusicView::AUDIO) ? 5000U : 10000U;
   if (elapsed_ms >= timeout_ms) {
+    m.drilldown = MusicDrilldown::NONE;
     m.view = MusicView::NOW_PLAYING;
     m.mode_bar_win_start = 0;
     m.hud_active = always_vis;

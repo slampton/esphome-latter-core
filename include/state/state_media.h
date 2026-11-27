@@ -10,21 +10,21 @@
 namespace latter_core {
 
 enum class MusicView : uint8_t {
-  NOW_PLAYING  = 0,
-  LIBRARY      = 1,
-  SPEAKERS     = 2,
-  VOLUME       = 3,
-  QUEUE        = 4,
-  LYRICS       = 5,
-  ALBUM_TRACKS = 6,
-  INFO         = 7,
-  SETTINGS     = 8,
+  NOW_PLAYING = 0,
+  LYRICS      = 1,
+  LIBRARY     = 2,
+  AUDIO       = 3,
+  TRACK       = 4,
 };
 
 enum class MusicDrilldown : uint8_t {
   NONE            = 0,
   LIB_LIST        = 1,
-  SPEAKER_ACTIONS = 2,
+  SPEAKER_PICKER  = 2,
+  SPEAKER_ACTIONS = 3,
+  TRACK_QUEUE     = 4,
+  TRACK_ALBUM     = 5,
+  TRACK_INFO      = 6,
 };
 
 enum class MusicTakeover : uint8_t {
@@ -33,10 +33,10 @@ enum class MusicTakeover : uint8_t {
   ACTION_SHEET = 2,
 };
 
-inline constexpr int kMusicPeerTabCount = 9;
+inline constexpr int kMusicPeerTabCount = 5;
 
 inline constexpr bool is_music_ambient_tab(MusicView v) noexcept {
-  return v == MusicView::NOW_PLAYING || v == MusicView::LYRICS || v == MusicView::INFO;
+  return v == MusicView::NOW_PLAYING || v == MusicView::LYRICS;
 }
 
 inline constexpr bool resolve_music_route_target(
@@ -46,23 +46,27 @@ inline constexpr bool resolve_music_route_target(
     case RouteId::APP_MUSIC:
       out_view = MusicView::NOW_PLAYING;
       return true;
+    case RouteId::MUSIC_LYRICS:
+      out_view = MusicView::LYRICS;
+      return true;
     case RouteId::MUSIC_LIBRARY:
       out_view = MusicView::LIBRARY;
       return true;
     case RouteId::MUSIC_SPEAKERS:
-      out_view = MusicView::SPEAKERS;
+      out_view = MusicView::AUDIO;
+      out_drilldown = MusicDrilldown::SPEAKER_PICKER;
       return true;
     case RouteId::MUSIC_QUEUE:
-      out_view = MusicView::QUEUE;
-      return true;
-    case RouteId::MUSIC_LYRICS:
-      out_view = MusicView::LYRICS;
+      out_view = MusicView::TRACK;
+      out_drilldown = MusicDrilldown::TRACK_QUEUE;
       return true;
     case RouteId::MUSIC_ALBUM_TRACKS:
-      out_view = MusicView::ALBUM_TRACKS;
+      out_view = MusicView::TRACK;
+      out_drilldown = MusicDrilldown::TRACK_ALBUM;
       return true;
     case RouteId::MUSIC_INFO:
-      out_view = MusicView::INFO;
+      out_view = MusicView::TRACK;
+      out_drilldown = MusicDrilldown::TRACK_INFO;
       return true;
     case RouteId::MUSIC_FAVORITES:
     case RouteId::MUSIC_PLAYLISTS:
@@ -257,7 +261,7 @@ struct MusicRuntimeState {
   MusicDrilldown drilldown{MusicDrilldown::NONE};
   MusicTakeover takeover{MusicTakeover::NONE};
   uint32_t takeover_interacted_ms = 0;
-  int mode_bar_win_start = 0;    // 0..5 window start for render_in_app_mode_bar_track
+  int mode_bar_win_start = 0;    // Window start (0..kMusicPeerTabCount - vis_slots) for mode_bar track
   int8_t action_sheet_slot = -1; // 0..4 when opened from a slot row; -1 for header container
   bool action_sheet_is_queue = false;
   bool action_sheet_is_container = false;

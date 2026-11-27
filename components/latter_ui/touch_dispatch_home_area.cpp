@@ -556,9 +556,9 @@ bool TouchGestureEngine::handle_tap_home_area_(
       const int vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
       if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
           touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-        if (cat_cnt > vis_cap) {
-          area_cat_dock_page() = std::clamp(
-              area_cat_dock_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? vis_cap : -vis_cap), 0, cat_cnt - vis_cap);
+        if (step_mode_bar_window_page(
+                area_cat_dock_page(), (wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1,
+                cat_cnt, vis_cap)) {
           rt_.schedule_disp();
         }
       } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&
@@ -674,9 +674,9 @@ bool TouchGestureEngine::handle_tap_home_area_(
   const int hh_vis_cap = std::clamp(layout().dock_slot_count, 1, kMaxDockSlots);
   if ((wid == WidgetId::MODE_BAR_LEFT || wid == WidgetId::MODE_BAR_RIGHT) &&
       touch_router().allow_tap(now_rel, TOUCH_DEBOUNCE_RAPID, tkey)) {
-    if (hh_tab_cnt > hh_vis_cap) {
-      home_hub_mode_bar_page() = std::clamp(
-          home_hub_mode_bar_page() + ((wid == WidgetId::MODE_BAR_RIGHT) ? hh_vis_cap : -hh_vis_cap), 0, hh_tab_cnt - hh_vis_cap);
+    if (step_mode_bar_window_page(
+            home_hub_mode_bar_page(), (wid == WidgetId::MODE_BAR_RIGHT) ? 1 : -1,
+            hh_tab_cnt, hh_vis_cap)) {
       rt_.schedule_disp();
     }
   } else if (wid >= WidgetId::MODE_BAR_SLOT_BASE && wid < WidgetId::MODE_BAR_SLOT_BASE + kMaxDockSlots &&

@@ -345,13 +345,20 @@ void TouchGestureEngine::launch_shortcut_route_(RouteId route_id, ShortcutOrigin
         mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
         reset_music_loading_slots(rs, "Loading...");
         TouchGestureEngine::fetch_music_browse_for_current_view_(rs, now_ms);
+      } else if (route_id == RouteId::MUSIC_SPEAKERS) {
+        enter_music_drilldown(MusicView::AUDIO, MusicDrilldown::SPEAKER_PICKER, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
+      } else if (route_id == RouteId::MUSIC_QUEUE) {
+        enter_music_drilldown(MusicView::TRACK, MusicDrilldown::TRACK_QUEUE, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
+      } else if (route_id == RouteId::MUSIC_ALBUM_TRACKS) {
+        enter_music_drilldown(MusicView::TRACK, MusicDrilldown::TRACK_ALBUM, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
+      } else if (route_id == RouteId::MUSIC_INFO) {
+        enter_music_drilldown(MusicView::TRACK, MusicDrilldown::TRACK_INFO, now_ms);
+        mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       } else {
-        MusicView mv = MusicView::LIBRARY;
-        if (route_id == RouteId::MUSIC_SPEAKERS) mv = MusicView::SPEAKERS;
-        else if (route_id == RouteId::MUSIC_QUEUE) mv = MusicView::QUEUE;
-        else if (route_id == RouteId::MUSIC_ALBUM_TRACKS) mv = MusicView::ALBUM_TRACKS;
-        else if (route_id == RouteId::MUSIC_LYRICS) mv = MusicView::LYRICS;
-        else if (route_id == RouteId::MUSIC_INFO) mv = MusicView::INFO;
+        const MusicView mv = (route_id == RouteId::MUSIC_LYRICS) ? MusicView::LYRICS : MusicView::LIBRARY;
         activate_music_peer_tab(mv, now_ms);
         mode_bar_anim().snap(rs.music.mode_bar_win_start, static_cast<int>(rs.music.view));
       }

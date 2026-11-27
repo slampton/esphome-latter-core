@@ -363,7 +363,7 @@ inline bool music_art_only(int gui_page, bool overlay_always_visible, bool hud_a
     return false;
   }
   if (m.view == latter_core::MusicView::NOW_PLAYING) return !overlay_always_visible;
-  return m.view == latter_core::MusicView::LYRICS || m.view == latter_core::MusicView::INFO;
+  return m.view == latter_core::MusicView::LYRICS;
 }
 
 inline int get_home_dock_start_index(int total_count, int page) {

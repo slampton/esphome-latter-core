@@ -191,6 +191,7 @@ bool is_d019_slot5_row_widget(uint16_t wid) noexcept {
          (wid >= WidgetId::MUSIC_ROW_PLAY_BASE && wid < WidgetId::MUSIC_ROW_PLAY_BASE + kMaxListSlots) ||
          (wid >= WidgetId::HOME_ACT_OVERLAY_ACTION_BASE && wid < WidgetId::HOME_ACT_OVERLAY_ACTION_BASE + kMaxListSlots) ||
          (wid >= WidgetId::MUSIC_ACTION_PLAY_NOW && wid <= WidgetId::MUSIC_ACTION_REMOVE_QUEUE) ||
+         (wid >= WidgetId::MUSIC_SPK_CONTROL_BTN && wid <= WidgetId::MUSIC_SPK_GROUP_BTN) ||
          wid == WidgetId::MUSIC_QUEUE_CLEAR ||
          wid == WidgetId::MUSIC_SHUFFLE_BTN ||
          wid == WidgetId::MUSIC_REPEAT_BTN ||
@@ -481,17 +482,29 @@ void test_all_14_pages_and_system_takeovers_rgb565_5geom() {
   rs.nav.home_subpage = HomeSubpage::MAIN;
   verify_scissor_band_isolation(fix, PageId::HOME, 80, 219);
 
-  // 2. PageId::MUSIC (Now Playing, Volume, Lyrics, Info, Settings, Library, Speakers, Queue, Scrub, Action Sheet)
+  // 2. PageId::MUSIC (5 Peer Tabs + Audio/Track/Library Drilldowns + Scrub & Action Sheet)
   rs.music.hud_active = true;
   rs.music.hud_timer = fix.ctx.now_ms;
-  for (MusicView v : {MusicView::NOW_PLAYING, MusicView::VOLUME, MusicView::LYRICS,
-                      MusicView::INFO, MusicView::SETTINGS, MusicView::LIBRARY,
-                      MusicView::SPEAKERS, MusicView::QUEUE, MusicView::ALBUM_TRACKS}) {
+  rs.music.takeover = MusicTakeover::NONE;
+  for (MusicView v : {MusicView::NOW_PLAYING, MusicView::LYRICS, MusicView::LIBRARY,
+                      MusicView::AUDIO, MusicView::TRACK}) {
     rs.music.view = v;
-    rs.music.takeover = MusicTakeover::NONE;
+    rs.music.drilldown = MusicDrilldown::NONE;
     render_page_full_and_check(fix, PageId::MUSIC, "PageId::MUSIC");
   }
+  rs.music.view = MusicView::AUDIO;
+  for (MusicDrilldown dd : {MusicDrilldown::SPEAKER_PICKER, MusicDrilldown::SPEAKER_ACTIONS}) {
+    rs.music.drilldown = dd;
+    rs.music.target_speaker_id = "media_player.office";
+    render_page_full_and_check(fix, PageId::MUSIC, "PageId::MUSIC audio drilldown");
+  }
+  rs.music.view = MusicView::TRACK;
+  for (MusicDrilldown dd : {MusicDrilldown::TRACK_QUEUE, MusicDrilldown::TRACK_ALBUM, MusicDrilldown::TRACK_INFO}) {
+    rs.music.drilldown = dd;
+    render_page_full_and_check(fix, PageId::MUSIC, "PageId::MUSIC track drilldown");
+  }
   rs.music.view = MusicView::NOW_PLAYING;
+  rs.music.drilldown = MusicDrilldown::NONE;
   rs.music.takeover = MusicTakeover::SCRUB;
   render_page_full_and_check(fix, PageId::MUSIC, "MusicTakeover::SCRUB");
   rs.music.takeover = MusicTakeover::ACTION_SHEET;
@@ -906,8 +919,11 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
       {false, false, 0},
       {true, true, 0},
       {false, true, 0},
+      {true, true, kArtDimMusicHud},
+      {false, true, kArtDimMusicHud},
       {true, true, kArtDimMenu},
       {true, false, kArtDimLyrics},
+      {true, false, kArtDimLyricsHud},
   };
 
   HostSurfaceFixture fix{};
