@@ -613,21 +613,17 @@ void sync_audio_session_media_observation(bool local_mp_playing,
 inline int step_music_volume_feedback(int dir, float step_pct_cfg, bool is_local,
                                       float local_mp_vol, uint32_t now_ms,
                                       MusicRuntimeState &m = runtime_state().music) {
-  const int v_step = (std::isnan(step_pct_cfg) || step_pct_cfg <= 0.0f)
-                         ? 5
-                         : std::max(1, static_cast<int>(std::lround(step_pct_cfg)));
-  const int delta = (dir >= 0) ? v_step : -v_step;
-  last_local_vol_tap_ms() = now_ms;
   int next_pct = -1;
   if (is_local) {
+    const int v_step = (std::isnan(step_pct_cfg) || step_pct_cfg <= 0.0f)
+                           ? 5
+                           : std::max(1, static_cast<int>(std::lround(step_pct_cfg)));
+    const int delta = (dir >= 0) ? v_step : -v_step;
+    last_local_vol_tap_ms() = now_ms;
     const int cur_pct = (std::isnan(local_mp_vol) || local_mp_vol <= 0.0f)
                             ? 70
                             : static_cast<int>(std::lround(local_mp_vol * 100.0f));
     next_pct = std::clamp(cur_pct + delta, 10, 100);
-    m.action_feedback = "Volume: " + std::to_string(next_pct) + "%";
-  } else if (remote_vol_pct() >= 0) {
-    next_pct = std::clamp(remote_vol_pct() + delta, 0, 100);
-    remote_vol_pct() = next_pct;
     m.action_feedback = "Volume: " + std::to_string(next_pct) + "%";
   } else {
     m.action_feedback = (dir >= 0) ? "Volume +" : "Volume -";

@@ -394,8 +394,9 @@ enum class LocalMediaHwAction : uint8_t {
   StopLocalMww = 2,
 };
 
-// Applies volume step in direction dir (+1 / -1). When step_already_recorded is false,
-// also updates remote_vol_pct() / action_feedback via step_music_volume_feedback.
+// Applies volume step in direction dir (+1 / -1). Local speakers step by volume_step_size;
+// remote speakers emit native up/down (volume_pct = -1) without modifying remote_vol_pct().
+// When step_already_recorded is false, also updates action_feedback via step_music_volume_feedback.
 // Returns new local player volume [0.10..1.00] when local, or -1.0f when remote RPC was emitted.
 float media_step_volume(int dir,
                         float current_local_vol,

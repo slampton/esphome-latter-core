@@ -1190,8 +1190,13 @@ void render_audio_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
 
   const int step_v = std::clamp(ctx.vol_step_pct, 1, 25);
   char up_lbl[16], dn_lbl[16];
-  std::snprintf(up_lbl, sizeof(up_lbl), "+%d%%", step_v);
-  std::snprintf(dn_lbl, sizeof(dn_lbl), "-%d%%", step_v);
+  if (ms.is_local) {
+    std::snprintf(up_lbl, sizeof(up_lbl), "+%d%%", step_v);
+    std::snprintf(dn_lbl, sizeof(dn_lbl), "-%d%%", step_v);
+  } else {
+    std::snprintf(up_lbl, sizeof(up_lbl), "Vol +");
+    std::snprintf(dn_lbl, sizeof(dn_lbl), "Vol -");
+  }
   const int btn_eh = std::clamp(g.btn_vis_h, 26, g.btn_h);
 
   ui::action_pill(it, g.btn_x0, g.btn_w, g.up_y0 + g.btn_h / 2, btn_eh,

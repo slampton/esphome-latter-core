@@ -449,7 +449,7 @@ float media_step_volume(int dir,
   }
 
   latter_core::emit_media_volume(
-      m.active_speaker_entity, (step_dir > 0) ? "up" : "down", remote_vol_pct());
+      m.active_speaker_entity, (step_dir > 0) ? "up" : "down", -1);
   return -1.0f;
 }
 

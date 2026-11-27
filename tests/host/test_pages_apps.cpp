@@ -32,6 +32,8 @@ void test_music_remote_override_and_volume_feedback() {
   const std::string state_h = read_repo_glob("../../include/state", "", ".h");
   LATTER_CHECK(music_cpp.find("art_mode == \"None\"") != std::string::npos);
   LATTER_CHECK(music_cpp.find("render_page_wallpaper_base(") != std::string::npos);
+  LATTER_CHECK(music_cpp.find("\"Vol +\"") != std::string::npos &&
+               music_cpp.find("\"Vol -\"") != std::string::npos);
   LATTER_CHECK(remote_cpp.find("render_page_wallpaper_base(") == std::string::npos);
   LATTER_CHECK(gui_yaml.find("render_page_wallpaper_base(") != std::string::npos);
   LATTER_CHECK(latter_ui::resolve_backdrop_mode(
@@ -55,10 +57,14 @@ void test_music_remote_override_and_volume_feedback() {
   LATTER_CHECK(m.action_feedback == "Volume: 10%");
 
   latter_core::remote_vol_pct() = 55;
-  LATTER_CHECK(latter_core::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6000U, m) == 60);
-  LATTER_CHECK(latter_core::remote_vol_pct() == 60 && m.action_feedback == "Volume: 60%");
-  LATTER_CHECK(latter_core::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6200U, m) == 65);
-  LATTER_CHECK(latter_core::remote_vol_pct() == 65 && m.action_feedback == "Volume: 65%");
+  LATTER_CHECK(latter_core::step_music_volume_feedback(1, 5.0f, false, 0.55f, 6000U, m) == -1);
+  LATTER_CHECK(latter_core::remote_vol_pct() == 55 &&
+               latter_core::last_local_vol_tap_ms() == 5200U &&
+               m.action_feedback == "Volume +" && m.feedback_timer == 6000U);
+  LATTER_CHECK(latter_core::step_music_volume_feedback(-1, 5.0f, false, 0.55f, 6200U, m) == -1);
+  LATTER_CHECK(latter_core::remote_vol_pct() == 55 &&
+               latter_core::last_local_vol_tap_ms() == 5200U &&
+               m.action_feedback == "Volume -" && m.feedback_timer == 6200U);
 }
 
 void test_phase3_weather_sky_backdrop_and_home_scene() {
