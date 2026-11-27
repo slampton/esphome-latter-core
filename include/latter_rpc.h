@@ -25,6 +25,7 @@ static constexpr size_t kMaxRpcFrameBytes = 230;
 static constexpr size_t kMaxRpcSlices = 32;
 static constexpr size_t kRpcQueueCapacity = 64;
 static constexpr uint32_t kMinInterFrameMs = 35U;
+inline constexpr uint32_t kTimeoutRpcDrainId = 0x4C410011U;
 
 static constexpr size_t kPinSessionKeyBytes = 32;
 static constexpr size_t kMinPinDigits = 4;
@@ -113,6 +114,7 @@ std::string build_rpc_json(
 size_t utf8_safe_cut(std::string_view sv, size_t start, size_t max_bytes);
 bool enqueue_chunked_json(std::string_view json_body);
 bool has_pending_frames();
+uint32_t outbox_next_delay_ms(uint32_t now_ms) noexcept;
 bool step_outbox_loop(uint32_t now_ms);
 
 template <typename SensorT>

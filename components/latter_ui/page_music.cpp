@@ -178,10 +178,84 @@ void draw_lyrics_alpha_print(Rgb565Surface &it, int x, int y,
     ui::shadow_print(it, x, y, font, col, align, txt, true);
   } else {
     const int sh_a = (alpha_q8 * 210) >> 8;
-    fast_print_alpha(it, x + 2, y + 2, font, kChromeShadow, align, txt, (sh_a * 170) >> 8);
     fast_print_alpha(it, x + 1, y + 1, font, kChromeShadow, align, txt, sh_a);
     fast_print_alpha(it, x, y, font, col, align, txt, alpha_q8);
   }
+}
+
+struct LyricSlice {
+  uint16_t off{0};
+  uint16_t len{0};
+};
+
+struct LyricWrapEntry {
+  uint8_t body_cnt{1};
+  uint8_t act_cnt{1};
+  LyricSlice body_sub[4]{};
+  LyricSlice act_sub[4]{};
+};
+
+struct LyricWrapCache {
+  static constexpr size_t kTrackKeyCap = 128U;
+  static constexpr size_t kTextPoolCap = 20480U;
+  char track_key[kTrackKeyCap]{};
+  uint16_t track_key_len{0};
+  uint32_t rev{0xFFFFFFFFU};
+  int line_count{-1};
+  int wrap_w{-1};
+  const void *active_font{nullptr};
+  const void *body_font{nullptr};
+  int16_t active_h{0};
+  int16_t body_h{0};
+  uint32_t pool_used{0};
+  LyricWrapEntry entries[kMaxMusicLyricLines]{};
+  int doc_y0[kMaxMusicLyricLines]{};
+  int doc_y1[kMaxMusicLyricLines]{};
+  int doc_cy[kMaxMusicLyricLines]{};
+  char text_pool[kTextPoolCap]{};
+};
+
+LyricWrapCache *&lyrics_wrap_cache_slot() noexcept {
+  static LyricWrapCache *s_ptr = nullptr;
+  return s_ptr;
+}
+
+void lyrics_wrap_cache_drop() noexcept {
+  LyricWrapCache *&ptr = lyrics_wrap_cache_slot();
+  if (ptr != nullptr) {
+    ui_psram_free(ptr);
+    ptr = nullptr;
+  }
+}
+
+LyricWrapCache *acquire_lyrics_wrap_cache() noexcept {
+  static const bool s_reg = register_psram_cache_evictor(&lyrics_wrap_cache_drop);
+  (void)s_reg;
+  LyricWrapCache *&ptr = lyrics_wrap_cache_slot();
+  if (ptr == nullptr) {
+    ptr = static_cast<LyricWrapCache *>(ui_psram_calloc(1U, sizeof(LyricWrapCache)));
+    if (ptr != nullptr) {
+      ptr->rev = 0xFFFFFFFFU;
+      ptr->line_count = -1;
+      ptr->wrap_w = -1;
+    }
+  }
+  return ptr;
+}
+
+inline LyricSlice append_lyric_slice(LyricWrapCache &wc, std::string_view sv) noexcept {
+  if (wc.pool_used >= LyricWrapCache::kTextPoolCap - 1U) {
+    return LyricSlice{static_cast<uint16_t>(LyricWrapCache::kTextPoolCap - 1U), 0U};
+  }
+  const size_t avail = (LyricWrapCache::kTextPoolCap - 1U) - wc.pool_used;
+  const size_t copy_len = std::min(sv.size(), avail);
+  const uint16_t off = static_cast<uint16_t>(wc.pool_used);
+  if (copy_len > 0U) {
+    std::memcpy(wc.text_pool + off, sv.data(), copy_len);
+  }
+  wc.text_pool[off + copy_len] = '\0';
+  wc.pool_used += static_cast<uint32_t>(copy_len + 1U);
+  return LyricSlice{off, static_cast<uint16_t>(copy_len)};
 }
 
 
@@ -306,63 +380,68 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
   const int body_lh = measure_font_lh(body_font, kAutoFonts.small) + dp_px(5);
   const int line_gap = dp_px(12);
 
+  const int hud_vp_top = std::max(ly.hdr_y + dp_px(24), LATTER_ROUND_DISPLAY ? dp_px(28) : dp_px(20));
+  const int base_vp_top = LATTER_ROUND_DISPLAY ? dp_px(28) : dp_px(20);
   const int anchor_screen_y = std::clamp((SCREEN_H * 38) / 100, vp_top + 28, vp_bot - 28);
+  const int wrap_anchor_y = std::clamp((SCREEN_H * 38) / 100, hud_vp_top + 28, tg.vp_bot - 28);
+  const int stable_top_span = std::min(safe_span(base_vp_top + dp_px(28), 26),
+                                       safe_span(hud_vp_top + dp_px(28), 26));
   const int wrap_w = std::max(120, std::min({ly.max_content_w(),
-                                             safe_span(anchor_screen_y, 26),
-                                             safe_span(vp_top + dp_px(28), 26)}));
+                                             safe_span(wrap_anchor_y, 26),
+                                             stable_top_span}));
 
   const uint32_t pos_ms = ms.interpolated_position_ms(ctx.now_ms);
   const int live_act_idx = lyr.synced ? lyr.find_active_line(pos_ms) : -1;
 
   const int n_lines = static_cast<int>(std::min<size_t>(lyr.lines.size(), kMaxMusicLyricLines));
-  struct LyricWrapEntry {
-    uint8_t body_cnt{1};
-    uint8_t act_cnt{1};
-    std::string body_sub[4]{};
-    std::string act_sub[4]{};
-  };
-  struct LyricWrapCache {
-    std::string track_key{};
-    uint32_t rev{0xFFFFFFFFU};
-    int line_count{-1};
-    int wrap_w{-1};
-    const void *active_font{nullptr};
-    const void *body_font{nullptr};
-    int16_t active_h{0};
-    int16_t body_h{0};
-    std::vector<LyricWrapEntry> entries{kMaxMusicLyricLines};
-  };
-  static LyricWrapCache s_wrap_cache{};
+  LyricWrapCache *const wc = acquire_lyrics_wrap_cache();
+  if (wc == nullptr) {
+    render_empty_state(it, ctx.cx, (vp_top + vp_bot) / 2, "Lyrics unavailable", ctx.font_small, ctx.col_slate);
+    finish_lyrics_chrome();
+    return;
+  }
+
   const bool same_fonts = (active_font.handle == body_font.handle && active_font.height == body_font.height);
-  if (s_wrap_cache.track_key != cur_key ||
-      s_wrap_cache.rev != lyr.rev ||
-      s_wrap_cache.line_count != n_lines ||
-      s_wrap_cache.wrap_w != wrap_w ||
-      s_wrap_cache.active_font != active_font.handle ||
-      s_wrap_cache.body_font != body_font.handle ||
-      s_wrap_cache.active_h != active_font.height ||
-      s_wrap_cache.body_h != body_font.height) {
-    s_wrap_cache.track_key = cur_key;
-    s_wrap_cache.rev = lyr.rev;
-    s_wrap_cache.line_count = n_lines;
-    s_wrap_cache.wrap_w = wrap_w;
-    s_wrap_cache.active_font = active_font.handle;
-    s_wrap_cache.body_font = body_font.handle;
-    s_wrap_cache.active_h = active_font.height;
-    s_wrap_cache.body_h = body_font.height;
-    if (s_wrap_cache.entries.size() < kMaxMusicLyricLines) {
-      s_wrap_cache.entries.resize(kMaxMusicLyricLines);
+  const size_t key_len = std::min(cur_key.size(), LyricWrapCache::kTrackKeyCap - 1U);
+  const bool key_match = (wc->track_key_len == key_len) &&
+                         (std::memcmp(wc->track_key, cur_key.data(), key_len) == 0);
+  if (!key_match ||
+      wc->rev != lyr.rev ||
+      wc->line_count != n_lines ||
+      wc->wrap_w != wrap_w ||
+      wc->active_font != active_font.handle ||
+      wc->body_font != body_font.handle ||
+      wc->active_h != active_font.height ||
+      wc->body_h != body_font.height) {
+    if (key_len > 0U) {
+      std::memcpy(wc->track_key, cur_key.data(), key_len);
     }
+    wc->track_key[key_len] = '\0';
+    wc->track_key_len = static_cast<uint16_t>(key_len);
+    wc->rev = lyr.rev;
+    wc->line_count = n_lines;
+    wc->wrap_w = wrap_w;
+    wc->active_font = active_font.handle;
+    wc->body_font = body_font.handle;
+    wc->active_h = active_font.height;
+    wc->body_h = body_font.height;
+    wc->pool_used = 0U;
+    std::string tmp_sub[4]{};
     for (int i = 0; i < n_lines; ++i) {
-      auto &ent = s_wrap_cache.entries[static_cast<size_t>(i)];
-      const std::string txt = lyr.lines[static_cast<size_t>(i)].text.empty()
-                                  ? std::string("♪")
-                                  : lyr.lines[static_cast<size_t>(i)].text;
+      auto &ent = wc->entries[static_cast<size_t>(i)];
+      const std::string &raw_line = lyr.lines[static_cast<size_t>(i)].text;
+      const std::string txt = raw_line.empty() ? std::string("♪") : raw_line;
       ent.body_cnt = static_cast<uint8_t>(
-          std::max(1, ui::wrap_text_lines(txt, wrap_w, body_font, ent.body_sub, 4)));
+          std::max(1, ui::wrap_text_lines(txt, wrap_w, body_font, tmp_sub, 4)));
+      for (int s = 0; s < static_cast<int>(ent.body_cnt); ++s) {
+        ent.body_sub[s] = append_lyric_slice(*wc, tmp_sub[s]);
+      }
       if (!same_fonts) {
         ent.act_cnt = static_cast<uint8_t>(
-            std::max(1, ui::wrap_text_lines(txt, wrap_w, active_font, ent.act_sub, 4)));
+            std::max(1, ui::wrap_text_lines(txt, wrap_w, active_font, tmp_sub, 4)));
+        for (int s = 0; s < static_cast<int>(ent.act_cnt); ++s) {
+          ent.act_sub[s] = append_lyric_slice(*wc, tmp_sub[s]);
+        }
       } else {
         ent.act_cnt = ent.body_cnt;
         for (int s = 0; s < static_cast<int>(ent.body_cnt); ++s) {
@@ -372,16 +451,15 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
     }
   }
 
-  static std::vector<int> s_doc_buf(kMaxMusicLyricLines * 3U);
-  int *const doc_y0 = s_doc_buf.data();
-  int *const doc_y1 = doc_y0 + kMaxMusicLyricLines;
-  int *const doc_cy = doc_y0 + (kMaxMusicLyricLines * 2U);
+  int *const doc_y0 = wc->doc_y0;
+  int *const doc_y1 = wc->doc_y1;
+  int *const doc_cy = wc->doc_cy;
   int cur_doc_y = dp_px(16);
 
   for (int i = 0; i < n_lines; ++i) {
     const bool is_act = lyr.synced && (i == live_act_idx);
     const int lh = is_act ? active_lh : body_lh;
-    const auto &ent = s_wrap_cache.entries[static_cast<size_t>(i)];
+    const auto &ent = wc->entries[static_cast<size_t>(i)];
     const int sc = static_cast<int>(is_act ? ent.act_cnt : ent.body_cnt);
     doc_y0[i] = cur_doc_y;
     doc_y1[i] = cur_doc_y + sc * lh;
@@ -412,9 +490,9 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
                                        : mix_color_q8(ctx.col_white, ctx.col_slate, 72);
     }
 
-    const auto &ent = s_wrap_cache.entries[static_cast<size_t>(i)];
+    const auto &ent = wc->entries[static_cast<size_t>(i)];
     const int sc = static_cast<int>(is_act ? ent.act_cnt : ent.body_cnt);
-    const std::string *sub = is_act ? ent.act_sub : ent.body_sub;
+    const LyricSlice *sub = is_act ? ent.act_sub : ent.body_sub;
 
     for (int s = 0; s < sc; ++s) {
       const int draw_cy = scr_y0 + s * lh + lh / 2;
@@ -431,7 +509,11 @@ void render_music_lyrics_view(Rgb565Surface &it, const UiFrameContext &ctx) {
         alpha_q8 = (alpha_q8 * 176) >> 8;
       }
       const int row_span = std::min(ly.max_content_w(), safe_span(draw_cy, 20));
-      const std::string clamped_line = fit_text_to_width_font(sub[s], row_span, f);
+      const LyricSlice sl = sub[s];
+      const char *raw_ptr = (sl.off + sl.len < LyricWrapCache::kTextPoolCap)
+                                ? (wc->text_pool + sl.off)
+                                : "";
+      const std::string clamped_line = fit_text_to_width_font(std::string(raw_ptr, sl.len), row_span, f);
       draw_lyrics_alpha_print(it, ctx.cx, draw_cy, f, fg_c, TextAlign::CENTER,
                               clamped_line.c_str(), alpha_q8);
     }

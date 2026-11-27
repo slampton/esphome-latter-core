@@ -1089,14 +1089,17 @@ void reset_runtime_state(bool preserve_hooks) {
 
 void apply_api_ha_connected_state(uint32_t now_ms) {
   auto &r = runtime_state();
+  const bool was_connected = link_state().ha_connected;
   reset_all_v3_rev_guards();
   reset_hello_sync_on_connect();
   mark_hello_in_flight(true, now_ms);
   link_state().ha_connected = true;
   link_state().last_ha_connect_ms = now_ms;
   r.alert.last_seen_alert_id = -1;
-  r.nav.last_pub_display_power_state = -1;
-  r.nav.last_pub_display_bri_pct = -1;
+  if (!was_connected) {
+    r.nav.last_pub_display_power_state = -1;
+    r.nav.last_pub_display_bri_pct = -1;
+  }
 }
 
 void apply_api_ha_disconnected_state(bool is_ha, uint32_t now_ms) {

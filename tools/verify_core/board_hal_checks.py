@@ -303,8 +303,11 @@ def _check_single_board_target(bf: Path, sound_refs: list[str], beacon_init_py: 
     )
     if 'CONFIG_COMPILER_OPTIMIZATION_PERF: "y"' not in uncommented:
         failures.append(f'[BOARD TRAITS] {bf.name} missing CONFIG_COMPILER_OPTIMIZATION_PERF: "y" (-O2)')
-    if 'CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"' not in uncommented:
-        failures.append(f'[BOARD TRAITS] {bf.name} missing CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "128"')
+    expected_always_internal = "128" if flags.get("LATTER_CHIP_P4") == "1" else "64"
+    if f'CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "{expected_always_internal}"' not in uncommented:
+        failures.append(
+            f'[BOARD TRAITS] {bf.name} missing CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "{expected_always_internal}"'
+        )
     _check_board_wifi_and_audio(bf.name, uncommented, sound_refs, failures)
     _check_board_light_sleep(bf.name, uncommented, beacon_init_py, failures)
     _check_board_p4_and_dsi(bf.name, uncommented, flags, failures)

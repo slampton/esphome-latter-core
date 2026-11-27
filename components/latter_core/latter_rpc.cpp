@@ -503,20 +503,38 @@ size_t utf8_safe_cut(std::string_view sv, size_t start, size_t max_bytes) {
   return (end > start) ? end : (start + max_bytes);
 }
 
+static size_t dec_digits(uint32_t v) noexcept {
+  size_t d = 1U;
+  while (v >= 10U) {
+    v /= 10U;
+    ++d;
+  }
+  return d;
+}
+
 bool enqueue_chunked_json(std::string_view json_body) {
   RpcQueueState &st = rpc_state();
-
-  // Reserve worst-case header budget: "<8hex>:<10dec>:<2dec>/<2dec>|" <= 27 bytes.
-  static constexpr size_t kHeaderReserve = 28;
-  static constexpr size_t kMaxSliceBytes = kMaxRpcFrameBytes - kHeaderReserve;
+  const uint32_t seq = st.next_seq;
+  // Header "<8hex>:<seq>:<part>/<total>|" has 12 fixed chars + dec_digits(seq) + 2 * part_digits.
+  const size_t base_hdr_bytes = 12U + dec_digits(seq);
 
   std::array<std::string_view, kMaxRpcSlices> slices{};
   size_t total_parts = 0;
   size_t pos = 0;
-  while (pos < json_body.size() && total_parts < slices.size()) {
-    size_t next_pos = utf8_safe_cut(json_body, pos, kMaxSliceBytes);
-    slices[total_parts++] = json_body.substr(pos, next_pos - pos);
-    pos = next_pos;
+  auto slice_with_reserve = [&](size_t hdr_reserve) {
+    total_parts = 0;
+    pos = 0;
+    const size_t max_slice = (kMaxRpcFrameBytes > hdr_reserve) ? (kMaxRpcFrameBytes - hdr_reserve) : 1U;
+    while (pos < json_body.size() && total_parts < slices.size()) {
+      size_t next_pos = utf8_safe_cut(json_body, pos, max_slice);
+      slices[total_parts++] = json_body.substr(pos, next_pos - pos);
+      pos = next_pos;
+    }
+  };
+
+  slice_with_reserve(base_hdr_bytes + 2U);
+  if (total_parts >= 10U || pos < json_body.size()) {
+    slice_with_reserve(base_hdr_bytes + 4U);
   }
   if (pos < json_body.size()) {
 #ifdef ESP_LOGW
@@ -530,7 +548,7 @@ bool enqueue_chunked_json(std::string_view json_body) {
     total_parts = 1;
   }
 
-  const uint32_t seq = st.next_seq++;
+  st.next_seq = seq + 1U;
   if (st.next_seq == 0) st.next_seq = 1;
 
   while (st.count > 0U && st.count + total_parts > kRpcQueueCapacity) {
@@ -559,6 +577,19 @@ bool enqueue_chunked_json(std::string_view json_body) {
 
 bool has_pending_frames() {
   return rpc_state().count > 0;
+}
+
+uint32_t outbox_next_delay_ms(uint32_t now_ms) noexcept {
+  const RpcQueueState &st = rpc_state();
+  if (st.count == 0U || st.sink_fn == nullptr || st.sink_ctx == nullptr) return 0U;
+  if (st.last_publish_ms == 0U) {
+    return (st.passes_since_publish < 2U) ? 1U : 0U;
+  }
+  const uint32_t elapsed = static_cast<uint32_t>(now_ms - st.last_publish_ms);
+  if (elapsed < kMinInterFrameMs) {
+    return kMinInterFrameMs - elapsed;
+  }
+  return (st.passes_since_publish < 2U) ? 1U : 0U;
 }
 
 bool step_outbox_loop(uint32_t now_ms) {

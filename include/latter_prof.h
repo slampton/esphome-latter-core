@@ -80,6 +80,8 @@ inline constexpr uint32_t kProfilerDefaultTimeoutMs = 24UL * 3600UL * 1000UL;
 struct ProfilerTimerState {
   uint32_t started_ms{0U};
   uint32_t timeout_ms{kProfilerDefaultTimeoutMs};
+  uint32_t last_10s_log_ms{0U};
+  int last_logged_pwr_state{-1};
   bool armed{false};
 };
 
@@ -101,12 +103,20 @@ inline void profiler_start(uint32_t now_ms, uint32_t timeout_ms = kProfilerDefau
   profiler_enabled() = true;
 }
 
+inline void profiler_mark_power_logged(uint32_t now_ms, int pwr_state) noexcept {
+  auto &st = profiler_timer_state();
+  st.last_10s_log_ms = now_ms;
+  st.last_logged_pwr_state = pwr_state;
+}
+
 inline void profiler_stop() {
   auto &st = profiler_timer_state();
   profiler_enabled() = false;
   st.armed = false;
   st.started_ms = 0U;
   st.timeout_ms = kProfilerDefaultTimeoutMs;
+  st.last_10s_log_ms = 0U;
+  st.last_logged_pwr_state = -1;
 }
 
 inline bool profiler_is_expired(uint32_t now_ms) {

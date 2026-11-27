@@ -872,8 +872,10 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
   // Enforce exact ui_panel_traits.h <-> hal_manifest.h parity on ArtCanvasCache slot cap.
 #if LATTER_CHIP_P4
   static_assert(kArtCacheEntries == 3, "P4 builds must configure 3 ArtCanvasCache entries");
+#elif LATTER_PSRAM_MB >= 8
+  static_assert(kArtCacheEntries == 3, "8 MB S3 builds must allow 3 ArtCanvasCache entries");
 #else
-  static_assert(kArtCacheEntries == 1, "8 MB S3 builds must cap ArtCanvasCache to 1 entry");
+  static_assert(kArtCacheEntries == 1, "<8 MB PSRAM builds must cap ArtCanvasCache to 1 entry");
 #endif
 
   static constexpr uint8_t kRefBayer4[4][4] = {
@@ -965,7 +967,51 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
       }
     }
   }
+  // Verify art_canvas_trim_to_one retains MRU slot without corruption
+  art_canvas_trim_to_one();
+  {
+    fix.fill(0U);
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::MUSIC, 2, 0U, true);
+    LATTER_CHECK(render_album_art_canvas_view(
+        fix.surf, art_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
+        /*apply_scrim=*/true, /*show_metadata=*/false, kArtDimLyricsHud));
+  }
   art_canvas_drop_all();
+
+  // Verify fast_hline_blend Q8 SWAR span blender matches color interpolation closely across endian modes & clipping
+  {
+    const UiColor bg_c{40, 80, 120};
+    const UiColor fg_c{220, 140, 60};
+    for (int mode : {1, 2, 3, 4}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, mode);
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::HOME, 0, 0U, true);
+      frame_base_begin();
+      const uint16_t bg_hw = encode_hw_rgb565(bg_c);
+      fix.fill(bg_hw);
+      const int y = SCREEN_H / 2;
+      fast_hline_blend(fix.surf, -4, 16, y, fg_c, 160);
+      for (int x = 0; x < 12; ++x) {
+        const uint16_t raw = decode_hw_rgb565_raw(fix.pixels[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)]);
+        const uint8_t r5 = static_cast<uint8_t>((raw >> 11) & 0x1FU);
+        const uint8_t g6 = static_cast<uint8_t>((raw >> 5) & 0x3FU);
+        const uint8_t b5 = static_cast<uint8_t>(raw & 0x1FU);
+        const UiColor got{static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+                          static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+                          static_cast<uint8_t>((b5 << 3) | (b5 >> 2))};
+        LATTER_CHECK(got.r > bg_c.r && got.r < fg_c.r);
+        LATTER_CHECK(got.g > bg_c.g && got.g < fg_c.g);
+        LATTER_CHECK(got.b < bg_c.b && got.b > fg_c.b);
+      }
+      LATTER_CHECK(fix.pixels[static_cast<size_t>(y) * SCREEN_W + 12U] == bg_hw);
+      // Full opacity fast path matches fast_hline exact output
+      fast_hline_blend(fix.surf, 20, 10, y, fg_c, 255);
+      for (int x = 20; x < 30; ++x) {
+        LATTER_CHECK(fix.pixels[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)] == encode_hw_rgb565(fg_c));
+      }
+    }
+  }
 }
 
 void test_rotated_fallback_print_and_adaptive_glass_style() {

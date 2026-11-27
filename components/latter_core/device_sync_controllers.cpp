@@ -72,21 +72,25 @@ DeviceCommandDispatch evaluate_device_command(std::string_view sv_cmd,
       out.publish_display_state = true;
     }
   } else if (sv_cmd == "set_profiler_on") {
+    const bool already_on = profiler_enabled();
     profiler_start(now_ms);
     out.set_ble_prof_log = true;
     out.ble_prof_log_val = true;
-    reset_flight_recorder_window(now_ms);
-    LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '%s' (screen=%dx%d, auto_off=24h)",
-                     (device_name != nullptr) ? device_name : "", screen_w, screen_h);
-    log_boot_summary();
-    (void)link_report_log_line(now_ms, last_reset_reason());
-    log_heap_summary();
-    log_power_and_mem_profile(
-        "PROFILER_ON", r.nav.display_power_state, r.hw_usb_connected, r.hw_batt_charging,
-        r.hw_batt_level, r.hw_batt_voltage, r.audio.speaker_enabled(),
-        r.audio.mww_running(), r.voice.active,
-        r.audio.local_mp_playing(),
-        ble_active, r.nav.active_game, r.nav.sleep_start_time);
+    if (!already_on) {
+      reset_flight_recorder_window(now_ms);
+      LATTER_PROF_LOGI("[PROF:START] Telemetry Profiler on for '%s' (screen=%dx%d, auto_off=24h)",
+                       (device_name != nullptr) ? device_name : "", screen_w, screen_h);
+      log_boot_summary();
+      (void)link_report_log_line(now_ms, last_reset_reason());
+      log_heap_summary();
+      log_power_and_mem_profile(
+          "PROFILER_ON", r.nav.display_power_state, r.hw_usb_connected, r.hw_batt_charging,
+          r.hw_batt_level, r.hw_batt_voltage, r.audio.speaker_enabled(),
+          r.audio.mww_running(), r.voice.active,
+          r.audio.local_mp_playing(),
+          ble_active, r.nav.active_game, r.nav.sleep_start_time);
+      profiler_mark_power_logged(now_ms, r.nav.display_power_state);
+    }
     out.publish_device_telemetry = true;
   } else if (sv_cmd == "set_profiler_off") {
     LATTER_PROF_LOGI("[PROF:STOP] Telemetry Profiler off");

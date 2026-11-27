@@ -554,9 +554,6 @@ script:
                 latter_rpc::bind_sensor_sink(&id(latter_rpc_outbox));
                 latter_core::emit_device_hello();
                 latter_core::check_and_emit_timer_alarm_state(now_ms, true);
-                auto &r = latter_core::runtime_state();
-                r.nav.last_pub_display_power_state = -1;
-                r.nav.last_pub_display_bri_pct = -1;
                 id(publish_device_telemetry).execute();
                 id(publish_display_state).execute();
                 latter_core::mark_hello_sent(now_ms, latter_core::persisted_prefs().dirty_mask);

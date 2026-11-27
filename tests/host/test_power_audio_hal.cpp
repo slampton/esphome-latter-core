@@ -851,6 +851,14 @@ void test_panel_dcs_timeout_isolation_and_wake_grace() {
   using namespace latter_core;
 
   static_assert(kTimeoutPanelDcsId == 0x4C410010U);
+  static_assert(latter_rpc::kTimeoutRpcDrainId == 0x4C410011U);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutPanelDcsId);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutAsyncDrawId);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutFbClearId);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutWeatherStepId);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutActivityRotateId);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutTouchLongPressId);
+  static_assert(latter_rpc::kTimeoutRpcDrainId != kTimeoutMusicPeerBrowseId);
   static_assert(kTimeoutPanelDcsId != kTimeoutAsyncDrawId);
   static_assert(kTimeoutPanelDcsId != kTimeoutFbClearId);
   static_assert(kTimeoutPanelDcsId != kTimeoutWeatherStepId);

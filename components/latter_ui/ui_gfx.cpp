@@ -143,6 +143,20 @@ void ui_psram_free(void *ptr) noexcept {
 #endif
 }
 
+bool psram_headroom_below(size_t min_free_bytes, size_t min_largest_block_bytes) noexcept {
+#ifdef USE_ESP32
+  if (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) < min_free_bytes) {
+    return true;
+  }
+  return (min_largest_block_bytes > 0U) &&
+         (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) < min_largest_block_bytes);
+#else
+  (void)min_free_bytes;
+  (void)min_largest_block_bytes;
+  return false;
+#endif
+}
+
 // 2. Between-Frames Async PPA Framebuffer Clear, PPA SRM Band Blit & PPA Blend Wash
 namespace {
 
@@ -1552,6 +1566,59 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
 }
 
 }  // namespace
+
+namespace {
+
+template <int Mode>
+void blend_solid_span_q8_mode(uint16_t *dst_row, int x0, int x1, UiColor c, int a_255) noexcept {
+  const uint32_t a_q8 = static_cast<uint32_t>(a_255 + (a_255 >> 7));
+  const uint32_t inv = 256U - a_q8;
+  const uint32_t sr5 = (static_cast<uint32_t>(c.r) * 31U + 127U) / 255U;
+  const uint32_t sg6 = (static_cast<uint32_t>(c.g) * 63U + 127U) / 255U;
+  const uint32_t sb5 = (static_cast<uint32_t>(c.b) * 31U + 127U) / 255U;
+  const uint32_t base_rb = ((sr5 * a_q8 + 128U) << 16) | (sb5 * a_q8 + 128U);
+  const uint32_t base_g_s5 = (sg6 * a_q8 + 128U) << 5;
+  for (int px = x0; px <= x1; ++px) {
+    dst_row[px] = blend_swar_q8_px<Mode>(dst_row[px], inv, base_rb, base_g_s5);
+  }
+}
+
+}  // namespace
+
+void fast_hline_blend_impl(Rgb565Surface &it, int x0, int w, int y, UiColor color, int alpha_255) {
+  if (w <= 0 || alpha_255 <= 0 || !row_in_clip_band(y)) return;
+  if (x0 < 0) {
+    w += x0;
+    x0 = 0;
+  }
+  if (x0 + w > SCREEN_W) {
+    w = SCREEN_W - x0;
+  }
+  if (w <= 0) return;
+  if (alpha_255 >= 255) {
+    fast_hline(it, x0, y, w, color);
+    return;
+  }
+  uint16_t *const fb = active_frame_buf16();
+  if (fb == nullptr) {
+    for (int px = x0; px < x0 + w; ++px) {
+      fast_pixel_blend(it, px, y, color, alpha_255);
+    }
+    return;
+  }
+  uint16_t *const row = fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+  const int x1 = x0 + w - 1;
+  const int mode = active_frame_endian_mode();
+  if (mode == 1 || mode < 0) {
+    blend_solid_span_q8_mode<1>(row, x0, x1, color, alpha_255);
+  } else if (mode == 2) {
+    blend_solid_span_q8_mode<2>(row, x0, x1, color, alpha_255);
+  } else if (mode == 4) {
+    blend_solid_span_q8_mode<4>(row, x0, x1, color, alpha_255);
+  } else {
+    blend_solid_span_q8_mode<3>(row, x0, x1, color, alpha_255);
+  }
+}
 
 void fill_round_rect_glass_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
                                 UiColor tint, int a_top, int a_bot, int hole) {

@@ -48,13 +48,11 @@ interval:
             #endif
             id(publish_device_telemetry).execute();
           }
-          static uint32_t last_prof_10s_ms = 0;
-          static int last_prof_pwr_state = -1;
+          const auto &pt = latter_core::profiler_timer_state();
           if (latter_core::profiler_enabled() &&
-              (rs.nav.display_power_state != last_prof_pwr_state || (now_1s_ms - last_prof_10s_ms >= 10000U))) {
-            const char *trig = (rs.nav.display_power_state != last_prof_pwr_state) ? "STATE_CHG" : "10S_TICK";
-            last_prof_pwr_state = rs.nav.display_power_state;
-            last_prof_10s_ms = now_1s_ms;
+              (rs.nav.display_power_state != pt.last_logged_pwr_state || (now_1s_ms - pt.last_10s_log_ms >= 10000U))) {
+            const char *trig = (rs.nav.display_power_state != pt.last_logged_pwr_state) ? "STATE_CHG" : "10S_TICK";
+            latter_core::profiler_mark_power_logged(now_1s_ms, rs.nav.display_power_state);
             latter_core::log_power_and_mem_profile(
                 trig, rs.nav.display_power_state, rs.hw_usb_connected, rs.hw_batt_charging,
                 rs.hw_batt_level, rs.hw_batt_voltage, rs.audio.speaker_enabled(),

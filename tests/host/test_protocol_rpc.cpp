@@ -532,8 +532,10 @@ void test_sram_psram_budget_and_http_stall_guards() {
 
 #if LATTER_CHIP_P4
   static_assert(LATTER_ART_CACHE_ENTRIES == 3, "32 MB PSRAM P4 builds allow 3 ArtCanvasCache slots");
+#elif LATTER_PSRAM_MB >= 8
+  static_assert(LATTER_ART_CACHE_ENTRIES == 3, "8 MB PSRAM S3 builds allow 3 ArtCanvasCache slots");
 #else
-  static_assert(LATTER_ART_CACHE_ENTRIES == 1, "8 MB PSRAM S3 builds must cap ArtCanvasCache to 1 slot");
+  static_assert(LATTER_ART_CACHE_ENTRIES == 1, "<8 MB PSRAM builds must cap ArtCanvasCache to 1 slot");
 #endif
   static_assert(!std::is_default_constructible_v<CalendarWindowStore>,
                 "CalendarWindowStore (~51 KB) must never be default-constructible on the stack");
@@ -830,8 +832,71 @@ void test_wave2_v3_wire_escaping_and_base_fold() {
     LATTER_CHECK(cmd_nav.forward_ui_cmd);
     const auto cmd_prof_on = evaluate_device_command("set_profiler_on", 7200U, true, true, "test", 466, 466);
     LATTER_CHECK(cmd_prof_on.set_ble_prof_log && cmd_prof_on.ble_prof_log_val && profiler_enabled());
+    LATTER_CHECK(profiler_timer_state().last_10s_log_ms == 7200U);
+    LATTER_CHECK(profiler_timer_state().last_logged_pwr_state == rs.nav.display_power_state);
+    // Re-sending set_profiler_on while already active refreshes timer without duplicating startup burst
+    profiler_mark_power_logged(7100U, 2);
+    const auto cmd_prof_on_again = evaluate_device_command("set_profiler_on", 7250U, true, true, "test", 466, 466);
+    LATTER_CHECK(cmd_prof_on_again.publish_device_telemetry && profiler_enabled());
+    LATTER_CHECK(profiler_timer_state().last_10s_log_ms == 7100U);
     const auto cmd_prof_off = evaluate_device_command("set_profiler_off", 7300U, true, true, "test", 466, 466);
     LATTER_CHECK(cmd_prof_off.set_ble_prof_log && !cmd_prof_off.ble_prof_log_val && !profiler_enabled());
+    LATTER_CHECK(profiler_timer_state().last_logged_pwr_state == -1);
+
+    // 410 B device_telemetry packs into 2 frames <= kMaxRpcFrameBytes, and 10+ part & max-seq frames never exceed cap
+    {
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      latter_rpc::rpc_state().boot_id = 0xec1b416eU;
+      latter_rpc::rpc_state().next_seq = 11U;
+      std::string link_p(240, 'a');
+      const std::string tel_json = latter_rpc::build_rpc_json("device_telemetry", {
+          {"link_json", link_p},
+          {"int_ram_free_kb", "91"},
+          {"int_ram_min_kb", "54"},
+          {"int_ram_largest_kb", "50"},
+          {"psram_min_kb", "1745"},
+          {"ble_active", "1"},
+          {"profiler_on", "0"},
+      });
+      LATTER_CHECK(tel_json.size() > 400U && tel_json.size() <= 426U);
+      LATTER_CHECK(latter_rpc::enqueue_chunked_json(tel_json));
+      LATTER_CHECK(latter_rpc::rpc_state().count == 2U);
+
+      latter_rpc::bind_sensor_sink(&default_box);
+      default_box.published.clear();
+      latter_rpc::step_outbox_loop(1000U);
+      latter_rpc::step_outbox_loop(1001U);
+      LATTER_CHECK(default_box.published.size() == 1U);
+      LATTER_CHECK(latter_rpc::outbox_next_delay_ms(1010U) == 25U);
+      LATTER_CHECK(latter_rpc::outbox_next_delay_ms(1036U) >= 1U);
+      latter_rpc::step_outbox_loop(1036U);
+      LATTER_CHECK(latter_rpc::outbox_next_delay_ms(1036U) == 0U);
+      latter_rpc::step_outbox_loop(1037U);
+      LATTER_CHECK(default_box.published.size() == 2U);
+      for (const auto &f : default_box.published) {
+        LATTER_CHECK(f.size() <= latter_rpc::kMaxRpcFrameBytes);
+      }
+
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      latter_rpc::rpc_state().boot_id = 0xdeadbeefU;
+      latter_rpc::rpc_state().next_seq = 0xFFFFFFFFU;
+      latter_rpc::bind_sensor_sink(&default_box);
+      default_box.published.clear();
+      std::string many_parts(2200U, 'z');
+      LATTER_CHECK(latter_rpc::enqueue_chunked_json(many_parts));
+      LATTER_CHECK(latter_rpc::rpc_state().count >= 10U);
+      uint32_t t_drain = 2000U;
+      while (latter_rpc::has_pending_frames()) {
+        latter_rpc::step_outbox_loop(t_drain);
+        t_drain += 20U;
+      }
+      LATTER_CHECK(default_box.published.size() >= 10U);
+      for (const auto &f : default_box.published) {
+        LATTER_CHECK(f.size() <= latter_rpc::kMaxRpcFrameBytes);
+      }
+      latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
+      latter_rpc::bind_sensor_sink(&default_box);
+    }
 
     rs.nav.display_power_state = 0;
     rs.nav.gui_page = PageId::HOME;

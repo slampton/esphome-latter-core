@@ -364,20 +364,49 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
     int max_w = 0;
     size_t raw_len = 0;
     uint32_t fnv_hash = 0;
-    std::string raw_key;
-    std::string fitted;
+    uint16_t fitted_len = 0;
+    char raw_key[128]{};
+    char fitted[128]{};
   };
-  static FitCacheEntry cache[16];
-  static uint8_t next_slot = 0;
+  struct FitTextCache {
+    FitCacheEntry entries[16]{};
+    uint8_t next_slot = 0;
+  };
+  struct FitCacheMem {
+    static FitTextCache *&slot() noexcept {
+      static FitTextCache *ptr = nullptr;
+      return ptr;
+    }
+    static void drop() noexcept {
+      FitTextCache *&ptr = slot();
+      if (ptr != nullptr) {
+        ui_psram_free(ptr);
+        ptr = nullptr;
+      }
+    }
+    static FitTextCache *acquire() noexcept {
+      static const bool s_reg = register_psram_cache_evictor(&drop);
+      (void)s_reg;
+      FitTextCache *&ptr = slot();
+      if (ptr == nullptr) {
+        ptr = static_cast<FitTextCache *>(ui_psram_calloc(1U, sizeof(FitTextCache)));
+      }
+      return ptr;
+    }
+  };
 
   uint32_t h = 2166136261U;
   for (unsigned char ch : raw_str) h = (h ^ ch) * 16777619U;
   const void *fptr = font.handle;
-  for (int i = 0; i < 16; i++) {
-    const auto &e = cache[i];
-    if (e.font_ptr == fptr && e.glyph_fn == font.find_glyph_fn && e.font_h == font.height &&
-        e.max_w == max_w && e.raw_len == raw_str.size() && e.fnv_hash == h && e.raw_key == raw_str) {
-      return e.fitted;
+  FitTextCache *fc = (raw_str.size() < sizeof(FitCacheEntry::raw_key)) ? FitCacheMem::acquire() : nullptr;
+  if (fc != nullptr) {
+    for (int i = 0; i < 16; i++) {
+      const auto &e = fc->entries[i];
+      if (e.font_ptr == fptr && e.glyph_fn == font.find_glyph_fn && e.font_h == font.height &&
+          e.max_w == max_w && e.raw_len == raw_str.size() && e.fnv_hash == h &&
+          std::memcmp(e.raw_key, raw_str.data(), raw_str.size()) == 0) {
+        return std::string(e.fitted, e.fitted_len);
+      }
     }
   }
 
@@ -420,16 +449,21 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
     result.append("..");
   }
 
-  auto &slot = cache[next_slot & 15U];
-  next_slot = static_cast<uint8_t>((next_slot + 1U) & 15U);
-  slot.font_ptr = fptr;
-  slot.glyph_fn = font.find_glyph_fn;
-  slot.font_h = font.height;
-  slot.max_w = max_w;
-  slot.raw_len = raw_str.size();
-  slot.fnv_hash = h;
-  slot.raw_key = raw_str;
-  slot.fitted = result;
+  if (fc != nullptr && result.size() < sizeof(FitCacheEntry::fitted)) {
+    auto &slot = fc->entries[fc->next_slot & 15U];
+    fc->next_slot = static_cast<uint8_t>((fc->next_slot + 1U) & 15U);
+    slot.font_ptr = fptr;
+    slot.glyph_fn = font.find_glyph_fn;
+    slot.font_h = font.height;
+    slot.max_w = max_w;
+    slot.raw_len = raw_str.size();
+    slot.fnv_hash = h;
+    std::memcpy(slot.raw_key, raw_str.data(), raw_str.size());
+    slot.raw_key[raw_str.size()] = '\0';
+    slot.fitted_len = static_cast<uint16_t>(result.size());
+    std::memcpy(slot.fitted, result.data(), result.size());
+    slot.fitted[result.size()] = '\0';
+  }
   return result;
 }
 
@@ -1104,6 +1138,31 @@ void art_canvas_drop(const void *data) {
   }
 }
 
+void art_canvas_trim_to_one() noexcept {
+  if (g_art_canvas_entries == nullptr || kArtCacheActiveSlots <= 1) return;
+  int keep_idx = -1;
+  uint32_t best_use = 0;
+  for (int i = 0; i < kArtCacheActiveSlots; i++) {
+    const ArtCanvasCache &e = g_art_canvas_entries[i];
+    if (e.px != nullptr && (keep_idx < 0 || e.last_use >= best_use)) {
+      keep_idx = i;
+      best_use = e.last_use;
+    }
+  }
+  for (int i = 0; i < kArtCacheActiveSlots; i++) {
+    if (i == keep_idx) continue;
+    ArtCanvasCache &e = g_art_canvas_entries[i];
+    if (e.px != nullptr || e.px_raw != nullptr) {
+      PsramPhaseBuf pb{e.px_raw, e.px};
+      ui_psram_phase_free(pb);
+      e.px_raw = nullptr;
+      e.px = nullptr;
+    }
+    e.data = nullptr;
+    e.last_use = 0;
+  }
+}
+
 void art_canvas_drop_all() noexcept {
   if (g_art_canvas_entries == nullptr) return;
   for (int i = 0; i < kArtCacheActiveSlots; i++) {
@@ -1120,7 +1179,7 @@ void art_canvas_drop_all() noexcept {
 }
 
 namespace {
-constexpr size_t kMaxPsramCacheEvictors = 16U;
+constexpr size_t kMaxPsramCacheEvictors = 24U;
 PsramCacheEvictorFn g_psram_cache_evictors[kMaxPsramCacheEvictors]{};
 size_t g_psram_cache_evictor_count = 0U;
 }  // namespace
@@ -1204,10 +1263,15 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
     const size_t frame_bytes = px_count * sizeof(uint16_t);
     if (victim->px == nullptr) {
-      if (LATTER_PSRAM_MB < 16 || frame_bytes > 1536U * 1024U) {
+      if ((LATTER_PSRAM_MB < 16 || frame_bytes > 1536U * 1024U) &&
+          psram_headroom_below(frame_bytes + 512U * 1024U, frame_bytes + 64U * 1024U)) {
         evict_registered_psram_caches();
       }
-      const PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);
+      PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);
+      if (pb.px == nullptr) {
+        evict_registered_psram_caches();
+        pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);
+      }
       victim->px_raw = pb.raw;
       victim->px = pb.px;
     }

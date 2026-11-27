@@ -37,6 +37,7 @@ PsramPhaseBuf ui_psram_phase_alloc(size_t bytes, const void *match_addr, bool ze
 void ui_psram_phase_free(PsramPhaseBuf &buf) noexcept;
 void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept;
 void ui_psram_free(void *ptr) noexcept;
+bool psram_headroom_below(size_t min_free_bytes, size_t min_largest_block_bytes = 0U) noexcept;
 void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept;
 bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int dst_y0,
                           int dst_w, int dst_h, const uint16_t *src, int src_w, int src_h,
@@ -551,6 +552,14 @@ inline void fast_circle_aa(DisplayT &it, int cx, int cy, float r, UiColor c, flo
   }
 }
 
+void fast_hline_blend_impl(Rgb565Surface &it, int x0, int w, int y, UiColor color, int alpha_255);
+
+template <typename DisplayT>
+inline void fast_hline_blend(DisplayT &it, int x0, int w, int y, UiColor color, int alpha_255) {
+  Rgb565Surface surf(it);
+  fast_hline_blend_impl(surf, x0, w, y, color, alpha_255);
+}
+
 template <typename DisplayT>
 inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy, int size_px,
                             UiColor color, bool drop_shadow = true,
@@ -564,10 +573,7 @@ inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy,
     rasterize_icon_fn(eff_name, cx + 1, cy + 1, size_px,
                       [&](int x0, int x1_excl, int y, uint8_t a) {
                         const int sa = (static_cast<int>(a) * 184) >> 8;
-                        if (sa <= 0) return;
-                        for (int px = x0; px < x1_excl; ++px) {
-                          fast_pixel_blend(it, px, y, kChromeShadow, sa);
-                        }
+                        if (sa > 0) fast_hline_blend(it, x0, x1_excl - x0, y, kChromeShadow, sa);
                       });
   }
   rasterize_icon_fn(eff_name, cx, cy, size_px,
@@ -575,9 +581,7 @@ inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy,
                       if (a == 255) {
                         fast_hline(it, x0, y, x1_excl - x0, color);
                       } else if (a > 0) {
-                        for (int px = x0; px < x1_excl; ++px) {
-                          fast_pixel_blend(it, px, y, color, static_cast<int>(a));
-                        }
+                        fast_hline_blend(it, x0, x1_excl - x0, y, color, static_cast<int>(a));
                       }
                     });
 }
@@ -790,6 +794,7 @@ inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 // never blow up PSRAM by blindly multiplying 3 * W * H * 2.
 inline constexpr size_t art_cache_psram_budget_bytes(int psram_mb) noexcept {
   if (psram_mb >= 16) return 3584U * 1024U;
+  if (psram_mb >= 8) return 1408U * 1024U;
   if (psram_mb >= 4) return 1024U * 1024U;
   return 0U;
 }
@@ -827,6 +832,7 @@ int compute_art_row_scale_q8(int y, bool show_controls, bool show_metadata, int 
 void art_letterbox_bounds(bool show_metadata, bool show_controls, int &out_y0, int &out_y1);
 ArtRect art_standard_rect(int cx, int src_w, int src_h, bool show_metadata, bool apply_scrim);
 void art_canvas_drop(const void *data);
+void art_canvas_trim_to_one() noexcept;
 void art_canvas_drop_all() noexcept;
 using PsramCacheEvictorFn = void (*)() noexcept;
 bool register_psram_cache_evictor(PsramCacheEvictorFn fn) noexcept;

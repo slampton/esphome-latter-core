@@ -1427,9 +1427,18 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
   if (fb != nullptr && cache.buf.px == nullptr &&
       sky_base_cache_allowed(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB)) {
     if (LATTER_CHIP_P4 == 0 || bytes > 1536U * 1024U) {
-      art_canvas_drop_all();
+      if (psram_headroom_below(bytes + 512U * 1024U, bytes + 64U * 1024U)) {
+        art_canvas_trim_to_one();
+      }
+      if (psram_headroom_below(bytes + 384U * 1024U, bytes + 64U * 1024U)) {
+        art_canvas_drop_all();
+      }
     }
     cache.buf = ui_psram_phase_alloc(bytes, fb, false);
+    if (cache.buf.px == nullptr) {
+      art_canvas_drop_all();
+      cache.buf = ui_psram_phase_alloc(bytes, fb, false);
+    }
     cache.valid = false;
   }
 

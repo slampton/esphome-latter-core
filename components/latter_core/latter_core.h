@@ -46,10 +46,20 @@ class LatterLoopProbe : public ::esphome::Component {
     s.passes++;
     if (::esphome::HighFrequencyLoopRequester::is_high_frequency()) s.hf_passes++;
 
-    // Drain paced multi-chunk RPC outbox frames & deterministic audio path deadlines with zero idle timers.
+    // Drain paced multi-chunk RPC outbox frames & deterministic audio path deadlines with zero busy-spinning.
     const bool more_rpc = ::latter_rpc::step_outbox_loop(now);
+    if (more_rpc) {
+      if (!this->rpc_drain_armed_) {
+        const uint32_t delay_ms = std::max<uint32_t>(1U, ::latter_rpc::outbox_next_delay_ms(now));
+        this->rpc_drain_armed_ = true;
+        this->set_timeout(::latter_rpc::kTimeoutRpcDrainId, delay_ms, [this]() { this->rpc_drain_armed_ = false; });
+      }
+    } else if (this->rpc_drain_armed_) {
+      this->cancel_timeout(::latter_rpc::kTimeoutRpcDrainId);
+      this->rpc_drain_armed_ = false;
+    }
     audio_arbitrator().poll_loop(now);
-    const bool need_hf = more_rpc || audio_arbitrator().needs_fast_loop();
+    const bool need_hf = audio_arbitrator().needs_fast_loop();
     if (need_hf && !this->rpc_hf_held_) {
       this->rpc_hf_.start();
       this->rpc_hf_held_ = true;
@@ -74,6 +84,7 @@ class LatterLoopProbe : public ::esphome::Component {
 
   ::esphome::HighFrequencyLoopRequester rpc_hf_{};
   bool rpc_hf_held_{false};
+  bool rpc_drain_armed_{false};
 };
 
 }  // namespace latter_core

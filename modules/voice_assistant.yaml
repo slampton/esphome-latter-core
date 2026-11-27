@@ -67,8 +67,13 @@ voice_assistant:
           }
           latter_core::log_audio_profile("VA_LISTEN_START");
           #if !LATTER_CHIP_P4
-          latter_ui::art_canvas_drop_all();
-          latter_ui::evict_registered_psram_caches();
+          if (latter_ui::psram_headroom_below(900U * 1024U, 512U * 1024U)) {
+            latter_ui::art_canvas_trim_to_one();
+          }
+          if (latter_ui::psram_headroom_below(640U * 1024U, 384U * 1024U)) {
+            latter_ui::art_canvas_drop_all();
+            latter_ui::evict_registered_psram_caches();
+          }
           #endif
           id(apply_power_policy).execute();  // va.is_running(): full-throughput Wi-Fi while streaming
           if (!latter_core::cam_intercom_ptt_active()) {
@@ -316,8 +321,13 @@ voice_assistant:
             - lambda: |-
                 latter_core::log_audio_profile("VA_TTS_START");
                 #if !LATTER_CHIP_P4
-                latter_ui::art_canvas_drop_all();
-                latter_ui::evict_registered_psram_caches();
+                if (latter_ui::psram_headroom_below(900U * 1024U, 512U * 1024U)) {
+                  latter_ui::art_canvas_trim_to_one();
+                }
+                if (latter_ui::psram_headroom_below(640U * 1024U, 384U * 1024U)) {
+                  latter_ui::art_canvas_drop_all();
+                  latter_ui::evict_registered_psram_caches();
+                }
                 #endif
             - mixer_speaker.apply_ducking:
                 id: media_mixing_input
