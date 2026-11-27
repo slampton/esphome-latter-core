@@ -72,6 +72,8 @@ voice_assistant:
           }
           if (latter_ui::psram_headroom_below(640U * 1024U, 384U * 1024U)) {
             latter_ui::art_canvas_drop_all();
+          }
+          if (latter_ui::psram_headroom_below(480U * 1024U, 256U * 1024U)) {
             latter_ui::evict_registered_psram_caches();
           }
           #endif
@@ -326,6 +328,8 @@ voice_assistant:
                 }
                 if (latter_ui::psram_headroom_below(640U * 1024U, 384U * 1024U)) {
                   latter_ui::art_canvas_drop_all();
+                }
+                if (latter_ui::psram_headroom_below(480U * 1024U, 256U * 1024U)) {
                   latter_ui::evict_registered_psram_caches();
                 }
                 #endif

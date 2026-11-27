@@ -1615,6 +1615,14 @@ bool evaluate_sky_has_fast_motion(std::string_view sim_opt, std::string_view raw
   return has_fast_weather_motion_sv(cond, is_night, now_ms);
 }
 
+bool evaluate_sky_is_fog(std::string_view sim_opt, std::string_view raw_cond,
+                         std::string_view sun_state) {
+  std::string_view cond{};
+  bool is_night = false;
+  if (!resolve_effective_sky_cond(sim_opt, raw_cond, sun_state, cond, is_night)) return false;
+  return classify_weather_condition(cond, is_night).is_fog_mist;
+}
+
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
                                  bool has_motion_cond) {
   if (!has_motion_cond || touch_gesture().active) return false;

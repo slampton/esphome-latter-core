@@ -49,6 +49,7 @@ struct Cadence20msInputs {
   bool sky_enabled = false;
   bool sky_stepping = false;
   bool sky_fast_motion = true;
+  bool sky_is_fog = false;
   bool sim_just_changed = false;
   float motion_mag = 0.0f;
   uint32_t home_rotate_due_ms = 0U;
@@ -159,6 +160,18 @@ static constexpr int kUpcomingAlarmPinMinutes = 120;
 
 inline constexpr int calm_home_sky_band_y1(int dock_y0) noexcept {
   return (dock_y0 > 1) ? ((dock_y0 & ~1) - 1) : 0;
+}
+
+inline constexpr int calm_home_sky_band_y1(
+    int dock_y0, int act_y0, bool has_static_act, bool sky_is_fog, int screen_h) noexcept {
+  const int dock_lim = calm_home_sky_band_y1(dock_y0);
+  if (!has_static_act || sky_is_fog) return dock_lim;
+  const int haze1_hh = ((8 * screen_h) / 466 > 5) ? ((8 * screen_h) / 466) : 5;
+  const int haze1_max = ((118 * screen_h + 233) / 466) + haze1_hh + 6;
+  if (act_y0 > haze1_max + 2 && act_y0 < dock_y0) {
+    return calm_home_sky_band_y1(act_y0);
+  }
+  return dock_lim;
 }
 
 inline constexpr uint32_t weather_sky_frame_gap_ms(uint32_t target_gap_ms,
@@ -323,6 +336,7 @@ class FrameCadenceController {
   bool last_sky_enabled_ = false;
   bool cached_has_motion_ = false;
   bool cached_has_fast_motion_ = false;
+  bool cached_sky_is_fog_ = false;
   uint8_t idle_anim_ticks_ = 0U;
 
   uint32_t prev_home_slot_ = 0U;
@@ -378,6 +392,8 @@ bool evaluate_sky_has_motion(std::string_view sim_opt, std::string_view raw_cond
                              std::string_view sun_state, uint32_t now_ms);
 bool evaluate_sky_has_fast_motion(std::string_view sim_opt, std::string_view raw_cond,
                                   std::string_view sun_state, uint32_t now_ms);
+bool evaluate_sky_is_fog(std::string_view sim_opt, std::string_view raw_cond,
+                         std::string_view sun_state);
 bool weather_sky_motion_stepping(bool usb_connected, uint32_t now_ms, uint32_t latest_input_ms,
                                  bool has_motion_cond);
 

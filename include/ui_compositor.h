@@ -128,6 +128,7 @@ struct FrameRenderPlan {
   bool weather_sky_active{false};
   bool weather_sky_stepping{false};
   bool w_has_fast_motion{false};
+  bool w_is_fog{false};
   bool on_home_main{false};
   bool dock_anim_now{false};
   bool page_horiz_bounce_now{false};

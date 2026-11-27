@@ -897,6 +897,7 @@ void FrameCadenceController::reset() {
   last_sky_enabled_ = false;
   cached_has_motion_ = false;
   cached_has_fast_motion_ = false;
+  cached_sky_is_fog_ = false;
   idle_anim_ticks_ = 0U;
   prev_home_slot_ = 0U;
   prev_pause_exp_pending_250ms_ = false;
@@ -1052,7 +1053,10 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
         out.record_ambient_ms = true;
         if (on_home_main && !in.sim_just_changed && in.sky_stepping && !in.sky_fast_motion && in.dock_y0 > 1) {
           out.band_y0 = 0;
-          out.band_y1 = calm_home_sky_band_y1(in.dock_y0);
+          out.band_y1 = calm_home_sky_band_y1(
+              in.dock_y0, in.act_y0,
+              in.has_act_band && !in.act_sliding && !in.act_fade_settle,
+              in.sky_is_fog, SCREEN_H);
           out.schedule_anim_band = true;
         } else {
           out.schedule_anim_full = true;
@@ -1336,6 +1340,9 @@ Cadence20msActions FrameCadenceController::step_20ms(
           cached_has_motion_ &&
           evaluate_sky_has_fast_motion(sim_opt, weather_state().condition,
                                        weather_state().sun_state, now_ms);
+      cached_sky_is_fog_ =
+          cached_has_motion_ &&
+          evaluate_sky_is_fog(sim_opt, weather_state().condition, weather_state().sun_state);
     }
     const uint32_t latest_input_ms =
         std::max(touch_gesture().last_touch_ms, ui_focus_last_ms());
@@ -1343,6 +1350,7 @@ Cadence20msActions FrameCadenceController::step_20ms(
         in.sky_enabled &&
         weather_sky_motion_stepping(motion_power, now_ms, latest_input_ms, cached_has_motion_);
     in.sky_fast_motion = cached_has_fast_motion_;
+    in.sky_is_fog = cached_sky_is_fog_;
   }
 
   const auto out = evaluate_20ms(in);
@@ -1616,6 +1624,9 @@ bool prepare_frame_plan(const UiFrameContext &ctx, FrameRenderPlan &out) {
   out.w_has_fast_motion =
       w_has_motion &&
       evaluate_sky_has_fast_motion(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state, ctx.now_ms);
+  out.w_is_fog =
+      w_has_motion &&
+      evaluate_sky_is_fog(ctx.weather_sim_opt, ws_cad.condition, ws_cad.sun_state);
   out.weather_sky_stepping =
       out.weather_sky_active && weather_ready_cad &&
       weather_sky_motion_stepping(motion_power_gui, ctx.now_ms, latest_input_ms, w_has_motion);
@@ -1805,7 +1816,10 @@ PostFrameSchedule compute_post_frame_schedule(const UiFrameContext &ctx, const F
       if (plan.on_home_main && !plan.w_has_fast_motion) {
         out.weather_band = true;
         out.weather_band_y0 = 0;
-        out.weather_band_y1 = calm_home_sky_band_y1(dock_dirty_band_y0());
+        out.weather_band_y1 = calm_home_sky_band_y1(
+            dock_dirty_band_y0(), plan.act_y0,
+            plan.has_act_band && !act_sliding_now,
+            plan.w_is_fog, SCREEN_H);
       } else {
         out.weather_full = true;
       }

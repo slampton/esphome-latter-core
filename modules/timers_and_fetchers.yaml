@@ -86,7 +86,12 @@ interval:
                   latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::dp_px(68), latter_ui::layout().back_y - 8);
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
                   if (now_t_ms - latter_ui::last_disp_update_ms() >= 200U) {
-                    latter_ui::schedule_disp_update(&id(disp1));
+                    int act_y0 = 0, act_y1 = 0;
+                    if (latter_ui::home_activity_band(act_y0, act_y1)) {
+                      latter_ui::schedule_band_disp_update(&id(disp1), act_y0, act_y1);
+                    } else {
+                      latter_ui::schedule_disp_update(&id(disp1));
+                    }
                   }
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 2) {
                   latter_ui::schedule_disp_update(&id(disp1));
@@ -463,8 +468,16 @@ script:
             return;
           }
           #if !LATTER_CHIP_P4
-          latter_ui::art_canvas_drop_all();
-          latter_ui::evict_registered_psram_caches();
+          const size_t cam_need_bytes =
+              static_cast<size_t>(req_w) * static_cast<size_t>(req_h) * 4U + 320U * 1024U;
+          const size_t cam_blk_bytes =
+              static_cast<size_t>(req_w) * static_cast<size_t>(req_h) * 2U + 64U * 1024U;
+          if (latter_ui::psram_headroom_below(cam_need_bytes + 320U * 1024U, cam_blk_bytes)) {
+            latter_ui::art_canvas_drop_all();
+          }
+          if (latter_ui::psram_headroom_below(cam_need_bytes + 128U * 1024U, cam_blk_bytes)) {
+            latter_ui::evict_registered_psram_caches();
+          }
           #endif
           latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
           latter_core::video_client().start(url, req_w, req_h);

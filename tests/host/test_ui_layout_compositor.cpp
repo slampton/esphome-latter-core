@@ -868,6 +868,34 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
   LATTER_CHECK(calm_due.schedule_anim_band && !calm_due.schedule_anim_full);
   LATTER_CHECK(calm_due.band_y0 == 0 && calm_due.band_y1 == calm_y1);
 
+  // Calm non-fog Home sky caps its animated band above a static Activity Card, while fog/no-card use calm_y1.
+  for (const char *fog_c : {"fog", "mist", "haze"}) {
+    LATTER_CHECK(evaluate_sky_is_fog("Live (Home Assistant)", fog_c, "above_horizon"));
+  }
+  for (const char *non_fog_c : {"sunny", "clear-day", "partlycloudy", "cloudy", "overcast"}) {
+    LATTER_CHECK(!evaluate_sky_is_fog("Live (Home Assistant)", non_fog_c, "above_horizon"));
+  }
+  {
+    const auto &ly_c = layout();
+    const int act_y0 = ly_c.home_activity_cy_for_rows(24, 1) - ly_c.home_activity_h_for_rows(1) / 2 - 2;
+    const int haze1_max = static_cast<int>(118.0f * wy_s) + std::max(5, static_cast<int>(8.0f * wy_s)) + 6;
+    const int capped_y1 = calm_home_sky_band_y1(dock_y0, act_y0, true, false, SCREEN_H);
+    LATTER_CHECK(capped_y1 < act_y0 && capped_y1 >= haze1_max && (capped_y1 & 1) == 1);
+    LATTER_CHECK(calm_home_sky_band_y1(dock_y0, act_y0, true, true, SCREEN_H) == calm_y1);
+    LATTER_CHECK(calm_home_sky_band_y1(dock_y0, act_y0, false, false, SCREEN_H) == calm_y1);
+
+    Cadence20msInputs act_in = in;
+    act_in.has_act_band = true;
+    act_in.act_y0 = act_y0;
+    act_in.act_y1 = dock_y0 - 4;
+    act_in.sky_is_fog = false;
+    const auto act_calm = ctrl.evaluate_20ms(act_in);
+    LATTER_CHECK(act_calm.schedule_anim_band && act_calm.band_y0 == 0 && act_calm.band_y1 == capped_y1);
+    act_in.sky_is_fog = true;
+    const auto act_fog = ctrl.evaluate_20ms(act_in);
+    LATTER_CHECK(act_fog.schedule_anim_band && act_fog.band_y0 == 0 && act_fog.band_y1 == calm_y1);
+  }
+
   // Weather app page (gui_page == 5) with calm sky still renders full frame (no Home Dock),
   // and its scheduled post-render cadence gap uses kCalmSkyFrameGapMs (240 ms) instead of 60-74 ms.
   in.gui_page = 5;
