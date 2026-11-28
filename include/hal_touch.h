@@ -169,6 +169,18 @@ inline constexpr uint16_t default_active_poll_ms(TouchHalProtocol p) noexcept {
   return 10U;
 }
 
+inline constexpr uint32_t touch_post_reset_settle_ms(TouchHalProtocol p) noexcept {
+  switch (p) {
+    case TouchHalProtocol::FT6336:
+    case TouchHalProtocol::FT3168:
+      return 250U;  // FocalTech datasheet T_rst is 200-300 ms before 0xA3 CIPHER & config regs respond
+    case TouchHalProtocol::GT911:
+      return 56U;
+    default:
+      return 38U;
+  }
+}
+
 static constexpr uint16_t kDefaultIdlePollMs = 28U;
 static constexpr uint32_t kPolledPostReleaseHoldMs = 450U;
 

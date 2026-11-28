@@ -958,7 +958,7 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
       const int uni_mul = uniform_art_dim_q8(apply_scrim, show_metadata, dim_level);
       const size_t frame_bytes =
           static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
-      if (uni_mul == 256) {
+      if (uni_mul == 256 && active_frame_endian_mode() == 1) {
         ui_psram_cache_writeback(src_data, frame_bytes);
         blit_psram_band_fast(fb_tgt, src_data, 0, SCREEN_H - 1);
         if (out_psram_coherent != nullptr) {

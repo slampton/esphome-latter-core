@@ -80,7 +80,7 @@ void LatterTouchscreen::setup() {
       }
       this->set_timeout(kResetReleaseTimeoutId, 12, [this]() {
         this->reset_pin_->digital_write(true);
-        this->set_timeout(kPostResetSettleTimeoutId, 56, [this]() {
+        this->set_timeout(kPostResetSettleTimeoutId, touch_post_reset_settle_ms(this->protocol_), [this]() {
           if (this->interrupt_pin_ != nullptr) {
             this->interrupt_pin_->pin_mode(gpio::FLAG_INPUT);
           }
@@ -90,13 +90,14 @@ void LatterTouchscreen::setup() {
       return;
     }
 
-    // Hynitron CST9217 & FocalTech: strictly non-blocking reset sequence (5 ms high -> 12 ms low -> 38 ms settle).
+    // Hynitron & FocalTech: strictly non-blocking reset sequence (5 ms high -> 12 ms low -> protocol settle).
     this->reset_pin_->digital_write(true);
     this->set_timeout(kResetAssertTimeoutId, 5, [this]() {
       this->reset_pin_->digital_write(false);
       this->set_timeout(kResetReleaseTimeoutId, 12, [this]() {
         this->reset_pin_->digital_write(true);
-        this->set_timeout(kPostResetSettleTimeoutId, 38, [this]() { this->finish_setup_(); });
+        this->set_timeout(kPostResetSettleTimeoutId, touch_post_reset_settle_ms(this->protocol_),
+                          [this]() { this->finish_setup_(); });
       });
     });
     return;
@@ -356,9 +357,9 @@ bool LatterTouchscreen::init_controller_() {
       }
       this->focaltech_id_verified_ = got_cipher && is_known_focaltech_chip_id(cipher_id);
       if (got_cipher && !this->focaltech_id_verified_) {
-        ESP_LOGW(TAG, "Touch HAL (%s @ 0x%02X) unexpected CIPHER 0x%02X; disabling monitor-mode writes",
+        ESP_LOGW(TAG, "Touch HAL (%s @ 0x%02X) unexpected CIPHER 0x%02X (vendor 0x%02X); disabling monitor-mode writes",
                  touch_hal_protocol_name(this->protocol_), this->address_,
-                 static_cast<unsigned>(cipher_id));
+                 static_cast<unsigned>(cipher_id), static_cast<unsigned>(vendor_id));
       }
       this->detected_chip_id_ = got_vendor ? vendor_id : cipher_id;
       // Program Trigger Pulse mode (0xA4 = 0x01), active scan mode (0x86 = 0x00), and ~100 Hz active period (0x88 = 0x06).

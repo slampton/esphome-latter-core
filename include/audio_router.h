@@ -291,7 +291,9 @@ class AudioPathArbitrator {
  public:
   using HostDriverFn = void (*)(uint32_t now_ms);
 
-  static constexpr uint32_t kDefaultMediaIdleDebounceMs = 3000U;
+  static constexpr uint32_t kDefaultMediaIdleDebounceMs = 1200U;
+  static constexpr uint32_t kVaResumeMusicGraceMs = 2500U;
+  static constexpr uint32_t kExplicitPauseFastIdleWindowMs = 2000U;
   static constexpr uint32_t kPauseSettleTimeoutMs = 500U;
   static constexpr uint32_t kAnnounceStallTimeoutMs = 6000U;
   static constexpr uint32_t kEchoQuietSpeakerTimeoutMs = 500U;
@@ -306,10 +308,14 @@ class AudioPathArbitrator {
   EchoGateStage echo_stage() const noexcept { return echo_stage_; }
   bool echo_gate_active() const noexcept { return echo_stage_ != EchoGateStage::Inactive; }
 
-  void arm_media_idle_debounce(uint32_t now_ms,
-                               uint32_t delay_ms = kDefaultMediaIdleDebounceMs) noexcept;
+  void arm_media_idle_debounce(uint32_t now_ms, uint32_t delay_ms = 0U) noexcept;
   void cancel_media_idle_debounce() noexcept;
   void arm_media_pause_settle(uint32_t now_ms) noexcept;
+  void clear_explicit_pause() noexcept { explicit_pause_ms_ = 0U; }
+  bool in_explicit_pause_window(uint32_t now_ms) const noexcept {
+    return explicit_pause_ms_ != 0U &&
+           static_cast<uint32_t>(now_ms - explicit_pause_ms_) <= kExplicitPauseFastIdleWindowMs;
+  }
   bool media_idle_debounce_active() const noexcept {
     return idle_debounce_start_ms_ != 0U || pause_settle_start_ms_ != 0U;
   }
@@ -345,6 +351,7 @@ class AudioPathArbitrator {
   uint32_t idle_debounce_start_ms_{0U};
   uint32_t idle_debounce_delay_ms_{kDefaultMediaIdleDebounceMs};
   uint32_t pause_settle_start_ms_{0U};
+  uint32_t explicit_pause_ms_{0U};
   uint32_t stall_check_start_ms_{0U};
 };
 

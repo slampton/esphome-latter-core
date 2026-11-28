@@ -71,7 +71,7 @@ speaker:
         buffer_duration: ${announcement_buffer_s}s
         timeout: 200ms
       - id: media_mixing_input
-        timeout: 1500ms
+        timeout: 600ms
       # Chimes, alarms and game sounds (latter_sound_player): their own input, so they duck and drain
       # independently of TTS and music.
       - id: sound_mixing_input
@@ -194,7 +194,10 @@ media_player:
                 id(mww).stop();
               }
             } else if (last_ss_state == static_cast<int>(media_player::MEDIA_PLAYER_STATE_PLAYING)) {
-              latter_core::audio_arbitrator().arm_media_idle_debounce(millis());
+              const auto &v = latter_core::runtime_state().voice;
+              if (!v.active && !v.tts_received) {
+                latter_core::audio_arbitrator().arm_media_idle_debounce(millis());
+              }
             }
             last_ss_state = cur_ss;
 
@@ -437,19 +440,34 @@ media_player:
                 return v.active || v.tts_received || !v.status_text.empty();
             then:
               - script.execute: va_tts_drain_and_finish
-        - lambda: |-
-            const uint32_t now_idle_ms = millis();
-            const auto &ms = latter_core::media_state();
-            if (!ms.is_local ||
-                (ms.state != "playing" && ms.state != "buffering" &&
-                 id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) {
-              latter_core::audio_session().note_local_playback_stopped();
-            }
-            latter_core::sync_audio_session_media_observation(false, false, now_idle_ms);
-            if (latter_core::runtime_state().nav.display_power_state == 0) {
-              latter_core::display_lifecycle().note_activity(now_idle_ms);
-            }
-            latter_core::audio_arbitrator().arm_media_idle_debounce(now_idle_ms);
+              - lambda: |-
+                  const uint32_t now_idle_ms = millis();
+                  const auto &ms = latter_core::media_state();
+                  if (!ms.is_local ||
+                      (ms.state != "playing" && ms.state != "buffering" &&
+                       id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+                    latter_core::audio_session().note_local_playback_stopped();
+                  }
+                  latter_core::sync_audio_session_media_observation(false, false, now_idle_ms);
+            else:
+              - if:
+                  condition:
+                    lambda: 'return latter_core::audio_arbitrator().in_explicit_pause_window(millis());'
+                  then:
+                    - speaker.stop: media_mixing_input
+              - lambda: |-
+                  const uint32_t now_idle_ms = millis();
+                  const auto &ms = latter_core::media_state();
+                  if (!ms.is_local ||
+                      (ms.state != "playing" && ms.state != "buffering" &&
+                       id(sendspin_group_media_player).state != media_player::MEDIA_PLAYER_STATE_PLAYING)) {
+                    latter_core::audio_session().note_local_playback_stopped();
+                  }
+                  latter_core::sync_audio_session_media_observation(false, false, now_idle_ms);
+                  if (latter_core::runtime_state().nav.display_power_state == 0) {
+                    latter_core::display_lifecycle().note_activity(now_idle_ms);
+                  }
+                  latter_core::audio_arbitrator().arm_media_idle_debounce(now_idle_ms);
 
 text_sensor:
   - platform: sendspin

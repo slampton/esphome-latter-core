@@ -205,18 +205,30 @@ void AudioPathArbitrator::cancel_echo_gate() noexcept {
 }
 
 void AudioPathArbitrator::arm_media_idle_debounce(uint32_t now_ms, uint32_t delay_ms) noexcept {
+  if (delay_ms == 0U && in_explicit_pause_window(now_ms)) {
+    idle_debounce_start_ms_ = 0U;
+    pause_settle_start_ms_ = non_zero_ms_(now_ms);
+    return;
+  }
   idle_debounce_start_ms_ = non_zero_ms_(now_ms);
   idle_debounce_delay_ms_ = (delay_ms == 0U) ? kDefaultMediaIdleDebounceMs : delay_ms;
+  pause_settle_start_ms_ = 0U;
+  if (delay_ms != 0U) {
+    explicit_pause_ms_ = 0U;
+  }
 }
 
 void AudioPathArbitrator::cancel_media_idle_debounce() noexcept {
   idle_debounce_start_ms_ = 0U;
   pause_settle_start_ms_ = 0U;
+  explicit_pause_ms_ = 0U;
 }
 
 void AudioPathArbitrator::arm_media_pause_settle(uint32_t now_ms) noexcept {
+  const uint32_t ts = non_zero_ms_(now_ms);
   idle_debounce_start_ms_ = 0U;
-  pause_settle_start_ms_ = non_zero_ms_(now_ms);
+  pause_settle_start_ms_ = ts;
+  explicit_pause_ms_ = ts;
 }
 
 void AudioPathArbitrator::arm_announce_stall_check(uint32_t now_ms) noexcept {
@@ -270,7 +282,7 @@ AudioArbitratorActions AudioPathArbitrator::step(uint32_t now_ms,
     }
   }
 
-  // 3. Media Idle Debounce (3000ms -> media_idle_finish)
+  // 3. Media Idle Debounce (default 1200ms -> media_idle_finish)
   if (idle_debounce_start_ms_ != 0U) {
     const uint32_t elapsed = static_cast<uint32_t>(now_ms - idle_debounce_start_ms_);
     if (elapsed >= idle_debounce_delay_ms_) {
@@ -485,7 +497,11 @@ LocalMediaHwAction media_toggle_playback(bool local_mp_playing, uint32_t now_ms)
     }
     sync_audio_session_media_observation(false, true, now_ms);
     latter_core::emit_media_command("pause");
-    return ms.is_local ? LocalMediaHwAction::PauseLocalPlayer : LocalMediaHwAction::None;
+    if (ms.is_local) {
+      audio_arbitrator().arm_media_pause_settle(now_ms);
+      return LocalMediaHwAction::PauseLocalPlayer;
+    }
+    return LocalMediaHwAction::None;
   }
 
   set_remote_play_override(true, now_ms);
@@ -500,6 +516,9 @@ bool media_clear_queue(uint32_t now_ms) {
   set_remote_play_override(false, now_ms);
   audio_session().clear_paused_music();
   audio_session().note_local_playback_stopped();
+  if (was_local) {
+    audio_arbitrator().arm_media_pause_settle(now_ms);
+  }
   music_queue_cleared() = true;
   ms.title.clear();
   ms.artist.clear();
@@ -867,6 +886,7 @@ bool finish_va_tts_drain_state() noexcept {
   auto &rs = runtime_state();
   log_audio_profile("VA_DRAIN_FINISH");
   audio_arbitrator().cancel_echo_gate();
+  audio_arbitrator().cancel_media_idle_debounce();
   const bool was_va_session = rs.voice.active;
   rs.voice.vad_active = false;
   rs.voice.status_text.clear();
@@ -945,6 +965,7 @@ bool can_finish_media_idle(const AudioHwSnapshot &hw) noexcept {
 
 MediaIdleFinishActions apply_media_idle_finish_state(uint32_t now_ms) noexcept {
   auto &rs = runtime_state();
+  audio_arbitrator().clear_explicit_pause();
   audio_session().note_local_playback_stopped();
   MediaIdleFinishActions act{};
   act.codecs_standby = should_audio_codecs_standby(rs.hw_usb_connected, false);
@@ -986,7 +1007,7 @@ ResumeMusicBranch prepare_resume_music_after_va(bool local_mp_playing, uint32_t 
     return set_res(ResumeMusicBranch::RingingAbort);
   }
   if (rs.voice.resume_music_after) {
-    audio_arbitrator().arm_media_idle_debounce(now_ms);
+    audio_arbitrator().arm_media_idle_debounce(now_ms, AudioPathArbitrator::kVaResumeMusicGraceMs);
     rs.voice.resume_music_after = false;
     audio_session().set_play_intent(MusicPlayIntent::AutoResumeAfterVa, now_ms);
     audio_session().set_paused_for_va(false, now_ms);

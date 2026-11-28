@@ -40,6 +40,10 @@ void test_touch_hal_kinematic_gestures_and_d049_d050() {
     static_assert(default_active_poll_ms(TouchHalProtocol::GT911) == 8U);
     static_assert(default_active_poll_ms(TouchHalProtocol::FT6336) == 10U);
     static_assert(default_active_poll_ms(TouchHalProtocol::CST9217) == 16U);
+    static_assert(touch_post_reset_settle_ms(TouchHalProtocol::FT6336) == 250U);
+    static_assert(touch_post_reset_settle_ms(TouchHalProtocol::FT3168) == 250U);
+    static_assert(touch_post_reset_settle_ms(TouchHalProtocol::GT911) == 56U);
+    static_assert(touch_post_reset_settle_ms(TouchHalProtocol::CST9217) == 38U);
 
     LATTER_CHECK(layout().home_zone_y() > layout().app_dock_y);
     if (SCREEN_W == 720 && SCREEN_H == 720) {

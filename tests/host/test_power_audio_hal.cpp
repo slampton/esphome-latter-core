@@ -1010,6 +1010,50 @@ void test_audio_path_and_intercom_arbitrator() {
   LATTER_CHECK(act.unmute_mic && arb.echo_stage() == EchoGateStage::Inactive);
   arb.reset();
 
+  // AudioPathArbitrator fast explicit-pause settle vs default 1200ms track-gap debounce vs 2500ms VA resume grace
+  {
+    static_assert(AudioPathArbitrator::kDefaultMediaIdleDebounceMs == 1200U);
+    static_assert(AudioPathArbitrator::kVaResumeMusicGraceMs == 2500U);
+    static_assert(AudioPathArbitrator::kExplicitPauseFastIdleWindowMs == 2000U);
+
+    AudioArbitratorInputs m_in{};
+    m_in.media_mixer_running = false;
+
+    arb.arm_media_pause_settle(1000U);
+    arb.arm_media_idle_debounce(1100U);  // e.g. Sendspin transitions IDLE inside explicit-pause window
+    act = arb.step(1120U, m_in);
+    LATTER_CHECK(act.run_media_idle_finish);
+    LATTER_CHECK(!arb.media_idle_debounce_active());
+
+    // Even if pause_settle already fired once before Sendspin reported IDLE, a follow-up default
+    // idle debounce inside kExplicitPauseFastIdleWindowMs stays on the fast settle path.
+    arb.arm_media_pause_settle(1000U);
+    LATTER_CHECK(arb.step(1020U, m_in).run_media_idle_finish);
+    arb.arm_media_idle_debounce(1110U);
+    LATTER_CHECK(arb.step(1120U, m_in).run_media_idle_finish);
+
+    // Explicit non-zero delay_ms overrides the explicit-pause window (VA music resume grace = 2500 ms).
+    arb.arm_media_pause_settle(1000U);
+    arb.arm_media_idle_debounce(1150U, AudioPathArbitrator::kVaResumeMusicGraceMs);
+    LATTER_CHECK(!arb.in_explicit_pause_window(1150U));
+    LATTER_CHECK(!arb.step(3649U, m_in).run_media_idle_finish);
+    LATTER_CHECK(arb.step(3650U, m_in).run_media_idle_finish);
+
+    // After clear_explicit_pause(), natural IDLE waits kDefaultMediaIdleDebounceMs (1200 ms).
+    arb.arm_media_pause_settle(1000U);
+    arb.clear_explicit_pause();
+    arb.arm_media_idle_debounce(2000U);
+    LATTER_CHECK(!arb.step(3199U, m_in).run_media_idle_finish);
+    LATTER_CHECK(arb.step(3200U, m_in).run_media_idle_finish);
+
+    // finish_va_tts_drain_state() clears any lingering media_idle_debounce so MWW re-arms promptly.
+    arb.arm_media_idle_debounce(4000U);
+    LATTER_CHECK(arb.media_idle_debounce_active());
+    (void)finish_va_tts_drain_state();
+    LATTER_CHECK(!arb.media_idle_debounce_active());
+    arb.reset();
+  }
+
   struct FakeOutbox {
     std::vector<std::string> frames;
     void publish_state(const std::string &s) { frames.push_back(s); }
@@ -1042,6 +1086,10 @@ void test_audio_path_and_intercom_arbitrator() {
   LATTER_CHECK(av_yaml.find("id: va_echo_gate") == std::string::npos);
   LATTER_CHECK(av_yaml.find("id: send_doorbell_intercom_cmd") == std::string::npos);
   LATTER_CHECK(av_yaml.find("codecs: [FLAC, PCM]") != std::string::npos);
+  LATTER_CHECK(av_yaml.find("timeout: 600ms") != std::string::npos);
+  LATTER_CHECK(av_yaml.find("in_explicit_pause_window(") != std::string::npos);
+  const std::string art_cpp = read_repo_file("../../components/latter_ui/ui_gfx_text_art.cpp");
+  LATTER_CHECK(art_cpp.find("uni_mul == 256 && active_frame_endian_mode() == 1") != std::string::npos);
   latter_rpc::rpc_state() = latter_rpc::RpcQueueState{};
 }
 
