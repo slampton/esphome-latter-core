@@ -36,12 +36,15 @@ void *ui_psram_aligned_calloc(size_t count, size_t elem_size) noexcept;
 PsramPhaseBuf ui_psram_phase_alloc(size_t bytes, const void *match_addr, bool zero_init = false) noexcept;
 void ui_psram_phase_free(PsramPhaseBuf &buf) noexcept;
 void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept;
+void ui_psram_cache_invalidate(const void *ptr, size_t bytes) noexcept;
 void ui_psram_free(void *ptr) noexcept;
 bool psram_headroom_below(size_t min_free_bytes, size_t min_largest_block_bytes = 0U) noexcept;
 void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept;
 bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int dst_y0,
                           int dst_w, int dst_h, const uint16_t *src, int src_w, int src_h,
-                          int crop_x0, int crop_y0, int crop_w, int crop_h) noexcept;
+                          int crop_x0, int crop_y0, int crop_w, int crop_h,
+                          bool sync_m2c = true) noexcept;
+bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexcept;
 bool blend_psram_vertical_wash_fast(uint16_t *dst_fb, const uint16_t *src_bg, int y0, int y1,
                                     uint8_t wash_r, uint8_t wash_g, uint8_t wash_b,
                                     int sheet_q8, int falloff_drop = 152, int round_inset = 0,
@@ -598,30 +601,16 @@ inline void fast_hline_blend(DisplayT &it, int x0, int w, int y, UiColor color, 
   fast_hline_blend_impl(surf, x0, w, y, color, alpha_255);
 }
 
+void render_mdi_icon_impl(Rgb565Surface &it, std::string_view name, int cx, int cy, int size_px,
+                          UiColor color, bool drop_shadow = true,
+                          std::string_view fallback_name = "mdi:map-marker");
+
 template <typename DisplayT>
 inline void render_mdi_icon(DisplayT &it, std::string_view name, int cx, int cy, int size_px,
                             UiColor color, bool drop_shadow = true,
                             std::string_view fallback_name = "mdi:map-marker") {
-  if (size_px <= 0) return;
-  const int half = (size_px + 3) / 2;
-  if ((cy + half) < clip_y0() || (cy - half) > clip_y1()) return;
-  const std::string_view eff_name = has_icon(name) ? name : fallback_name;
-  if (eff_name.empty()) return;
-  if (drop_shadow) {
-    rasterize_icon_fn(eff_name, cx + 1, cy + 1, size_px,
-                      [&](int x0, int x1_excl, int y, uint8_t a) {
-                        const int sa = (static_cast<int>(a) * 184) >> 8;
-                        if (sa > 0) fast_hline_blend(it, x0, x1_excl - x0, y, kChromeShadow, sa);
-                      });
-  }
-  rasterize_icon_fn(eff_name, cx, cy, size_px,
-                    [&](int x0, int x1_excl, int y, uint8_t a) {
-                      if (a == 255) {
-                        fast_hline(it, x0, y, x1_excl - x0, color);
-                      } else if (a > 0) {
-                        fast_hline_blend(it, x0, x1_excl - x0, y, color, static_cast<int>(a));
-                      }
-                    });
+  Rgb565Surface surf(it);
+  render_mdi_icon_impl(surf, name, cx, cy, size_px, color, drop_shadow, fallback_name);
 }
 
 static constexpr int kGlassAlphaMinQ8 = 96;
@@ -831,6 +820,7 @@ inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 // PSRAM byte-budgeted cache sizing so large landscape displays (e.g. 1280x800 = 2 MB/frame)
 // never blow up PSRAM by blindly multiplying 3 * W * H * 2.
 inline constexpr size_t art_cache_psram_budget_bytes(int psram_mb) noexcept {
+  if (psram_mb >= 32) return 6144U * 1024U;
   if (psram_mb >= 16) return 3584U * 1024U;
   if (psram_mb >= 8) return 1408U * 1024U;
   if (psram_mb >= 4) return 1024U * 1024U;
@@ -861,6 +851,16 @@ inline constexpr bool sky_base_cache_allowed(int w, int h, int psram_mb) noexcep
   const size_t frame_bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * sizeof(uint16_t);
   return frame_bytes <= sky_cache_psram_budget_bytes(psram_mb);
 }
+
+inline constexpr int compute_sky_cache_slot_budget(int w, int h, int psram_mb) noexcept {
+  if (!sky_base_cache_allowed(w, h, psram_mb)) return 0;
+  const size_t frame_bytes = static_cast<size_t>(w) * static_cast<size_t>(h) * sizeof(uint16_t);
+  if (psram_mb >= 16 && frame_bytes <= 1536U * 1024U) return 2;
+  return 1;
+}
+
+inline constexpr int kSkyCacheActiveSlots =
+    compute_sky_cache_slot_budget(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB);
 
 struct ArtRect {
   int x0, y0, w, h;

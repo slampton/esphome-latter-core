@@ -25,7 +25,7 @@
   "i2c_devices": [
     {"address": "0x18", "part": "ES8311"},
     {"address": "0x40", "part": "ES7210", "note": "MIC1 FL, MIC2 FR, MIC3 AEC loopback (TDM), MIC4 NC"},
-    {"address": "0x5d", "part": "GT911", "note": "latter_core Touch HAL (8 ms race-free 0x814E poll; auto-fallback 0x14); INT on test point only"}
+    {"address": "0x5d", "part": "GT911", "note": "latter_core Touch HAL (8 ms active / 28 ms idle race-free 0x814E poll; auto-fallback 0x14); INT on test point only"}
   ],
   "latter_flags": {
     "LATTER_SCREEN_W": 720, "LATTER_SCREEN_H": 720, "LATTER_ROUND_DISPLAY": 0, "LATTER_PANEL_PPI": 254, "LATTER_CORNER_R": 0, "LATTER_VIEW_SCALE_PCT": 145,

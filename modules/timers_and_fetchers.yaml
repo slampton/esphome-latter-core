@@ -85,13 +85,9 @@ interval:
                 if (rs.nav.gui_page == 10 && rs.nav.time_subpage == 1) {
                   latter_ui::schedule_band_disp_update(&id(disp1), latter_ui::dp_px(68), latter_ui::layout().back_y - 8);
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
-                  if (now_t_ms - latter_ui::last_disp_update_ms() >= 200U) {
-                    int act_y0 = 0, act_y1 = 0;
-                    if (latter_ui::home_activity_band(act_y0, act_y1)) {
-                      latter_ui::schedule_band_disp_update(&id(disp1), act_y0, act_y1);
-                    } else {
-                      latter_ui::schedule_disp_update(&id(disp1));
-                    }
+                  int act_y0 = 0, act_y1 = 0;
+                  if (latter_ui::home_activity_band(act_y0, act_y1)) {
+                    latter_ui::schedule_band_disp_update(&id(disp1), act_y0, act_y1);
                   }
                 } else if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 2) {
                   latter_ui::schedule_disp_update(&id(disp1));

@@ -401,9 +401,36 @@ void test_frame_cadence_and_typed_prefs() {
   in250.gui_page = 1;
   in250.activity_mask = 0x02U;
   in250.rotate_period_ms = 8000U;
+  in250.home_rotate_due_ms = 8000U;
   in250.pending_wallpaper_fetch = true;
   auto act250 = fc.evaluate_250ms(in250);
   LATTER_CHECK(act250.ensure_anim_poller && act250.schedule_disp_now && act250.fetch_wallpaper);
+
+  // Wave 4 Item 2: non-rotating deck (home_rotate_due_ms == 0) never fires spurious 8 s redraw,
+  // while rotating deck with active Home card band schedules banded update rather than full screen.
+  {
+    FrameCadenceController fc_rot{};
+    fc_rot.reset();
+    Cadence250msInputs rot_in{};
+    rot_in.now_ms = 7900U;
+    rot_in.gui_page = 1;
+    rot_in.activity_mask = 0x1FU;
+    rot_in.rotate_period_ms = 8000U;
+    rot_in.home_rotate_due_ms = 0U;
+    (void)fc_rot.evaluate_250ms(rot_in);
+    rot_in.now_ms = 8150U;
+    const auto idle_rot = fc_rot.evaluate_250ms(rot_in);
+    LATTER_CHECK(!idle_rot.schedule_disp_now && !idle_rot.schedule_band_now);
+
+    rot_in.home_rotate_due_ms = 250U;
+    rot_in.has_act_band = true;
+    rot_in.act_y0 = 300;
+    rot_in.act_y1 = 410;
+    rot_in.now_ms = 16000U;
+    const auto band_rot = fc_rot.evaluate_250ms(rot_in);
+    LATTER_CHECK(band_rot.ensure_anim_poller && band_rot.schedule_band_now && !band_rot.schedule_disp_now);
+    LATTER_CHECK(band_rot.band_y0 == 300 && band_rot.band_y1 == 410);
+  }
 
   // Horizontal edge-bounce wakes step_250ms animation poller cleanly on pages with horiz bounce.
   {
@@ -733,9 +760,10 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
   }
 
   // 2. Byte-budgeted PSRAM cache sizing (ArtCanvasCache & SkyBaseCache)
-  static_assert(compute_art_cache_slot_budget(720, 720, 32, 3) == 3);
-  static_assert(compute_art_cache_slot_budget(1024, 600, 32, 3) == 2);
-  static_assert(compute_art_cache_slot_budget(1280, 800, 32, 3) == 1);
+  static_assert(compute_art_cache_slot_budget(720, 720, 32, 6) == 6);
+  static_assert(compute_art_cache_slot_budget(1024, 600, 32, 6) == 5);
+  static_assert(compute_art_cache_slot_budget(1280, 800, 32, 6) == 3);
+  static_assert(compute_art_cache_slot_budget(1280, 800, 16, 6) == 1);
   static_assert(compute_art_cache_slot_budget(466, 466, 8, 3) == 3);
   static_assert(compute_art_cache_slot_budget(480, 480, 8, 3) == 3);
   static_assert(compute_art_cache_slot_budget(800, 480, 8, 3) == 1);
@@ -861,12 +889,20 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
   LATTER_CHECK(calm_early.anim_driving_disp);
   LATTER_CHECK(!calm_early.schedule_anim_band && !calm_early.schedule_anim_full);
 
-  // At >= kCalmSkyFrameGapMs: calm Home sky schedules upper-band [0, calm_y1] strictly above the Dock.
+  // At >= kCalmSkyFrameGapMs: calm non-fog Home sky schedules tight drift-haze band strictly above Dock,
+  // while fog keeps [0, calm_y1].
+  int exp_y0 = -1, exp_y1 = -1;
+  calm_home_sky_band(dock_y0, 0, false, false, SCREEN_H, exp_y0, exp_y1);
+  const int cy_haze = (118 * SCREEN_H + 233) / 466;
+  const int hh_haze = std::max(5, (8 * SCREEN_H) / 466);
+  LATTER_CHECK(exp_y0 >= 0 && (exp_y0 & 1) == 0 && (exp_y1 & 1) == 1 && exp_y0 < exp_y1 && exp_y1 <= calm_y1);
+  LATTER_CHECK(exp_y0 <= (cy_haze - hh_haze - 4) && exp_y1 >= (cy_haze + hh_haze + 4));
+
   in.now_ms = 1000U + kCalmSkyFrameGapMs;
   const auto calm_due = ctrl.evaluate_20ms(in);
   LATTER_CHECK(calm_due.record_ambient_ms);
   LATTER_CHECK(calm_due.schedule_anim_band && !calm_due.schedule_anim_full);
-  LATTER_CHECK(calm_due.band_y0 == 0 && calm_due.band_y1 == calm_y1);
+  LATTER_CHECK(calm_due.band_y0 == exp_y0 && calm_due.band_y1 == exp_y1);
 
   // Calm non-fog Home sky caps its animated band above a static Activity Card, while fog/no-card use calm_y1.
   for (const char *fog_c : {"fog", "mist", "haze"}) {
@@ -884,16 +920,70 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
     LATTER_CHECK(calm_home_sky_band_y1(dock_y0, act_y0, true, true, SCREEN_H) == calm_y1);
     LATTER_CHECK(calm_home_sky_band_y1(dock_y0, act_y0, false, false, SCREEN_H) == calm_y1);
 
+    int act_calm_y0 = -1, act_calm_y1 = -1;
+    calm_home_sky_band(dock_y0, act_y0, true, false, SCREEN_H, act_calm_y0, act_calm_y1);
+    LATTER_CHECK(act_calm_y0 == exp_y0 && act_calm_y1 <= capped_y1 && act_calm_y1 < act_y0);
+
     Cadence20msInputs act_in = in;
     act_in.has_act_band = true;
     act_in.act_y0 = act_y0;
     act_in.act_y1 = dock_y0 - 4;
     act_in.sky_is_fog = false;
     const auto act_calm = ctrl.evaluate_20ms(act_in);
-    LATTER_CHECK(act_calm.schedule_anim_band && act_calm.band_y0 == 0 && act_calm.band_y1 == capped_y1);
+    LATTER_CHECK(act_calm.schedule_anim_band && act_calm.band_y0 == act_calm_y0 && act_calm.band_y1 == act_calm_y1);
     act_in.sky_is_fog = true;
     const auto act_fog = ctrl.evaluate_20ms(act_in);
     LATTER_CHECK(act_fog.schedule_anim_band && act_fog.band_y0 == 0 && act_fog.band_y1 == calm_y1);
+  }
+
+  // Wave 4 Items 1 & 3: Sky cache 2-slot P4 budget + Home Main running timer/stopwatch dirty band
+  static_assert(compute_sky_cache_slot_budget(720, 720, 32) == 2);
+  static_assert(compute_sky_cache_slot_budget(1024, 600, 32) == 2);
+  static_assert(compute_sky_cache_slot_budget(1280, 800, 32) == 1);
+  static_assert(compute_sky_cache_slot_budget(466, 466, 8) == 1);
+  {
+    HostSurfaceFixture fx{};
+    reset_runtime_state();
+    auto &rs = runtime_state();
+    rs.nav.gui_page = PageId::HOME;
+    rs.nav.home_subpage = HomeSubpage::MAIN;
+    fx.ctx.now_ms = 5000U;
+    const uint32_t sig_idle = compute_idle_state_signature(fx.ctx);
+
+    rs.timers.slots[0].running = true;
+    rs.timers.slots[0].remaining_sec = 45;
+    LATTER_CHECK(compute_idle_state_signature(fx.ctx) != sig_idle);
+
+    // Render Home Main once so home_activity_band() is populated, then advance timer by 1s.
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::HOME, 0, 0U, true);
+    frame_hits().clear();
+    render_home_page(fx.surf, fx.ctx);
+    int act_y0 = 0, act_y1 = 0;
+    LATTER_CHECK(home_activity_band(act_y0, act_y1));
+
+    int exp_act_y0 = 0, exp_act_y1 = 0;
+    DirtyBandTracker::align_band(act_y0, act_y1, SCREEN_H, exp_act_y0, exp_act_y1);
+    dirty_band().has_pending_band = false;
+    dirty_band().force_full = false;
+    LATTER_CHECK(!compute_live_sec_active(fx.ctx));
+    rs.timers.slots[0].remaining_sec = 44;
+    dirty_band().has_pending_band = false;
+    LATTER_CHECK(!compute_live_sec_active(fx.ctx));
+    LATTER_CHECK(dirty_band().has_pending_band && dirty_band().pending_y0 == exp_act_y0 && dirty_band().pending_y1 == exp_act_y1);
+
+    rs.timers.slots[0].running = false;
+    rs.stopwatch.running = true;
+    rs.stopwatch.start_time_ms = 5000U;
+    fx.ctx.now_ms = 6000U;
+    LATTER_CHECK(compute_idle_state_signature(fx.ctx) != sig_idle);
+    LATTER_CHECK(!compute_live_sec_active(fx.ctx));
+
+    rs.nav.home_subpage = HomeSubpage::ACTIVITY_OVERLAY;
+    LATTER_CHECK(compute_live_sec_active(fx.ctx));
+    rs.nav.home_subpage = HomeSubpage::MAIN;
+    rs.stopwatch.running = false;
+    LATTER_CHECK(!compute_live_sec_active(fx.ctx));
   }
 
   // Weather app page (gui_page == 5) with calm sky still renders full frame (no Home Dock),

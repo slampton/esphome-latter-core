@@ -169,6 +169,19 @@ inline constexpr uint16_t default_active_poll_ms(TouchHalProtocol p) noexcept {
   return 10U;
 }
 
+static constexpr uint16_t kDefaultIdlePollMs = 28U;
+static constexpr uint32_t kPolledPostReleaseHoldMs = 450U;
+
+inline constexpr uint16_t effective_touch_poll_ms(bool finger_down, bool has_interrupt_pin,
+                                                  uint16_t active_poll_ms, uint16_t idle_poll_ms,
+                                                  uint32_t now_ms, uint32_t last_release_ms) noexcept {
+  if (finger_down || has_interrupt_pin) return active_poll_ms;
+  if (last_release_ms != 0U && (now_ms - last_release_ms) < kPolledPostReleaseHoldMs) {
+    return active_poll_ms;
+  }
+  return (idle_poll_ms > active_poll_ms) ? idle_poll_ms : active_poll_ms;
+}
+
 // FocalTech FT5x06 / FT6x36 / FT3x68 CIPHER (REG 0xA3) chip family IDs.
 // Rejects non-FocalTech chips sharing I2C 0x38 (e.g. AHT20 status byte 0x18/0x1C, PCA9554A 0x00/0xFF).
 inline constexpr bool is_known_focaltech_chip_id(uint8_t chip_id) noexcept {
@@ -369,6 +382,7 @@ class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::e
   void complete_setup_ready_();
   bool init_controller_();
   void consume_edge_delta_(uint32_t now);
+  uint16_t effective_poll_ms_() const noexcept;
   void service_once_(uint32_t now);
   void update_touches() override;
 
@@ -380,6 +394,7 @@ class LatterTouchscreen : public ::esphome::touchscreen::Touchscreen, public ::e
   TouchRecoveryPolicy recovery_policy_{};
   uint32_t last_edge_snapshot_{0};
   uint32_t last_service_ms_{0};
+  uint32_t last_release_ms_{0};
   uint32_t last_prof_tel_ms_{0};
   uint32_t last_prof_reads_{0};
   uint16_t active_poll_ms_{10};

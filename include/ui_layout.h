@@ -165,7 +165,11 @@ struct UiLayout {
   constexpr int top_edge_zone_y() const {
     return compute_top_edge_zone_y(w, h, is_round, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI, LATTER_CORNER_R);
   }
-  constexpr int home_zone_y() const { return is_round ? ((h * 884) / 1000) : (h - mm_to_px(5.2f)); }
+  constexpr int home_zone_y() const {
+    if (is_round) return (h * 884) / 1000;
+    const int zone_h = std::max(mm_to_px(5.2f), dp_px(52));
+    return std::max(app_dock_y + dp_px(4), h - zone_h);
+  }
   constexpr int chin_guard_y() const { return is_round ? ((h * 884) / 1000) : (h - mm_to_px(2.7f)); }
   constexpr int mode_bar_zone_top() const { return app_dock_y - dock_r - dp_px(14); }
   constexpr int dock_hit_r() const { return base.dock_hit_r; }

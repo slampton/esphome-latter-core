@@ -871,7 +871,7 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
 
   // Enforce exact ui_panel_traits.h <-> hal_manifest.h parity on ArtCanvasCache slot cap.
 #if LATTER_CHIP_P4
-  static_assert(kArtCacheEntries == 3, "P4 builds must configure 3 ArtCanvasCache entries");
+  static_assert(kArtCacheEntries == 6, "P4 builds must configure 6 ArtCanvasCache entries");
 #elif LATTER_PSRAM_MB >= 8
   static_assert(kArtCacheEntries == 3, "8 MB S3 builds must allow 3 ArtCanvasCache entries");
 #else

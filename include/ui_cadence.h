@@ -174,6 +174,31 @@ inline constexpr int calm_home_sky_band_y1(
   return dock_lim;
 }
 
+inline constexpr void calm_home_sky_band(
+    int dock_y0, int act_y0, bool has_static_act, bool sky_is_fog, int screen_h,
+    int &out_y0, int &out_y1) noexcept {
+  const int cap_y1 = calm_home_sky_band_y1(dock_y0, act_y0, has_static_act, sky_is_fog, screen_h);
+  if (sky_is_fog || cap_y1 <= 1 || screen_h <= 0) {
+    out_y0 = 0;
+    out_y1 = cap_y1;
+    return;
+  }
+  const int cy_haze = (118 * screen_h + 233) / 466;
+  const int hh = ((8 * screen_h) / 466 > 5) ? ((8 * screen_h) / 466) : 5;
+  const int margin = hh + 8;  // covers +/-hh + +/-4 px IMU parallax + even/odd alignment slack
+  int y0 = (cy_haze - margin) & ~1;
+  int y1 = (cy_haze + margin) | 1;
+  if (y0 < 0) y0 = 0;
+  if (y1 > cap_y1) y1 = cap_y1;
+  if (y0 >= y1) {
+    out_y0 = 0;
+    out_y1 = cap_y1;
+    return;
+  }
+  out_y0 = y0;
+  out_y1 = y1;
+}
+
 inline constexpr uint32_t weather_sky_frame_gap_ms(uint32_t target_gap_ms,
                                                    bool has_fast_motion) noexcept {
   return has_fast_motion ? target_gap_ms

@@ -525,8 +525,14 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
       if (rs.timers.paused || rs.timers.slots[0].paused || rs.timers.slots[1].paused || rs.timers.slots[2].paused) {
         act_mask |= (1U << 2);
       }
+      if (rs.timers.running || rs.timers.slots[0].running || rs.timers.slots[1].running || rs.timers.slots[2].running) {
+        act_mask |= (1U << 13);
+      }
       if (!rs.stopwatch.running && rs.stopwatch.elapsed_ms > 0U) {
         act_mask |= (1U << 12);
+      }
+      if (rs.stopwatch.running) {
+        act_mask |= (1U << 14);
       }
       const int snoozed_slot = (rs.alarms.snooze_until > 0) ? snoozed_alarm_slot() : -1;
       if (rs.alarms.snooze_until > 0) {
@@ -754,6 +760,10 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   if (rs.nav.quick_actions_open) return false;
   static uint32_t s_last_music_np_pos_sec = 0xFFFFFFFFU;
   static int s_last_music_np_dur_sec = -1;
+  static uint32_t s_last_home_live_sec_sig = 0xFFFFFFFFU;
+  if (rs.nav.gui_page != PageId::HOME || rs.nav.home_subpage != HomeSubpage::MAIN) {
+    s_last_home_live_sec_sig = 0xFFFFFFFFU;
+  }
   if (rs.nav.gui_page != PageId::MUSIC ||
       rs.music.view != MusicView::NOW_PLAYING ||
       rs.music.drilldown != MusicDrilldown::NONE ||
@@ -774,9 +784,43 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
       return true;
     }
     if (is_doorbell_or_intercom_active()) return true;
-    if (rs.stopwatch.running || rs.timers.running ||
-        rs.timers.slots[0].running || rs.timers.slots[1].running || rs.timers.slots[2].running) {
-      return true;
+    const bool has_live_timer_or_sw =
+        rs.stopwatch.running || rs.timers.running ||
+        rs.timers.slots[0].running || rs.timers.slots[1].running || rs.timers.slots[2].running;
+    if (!has_live_timer_or_sw) {
+      s_last_home_live_sec_sig = 0xFFFFFFFFU;
+      return false;
+    }
+    if (rs.nav.home_subpage == HomeSubpage::ACTIVITY_OVERLAY) return true;
+    if (rs.nav.home_subpage != HomeSubpage::MAIN) return false;
+    uint32_t cur_sig = 2166136261U;
+    auto mix_u32 = [&](uint32_t v) {
+      cur_sig ^= v;
+      cur_sig *= 16777619U;
+    };
+    if (rs.timers.running) {
+      mix_u32(0x10U);
+      mix_u32(static_cast<uint32_t>(rs.timers.remaining_sec));
+    }
+    for (int i = 0; i < 3; ++i) {
+      if (rs.timers.slots[i].running) {
+        mix_u32(static_cast<uint32_t>(0x20 + i));
+        mix_u32(static_cast<uint32_t>(rs.timers.slots[i].remaining_sec));
+      }
+    }
+    if (rs.stopwatch.running) {
+      const uint32_t sw_el_ms =
+          (ctx.now_ms >= rs.stopwatch.start_time_ms) ? (ctx.now_ms - rs.stopwatch.start_time_ms) : 0U;
+      mix_u32(0x40U);
+      mix_u32(sw_el_ms / 1000U);
+    }
+    if (cur_sig == 0xFFFFFFFFU) cur_sig = 0xFFFFFFFEU;
+    if (cur_sig != s_last_home_live_sec_sig) {
+      s_last_home_live_sec_sig = cur_sig;
+      int act_y0 = 0, act_y1 = 0;
+      if (home_activity_band(act_y0, act_y1)) {
+        mark_dirty_band(act_y0, act_y1);
+      }
     }
     return false;
   }
@@ -1052,11 +1096,11 @@ Cadence20msActions FrameCadenceController::evaluate_20ms(const Cadence20msInputs
                    (in.now_ms - in.last_ambient_ms >= kCalmSkyFrameGapMs)))) {
         out.record_ambient_ms = true;
         if (on_home_main && !in.sim_just_changed && in.sky_stepping && !in.sky_fast_motion && in.dock_y0 > 1) {
-          out.band_y0 = 0;
-          out.band_y1 = calm_home_sky_band_y1(
+          calm_home_sky_band(
               in.dock_y0, in.act_y0,
               in.has_act_band && !in.act_sliding && !in.act_fade_settle,
-              in.sky_is_fog, SCREEN_H);
+              in.sky_is_fog, SCREEN_H,
+              out.band_y0, out.band_y1);
           out.schedule_anim_band = true;
         } else {
           out.schedule_anim_full = true;
@@ -1094,16 +1138,22 @@ Cadence250msActions FrameCadenceController::evaluate_250ms(const Cadence250msInp
     const uint32_t cur_home_slot = in.now_ms / period;
     const bool on_home_main = (in.gui_page == 1 && in.home_subpage == 0);
     const bool home_slot_rotated = (on_home_main && cur_home_slot != prev_home_slot_);
+    const bool deck_rotates = (in.activity_mask != 0U) && (in.home_rotate_due_ms > 0U);
     const bool home_rotate_imminent =
-        on_home_main && in.activity_mask != 0U &&
-        ((period - (in.now_ms % period)) <= 300U);
+        on_home_main && deck_rotates && (in.home_rotate_due_ms <= 300U);
     prev_home_slot_ = cur_home_slot;
     if (home_rotate_imminent) {
       out.ensure_anim_poller = true;
     }
-    if (home_slot_rotated && in.activity_mask != 0U) {
+    if (home_slot_rotated && deck_rotates) {
       out.ensure_anim_poller = true;
-      out.schedule_disp_now = true;
+      if (in.has_act_band) {
+        out.band_y0 = in.act_y0;
+        out.band_y1 = in.act_y1;
+        out.schedule_band_now = true;
+      } else {
+        out.schedule_disp_now = true;
+      }
     }
 
     const uint32_t pause_exp_due = on_home_main ? in.pause_exp_due_ms : 0U;
@@ -1815,11 +1865,11 @@ PostFrameSchedule compute_post_frame_schedule(const UiFrameContext &ctx, const F
       out.record_ambient_ms = true;
       if (plan.on_home_main && !plan.w_has_fast_motion) {
         out.weather_band = true;
-        out.weather_band_y0 = 0;
-        out.weather_band_y1 = calm_home_sky_band_y1(
+        calm_home_sky_band(
             dock_dirty_band_y0(), plan.act_y0,
             plan.has_act_band && !act_sliding_now,
-            plan.w_is_fog, SCREEN_H);
+            plan.w_is_fog, SCREEN_H,
+            out.weather_band_y0, out.weather_band_y1);
       } else {
         out.weather_full = true;
       }

@@ -45,7 +45,10 @@ bool font_supports_cp(const UiFontView &font, uint32_t cp) noexcept {
   return (cp >= 0x20U && cp <= 0x7EU) || (cp >= 0xA1U && cp != 0xADU);
 }
 
-constexpr int kTextCacheEntries = 32;
+constexpr int kTextCacheEntries = (LATTER_CHIP_P4 || LATTER_PSRAM_MB >= 16) ? 64 : 32;
+constexpr int kFitTextCacheEntries = (LATTER_CHIP_P4 || LATTER_PSRAM_MB >= 16) ? 64 : 16;
+static_assert((kFitTextCacheEntries & (kFitTextCacheEntries - 1)) == 0 && kFitTextCacheEntries <= 256,
+              "kFitTextCacheEntries must be a power of 2 <= 256");
 constexpr int kTextScratchSpans = 6144;
 
 TextCacheEntry *&text_cache_entries_slot() {
@@ -369,7 +372,7 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
     char fitted[128]{};
   };
   struct FitTextCache {
-    FitCacheEntry entries[16]{};
+    FitCacheEntry entries[kFitTextCacheEntries]{};
     uint8_t next_slot = 0;
   };
   struct FitCacheMem {
@@ -400,7 +403,7 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
   const void *fptr = font.handle;
   FitTextCache *fc = (raw_str.size() < sizeof(FitCacheEntry::raw_key)) ? FitCacheMem::acquire() : nullptr;
   if (fc != nullptr) {
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < kFitTextCacheEntries; i++) {
       const auto &e = fc->entries[i];
       if (e.font_ptr == fptr && e.glyph_fn == font.find_glyph_fn && e.font_h == font.height &&
           e.max_w == max_w && e.raw_len == raw_str.size() && e.fnv_hash == h &&
@@ -450,8 +453,9 @@ std::string fit_text_to_width_font(const std::string &raw_str, int max_w, UiFont
   }
 
   if (fc != nullptr && result.size() < sizeof(FitCacheEntry::fitted)) {
-    auto &slot = fc->entries[fc->next_slot & 15U];
-    fc->next_slot = static_cast<uint8_t>((fc->next_slot + 1U) & 15U);
+    constexpr uint8_t kSlotMask = static_cast<uint8_t>(kFitTextCacheEntries - 1);
+    auto &slot = fc->entries[fc->next_slot & kSlotMask];
+    fc->next_slot = static_cast<uint8_t>((fc->next_slot + 1U) & kSlotMask);
     slot.font_ptr = fptr;
     slot.glyph_fn = font.find_glyph_fn;
     slot.font_h = font.height;
@@ -874,9 +878,25 @@ void art_row_span(int y, int cx, int &start_x, int &end_x) {
 #endif
 }
 
+int uniform_art_dim_q8(bool show_controls, bool show_metadata, int dim_level) noexcept {
+  if (dim_level == kArtDimLyricsHud) return 64;
+  if (dim_level == kArtDimLyrics) return -1;
+  if (dim_level >= kArtDimMenu) return 64;
+  if (dim_level == kArtDimMusicHud) {
+    if (show_controls) return 96;
+    if (show_metadata) return -1;
+    return 256;
+  }
+  if (show_controls) return 140;
+  if (show_metadata) return -1;
+  return 256;
+}
+
 void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int src_h, int cx,
                     bool is_standard, bool is_letterbox, bool apply_scrim, bool show_metadata, int dim_level,
-                    uint16_t *mirror_fb = nullptr, int mirror_y_lo = 0, int mirror_y_hi = -1) {
+                    uint16_t *mirror_fb = nullptr, int mirror_y_lo = 0, int mirror_y_hi = -1,
+                    bool *out_psram_coherent = nullptr) {
+  if (out_psram_coherent != nullptr) *out_psram_coherent = false;
   ArtScaleScratch *scratch_p = art_scale_scratch_ptr();
   if (scratch_p == nullptr) return;
   auto &scratch = *scratch_p;
@@ -961,9 +981,38 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
       const int crop_h = std::clamp(vis_src_h_fp >> 12, 1, src_h);
       const int crop_x0 = std::clamp((src_w - crop_w) / 2, 0, src_w - crop_w);
       const int crop_y0 = std::clamp((src_h - crop_h) / 2, 0, src_h - crop_h);
+      const int uni_mul = uniform_art_dim_q8(apply_scrim, show_metadata, dim_level);
+      const size_t frame_bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
       if (ppa_srm_scale_rgb565(fb_tgt, SCREEN_W, 0, 0, SCREEN_W, SCREEN_H,
-                               src_data, src_w, src_h, crop_x0, crop_y0, crop_w, crop_h)) {
+                               src_data, src_w, src_h, crop_x0, crop_y0, crop_w, crop_h,
+                               /*sync_m2c=*/(uni_mul < 0))) {
         ppa_scaled = true;
+        if (uni_mul == 256) {
+          ui_psram_cache_invalidate(fb_tgt, frame_bytes);
+          if (out_psram_coherent != nullptr) {
+            *out_psram_coherent = true;
+          } else if (mirror_fb != nullptr && mirror_fb != fb_tgt) {
+            for (int y = mirror_y_lo; y <= mirror_y_hi; ++y) {
+              const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+              std::memcpy(mirror_fb + off, fb_tgt + off, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+            }
+          }
+          return;
+        }
+        if (uni_mul >= 0 && ppa_blend_uniform_dim_rgb565(fb_tgt, SCREEN_W, SCREEN_H, uni_mul)) {
+          if (out_psram_coherent != nullptr) {
+            *out_psram_coherent = true;
+          } else if (mirror_fb != nullptr && mirror_fb != fb_tgt) {
+            for (int y = mirror_y_lo; y <= mirror_y_hi; ++y) {
+              const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+              std::memcpy(mirror_fb + off, fb_tgt + off, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+            }
+          }
+          return;
+        }
+        if (uni_mul >= 0) {
+          ui_psram_cache_invalidate(fb_tgt, frame_bytes);
+        }
         for (int y = 0; y < SCREEN_H; ++y) {
           const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
           uint16_t *const dst_row = fb_tgt + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
@@ -1285,13 +1334,15 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     const int saved_cy1 = clip_y1();
     reset_clip_y_band();
     active_frame_buf16() = victim->px;
-    // On a full-bleed miss, mirror each L1-hot scanline directly to fb to avoid a cold 434 KB PSRAM read-back.
+    // On a full-bleed miss, mirror each L1-hot scanline directly to fb to avoid a cold PSRAM read-back
+    // unless P4 PPA hardware wrote the scaled/dimmed target directly into PSRAM.
     uint16_t *const mirror_dst = (full_bleed && y_hi >= y_lo) ? fb : nullptr;
+    bool psram_coherent = false;
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level,
-                   mirror_dst, y_lo, y_hi);
+                   mirror_dst, y_lo, y_hi, &psram_coherent);
     active_frame_buf16() = fb;
     set_clip_y_band(saved_cy0, saved_cy1);
-    if (full_rect_overwrite) {
+    if (full_rect_overwrite && !psram_coherent) {
       ui_psram_cache_writeback(victim->px, frame_bytes);
     }
     art_canvas_spans(*victim, cx, src_w, src_h, is_standard, is_letterbox, apply_scrim, show_metadata);
@@ -1301,7 +1352,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     victim->sample = sample;
     victim->mode = mode;
     hit = victim;
-    mirrored_to_fb = (mirror_dst != nullptr);
+    mirrored_to_fb = (mirror_dst != nullptr) && !psram_coherent;
   }
   hit->last_use = use_seq;
 

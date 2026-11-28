@@ -1208,18 +1208,25 @@ uint32_t fnv1a_sky_str(std::string_view sv) noexcept {
   return h;
 }
 
-// Retryable PSRAM static sky base cache: retries on transient OOM instead of latching failure.
-struct SkyBaseCache {
+// Retryable PSRAM static sky base cache (1-slot S3 / 2-slot P4 LRU): retries on transient OOM instead of latching failure.
+struct SkyBaseCacheSlot {
   PsramPhaseBuf buf{};
   bool valid = false, is_night = false, show_celestial = false;
   uint32_t cond_hash = 0U;
+  uint32_t last_use = 0U;
   int16_t cel_cx = -1, cel_cy = -1;
   uint8_t quantized_moon_phase = 255U, dim_mode = 255U;
 };
 
-SkyBaseCache &sky_base_cache() {
-  static SkyBaseCache cache{};
-  return cache;
+struct SkyBaseCachePool {
+  static constexpr int kSlotCap = (kSkyCacheActiveSlots > 0) ? kSkyCacheActiveSlots : 1;
+  SkyBaseCacheSlot slots[kSlotCap]{};
+  uint32_t use_seq = 0U;
+};
+
+SkyBaseCachePool &sky_base_cache_pool() {
+  static SkyBaseCachePool pool{};
+  return pool;
 }
 
 struct WeatherCondFlags {
@@ -1422,25 +1429,10 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
                            double moon_cycle, int cel_cx, int cel_cy, bool show_celestial,
                            int wash_sheet_q8 = 0) {
   uint16_t *fb = active_frame_buf16();
-  auto &cache = sky_base_cache();
+  auto &pool = sky_base_cache_pool();
   const size_t bytes = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
-  if (fb != nullptr && cache.buf.px == nullptr &&
-      sky_base_cache_allowed(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB)) {
-    if (LATTER_CHIP_P4 == 0 || bytes > 1536U * 1024U) {
-      if (psram_headroom_below(bytes + 512U * 1024U, bytes + 64U * 1024U)) {
-        art_canvas_trim_to_one();
-      }
-      if (psram_headroom_below(bytes + 384U * 1024U, bytes + 64U * 1024U)) {
-        art_canvas_drop_all();
-      }
-    }
-    cache.buf = ui_psram_phase_alloc(bytes, fb, false);
-    if (cache.buf.px == nullptr) {
-      art_canvas_drop_all();
-      cache.buf = ui_psram_phase_alloc(bytes, fb, false);
-    }
-    cache.valid = false;
-  }
+  const bool cache_allowed = (fb != nullptr && kSkyCacheActiveSlots > 0 &&
+                              sky_base_cache_allowed(SCREEN_W, SCREEN_H, LATTER_PSRAM_MB));
 
   const uint32_t cond_hash = fnv1a_sky_str(cond);
   const uint8_t quant_moon = (show_celestial && is_night)
@@ -1449,37 +1441,102 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
   const int16_t key_cel_x = show_celestial ? static_cast<int16_t>(cel_cx) : static_cast<int16_t>(0);
   const int16_t key_cel_y = show_celestial ? static_cast<int16_t>(cel_cy) : static_cast<int16_t>(0);
 
-  if (fb != nullptr && cache.buf.px != nullptr) {
-    if (!cache.valid || cache.cond_hash != cond_hash || cache.is_night != is_night ||
-        cache.show_celestial != show_celestial || cache.cel_cx != key_cel_x ||
-        cache.cel_cy != key_cel_y || cache.quantized_moon_phase != quant_moon ||
-        cache.dim_mode != cur_dim_mode) {
-      const int saved_y0 = clip_y0(), saved_y1 = clip_y1();
-      reset_clip_y_band();
-      active_frame_buf16() = cache.buf.px;
-      bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
-      active_frame_buf16() = fb;
-      set_clip_y_band(saved_y0, saved_y1);
-#if !LATTER_ROUND_DISPLAY
-      ui_psram_cache_writeback(cache.buf.px, bytes);
-#endif
-
-      cache.valid = true;
-      cache.cond_hash = cond_hash;
-      cache.is_night = is_night;
-      cache.show_celestial = show_celestial;
-      cache.cel_cx = key_cel_x;
-      cache.cel_cy = key_cel_y;
-      cache.quantized_moon_phase = quant_moon;
-      cache.dim_mode = cur_dim_mode;
+  SkyBaseCacheSlot *hit = nullptr;
+  if (cache_allowed) {
+    for (int i = 0; i < SkyBaseCachePool::kSlotCap; ++i) {
+      SkyBaseCacheSlot &slot = pool.slots[i];
+      if (slot.buf.px != nullptr && slot.valid && slot.cond_hash == cond_hash && slot.is_night == is_night &&
+          slot.show_celestial == show_celestial && slot.cel_cx == key_cel_x && slot.cel_cy == key_cel_y &&
+          slot.quantized_moon_phase == quant_moon && slot.dim_mode == cur_dim_mode) {
+        hit = &slot;
+        break;
+      }
     }
 
+    if (hit == nullptr) {
+      SkyBaseCacheSlot *victim = nullptr;
+      for (int i = 0; i < SkyBaseCachePool::kSlotCap; ++i) {
+        SkyBaseCacheSlot &slot = pool.slots[i];
+        if (slot.buf.px != nullptr && !slot.valid) {
+          victim = &slot;
+          break;
+        }
+      }
+      if (victim == nullptr) {
+        for (int i = 0; i < SkyBaseCachePool::kSlotCap; ++i) {
+          SkyBaseCacheSlot &slot = pool.slots[i];
+          if (slot.buf.px == nullptr) {
+            victim = &slot;
+            break;
+          }
+        }
+      }
+      if (victim == nullptr) {
+        victim = &pool.slots[0];
+        for (int i = 1; i < SkyBaseCachePool::kSlotCap; ++i) {
+          if (pool.slots[i].last_use < victim->last_use) victim = &pool.slots[i];
+        }
+      }
+
+      if (victim->buf.px == nullptr) {
+        if (LATTER_CHIP_P4 == 0 || bytes > 1536U * 1024U) {
+          if (psram_headroom_below(bytes + 512U * 1024U, bytes + 64U * 1024U)) {
+            art_canvas_trim_to_one();
+          }
+          if (psram_headroom_below(bytes + 384U * 1024U, bytes + 64U * 1024U)) {
+            art_canvas_drop_all();
+          }
+        }
+        victim->buf = ui_psram_phase_alloc(bytes, fb, false);
+        if (victim->buf.px == nullptr) {
+          art_canvas_drop_all();
+          victim->buf = ui_psram_phase_alloc(bytes, fb, false);
+        }
+        if (victim->buf.px == nullptr) {
+          SkyBaseCacheSlot *fallback = nullptr;
+          for (int i = 0; i < SkyBaseCachePool::kSlotCap; ++i) {
+            SkyBaseCacheSlot &slot = pool.slots[i];
+            if (slot.buf.px != nullptr && (fallback == nullptr || slot.last_use < fallback->last_use)) {
+              fallback = &slot;
+            }
+          }
+          if (fallback != nullptr) victim = fallback;
+        }
+        victim->valid = false;
+      }
+
+      if (victim->buf.px != nullptr) {
+        const int saved_y0 = clip_y0(), saved_y1 = clip_y1();
+        reset_clip_y_band();
+        active_frame_buf16() = victim->buf.px;
+        bake_static_sky_base(it, cx, cy, cond, is_night, moon_cycle, cel_cx, cel_cy, show_celestial);
+        active_frame_buf16() = fb;
+        set_clip_y_band(saved_y0, saved_y1);
+#if !LATTER_ROUND_DISPLAY
+        ui_psram_cache_writeback(victim->buf.px, bytes);
+#endif
+
+        victim->valid = true;
+        victim->cond_hash = cond_hash;
+        victim->is_night = is_night;
+        victim->show_celestial = show_celestial;
+        victim->cel_cx = key_cel_x;
+        victim->cel_cy = key_cel_y;
+        victim->quantized_moon_phase = quant_moon;
+        victim->dim_mode = cur_dim_mode;
+        hit = victim;
+      }
+    }
+  }
+
+  if (hit != nullptr) {
+    hit->last_use = ++pool.use_seq;
     frame_base_claim();
     const int y0 = std::max(0, clip_y0()), y1 = std::min(SCREEN_H - 1, clip_y1());
     if (y0 <= y1) {
       if (wash_sheet_q8 > 0) {
         static constexpr int kFlashInset = LATTER_ROUND_DISPLAY ? 5 : 0;
-        blend_psram_vertical_wash_fast(fb, cache.buf.px, y0, y1, 190U, 220U, 255U,
+        blend_psram_vertical_wash_fast(fb, hit->buf.px, y0, y1, 190U, 220U, 255U,
                                        wash_sheet_q8, 152, kFlashInset, cx);
       } else {
 #if LATTER_ROUND_DISPLAY
@@ -1488,11 +1545,11 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
           const int x0 = std::max(0, SCREEN_CX - hw), x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
           if (x0 <= x1) {
             const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
-            std::memcpy(fb + off, cache.buf.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
+            std::memcpy(fb + off, hit->buf.px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
           }
         }
 #else
-        blit_psram_band_fast(fb, cache.buf.px, y0, y1);
+        blit_psram_band_fast(fb, hit->buf.px, y0, y1);
 #endif
       }
     }
@@ -1570,9 +1627,14 @@ void weather_cloud_cache_drop() noexcept {
 
 namespace {
 void sky_base_cache_evict() noexcept {
-  auto &cache = sky_base_cache();
-  ui_psram_phase_free(cache.buf);
-  cache.valid = false;
+  auto &pool = sky_base_cache_pool();
+  for (int i = 0; i < SkyBaseCachePool::kSlotCap; ++i) {
+    SkyBaseCacheSlot &slot = pool.slots[i];
+    ui_psram_phase_free(slot.buf);
+    slot.valid = false;
+    slot.last_use = 0U;
+  }
+  pool.use_seq = 0U;
 }
 }  // namespace
 

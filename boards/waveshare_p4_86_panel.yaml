@@ -154,7 +154,7 @@ touchscreen:
     i2c_id: bus_internal
     address: 0x5D
     active_poll_interval: 8ms
-    update_interval: 8ms
+    update_interval: 28ms
 
 script:
   - id: hal_release_deep_sleep_holds

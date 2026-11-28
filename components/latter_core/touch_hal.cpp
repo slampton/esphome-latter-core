@@ -232,14 +232,24 @@ void LatterTouchscreen::consume_edge_delta_(uint32_t now) {
   }
 }
 
+uint16_t LatterTouchscreen::effective_poll_ms_() const noexcept {
+  const uint32_t upd_ms = this->get_update_interval();
+  return (upd_ms > this->active_poll_ms_ && upd_ms <= 100U)
+             ? static_cast<uint16_t>(upd_ms)
+             : kDefaultIdlePollMs;
+}
+
 void LatterTouchscreen::pump_from_host() {
   if (!this->setup_complete_ || this->is_failed() || this->in_service_) return;
   const uint32_t now = esphome::millis();
   this->consume_edge_delta_(now);
   const bool has_irq = this->irq_store_.irq_pending.load(std::memory_order_relaxed);
+  const uint16_t poll_ms = effective_touch_poll_ms(
+      this->finger_down_, this->interrupt_pin_ != nullptr,
+      this->active_poll_ms_, this->effective_poll_ms_(), now, this->last_release_ms_);
   const bool poll_ready =
       (this->finger_down_ || this->interrupt_pin_ == nullptr) &&
-      (this->last_service_ms_ == 0U || (now - this->last_service_ms_) >= this->active_poll_ms_);
+      (this->last_service_ms_ == 0U || (now - this->last_service_ms_) >= poll_ms);
   if (has_irq || poll_ready) {
     this->service_once_(now);
   }
@@ -257,9 +267,12 @@ void LatterTouchscreen::loop() {
   const bool int_asserted =
       (this->interrupt_pin_ != nullptr) &&
       (this->interrupt_pin_->digital_read() == this->irq_active_high_);
+  const uint16_t poll_ms = effective_touch_poll_ms(
+      this->finger_down_, this->interrupt_pin_ != nullptr,
+      this->active_poll_ms_, this->effective_poll_ms_(), now, this->last_release_ms_);
   const bool active_due =
       (this->finger_down_ || int_asserted || this->interrupt_pin_ == nullptr || this->poll_due_) &&
-      (this->last_service_ms_ == 0U || (now - this->last_service_ms_) >= this->active_poll_ms_);
+      (this->last_service_ms_ == 0U || (now - this->last_service_ms_) >= poll_ms);
 
   if (has_irq || active_due) {
     this->service_once_(now);
@@ -457,6 +470,7 @@ void LatterTouchscreen::service_once_(uint32_t now) {
     tel.contacts++;
   } else if (was_down) {
     tel.releases++;
+    this->last_release_ms_ = (now == 0U) ? 1U : now;
   }
 
   this->send_touches_();
@@ -465,6 +479,7 @@ void LatterTouchscreen::service_once_(uint32_t now) {
     this->wake_pulse_active_ = false;
     this->is_touched_ = false;
     this->finger_down_ = false;
+    this->last_release_ms_ = (now == 0U) ? 1U : now;
     if (this->hf_held_) {
       this->touch_hf_.stop();
       this->hf_held_ = false;

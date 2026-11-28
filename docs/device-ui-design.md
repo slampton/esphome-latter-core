@@ -132,7 +132,7 @@ Every gesture threshold in `TouchGestureEngine` ([`ui_touch_engine.h`](../includ
 | `swipe_min()` | 2.35 | Unified live swipe commit (`on_touch_move`, 1 step per stroke) | 25 | 29 | 29 | 15 | 24 |
 | `edge_guard_y()` | 1.5 | Band below in-app content (from the bottom) | 16 | 18 | 19 | 10 | 15 |
 | `top_edge_zone_y()` | 5.2 | Pull-down Quick Actions starts here (from the top; round: y 54; mirror of `home_zone_y()`) | 54 | 64 | 64 | 34 | 52 |
-| `home_zone_y()` | 5.2 | Swipe-up home starts here (from the bottom; round: y 411) | 411 | 64 | 64 | 34 | 52 |
+| `home_zone_y()` | `max(5.2 mm, 52 dp)` capped below `app_dock_y + 4 dp` | Swipe-up home starts here (from the bottom; round: y 411) | 411 | 64 | 64 | 40 | 72 |
 | `chin_guard_y()` | 2.7 | The home pill's chin (from the bottom; round: y 411) | 411 | 33 | 33 | 18 | 27 |
 | `mode_bar_zone_top()` | `app_dock_y − dock_r − dp_px(14)` | Vertical list boundary above in-app mode bar | | | | | |
 | `dock_hit_r()` | max(`dock_r` + 16, 3.6 mm) | Home dock icon hit radius (≥ 7 mm target) | 43 | 44 | 45 | 40 | 56 |

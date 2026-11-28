@@ -134,6 +134,23 @@ void ui_psram_cache_writeback(const void *ptr, size_t bytes) noexcept {
 #endif
 }
 
+void ui_psram_cache_invalidate(const void *ptr, size_t bytes) noexcept {
+#if LATTER_FB_PPA
+  if (ptr == nullptr || bytes == 0U) return;
+  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+  const uintptr_t addr = reinterpret_cast<uintptr_t>(ptr);
+  const uintptr_t lo = addr & ~kMask;
+  const uintptr_t hi = (addr + bytes + kMask) & ~kMask;
+  if (hi > lo) {
+    (void)esp_cache_msync(reinterpret_cast<void *>(lo), static_cast<size_t>(hi - lo),
+                          ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+  }
+#else
+  (void)ptr;
+  (void)bytes;
+#endif
+}
+
 void ui_psram_free(void *ptr) noexcept {
   if (ptr == nullptr) return;
 #ifdef USE_ESP32
@@ -420,6 +437,8 @@ struct PpaBlendWashState {
   bool init_tried = false;
   bool ok = false;
   bool verified = false;
+  bool uniform_ok = true;
+  bool uniform_verified = false;
   bool evictor_registered = false;
   ppa_client_handle_t ppa = nullptr;
   uint8_t *alpha_mask = nullptr;
@@ -756,7 +775,8 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
 
 bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int dst_y0,
                           int dst_w, int dst_h, const uint16_t *src, int src_w, int src_h,
-                          int crop_x0, int crop_y0, int crop_w, int crop_h) noexcept {
+                          int crop_x0, int crop_y0, int crop_w, int crop_h,
+                          bool sync_m2c) noexcept {
 #if LATTER_FB_PPA
   if (dst_fb == nullptr || src == nullptr || dst_fb == src || dst_stride_px <= 0 ||
       dst_x0 < 0 || dst_y0 < 0 || dst_w <= 0 || dst_h <= 0 ||
@@ -807,14 +827,16 @@ bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int d
 
   const esp_err_t err = ppa_do_scale_rotate_mirror(st.ppa, &cfg);
   if (err != ESP_OK) return false;
-  const uintptr_t y0_addr = reinterpret_cast<uintptr_t>(dst_fb + static_cast<size_t>(dst_y0) * static_cast<size_t>(dst_stride_px));
-  const uintptr_t y1_addr = reinterpret_cast<uintptr_t>(dst_fb + out_pic_h * static_cast<size_t>(dst_stride_px));
-  const uintptr_t lo = y0_addr & ~kMask;
-  const uintptr_t hi = (y1_addr + kMask) & ~kMask;
-  if (hi > lo) {
-    if (esp_cache_msync(reinterpret_cast<void *>(lo), static_cast<size_t>(hi - lo),
-                        ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
-      return false;
+  if (sync_m2c) {
+    const uintptr_t y0_addr = reinterpret_cast<uintptr_t>(dst_fb + static_cast<size_t>(dst_y0) * static_cast<size_t>(dst_stride_px));
+    const uintptr_t y1_addr = reinterpret_cast<uintptr_t>(dst_fb + out_pic_h * static_cast<size_t>(dst_stride_px));
+    const uintptr_t lo = y0_addr & ~kMask;
+    const uintptr_t hi = (y1_addr + kMask) & ~kMask;
+    if (hi > lo) {
+      if (esp_cache_msync(reinterpret_cast<void *>(lo), static_cast<size_t>(hi - lo),
+                          ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
+        return false;
+      }
     }
   }
   st.blits++;
@@ -833,6 +855,99 @@ bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int d
   (void)crop_y0;
   (void)crop_w;
   (void)crop_h;
+  (void)sync_m2c;
+  return false;
+#endif
+}
+
+bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexcept {
+#if LATTER_FB_PPA && !LATTER_ROUND_DISPLAY
+  if (buf == nullptr || w <= 0 || h <= 0 || mul_q8 < 0 || mul_q8 >= 256) return false;
+  const int endian = active_frame_endian_mode();
+  if (endian != 1 && endian != 3) return false;
+  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+  if ((reinterpret_cast<uintptr_t>(buf) & kMask) != 0U) return false;
+
+  const size_t px_count = static_cast<size_t>(w) * static_cast<size_t>(h);
+  const size_t max_mask_px = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
+  const size_t total_bytes = px_count * sizeof(uint16_t);
+  if (px_count > max_mask_px || total_bytes < 32768U || (total_bytes % kPpaCopyRowBytes) != 0U) {
+    return false;
+  }
+  const size_t rows = total_bytes / kPpaCopyRowBytes;
+  if (rows == 0U || rows > kFbPpaMaxRows) return false;
+  if (!ppa_blend_wash_init()) return false;
+
+  auto &st = ppa_blend_wash_state();
+  if (!st.uniform_ok) return false;
+  uint8_t *const alpha_mask = ppa_blend_wash_ensure_mask(0);
+  if (alpha_mask == nullptr) return false;
+
+  ppa_blend_oper_config_t bcfg = {};
+  bcfg.in_bg.buffer = buf;
+  bcfg.in_bg.pic_w = kPpaCopyRowPx;
+  bcfg.in_bg.pic_h = static_cast<uint32_t>(rows);
+  bcfg.in_bg.block_w = kPpaCopyRowPx;
+  bcfg.in_bg.block_h = static_cast<uint32_t>(rows);
+  bcfg.in_bg.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+
+  bcfg.in_fg.buffer = alpha_mask;
+  bcfg.in_fg.pic_w = kPpaCopyRowPx;
+  bcfg.in_fg.pic_h = static_cast<uint32_t>(rows);
+  bcfg.in_fg.block_w = kPpaCopyRowPx;
+  bcfg.in_fg.block_h = static_cast<uint32_t>(rows);
+  bcfg.in_fg.blend_cm = PPA_BLEND_COLOR_MODE_A8;
+
+  bcfg.out.buffer = buf;
+  bcfg.out.buffer_size = static_cast<uint32_t>(total_bytes);
+  bcfg.out.pic_w = kPpaCopyRowPx;
+  bcfg.out.pic_h = static_cast<uint32_t>(rows);
+  bcfg.out.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+
+  bcfg.bg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+  bcfg.bg_alpha_fix_val = 255U;
+  if (mul_q8 <= 0) {
+    bcfg.fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+  } else {
+    bcfg.fg_alpha_update_mode = PPA_ALPHA_SCALE;
+    bcfg.fg_alpha_scale_ratio = static_cast<float>(256 - mul_q8) * (1.0f / 256.0f);
+  }
+  bcfg.fg_fix_rgb_val.r = 0U;
+  bcfg.fg_fix_rgb_val.g = 0U;
+  bcfg.fg_fix_rgb_val.b = 0U;
+  bcfg.mode = PPA_TRANS_MODE_BLOCKING;
+
+  const int64_t t0_us = esp_timer_get_time();
+  const esp_err_t blend_err = ppa_do_blend(st.ppa, &bcfg);
+  const int64_t t_blend_us = esp_timer_get_time();
+  if (blend_err != ESP_OK) {
+    st.uniform_ok = false;
+    ESP_LOGW("disp_fb", "PSRAM PPA Blend uniform dim failed (err=%d); disabling", static_cast<int>(blend_err));
+    return false;
+  }
+  const esp_err_t post_err = esp_cache_msync(buf, total_bytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+  const int64_t t_post_us = esp_timer_get_time();
+  if (post_err != ESP_OK) {
+    st.uniform_ok = false;
+    ESP_LOGW("disp_fb", "PSRAM PPA Blend uniform dim post-msync failed (err=%d); disabling", static_cast<int>(post_err));
+    return false;
+  }
+  st.washes++;
+  if (!st.uniform_verified) {
+    st.uniform_verified = true;
+    ESP_LOGI("disp_fb",
+             "PSRAM PPA Blend uniform dim verified: %u KB (%dx%d q8=%d) in %ld us (blend=%ldus post=%ldus)",
+             static_cast<unsigned>(total_bytes / 1024U), w, h, mul_q8,
+             static_cast<long>(t_post_us - t0_us),
+             static_cast<long>(t_blend_us - t0_us),
+             static_cast<long>(t_post_us - t_blend_us));
+  }
+  return true;
+#else
+  (void)buf;
+  (void)w;
+  (void)h;
+  (void)mul_q8;
   return false;
 #endif
 }
@@ -1641,6 +1756,79 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
 namespace {
 
 template <int Mode>
+inline void blend_icon_span_mode(uint16_t *fb, int x0, int x1_excl, int y, int cy0, int cy1,
+                                 uint32_t r5, uint32_t g6, uint32_t b5, uint32_t a_q8) noexcept {
+  if (a_q8 == 0U || y < cy0 || y > cy1) return;
+  if (x0 < 0) x0 = 0;
+  if (x1_excl > SCREEN_W) x1_excl = SCREEN_W;
+  if (x0 >= x1_excl) return;
+  uint16_t *const dst = fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+  const uint32_t inv = 256U - a_q8;
+  const uint32_t base_rb = ((r5 * a_q8 + 128U) << 16) | (b5 * a_q8 + 128U);
+  const uint32_t base_g_s5 = (g6 * a_q8 + 128U) << 5;
+  for (int px = x0; px < x1_excl; ++px) {
+    dst[px] = blend_swar_q8_px<Mode>(dst[px], inv, base_rb, base_g_s5);
+  }
+}
+
+template <int Mode>
+void render_mdi_icon_mode(uint16_t *fb, std::string_view eff_name, int cx, int cy, int size_px,
+                          int cy0, int cy1, UiColor color, uint16_t full_hw, bool drop_shadow) {
+  struct IconSpanCtx {
+    uint16_t *fb;
+    int cy0;
+    int cy1;
+    uint32_t r5;
+    uint32_t g6;
+    uint32_t b5;
+    uint16_t full_hw;
+  };
+  if (drop_shadow) {
+    IconSpanCtx sctx{
+        fb, cy0, cy1,
+        (static_cast<uint32_t>(kChromeShadow.r) * 31U + 127U) / 255U,
+        (static_cast<uint32_t>(kChromeShadow.g) * 63U + 127U) / 255U,
+        (static_cast<uint32_t>(kChromeShadow.b) * 31U + 127U) / 255U,
+        0U,
+    };
+    auto emit_sh = +[](void *u, int x0, int x1_excl, int y, uint8_t a) {
+      const auto &c = *static_cast<const IconSpanCtx *>(u);
+      const uint32_t sa = (static_cast<uint32_t>(a) * 184U) >> 8;
+      if (sa > 0U) {
+        blend_icon_span_mode<Mode>(c.fb, x0, x1_excl, y, c.cy0, c.cy1, c.r5, c.g6, c.b5,
+                                   sa + (sa >> 7));
+      }
+    };
+    rasterize_icon(eff_name, cx + 1, cy + 1, size_px, emit_sh, &sctx);
+  }
+  IconSpanCtx ctx{
+      fb, cy0, cy1,
+      (static_cast<uint32_t>(color.r) * 31U + 127U) / 255U,
+      (static_cast<uint32_t>(color.g) * 63U + 127U) / 255U,
+      (static_cast<uint32_t>(color.b) * 31U + 127U) / 255U,
+      full_hw,
+  };
+  auto emit_fg = +[](void *u, int x0, int x1_excl, int y, uint8_t a) {
+    const auto &c = *static_cast<const IconSpanCtx *>(u);
+    if (a == 255U) {
+      if (y < c.cy0 || y > c.cy1) return;
+      if (x0 < 0) x0 = 0;
+      if (x1_excl > SCREEN_W) x1_excl = SCREEN_W;
+      if (x0 < x1_excl) {
+        fill_hw16_span(c.fb + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + x0,
+                       x1_excl - x0, c.full_hw);
+      }
+      return;
+    }
+    if (a > 0U) {
+      blend_icon_span_mode<Mode>(c.fb, x0, x1_excl, y, c.cy0, c.cy1, c.r5, c.g6, c.b5,
+                                 static_cast<uint32_t>(a) + (static_cast<uint32_t>(a) >> 7));
+    }
+  };
+  rasterize_icon(eff_name, cx, cy, size_px, emit_fg, &ctx);
+}
+
+template <int Mode>
 void blend_solid_span_q8_mode(uint16_t *dst_row, int x0, int x1, UiColor c, int a_255) noexcept {
   const uint32_t a_q8 = static_cast<uint32_t>(a_255 + (a_255 >> 7));
   const uint32_t inv = 256U - a_q8;
@@ -1688,6 +1876,49 @@ void fast_hline_blend_impl(Rgb565Surface &it, int x0, int w, int y, UiColor colo
     blend_solid_span_q8_mode<4>(row, x0, x1, color, alpha_255);
   } else {
     blend_solid_span_q8_mode<3>(row, x0, x1, color, alpha_255);
+  }
+}
+
+void render_mdi_icon_impl(Rgb565Surface &it, std::string_view name, int cx, int cy, int size_px,
+                          UiColor color, bool drop_shadow, std::string_view fallback_name) {
+  if (size_px <= 0) return;
+  const int half = (size_px + 3) / 2;
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  if ((cy + half) < cy0 || (cy - half) > cy1) return;
+  const std::string_view eff_name = has_icon(name) ? name : fallback_name;
+  if (eff_name.empty()) return;
+
+  uint16_t *const fb = active_frame_buf16();
+  if (fb == nullptr) {
+    if (drop_shadow) {
+      rasterize_icon_fn(eff_name, cx + 1, cy + 1, size_px,
+                        [&](int x0, int x1_excl, int y, uint8_t a) {
+                          const int sa = (static_cast<int>(a) * 184) >> 8;
+                          if (sa > 0) fast_hline_blend_impl(it, x0, x1_excl - x0, y, kChromeShadow, sa);
+                        });
+    }
+    rasterize_icon_fn(eff_name, cx, cy, size_px,
+                      [&](int x0, int x1_excl, int y, uint8_t a) {
+                        if (a == 255U) {
+                          fast_hline(it, x0, y, x1_excl - x0, color);
+                        } else if (a > 0U) {
+                          fast_hline_blend_impl(it, x0, x1_excl - x0, y, color, static_cast<int>(a));
+                        }
+                      });
+    return;
+  }
+
+  const uint16_t full_hw = encode_hw_rgb565(color);
+  const int mode = active_frame_endian_mode();
+  if (mode == 1 || mode < 0) {
+    render_mdi_icon_mode<1>(fb, eff_name, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+  } else if (mode == 2) {
+    render_mdi_icon_mode<2>(fb, eff_name, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+  } else if (mode == 4) {
+    render_mdi_icon_mode<4>(fb, eff_name, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+  } else {
+    render_mdi_icon_mode<3>(fb, eff_name, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
   }
 }
 

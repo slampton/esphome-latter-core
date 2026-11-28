@@ -113,7 +113,11 @@ constexpr uint8_t kOpCubic = 254;
 constexpr uint8_t kOpClose = 255;
 constexpr uint8_t kContourEnd = 255;
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(USE_ESP32_VARIANT_ESP32P4)
+constexpr std::size_t kCacheSlots = 16;
+#else
 constexpr std::size_t kCacheSlots = 6;
+#endif
 constexpr std::size_t kMaxCachedBytes = 1536;
 
 struct DecodedMdiEntry {
@@ -143,8 +147,13 @@ struct MdiSpan {
   uint8_t alpha;
 };
 
+#if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(USE_ESP32_VARIANT_ESP32P4)
+constexpr std::size_t kRasterCacheSlots = 64;
+constexpr std::size_t kMaxCachedSpans = 2048;
+#else
 constexpr std::size_t kRasterCacheSlots = 24;
 constexpr std::size_t kMaxCachedSpans = 1024;
+#endif
 
 struct RasterizedMdiEntry {
   uint32_t hash = 0;
