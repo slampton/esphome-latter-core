@@ -836,7 +836,7 @@ struct ArtScaleScratch {
   uint16_t row_buf[SCREEN_W];
   uint16_t sx_lut[SCREEN_W];
   uint16_t scaled_row[SCREEN_W];
-  // Calloc-safe per-(mul_q8, endian_mode) 4x4 Bayer channel LUT (4 KiB in PSRAM, stays L1 D-cache hot).
+  // Calloc-safe per-(mul_q8, endian_mode) 4x4 Bayer channel LUT (4 KiB + 4 KiB packed pairs in PSRAM).
   // lut_row_mask bit (y & 3) tracks which Bayer rows are populated so uniform dim modes build once per frame
   // and ramp rows build only their 4 active columns.
   int lut_mul_q8;
@@ -845,6 +845,9 @@ struct ArtScaleScratch {
   uint16_t r_lut[16][32];
   uint16_t g_lut[16][64];
   uint16_t b_lut[16][32];
+  uint32_t r_pair[4][2][32];
+  uint32_t g_pair[4][2][64];
+  uint32_t b_pair[4][2][32];
 };
 
 // Retryable allocation — never permanently latches nullptr on transient OOM.
@@ -886,6 +889,24 @@ inline void ensure_art_dim_lut_row(ArtScaleScratch &scratch, int mul_q8, int mod
       const uint32_t q = (v * m + t) >> 8;
       const uint16_t g_raw = static_cast<uint16_t>(q << 5);
       gl[v] = swap_bytes ? bswap16_u16(g_raw) : g_raw;
+    }
+  }
+  for (int p = 0; p < 2; ++p) {
+    const uint16_t *const rl0 = scratch.r_lut[th[p * 2]];
+    const uint16_t *const rl1 = scratch.r_lut[th[p * 2 + 1]];
+    const uint16_t *const bl0 = scratch.b_lut[th[p * 2]];
+    const uint16_t *const bl1 = scratch.b_lut[th[p * 2 + 1]];
+    uint32_t *const rp = scratch.r_pair[ry][p];
+    uint32_t *const bp = scratch.b_pair[ry][p];
+    for (uint32_t v = 0U; v < 32U; ++v) {
+      rp[v] = static_cast<uint32_t>(rl0[v]) | (static_cast<uint32_t>(rl1[v]) << 16);
+      bp[v] = static_cast<uint32_t>(bl0[v]) | (static_cast<uint32_t>(bl1[v]) << 16);
+    }
+    const uint16_t *const gl0 = scratch.g_lut[th[p * 2]];
+    const uint16_t *const gl1 = scratch.g_lut[th[p * 2 + 1]];
+    uint32_t *const gp = scratch.g_pair[ry][p];
+    for (uint32_t v = 0U; v < 64U; ++v) {
+      gp[v] = static_cast<uint32_t>(gl0[v]) | (static_cast<uint32_t>(gl1[v]) << 16);
     }
   }
   scratch.lut_row_mask |= bit;
@@ -1153,46 +1174,45 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
         copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
         copy_row_span(dst1, y1, line0_px, sx0_b, sx1_b);
       } else {
-        const uint32_t m = static_cast<uint32_t>(std::max(0, mul0));
-        const uint8_t *const th0 = kBayer4[y0 & 3];
-        const uint8_t *const th1 = kBayer4[y1 & 3];
-        uint32_t t0_rb[4], t0_g[4], t1_rb[4], t1_g[4];
-        for (int k = 0; k < 4; ++k) {
-          const uint32_t tk0 = static_cast<uint32_t>(th0[k]) * 16U + 8U;
-          const uint32_t tk1 = static_cast<uint32_t>(th1[k]) * 16U + 8U;
-          t0_rb[k] = (tk0 << 16) | tk0;
-          t0_g[k] = tk0 << 5;
-          t1_rb[k] = (tk1 << 16) | tk1;
-          t1_g[k] = tk1 << 5;
-        }
-        auto emit_one_src = [&](int sx, int b_lo, int b_hi) noexcept {
+        const int eff_mul = std::max(0, mul0);
+        ensure_art_dim_lut_row(scratch, eff_mul, EffMode, y0);
+        ensure_art_dim_lut_row(scratch, eff_mul, EffMode, y1);
+        const int ry0 = y0 & 3;
+        const int ry1 = y1 & 3;
+        const uint32_t *const r0_0 = scratch.r_pair[ry0][0];
+        const uint32_t *const g0_0 = scratch.g_pair[ry0][0];
+        const uint32_t *const b0_0 = scratch.b_pair[ry0][0];
+        const uint32_t *const r0_1 = scratch.r_pair[ry0][1];
+        const uint32_t *const g0_1 = scratch.g_pair[ry0][1];
+        const uint32_t *const b0_1 = scratch.b_pair[ry0][1];
+        const uint32_t *const r1_0 = scratch.r_pair[ry1][0];
+        const uint32_t *const g1_0 = scratch.g_pair[ry1][0];
+        const uint32_t *const b1_0 = scratch.b_pair[ry1][0];
+        const uint32_t *const r1_1 = scratch.r_pair[ry1][1];
+        const uint32_t *const g1_1 = scratch.g_pair[ry1][1];
+        const uint32_t *const b1_1 = scratch.b_pair[ry1][1];
+        auto emit_one_src = [&](int sx, const uint32_t *r0p, const uint32_t *g0p, const uint32_t *b0p,
+                                const uint32_t *r1p, const uint32_t *g1p, const uint32_t *b1p) noexcept {
           const uint32_t s = src_row[sx];
-          const uint32_t rb_m = (((s & 0xF800U) << 5) | (s & 0x001FU)) * m;
-          const uint32_t g_m = (s & 0x07E0U) * m;
-          const uint32_t d00 = dim_rgb565_swar_q8_le(rb_m, g_m, t0_rb[b_lo], t0_g[b_lo]);
-          const uint32_t d01 = dim_rgb565_swar_q8_le(rb_m, g_m, t0_rb[b_hi], t0_g[b_hi]);
-          const uint32_t d10 = dim_rgb565_swar_q8_le(rb_m, g_m, t1_rb[b_lo], t1_g[b_lo]);
-          const uint32_t d11 = dim_rgb565_swar_q8_le(rb_m, g_m, t1_rb[b_hi], t1_g[b_hi]);
-          uint32_t a = d00 | (d01 << 16);
-          uint32_t b = d10 | (d11 << 16);
-          if constexpr (EffMode == 2) {
-            a = bswap16x2_u32(a);
-            b = bswap16x2_u32(b);
-          }
+          const uint32_t rv = s >> 11;
+          const uint32_t gv = (s >> 5) & 0x3FU;
+          const uint32_t bv = s & 0x1FU;
+          const uint32_t a = r0p[rv] | g0p[gv] | b0p[bv];
+          const uint32_t b = r1p[rv] | g1p[gv] | b1p[bv];
           std::memcpy(line0_px + (sx << 1), &a, 4U);
           std::memcpy(line1_px + (sx << 1), &b, 4U);
         };
         int sx = s_lo;
         if ((sx & 1) != 0 && sx <= s_hi) {
-          emit_one_src(sx, 2, 3);
+          emit_one_src(sx, r0_1, g0_1, b0_1, r1_1, g1_1, b1_1);
           ++sx;
         }
         for (; sx + 1 <= s_hi; sx += 2) {
-          emit_one_src(sx, 0, 1);
-          emit_one_src(sx + 1, 2, 3);
+          emit_one_src(sx, r0_0, g0_0, b0_0, r1_0, g1_0, b1_0);
+          emit_one_src(sx + 1, r0_1, g0_1, b0_1, r1_1, g1_1, b1_1);
         }
         if (sx <= s_hi) {
-          emit_one_src(sx, 0, 1);
+          emit_one_src(sx, r0_0, g0_0, b0_0, r1_0, g1_0, b1_0);
         }
         copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
         copy_row_span(dst1, y1, line1_px, sx0_b, sx1_b);
