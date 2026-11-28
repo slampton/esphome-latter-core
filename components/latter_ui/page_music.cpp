@@ -1258,6 +1258,7 @@ void render_audio_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
       } else {
         fill_rect_row_major(it, pct_x0, pct_y0, pct_w, pct_h, ctx.col_bg);
         fill_rect_row_major(it, sl_rx0, sl_ry0, sl_rw, sl_rh, ctx.col_bg);
+        frame_base_claim();
         backdrop_active() = true;
         backdrop_max_lum_q8() = 64;
         fast_vol_redraw = true;

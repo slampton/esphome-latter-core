@@ -707,6 +707,66 @@ template <int Mode>
 inline void blend_swar_q8_span(uint16_t *dst_row, const uint16_t *src_row, int x0, int x1,
                                uint32_t inv, const uint32_t base_rb[4],
                                const uint32_t base_g_s5[4]) noexcept {
+  const int len = x1 - x0 + 1;
+  if (len <= 0) return;
+
+  if constexpr (SCREEN_W <= 512) {
+    if (len >= 16) {
+      alignas(4) uint16_t line_px[512];
+      std::memcpy(line_px, src_row + x0, static_cast<size_t>(len) * sizeof(uint16_t));
+      const int phase = x0 & 3;
+      const uint32_t rb0 = base_rb[phase],           rb1 = base_rb[(phase + 1) & 3];
+      const uint32_t rb2 = base_rb[(phase + 2) & 3], rb3 = base_rb[(phase + 3) & 3];
+      const uint32_t g0  = base_g_s5[phase],         g1  = base_g_s5[(phase + 1) & 3];
+      const uint32_t g2  = base_g_s5[(phase + 2) & 3], g3  = base_g_s5[(phase + 3) & 3];
+      bool has_cache = false;
+      uint32_t c_in01 = 0U, c_in23 = 0U, c_p01 = 0U, c_p23 = 0U;
+      int i = 0;
+      auto *lp32 = std::assume_aligned<4>(reinterpret_cast<uint8_t *>(line_px));
+      for (; i + 3 < len; i += 4, lp32 += 8) {
+        uint32_t in01 = 0U, in23 = 0U;
+        std::memcpy(&in01, lp32, 4U);
+        std::memcpy(&in23, lp32 + 4, 4U);
+        if (has_cache && in01 == c_in01 && in23 == c_in23) {
+          std::memcpy(lp32, &c_p01, 4U);
+          std::memcpy(lp32 + 4, &c_p23, 4U);
+          continue;
+        }
+        uint32_t p01 = 0U, p23 = 0U;
+        if constexpr (Mode == 2) {
+          const uint32_t sw01 = bswap16x2_u32(in01);
+          const uint32_t sw23 = bswap16x2_u32(in23);
+          const uint32_t out0 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw01), inv, rb0, g0);
+          const uint32_t out1 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw01 >> 16), inv, rb1, g1);
+          const uint32_t out2 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw23), inv, rb2, g2);
+          const uint32_t out3 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw23 >> 16), inv, rb3, g3);
+          p01 = bswap16x2_u32(out0 | (out1 << 16));
+          p23 = bswap16x2_u32(out2 | (out3 << 16));
+        } else {
+          const uint32_t out0 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01), inv, rb0, g0);
+          const uint32_t out1 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
+          const uint32_t out2 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23), inv, rb2, g2);
+          const uint32_t out3 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
+          p01 = out0 | (out1 << 16);
+          p23 = out2 | (out3 << 16);
+        }
+        c_in01 = in01;
+        c_in23 = in23;
+        c_p01 = p01;
+        c_p23 = p23;
+        has_cache = true;
+        std::memcpy(lp32, &p01, 4U);
+        std::memcpy(lp32 + 4, &p23, 4U);
+      }
+      for (; i < len; ++i) {
+        const int k = (x0 + i) & 3;
+        line_px[i] = blend_swar_q8_px<Mode>(line_px[i], inv, base_rb[k], base_g_s5[k]);
+      }
+      std::memcpy(dst_row + x0, line_px, static_cast<size_t>(len) * sizeof(uint16_t));
+      return;
+    }
+  }
+
   int px = x0;
   if (px <= x1 && (reinterpret_cast<uintptr_t>(dst_row + px) & 2U) != 0U) {
     const int k = px & 3;
@@ -723,31 +783,42 @@ inline void blend_swar_q8_span(uint16_t *dst_row, const uint16_t *src_row, int x
   if (src_aligned4) {
     auto *dst32 = std::assume_aligned<4>(reinterpret_cast<uint8_t *>(dst_row + px));
     const auto *src32 = std::assume_aligned<4>(reinterpret_cast<const uint8_t *>(src_row + px));
+    bool has_cache = false;
+    uint32_t c_in01 = 0U, c_in23 = 0U, c_p01 = 0U, c_p23 = 0U;
     for (; px <= x_end4; px += 4, dst32 += 8, src32 += 8) {
       uint32_t in01 = 0U, in23 = 0U;
       std::memcpy(&in01, src32, 4U);
       std::memcpy(&in23, src32 + 4, 4U);
+      if (has_cache && in01 == c_in01 && in23 == c_in23) {
+        std::memcpy(dst32, &c_p01, 4U);
+        std::memcpy(dst32 + 4, &c_p23, 4U);
+        continue;
+      }
+      uint32_t p01 = 0U, p23 = 0U;
       if constexpr (Mode == 2) {
-        in01 = bswap16x2_u32(in01);
-        in23 = bswap16x2_u32(in23);
-        const uint32_t out0 = blend_swar_q8_px<1>(static_cast<uint16_t>(in01), inv, rb0, g0);
-        const uint32_t out1 = blend_swar_q8_px<1>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
-        const uint32_t out2 = blend_swar_q8_px<1>(static_cast<uint16_t>(in23), inv, rb2, g2);
-        const uint32_t out3 = blend_swar_q8_px<1>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
-        const uint32_t p01 = bswap16x2_u32(out0 | (out1 << 16));
-        const uint32_t p23 = bswap16x2_u32(out2 | (out3 << 16));
-        std::memcpy(dst32, &p01, 4U);
-        std::memcpy(dst32 + 4, &p23, 4U);
+        const uint32_t sw01 = bswap16x2_u32(in01);
+        const uint32_t sw23 = bswap16x2_u32(in23);
+        const uint32_t out0 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw01), inv, rb0, g0);
+        const uint32_t out1 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw01 >> 16), inv, rb1, g1);
+        const uint32_t out2 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw23), inv, rb2, g2);
+        const uint32_t out3 = blend_swar_q8_px<1>(static_cast<uint16_t>(sw23 >> 16), inv, rb3, g3);
+        p01 = bswap16x2_u32(out0 | (out1 << 16));
+        p23 = bswap16x2_u32(out2 | (out3 << 16));
       } else {
         const uint32_t out0 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01), inv, rb0, g0);
         const uint32_t out1 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
         const uint32_t out2 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23), inv, rb2, g2);
         const uint32_t out3 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
-        const uint32_t p01 = out0 | (out1 << 16);
-        const uint32_t p23 = out2 | (out3 << 16);
-        std::memcpy(dst32, &p01, 4U);
-        std::memcpy(dst32 + 4, &p23, 4U);
+        p01 = out0 | (out1 << 16);
+        p23 = out2 | (out3 << 16);
       }
+      c_in01 = in01;
+      c_in23 = in23;
+      c_p01 = p01;
+      c_p23 = p23;
+      has_cache = true;
+      std::memcpy(dst32, &p01, 4U);
+      std::memcpy(dst32 + 4, &p23, 4U);
     }
   } else {
     auto *dst32 = std::assume_aligned<4>(reinterpret_cast<uint8_t *>(dst_row + px));

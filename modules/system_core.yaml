@@ -243,11 +243,15 @@ api:
         slots: string
       then:
         - lambda: |-
+            bool slots_changed = false;
             if (latter_core::apply_slots_action(
                     req_id, std::string_view(mode.c_str(), mode.size()),
                     page, total_pages, std::string_view(slots.c_str(), slots.size()),
-                    millis(), is_area_slots)) {
-              latter_ui::schedule_disp_update(&id(disp1));
+                    millis(), is_area_slots, latter_core::runtime_state(), &slots_changed)) {
+              const auto &rs = latter_core::runtime_state();
+              if (slots_changed && rs.nav.display_power_state == 0 && !rs.nav.is_hibernating) {
+                latter_ui::schedule_disp_update(&id(disp1));
+              }
             }
 
     - action: latter_set_music_lyrics

@@ -632,10 +632,42 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     hh_sig = (hh_sig ^ flags) * 16777619U;
     sig ^= (hh_sig | 1U);
   } else if (rs.nav.gui_page == PageId::AREA) {
+    const auto &ac = area_ctx_state();
     uint32_t ar_sig = 2166136261U;
-    ar_sig = (ar_sig ^ area_ctx_state().rev) * 16777619U;
+    auto hash_ar = [&](std::string_view sv) {
+      for (unsigned char c : sv) ar_sig = (ar_sig ^ c) * 16777619U;
+      ar_sig = (ar_sig ^ 0xFFU) * 16777619U;
+    };
+    hash_ar(rs.area.active_area_id);
+    hash_ar(rs.area.active_area_name);
+    hash_ar(rs.area.domain_filter);
+    hash_ar(rs.area.browse_mode);
+    hash_ar(area_available_domains_csv());
+    hash_ar(ac.area_climates_summary);
+    const int qt = std::isnan(ac.area_temp) ? 0x7FFF : static_cast<int>(std::lround(ac.area_temp * 10.0f));
+    const int qh = std::isnan(ac.area_humidity) ? 0x7FFF : static_cast<int>(std::lround(ac.area_humidity * 10.0f));
+    ar_sig = (ar_sig ^ static_cast<uint32_t>(qt)) * 16777619U;
+    ar_sig = (ar_sig ^ static_cast<uint32_t>(qh)) * 16777619U;
     ar_sig = (ar_sig ^ home_hub_state().local_mutation_seq) * 16777619U;
     ar_sig = (ar_sig ^ static_cast<uint32_t>(rs.area.light_insp_bri_pct + 10)) * 16777619U;
+    ar_sig = (ar_sig ^ static_cast<uint32_t>(area_cat_dock_page() + 1)) * 16777619U;
+    if (!rs.area.action_feedback.empty() && (ctx.now_ms - rs.area.feedback_timer < 3200U)) {
+      hash_ar(rs.area.action_feedback);
+    }
+    const bool show_areas = (rs.nav.area_subpage == AreaSubpage::PICKER) || (rs.area.browse_mode == "areas");
+    const auto ch = show_areas ? latter_rpc::SlotChannel::AREA_LIST : latter_rpc::SlotChannel::AREA_ENTITIES;
+    const size_t max_slots =
+        show_areas ? DeviceRuntimeState::kListSlotsPerPage : DeviceRuntimeState::kCardSlotsPerPage;
+    ar_sig = (ar_sig ^ static_cast<uint32_t>(rs.slot_page_for(ch) + 1)) * 16777619U;
+    ar_sig = (ar_sig ^ static_cast<uint32_t>(rs.slot_total_pages_for(ch) + 1)) * 16777619U;
+    const BrowseSlotItem *slots = rs.slots_for(ch);
+    for (size_t si = 0; si < max_slots; ++si) {
+      hash_ar(slots[si].id);
+      hash_ar(slots[si].name);
+      hash_ar(slots[si].type);
+      ar_sig = (ar_sig ^ static_cast<uint32_t>((slots[si].active ? 1 : 0) | ((slots[si].level + 2) << 1))) *
+               16777619U;
+    }
     sig ^= (ar_sig | 1U);
   } else if (rs.nav.gui_page == PageId::TOOLS) {
     uint32_t tl_sig = 2166136261U;

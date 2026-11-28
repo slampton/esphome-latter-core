@@ -22,6 +22,8 @@
 #include "state/state_time_alarms.h"
 #include "state/state_alerts_intercom.h"
 
+#include <cmath>
+
 namespace latter_core {
 
 enum class ImuPowerMode : uint8_t {
@@ -515,7 +517,8 @@ bool apply_music_lyrics_action(int req_id,
 bool apply_slots_action(int req_id, std::string_view mode,
                         int page, int total_pages, std::string_view slots_blob,
                         uint32_t now_ms = 0, bool force_area_entities = false,
-                        DeviceRuntimeState &rt = runtime_state());
+                        DeviceRuntimeState &rt = runtime_state(),
+                        bool *out_changed = nullptr);
 
 // Shared notification/alert banner populator for area_context push and show_notification action.
 inline bool trigger_alert_banner(std::string_view title, std::string_view message,
@@ -1052,6 +1055,10 @@ class V3DomainReducer {
   uint16_t prev_media_caps_{0};
   std::string prev_sun_{};
   std::string prev_wallpaper_url_{};
+  std::string prev_area_name_{};
+  float prev_area_temp_{NAN};
+  float prev_area_humidity_{NAN};
+  std::string prev_climates_summary_{};
 };
 
 V3DomainReducer &v3_domain_reducer() noexcept;

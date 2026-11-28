@@ -906,31 +906,114 @@ bool color_wheel_cache_ensure(int r_in, int r_out) noexcept {
     color_wheel_cache_drop();
     return false;
   }
+  std::memset(c.rgb, 0, px_count * sizeof(uint16_t));
+  std::memset(c.alpha, 0, px_count);
+
   const float f_in = static_cast<float>(r_in);
   const float f_out = static_cast<float>(r_out);
   const float inv_span = 1.0f / static_cast<float>(std::max(1, r_out - r_in));
   constexpr float kInvTwoPi = 1.0f / (2.0f * PI_F);
-  for (int py = 0; py < side; ++py) {
-    const float dy = static_cast<float>(py - half);
-    const float dy2 = dy * dy;
-    uint16_t *const rgb_row = c.rgb + static_cast<size_t>(py) * static_cast<size_t>(side);
-    uint8_t *const alpha_row = c.alpha + static_cast<size_t>(py) * static_cast<size_t>(side);
-    for (int px = 0; px < side; ++px) {
-      const float dx = static_cast<float>(px - half);
-      const float d = std::sqrt(dx * dx + dy2);
-      const float cov_in = std::clamp(d - (f_in - 0.5f), 0.0f, 1.0f);
-      const float cov_out = std::clamp((f_out + 0.5f) - d, 0.0f, 1.0f);
-      const float cov = std::min(cov_in, cov_out);
-      if (cov <= 0.004f) {
-        rgb_row[px] = 0U;
-        alpha_row[px] = 0U;
-      } else {
-        float ang = std::atan2(dy, dx);
-        if (ang < 0.0f) ang += 2.0f * PI_F;
+  const int r_in_lo = std::max(0, r_in - 1);
+  const int r_out_hi = std::min(half, r_out + 1);
+  const int r_in_lo2 = r_in_lo * r_in_lo;
+  const int r_out_hi2 = r_out_hi * r_out_hi;
+
+  auto fast_atan2_q1_unit = [&](int dx_i, int dy_i) noexcept -> float {
+    if (dy_i == 0) return 0.0f;
+    if (dx_i == 0) return 0.25f;
+    const int mn = (dx_i < dy_i) ? dx_i : dy_i;
+    const int mx = (dx_i < dy_i) ? dy_i : dx_i;
+    const float t = static_cast<float>(mn) / static_cast<float>(mx);
+    const float t2 = t * t;
+    float a_rad = t * (0.9998660f +
+                       t2 * (-0.3302995f +
+                             t2 * (0.1801410f + t2 * (-0.0851330f + t2 * 0.0208351f))));
+    if (dy_i > dx_i) a_rad = 0.5f * PI_F - a_rad;
+    return a_rad * kInvTwoPi;
+  };
+
+  if (side <= 512) {
+    uint16_t rgb_pos[512];
+    uint16_t rgb_neg[512];
+    uint8_t alpha_pos[512];
+    uint8_t alpha_neg[512];
+    for (int dy_i = 0; dy_i <= r_out_hi; ++dy_i) {
+      const int dy2 = dy_i * dy_i;
+      std::memset(rgb_pos, 0, static_cast<size_t>(side) * sizeof(uint16_t));
+      std::memset(alpha_pos, 0, static_cast<size_t>(side));
+      if (dy_i > 0) {
+        std::memset(rgb_neg, 0, static_cast<size_t>(side) * sizeof(uint16_t));
+        std::memset(alpha_neg, 0, static_cast<size_t>(side));
+      }
+      bool any_px = false;
+      for (int dx_i = 0; dx_i <= r_out_hi; ++dx_i) {
+        const int d2 = dx_i * dx_i + dy2;
+        if (d2 == 0 || d2 < r_in_lo2 || d2 > r_out_hi2) continue;
+        const float d = std::sqrt(static_cast<float>(d2));
+        const float cov = std::min(std::clamp(d - (f_in - 0.5f), 0.0f, 1.0f),
+                                   std::clamp((f_out + 0.5f) - d, 0.0f, 1.0f));
+        if (cov <= 0.004f) continue;
+        any_px = true;
+        const uint8_t a_u8 = static_cast<uint8_t>(std::lround(cov * 255.0f));
         const float sat = std::clamp(0.35f + 0.65f * ((d - f_in) * inv_span), 0.35f, 1.0f);
-        const UiColor col = hsv_to_rgb(ang * kInvTwoPi, sat, 1.0f);
-        rgb_row[px] = encode_hw_rgb565(col);
-        alpha_row[px] = static_cast<uint8_t>(std::lround(cov * 255.0f));
+        const float h_q1 = fast_atan2_q1_unit(dx_i, dy_i);
+
+        rgb_pos[half + dx_i] = encode_hw_rgb565(hsv_to_rgb(h_q1, sat, 1.0f));
+        alpha_pos[half + dx_i] = a_u8;
+        if (dx_i > 0) {
+          rgb_pos[half - dx_i] = encode_hw_rgb565(hsv_to_rgb(0.5f - h_q1, sat, 1.0f));
+          alpha_pos[half - dx_i] = a_u8;
+        }
+        if (dy_i > 0) {
+          rgb_neg[half + dx_i] = encode_hw_rgb565(hsv_to_rgb(1.0f - h_q1, sat, 1.0f));
+          alpha_neg[half + dx_i] = a_u8;
+          if (dx_i > 0) {
+            rgb_neg[half - dx_i] = encode_hw_rgb565(hsv_to_rgb(0.5f + h_q1, sat, 1.0f));
+            alpha_neg[half - dx_i] = a_u8;
+          }
+        }
+      }
+      if (any_px) {
+        const size_t off_pos = static_cast<size_t>(half + dy_i) * static_cast<size_t>(side);
+        std::memcpy(c.rgb + off_pos, rgb_pos, static_cast<size_t>(side) * sizeof(uint16_t));
+        std::memcpy(c.alpha + off_pos, alpha_pos, static_cast<size_t>(side));
+        if (dy_i > 0) {
+          const size_t off_neg = static_cast<size_t>(half - dy_i) * static_cast<size_t>(side);
+          std::memcpy(c.rgb + off_neg, rgb_neg, static_cast<size_t>(side) * sizeof(uint16_t));
+          std::memcpy(c.alpha + off_neg, alpha_neg, static_cast<size_t>(side));
+        }
+      }
+    }
+  } else {
+    for (int dy_i = 0; dy_i <= r_out_hi; ++dy_i) {
+      const int dy2 = dy_i * dy_i;
+      const size_t off_pos = static_cast<size_t>(half + dy_i) * static_cast<size_t>(side);
+      const size_t off_neg = static_cast<size_t>(half - dy_i) * static_cast<size_t>(side);
+      for (int dx_i = 0; dx_i <= r_out_hi; ++dx_i) {
+        const int d2 = dx_i * dx_i + dy2;
+        if (d2 == 0 || d2 < r_in_lo2 || d2 > r_out_hi2) continue;
+        const float d = std::sqrt(static_cast<float>(d2));
+        const float cov = std::min(std::clamp(d - (f_in - 0.5f), 0.0f, 1.0f),
+                                   std::clamp((f_out + 0.5f) - d, 0.0f, 1.0f));
+        if (cov <= 0.004f) continue;
+        const uint8_t a_u8 = static_cast<uint8_t>(std::lround(cov * 255.0f));
+        const float sat = std::clamp(0.35f + 0.65f * ((d - f_in) * inv_span), 0.35f, 1.0f);
+        const float h_q1 = fast_atan2_q1_unit(dx_i, dy_i);
+
+        c.rgb[off_pos + static_cast<size_t>(half + dx_i)] = encode_hw_rgb565(hsv_to_rgb(h_q1, sat, 1.0f));
+        c.alpha[off_pos + static_cast<size_t>(half + dx_i)] = a_u8;
+        if (dx_i > 0) {
+          c.rgb[off_pos + static_cast<size_t>(half - dx_i)] = encode_hw_rgb565(hsv_to_rgb(0.5f - h_q1, sat, 1.0f));
+          c.alpha[off_pos + static_cast<size_t>(half - dx_i)] = a_u8;
+        }
+        if (dy_i > 0) {
+          c.rgb[off_neg + static_cast<size_t>(half + dx_i)] = encode_hw_rgb565(hsv_to_rgb(1.0f - h_q1, sat, 1.0f));
+          c.alpha[off_neg + static_cast<size_t>(half + dx_i)] = a_u8;
+          if (dx_i > 0) {
+            c.rgb[off_neg + static_cast<size_t>(half - dx_i)] = encode_hw_rgb565(hsv_to_rgb(0.5f + h_q1, sat, 1.0f));
+            c.alpha[off_neg + static_cast<size_t>(half - dx_i)] = a_u8;
+          }
+        }
       }
     }
   }

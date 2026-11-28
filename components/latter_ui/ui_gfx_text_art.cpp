@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <type_traits>
 
 namespace latter_ui {
 using namespace latter_core;
@@ -1117,12 +1118,56 @@ void upscale_2x_single_row_swar(uint16_t *dst_row, const uint16_t *src_row,
   }
 }
 
+struct LocalArtDimLut {
+  int mul_q8{-1};
+  uint8_t row_mask{0U};
+  uint16_t r[16][32];
+  uint16_t g[16][64];
+  uint16_t b[16][32];
+};
+
+template <int EffMode>
+inline void ensure_local_art_dim_lut_row(LocalArtDimLut &lut, int mul_q8, int y) noexcept {
+  if (lut.mul_q8 != mul_q8) {
+    lut.mul_q8 = mul_q8;
+    lut.row_mask = 0U;
+  }
+  const uint8_t ry = static_cast<uint8_t>(y & 3);
+  const uint8_t bit = static_cast<uint8_t>(1U << ry);
+  if ((lut.row_mask & bit) != 0U) return;
+
+  const uint32_t m = static_cast<uint32_t>(mul_q8);
+  constexpr bool swap_bytes = (EffMode == 2);
+  const uint8_t *const th = kBayer4[ry];
+  for (int col = 0; col < 4; ++col) {
+    const uint8_t bidx = th[col];
+    const uint32_t t = static_cast<uint32_t>(bidx) * 16U + 8U;
+    uint16_t *const rl = lut.r[bidx];
+    uint16_t *const gl = lut.g[bidx];
+    uint16_t *const bl = lut.b[bidx];
+    for (uint32_t v = 0U; v < 32U; ++v) {
+      const uint32_t q = (v * m + t) >> 8;
+      const uint16_t r_raw = static_cast<uint16_t>(q << 11);
+      const uint16_t b_raw = static_cast<uint16_t>(q);
+      rl[v] = swap_bytes ? bswap16_u16(r_raw) : r_raw;
+      bl[v] = swap_bytes ? bswap16_u16(b_raw) : b_raw;
+    }
+    for (uint32_t v = 0U; v < 64U; ++v) {
+      const uint32_t q = (v * m + t) >> 8;
+      const uint16_t g_raw = static_cast<uint16_t>(q << 5);
+      gl[v] = swap_bytes ? bswap16_u16(g_raw) : g_raw;
+    }
+  }
+  lut.row_mask |= bit;
+}
+
 template <int EffMode>
 void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, int src_w, int cx,
                                     bool apply_scrim, bool show_metadata, int dim_level,
                                     uint16_t *mirror_fb, int mirror_y_lo, int mirror_y_hi) noexcept {
   alignas(4) uint16_t line0_px[512];
   alignas(4) uint16_t line1_px[512];
+  std::conditional_t<(SCREEN_W <= 512), LocalArtDimLut, uint8_t> local_lut{};
   auto copy_row_span = [&](uint16_t *dst_row, int row_y, const uint16_t *src_line, int sx0, int sx1) noexcept {
     const size_t nbytes = static_cast<size_t>(sx1 - sx0 + 1) * sizeof(uint16_t);
     std::memcpy(dst_row + sx0, src_line + sx0, nbytes);
@@ -1165,31 +1210,29 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
         }
         copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
         copy_row_span(dst1, y1, line0_px, sx0_b, sx1_b);
-      } else {
-        const uint32_t m = static_cast<uint32_t>(std::max(0, mul0));
+      } else if constexpr (SCREEN_W <= 512) {
+        const int eff_mul = std::max(0, mul0);
+        ensure_local_art_dim_lut_row<EffMode>(local_lut, eff_mul, y0);
+        ensure_local_art_dim_lut_row<EffMode>(local_lut, eff_mul, y1);
         const uint8_t *const th0 = kBayer4[y0 & 3];
         const uint8_t *const th1 = kBayer4[y1 & 3];
-        uint32_t t0_rb[4], t0_g[4], t1_rb[4], t1_g[4];
-        for (int k = 0; k < 4; ++k) {
-          const uint32_t v0 = static_cast<uint32_t>(th0[k]) * 16U + 8U;
-          const uint32_t v1 = static_cast<uint32_t>(th1[k]) * 16U + 8U;
-          t0_rb[k] = (v0 << 16) | v0;
-          t0_g[k] = v0 << 5;
-          t1_rb[k] = (v1 << 16) | v1;
-          t1_g[k] = v1 << 5;
-        }
+        const uint16_t *const r0[4] = {local_lut.r[th0[0]], local_lut.r[th0[1]], local_lut.r[th0[2]], local_lut.r[th0[3]]};
+        const uint16_t *const g0[4] = {local_lut.g[th0[0]], local_lut.g[th0[1]], local_lut.g[th0[2]], local_lut.g[th0[3]]};
+        const uint16_t *const b0[4] = {local_lut.b[th0[0]], local_lut.b[th0[1]], local_lut.b[th0[2]], local_lut.b[th0[3]]};
+        const uint16_t *const r1[4] = {local_lut.r[th1[0]], local_lut.r[th1[1]], local_lut.r[th1[2]], local_lut.r[th1[3]]};
+        const uint16_t *const g1[4] = {local_lut.g[th1[0]], local_lut.g[th1[1]], local_lut.g[th1[2]], local_lut.g[th1[3]]};
+        const uint16_t *const b1[4] = {local_lut.b[th1[0]], local_lut.b[th1[1]], local_lut.b[th1[2]], local_lut.b[th1[3]]};
         auto emit_one_src = [&](int sx, int b_lo, int b_hi) noexcept {
           const uint32_t s = src_row[sx];
-          const uint32_t rb = (((s & 0xF800U) << 5) | (s & 0x001FU)) * m;
-          const uint32_t g = (s & 0x07E0U) * m;
-          uint32_t a = dim_rgb565_swar_q8_le(rb, g, t0_rb[b_lo], t0_g[b_lo]) |
-                       (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb, g, t0_rb[b_hi], t0_g[b_hi])) << 16);
-          uint32_t b = dim_rgb565_swar_q8_le(rb, g, t1_rb[b_lo], t1_g[b_lo]) |
-                       (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb, g, t1_rb[b_hi], t1_g[b_hi])) << 16);
-          if constexpr (EffMode == 2) {
-            a = bswap16x2_u32(a);
-            b = bswap16x2_u32(b);
-          }
+          const uint32_t rv = s >> 11;
+          const uint32_t gv = (s >> 5) & 0x3FU;
+          const uint32_t bv = s & 0x1FU;
+          const uint32_t a =
+              static_cast<uint32_t>(r0[b_lo][rv] | g0[b_lo][gv] | b0[b_lo][bv]) |
+              (static_cast<uint32_t>(r0[b_hi][rv] | g0[b_hi][gv] | b0[b_hi][bv]) << 16);
+          const uint32_t b =
+              static_cast<uint32_t>(r1[b_lo][rv] | g1[b_lo][gv] | b1[b_lo][bv]) |
+              (static_cast<uint32_t>(r1[b_hi][rv] | g1[b_hi][gv] | b1[b_hi][bv]) << 16);
           std::memcpy(line0_px + (sx << 1), &a, 4U);
           std::memcpy(line1_px + (sx << 1), &b, 4U);
         };
@@ -1199,31 +1242,8 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
           ++sx;
         }
         for (; sx + 1 <= s_hi; sx += 2) {
-          const uint32_t s0 = src_row[sx];
-          const uint32_t s1 = src_row[sx + 1];
-          const uint32_t rb0 = (((s0 & 0xF800U) << 5) | (s0 & 0x001FU)) * m;
-          const uint32_t g0 = (s0 & 0x07E0U) * m;
-          const uint32_t rb1 = (((s1 & 0xF800U) << 5) | (s1 & 0x001FU)) * m;
-          const uint32_t g1 = (s1 & 0x07E0U) * m;
-
-          uint32_t a01 = dim_rgb565_swar_q8_le(rb0, g0, t0_rb[0], t0_g[0]) |
-                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb0, g0, t0_rb[1], t0_g[1])) << 16);
-          uint32_t a23 = dim_rgb565_swar_q8_le(rb1, g1, t0_rb[2], t0_g[2]) |
-                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb1, g1, t0_rb[3], t0_g[3])) << 16);
-          uint32_t b01 = dim_rgb565_swar_q8_le(rb0, g0, t1_rb[0], t1_g[0]) |
-                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb0, g0, t1_rb[1], t1_g[1])) << 16);
-          uint32_t b23 = dim_rgb565_swar_q8_le(rb1, g1, t1_rb[2], t1_g[2]) |
-                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb1, g1, t1_rb[3], t1_g[3])) << 16);
-          if constexpr (EffMode == 2) {
-            a01 = bswap16x2_u32(a01);
-            a23 = bswap16x2_u32(a23);
-            b01 = bswap16x2_u32(b01);
-            b23 = bswap16x2_u32(b23);
-          }
-          std::memcpy(line0_px + (sx << 1), &a01, 4U);
-          std::memcpy(line0_px + ((sx + 1) << 1), &a23, 4U);
-          std::memcpy(line1_px + (sx << 1), &b01, 4U);
-          std::memcpy(line1_px + ((sx + 1) << 1), &b23, 4U);
+          emit_one_src(sx, 0, 1);
+          emit_one_src(sx + 1, 2, 3);
         }
         if (sx <= s_hi) {
           emit_one_src(sx, 0, 1);
@@ -1856,6 +1876,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
       }
     }
   }
+  frame_base_claim();
   backdrop_active() = true;
   backdrop_max_lum_q8() = hit->max_mul_q8;
   return true;
@@ -1907,6 +1928,7 @@ bool blit_album_art_cached_rect_view(Rgb565Surface &it, ArtImageView target_art,
       std::memcpy(fb + off, hit->px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
     }
   }
+  frame_base_claim();
   backdrop_active() = true;
   backdrop_max_lum_q8() = hit->max_mul_q8;
   return true;

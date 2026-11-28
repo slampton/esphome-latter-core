@@ -1717,6 +1717,60 @@ void test_aa_font_live_fb_blending_no_halo() {
     latter_core::area_ctx_state() = saved_ac;
     latter_core::v3_domain_reducer().reset();
 
+    // 7. apply_slots_action(..., &changed) & PageId::AREA area_context coalescing.
+    {
+      latter_core::reset_all_v3_rev_guards();
+      bool slot_changed = false;
+      const std::string blob1 = "Light 1\x1flight.l1\x1flight\x1f" "1\x1f" "80";
+      LATTER_CHECK(latter_core::apply_slots_action(
+          100, "entities", 1, 2, blob1, 6000U, true, rs, &slot_changed));
+      LATTER_CHECK(slot_changed);
+
+      LATTER_CHECK(latter_core::apply_slots_action(
+          101, "entities", 1, 2, blob1, 6100U, true, rs, &slot_changed));
+      LATTER_CHECK(!slot_changed);
+
+      const std::string blob2 = "Light 1\x1flight.l1\x1flight\x1f" "0\x1f" "0";
+      LATTER_CHECK(latter_core::apply_slots_action(
+          102, "entities", 1, 2, blob2, 6200U, true, rs, &slot_changed));
+      LATTER_CHECK(slot_changed);
+
+      latter_core::v3_domain_reducer().reset();
+      auto &ac2 = latter_core::area_ctx_state();
+      ac2 = latter_core::AreaContextState{};
+      ac2.epoch = 1U;
+      ac2.rev = 10U;
+      ac2.area_id = "kitchen";
+      ac2.area_name = "Kitchen";
+      ac2.available_domains = "light";
+      ac2.area_temp = 72.0f;
+      ac2.area_humidity = 45.0f;
+      ac2.area_climates_summary = "idle";
+      rs.nav.display_power_state = 0;
+      rs.nav.is_hibernating = false;
+      rs.nav.gui_page = latter_core::PageId::AREA;
+      rs.nav.area_subpage = 0;
+      (void)latter_core::v3_domain_reducer().reduce("area_context", rctx);
+      const uint32_t sig_ar0 = compute_idle_state_signature(ctx);
+
+      ac2.rev = 11U;
+      ac2.local_tz_info = "EST";
+      ac2.alarm_state = "disarmed";
+      const auto eff_ar_noop = latter_core::v3_domain_reducer().reduce("area_context", rctx);
+      LATTER_CHECK(!eff_ar_noop.schedule_disp_update && !eff_ar_noop.mark_dirty_full);
+      LATTER_CHECK(compute_idle_state_signature(ctx) == sig_ar0);
+
+      ac2.rev = 12U;
+      ac2.area_temp = 74.0f;
+      const auto eff_ar_temp = latter_core::v3_domain_reducer().reduce("area_context", rctx);
+      LATTER_CHECK(eff_ar_temp.schedule_disp_update);
+      LATTER_CHECK(compute_idle_state_signature(ctx) != sig_ar0);
+
+      latter_core::area_ctx_state() = saved_ac;
+      latter_core::v3_domain_reducer().reset();
+      latter_core::reset_all_v3_rev_guards();
+    }
+
     ms = saved_ms;
     rs.music = saved_music;
     rs.nav = saved_nav;

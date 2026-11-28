@@ -231,6 +231,20 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     const bool was_unassigned = r.area.active_area_id.empty();
     const bool area_changed = !st.area_id.empty() && st.area_id != r.area.active_area_id;
+    const bool area_cleared = !area_changed && st.area_id.empty() && !r.area.active_area_id.empty();
+    auto same_opt_float = [](float a, float b) noexcept -> bool {
+      if (std::isnan(a) && std::isnan(b)) return true;
+      if (std::isnan(a) || std::isnan(b)) return false;
+      return std::fabs(a - b) < 0.05f;
+    };
+    const bool area_name_changed = (st.area_name != prev_area_name_);
+    prev_area_name_ = st.area_name;
+    const bool area_temp_changed = !same_opt_float(st.area_temp, prev_area_temp_);
+    prev_area_temp_ = st.area_temp;
+    const bool area_humidity_changed = !same_opt_float(st.area_humidity, prev_area_humidity_);
+    prev_area_humidity_ = st.area_humidity;
+    const bool climates_changed = (st.area_climates_summary != prev_climates_summary_);
+    prev_climates_summary_ = st.area_climates_summary;
 
     if (area_changed) {
       r.area.active_area_id = st.area_id;
@@ -242,7 +256,7 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       r.slot_page_for(latter_rpc::SlotChannel::AREA_ENTITIES) = 1;
       area_cat_dock_page() = 0;
       eff.mark_dirty_full = true;
-    } else if (st.area_id.empty() && !r.area.active_area_id.empty()) {
+    } else if (area_cleared) {
       r.area.active_area_id.clear();
       r.nav.ambient_bri_override_pct = -1;
       eff.mark_dirty_full = true;
@@ -262,8 +276,8 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     sync_audio_session_media_observation(ctx.local_mp_playing, ctx.local_mp_paused, ctx.now_ms);
 
+    const bool domains_changed = (st.available_domains != area_available_domains_csv());
     {
-      const bool domains_changed = (st.available_domains != area_available_domains_csv());
       area_available_domains_csv() = st.available_domains;
       std::string cats[8];
       const int cnt = collect_area_categories(cats);
@@ -416,10 +430,14 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
 
     if (r.nav.display_power_state == 0 && !r.nav.is_hibernating) {
       const int gp = r.nav.gui_page;
+      const bool area_page_changed =
+          area_changed || area_cleared || domains_changed || area_name_changed ||
+          area_temp_changed || area_humidity_changed || climates_changed;
       if (wallpaper_cleared || wallpaper_changed || first_area_ctx) {
         eff.mark_dirty_full = true;
       }
-      if (wallpaper_cleared || wallpaper_changed || first_area_ctx || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 ||
+      if (wallpaper_cleared || wallpaper_changed || first_area_ctx || r.alert.active || gp == 1 || gp == 4 ||
+          (gp == 6 && area_page_changed) || gp == 7 || gp == 9 ||
           (gp == 10 && r.nav.time_subpage == 0) ||
           gp == PageId::PINNED || gp == PageId::CALENDAR || gp == PageId::CAMERAS || gp == PageId::WEATHER) {
         if (gp == 1 && r.nav.home_subpage == 0) {

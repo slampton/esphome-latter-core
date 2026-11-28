@@ -337,29 +337,58 @@ bool apply_music_lyrics_action(int req_id,
 bool apply_slots_action(int req_id, std::string_view mode,
                         int page, int total_pages, std::string_view slots_blob,
                         uint32_t now_ms, bool force_area_entities,
-                        DeviceRuntimeState &rt) {
+                        DeviceRuntimeState &rt, bool *out_changed) {
   const latter_rpc::SlotChannel ch =
       force_area_entities ? latter_rpc::SlotChannel::AREA_ENTITIES
                           : latter_rpc::classify_browse_mode(mode);
-  if (!latter_rpc::accept_req_id(ch, req_id)) return false;
+  if (!latter_rpc::accept_req_id(ch, req_id)) {
+    if (out_changed != nullptr) *out_changed = false;
+    return false;
+  }
 
+  static_assert(DeviceRuntimeState::kListSlotsPerPage >= DeviceRuntimeState::kCardSlotsPerPage);
   const size_t max_items =
       (ch == latter_rpc::SlotChannel::AREA_ENTITIES) ? DeviceRuntimeState::kCardSlotsPerPage
                                                      : DeviceRuntimeState::kListSlotsPerPage;
-  parse_v3_slots_payload(slots_blob, rt.slots_for(ch), max_items);
+  BrowseSlotItem parsed[DeviceRuntimeState::kListSlotsPerPage]{};
+  parse_v3_slots_payload(slots_blob, parsed, max_items);
 
+  int new_page = rt.slot_page_for(ch);
   if (ch == latter_rpc::SlotChannel::MUSIC) {
     if (now_ms == 0 || (now_ms - rt.last_music_page_req_ms) > 350U || page == rt.slot_page_for(ch)) {
-      rt.slot_page_for(ch) = page;
+      new_page = page;
     }
   } else {
-    rt.slot_page_for(ch) = page;
+    new_page = page;
   }
-  rt.slot_total_pages_for(ch) = total_pages;
+  const std::string new_browse_mode =
+      (ch == latter_rpc::SlotChannel::AREA_ENTITIES)
+          ? (force_area_entities ? std::string(mode) : std::string("entities"))
+          : rt.area.browse_mode;
 
-  if (ch == latter_rpc::SlotChannel::AREA_ENTITIES) {
-    rt.area.browse_mode = force_area_entities ? std::string(mode) : std::string("entities");
+  BrowseSlotItem *cur = rt.slots_for(ch);
+  bool changed = (new_page != rt.slot_page_for(ch)) ||
+                 (total_pages != rt.slot_total_pages_for(ch)) ||
+                 ((ch == latter_rpc::SlotChannel::AREA_ENTITIES) && (new_browse_mode != rt.area.browse_mode));
+  for (size_t i = 0; i < max_items; ++i) {
+    if (!changed &&
+        (cur[i].active != parsed[i].active ||
+         cur[i].level != parsed[i].level ||
+         cur[i].is_current != parsed[i].is_current ||
+         cur[i].id != parsed[i].id ||
+         cur[i].name != parsed[i].name ||
+         cur[i].type != parsed[i].type ||
+         cur[i].queue_item_id != parsed[i].queue_item_id)) {
+      changed = true;
+    }
+    cur[i] = std::move(parsed[i]);
   }
+  rt.slot_page_for(ch) = new_page;
+  rt.slot_total_pages_for(ch) = total_pages;
+  if (ch == latter_rpc::SlotChannel::AREA_ENTITIES) {
+    rt.area.browse_mode = new_browse_mode;
+  }
+  if (out_changed != nullptr) *out_changed = changed;
   return true;
 }
 

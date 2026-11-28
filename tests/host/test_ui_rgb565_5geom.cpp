@@ -1182,6 +1182,7 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
     frame_base_begin();
     frame_hits().clear();
     render_music_page(fix.surf, fix.ctx);
+    LATTER_CHECK(frame_base_state().painted);
     reset_clip_y_band();
 
     // Bottom mode bar & all 3 left-column pills stay pixel-identical to full35.
@@ -1241,6 +1242,99 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
     rs.nav = saved_nav;
     dirty_band() = DirtyBandTracker{};
     art_canvas_drop_all();
+  }
+
+  // Verify hsv_color_wheel() optimized 4-quadrant cache & endian parity plus stack-buffered
+  // fill_round_rect_glass() bit-exact parity (including period-4 hit & non-repeating noisy inputs).
+  {
+    auto decode_px = [](uint16_t hw, int mode) -> UiColor {
+      const uint16_t raw = (mode == 2) ? static_cast<uint16_t>((hw >> 8) | (hw << 8)) : decode_hw_rgb565_raw(hw);
+      const uint8_t r5 = static_cast<uint8_t>((raw >> 11) & 0x1FU);
+      const uint8_t g6 = static_cast<uint8_t>((raw >> 5) & 0x3FU);
+      const uint8_t b5 = static_cast<uint8_t>(raw & 0x1FU);
+      return UiColor{static_cast<uint8_t>((r5 << 3) | (r5 >> 2)),
+                     static_cast<uint8_t>((g6 << 2) | (g6 >> 4)),
+                     static_cast<uint8_t>((b5 << 3) | (b5 >> 2))};
+    };
+
+    const ui::ColorWheelGeom cw = ui::area_color_wheel_geom();
+    int d_lo = -1, d_hi = -1;
+    for (int d = 1; d < SCREEN_W / 2; ++d) {
+      float h_tmp = 0.0f, s_tmp = 0.0f;
+      if (ui::hsv_wheel_pick(cw.cx + d, cw.cy, cw, h_tmp, s_tmp)) {
+        if (d_lo < 0) d_lo = d;
+        d_hi = d;
+      }
+    }
+    LATTER_CHECK(d_lo > 0 && d_hi > d_lo + 4);
+    const int r_mid = (d_lo + d_hi) / 2;
+
+    for (int endian_mode : {1, 2}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, endian_mode);
+      const UiColor bg{16, 24, 32};
+      const uint16_t bg_hw = encode_hw_rgb565(bg);
+      fix.fill(bg_hw);
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::AREA, 2, 0U, true);
+      frame_base_begin();
+      ui::hsv_color_wheel(fix.surf, cw, 0.0f, 1.0f, bg, UiColor{255, 255, 255}, WidgetId::COLOR_WHEEL_RING);
+
+      const UiColor c_east = decode_px(fix.pixels[static_cast<size_t>(cw.cy) * SCREEN_W + static_cast<size_t>(cw.cx + r_mid)], endian_mode);
+      const UiColor c_south = decode_px(fix.pixels[static_cast<size_t>(cw.cy + r_mid) * SCREEN_W + static_cast<size_t>(cw.cx)], endian_mode);
+      const UiColor c_west = decode_px(fix.pixels[static_cast<size_t>(cw.cy) * SCREEN_W + static_cast<size_t>(cw.cx - r_mid)], endian_mode);
+      const UiColor c_north = decode_px(fix.pixels[static_cast<size_t>(cw.cy - r_mid) * SCREEN_W + static_cast<size_t>(cw.cx)], endian_mode);
+      LATTER_CHECK(c_east.r > 200 && c_east.r > c_east.g + 60 && c_east.r > c_east.b + 60);
+      LATTER_CHECK(c_south.g > 180 && c_south.b < 140);
+      LATTER_CHECK(c_west.g > 180 && c_west.b > 180 && c_west.r < 140);
+      LATTER_CHECK(c_north.b > 180 && c_north.r > 60 && c_north.g < 140);
+      LATTER_CHECK(fix.pixels[0] == bg_hw);
+
+      // Verify fill_round_rect_glass over both a repeating background (period-4 cache hit) and noisy pixels (miss)
+      const int gx = 16;
+      const int gy = SCREEN_CY - 20;
+      const int gw = std::min(220, SCREEN_W - 32);
+      const int gh = 40;
+      const UiColor tint{22, 30, 44};
+      const int alpha_q8 = 128;
+      std::vector<uint16_t> orig(static_cast<size_t>(SCREEN_W) * SCREEN_H);
+      for (int y = 0; y < SCREEN_H; ++y) {
+        for (int x = 0; x < SCREEN_W; ++x) {
+          const bool noisy_band = (y >= gy + 16 && y <= gy + 24);
+          const UiColor px_c = noisy_band
+              ? UiColor{static_cast<uint8_t>((x * 29 + y * 13) & 255),
+                        static_cast<uint8_t>((x * 17 + y * 37) & 255),
+                        static_cast<uint8_t>((x * 43 + y * 7) & 255)}
+              : UiColor{40, 80, 120};
+          orig[static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x)] = encode_hw_rgb565(px_c);
+        }
+      }
+      fix.pixels = orig;
+      fill_round_rect_glass(fix.surf, gx, gy, gw, gh, 8.0f, tint, alpha_q8, alpha_q8);
+      for (int py = gy + 10; py <= gy + 26; ++py) {
+        for (int px = gx + 10; px < gx + gw - 10; px += 5) {
+          const size_t idx = static_cast<size_t>(py) * SCREEN_W + static_cast<size_t>(px);
+          const uint16_t bg_raw = (endian_mode == 2)
+                                      ? static_cast<uint16_t>((orig[idx] >> 8) | (orig[idx] << 8))
+                                      : orig[idx];
+          const uint32_t tr = (static_cast<uint32_t>(tint.r) * 31U * 256U + 127U) / 255U;
+          const uint32_t tg = (static_cast<uint32_t>(tint.g) * 63U * 256U + 127U) / 255U;
+          const uint32_t tb = (static_cast<uint32_t>(tint.b) * 31U * 256U + 127U) / 255U;
+          const uint32_t tr_a = (tr * static_cast<uint32_t>(alpha_q8)) >> 8;
+          const uint32_t tg_a = (tg * static_cast<uint32_t>(alpha_q8)) >> 8;
+          const uint32_t tb_a = (tb * static_cast<uint32_t>(alpha_q8)) >> 8;
+          const uint32_t tk = static_cast<uint32_t>(kBayer4[py & 3][px & 3]) * 16U + 8U;
+          const uint32_t ia = static_cast<uint32_t>(256 - alpha_q8);
+          const uint32_t r = (tr_a + ((bg_raw >> 11) & 0x1FU) * ia + tk) >> 8;
+          const uint32_t g = (tg_a + ((bg_raw >> 5) & 0x3FU) * ia + tk) >> 8;
+          const uint32_t b = (tb_a + (bg_raw & 0x1FU) * ia + tk) >> 8;
+          const uint16_t exp_le = static_cast<uint16_t>((r << 11) | (g << 5) | b);
+          const uint16_t exp_hw = (endian_mode == 2) ? static_cast<uint16_t>((exp_le >> 8) | (exp_le << 8)) : exp_le;
+          LATTER_CHECK(fix.pixels[idx] == exp_hw);
+        }
+      }
+    }
+    evict_registered_psram_caches();
+    dirty_band() = DirtyBandTracker{};
   }
 
   // Verify static day/night sky and lyrics fallback gradient propagate provable backdrop_max_lum_q8() ceilings
