@@ -602,8 +602,9 @@ bool blit_rgb565_fitted_frame(Rgb565Surface &it, const uint16_t *src,
   const bool one_to_one = (crop_w == fit_r.w && crop_h == fit_r.h && crop_x0 == 0 && crop_y0 == 0);
 
   // ESP32-P4 hardware bilinear PPA SRM scaling fast path when unclipped and rectangular.
+  const bool need_round_clip = (LATTER_ROUND_DISPLAY != 0) && clip_round_bezel;
   uint16_t *const fb_direct = active_frame_buf16();
-  if (!one_to_one && !clip_round_bezel && fb_direct != nullptr &&
+  if (!one_to_one && !need_round_clip && fb_direct != nullptr &&
       y_start == fit_r.y0 && y_end == (fit_r.y0 + fit_r.h - 1) &&
       fit_r.x0 >= 0 && (fit_r.x0 + fit_r.w) <= SCREEN_W &&
       ppa_srm_scale_rgb565(fb_direct, SCREEN_W, fit_r.x0, fit_r.y0, fit_r.w, fit_r.h,

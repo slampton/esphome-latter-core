@@ -44,7 +44,8 @@ bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int d
                           int dst_w, int dst_h, const uint16_t *src, int src_w, int src_h,
                           int crop_x0, int crop_y0, int crop_w, int crop_h,
                           bool sync_m2c = true) noexcept;
-bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexcept;
+bool ppa_blend_uniform_dim_rgb565(uint16_t *dst_buf, const uint16_t *src_buf,
+                                  int w, int h, int mul_q8) noexcept;
 bool blend_psram_vertical_wash_fast(uint16_t *dst_fb, const uint16_t *src_bg, int y0, int y1,
                                     uint8_t wash_r, uint8_t wash_g, uint8_t wash_b,
                                     int sheet_q8, int falloff_drop = 152, int round_inset = 0,

@@ -1186,6 +1186,16 @@ void test_rotated_fallback_print_and_adaptive_glass_style() {
     LATTER_CHECK(backdrop_active());
     const uint16_t right_px = fix.pixels[static_cast<size_t>(SCREEN_CY) * SCREEN_W + static_cast<size_t>(SCREEN_W - 2)];
     LATTER_CHECK(right_px != 0U);
+
+    // Non-round displays must ignore clip_round_bezel and still fill corners cleanly.
+    fix.fill(0U);
+    backdrop_active() = false;
+    LATTER_CHECK(blit_rgb565_fitted_frame(fix.surf, src_px, 2, 2, vp, /*fill=*/true, /*clip_round_bezel=*/true));
+    LATTER_CHECK(backdrop_active());
+#if !LATTER_ROUND_DISPLAY
+    LATTER_CHECK(fix.pixels[0] != 0U);
+    LATTER_CHECK(fix.pixels[static_cast<size_t>(SCREEN_H - 1) * SCREEN_W + static_cast<size_t>(SCREEN_W - 1)] != 0U);
+#endif
     evict_registered_psram_caches();
   }
 
@@ -1676,6 +1686,35 @@ void test_wave2_rodata_lut_spans_blend_glass_and_clipped_pill() {
     }
     active_frame_endian_mode() = saved_endian;
     fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+  }
+
+  // 4b. Wide fill_round_rect_glass(hole=0) vertical gradient parity across endian modes & host PPA stub guard.
+  {
+    const uint16_t bg_hw = encode_hw_rgb565(UiColor{30, 50, 80});
+    const UiColor tint_c{18, 22, 30};
+    const int rw = std::min(SCREEN_W - 40, 600);
+    const int rx = (SCREEN_W - rw) / 2;
+    const int ry = 48;
+    const int rh = 76;
+    const int saved_endian = active_frame_endian_mode();
+    for (int mode : {1, 2, 3, 4}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, mode);
+      const uint16_t m_bg = encode_hw_rgb565(UiColor{30, 50, 80});
+      fix.fill(m_bg);
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::HOME, 0, 0U, true);
+      frame_base_begin();
+      fill_round_rect_glass(fix.surf, rx, ry, rw, rh, 18.0f, tint_c, 116, 96, 0);
+      const uint16_t top_px = fix.pixels[static_cast<size_t>(ry + 2) * SCREEN_W + static_cast<size_t>(SCREEN_CX)];
+      const uint16_t mid_px = fix.pixels[static_cast<size_t>(ry + rh / 2) * SCREEN_W + static_cast<size_t>(SCREEN_CX)];
+      const uint16_t bot_px = fix.pixels[static_cast<size_t>(ry + rh - 3) * SCREEN_W + static_cast<size_t>(SCREEN_CX)];
+      LATTER_CHECK(top_px != m_bg && mid_px != m_bg && bot_px != m_bg);
+      LATTER_CHECK(fix.pixels[static_cast<size_t>(ry) * SCREEN_W + static_cast<size_t>(rx)] == m_bg);
+    }
+    LATTER_CHECK(!ppa_blend_uniform_dim_rgb565(fix.pixels.data(), fix.pixels.data(), SCREEN_W, SCREEN_H, 96));
+    active_frame_endian_mode() = saved_endian;
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+    fix.fill(bg_hw);
   }
 
   // 5. Clipped-out ui::action_pill skips drawing while still registering its FrameHitTable region.

@@ -408,13 +408,47 @@ struct PpaSrmBlitState {
   bool init_tried = false;
   bool ok = false;
   bool verified = false;
+  bool scale_verified = false;
+  bool scale_warned = false;
+  bool stage_evictor_registered = false;
   ppa_client_handle_t ppa = nullptr;
+  uint16_t *stage_buf = nullptr;
+  size_t stage_bytes = 0U;
   uint32_t blits = 0U;
 };
 
 PpaSrmBlitState &ppa_srm_blit_state() {
   static PpaSrmBlitState st{};
   return st;
+}
+
+void ppa_srm_stage_evict() noexcept {
+  auto &st = ppa_srm_blit_state();
+  if (st.stage_buf != nullptr) {
+    ui_psram_free(st.stage_buf);
+    st.stage_buf = nullptr;
+    st.stage_bytes = 0U;
+  }
+}
+
+uint16_t *ppa_srm_ensure_stage(size_t needed_bytes) noexcept {
+  auto &st = ppa_srm_blit_state();
+  const size_t req = align_up_psram(needed_bytes);
+  if (req == 0U) return nullptr;
+  if (st.stage_buf != nullptr && st.stage_bytes < req) {
+    ui_psram_free(st.stage_buf);
+    st.stage_buf = nullptr;
+    st.stage_bytes = 0U;
+  }
+  if (st.stage_buf == nullptr) {
+    st.stage_buf = static_cast<uint16_t *>(ui_psram_aligned_alloc(req));
+    if (st.stage_buf == nullptr) return nullptr;
+    st.stage_bytes = req;
+    if (!st.stage_evictor_registered) {
+      st.stage_evictor_registered = register_psram_cache_evictor(&ppa_srm_stage_evict);
+    }
+  }
+  return st.stage_buf;
 }
 
 bool ppa_srm_blit_init() noexcept {
@@ -439,10 +473,21 @@ struct PpaBlendWashState {
   bool verified = false;
   bool uniform_ok = true;
   bool uniform_verified = false;
+  bool uniform_warned = false;
+  bool glass_ok = true;
+  bool glass_verified = false;
   bool evictor_registered = false;
   ppa_client_handle_t ppa = nullptr;
   uint8_t *alpha_mask = nullptr;
   int cached_falloff_drop = -1;
+  uint8_t *glass_mask = nullptr;
+  size_t glass_mask_cap = 0U;
+  int glass_key_w = 0;
+  int glass_key_h = 0;
+  int glass_key_rel_y = 0;
+  int glass_key_rect_h = 0;
+  int glass_key_at = -1;
+  int glass_key_ab = -1;
   uint32_t washes = 0U;
 };
 
@@ -457,6 +502,12 @@ void ppa_blend_wash_evict() noexcept {
     ui_psram_free(st.alpha_mask);
     st.alpha_mask = nullptr;
     st.cached_falloff_drop = -1;
+  }
+  if (st.glass_mask != nullptr) {
+    ui_psram_free(st.glass_mask);
+    st.glass_mask = nullptr;
+    st.glass_mask_cap = 0U;
+    st.glass_key_at = -1;
   }
 }
 
@@ -498,6 +549,156 @@ uint8_t *ppa_blend_wash_ensure_mask(int falloff_drop) noexcept {
     st.cached_falloff_drop = falloff_drop;
   }
   return st.alpha_mask;
+}
+
+uint8_t *ppa_blend_glass_ensure_mask(int core_w, int core_h, int core_y0, int rect_y0,
+                                     int rect_h, int a_top, int a_bot, bool need_gradient) noexcept {
+  auto &st = ppa_blend_wash_state();
+  const size_t raw_bytes = static_cast<size_t>(core_w) * static_cast<size_t>(core_h);
+  const size_t req_bytes = align_up_psram(raw_bytes);
+  if (req_bytes == 0U) return nullptr;
+  if (st.glass_mask != nullptr && st.glass_mask_cap < req_bytes) {
+    ui_psram_free(st.glass_mask);
+    st.glass_mask = nullptr;
+    st.glass_mask_cap = 0U;
+    st.glass_key_at = -1;
+  }
+  if (st.glass_mask == nullptr) {
+    st.glass_mask = static_cast<uint8_t *>(ui_psram_aligned_alloc(req_bytes));
+    if (st.glass_mask == nullptr) return nullptr;
+    st.glass_mask_cap = req_bytes;
+    st.glass_key_at = -1;
+    if (!st.evictor_registered) {
+      st.evictor_registered = register_psram_cache_evictor(&ppa_blend_wash_evict);
+    }
+  }
+  if (!need_gradient) return st.glass_mask;
+  const int rel_y = core_y0 - rect_y0;
+  if (st.glass_key_w != core_w || st.glass_key_h != core_h ||
+      st.glass_key_rel_y != rel_y || st.glass_key_rect_h != rect_h ||
+      st.glass_key_at != a_top || st.glass_key_ab != a_bot) {
+    const int den = std::max(1, rect_h - 1);
+    for (int r = 0; r < core_h; ++r) {
+      const int py_rel = rel_y + r;
+      const int a_q8 = std::clamp((rect_h > 1) ? (a_top + ((a_bot - a_top) * py_rel) / den) : a_top, 0, 256);
+      const int a_8 = std::clamp((a_q8 * 255 + 128) >> 8, 0, 255);
+      std::memset(st.glass_mask + static_cast<size_t>(r) * static_cast<size_t>(core_w), a_8,
+                  static_cast<size_t>(core_w));
+    }
+    st.glass_key_w = core_w;
+    st.glass_key_h = core_h;
+    st.glass_key_rel_y = rel_y;
+    st.glass_key_rect_h = rect_h;
+    st.glass_key_at = a_top;
+    st.glass_key_ab = a_bot;
+  }
+  return st.glass_mask;
+}
+
+bool ppa_blend_glass_rect_rgb565(uint16_t *fb, int &inout_x0, int &inout_x1,
+                                 int &inout_y0, int &inout_y1, int rect_y0, int rect_h,
+                                 UiColor tint, int a_top, int a_bot, int mode) noexcept {
+  if (fb == nullptr || (mode != 1 && mode != 3)) return false;
+  if (!ppa_blend_wash_init()) return false;
+  auto &st = ppa_blend_wash_state();
+  if (!st.glass_ok) return false;
+
+  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+  const uintptr_t rem = reinterpret_cast<uintptr_t>(fb) & kMask;
+  if ((rem & 1U) != 0U) return false;
+  const size_t pad_bytes = (rem == 0U) ? 0U : (kPsramCacheLineAlign - rem);
+  const int pad_px = static_cast<int>(pad_bytes >> 1);
+
+  int x0 = std::max(inout_x0, pad_px);
+  int x1 = std::min(inout_x1, SCREEN_W - 1);
+  const int y0 = std::max(inout_y0, 0);
+  const int y1 = std::min(inout_y1, (pad_px > 0) ? (SCREEN_H - 2) : (SCREEN_H - 1));
+  if (x0 > x1 || y0 > y1) return false;
+
+  const int eff_x0 = ((x0 - pad_px) + 7) & ~7;
+  x0 = eff_x0 + pad_px;
+  const int core_w = (x1 - x0 + 1) & ~15;
+  x1 = x0 + core_w - 1;
+  const int core_h = y1 - y0 + 1;
+  if (core_w < 64 || core_h < 16 || (core_w * core_h) < 4096) return false;
+
+  const size_t avail_bytes =
+      (static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) - static_cast<size_t>(pad_px)) * sizeof(uint16_t);
+  const size_t aligned_avail = avail_bytes & ~kMask;
+  const size_t out_pic_h = static_cast<size_t>(y1 + 1);
+  const size_t out_pic_len = static_cast<size_t>(SCREEN_W) * out_pic_h * sizeof(uint16_t);
+  if (out_pic_len > aligned_avail) return false;
+
+  const bool need_grad = (a_top != a_bot);
+  uint8_t *const mask = ppa_blend_glass_ensure_mask(core_w, core_h, y0, rect_y0, rect_h, a_top, a_bot, need_grad);
+  if (mask == nullptr) return false;
+
+  uint16_t *const aligned_fb = fb + pad_px;
+  ppa_blend_oper_config_t bcfg = {};
+  bcfg.in_bg.buffer = aligned_fb;
+  bcfg.in_bg.pic_w = static_cast<uint32_t>(SCREEN_W);
+  bcfg.in_bg.pic_h = static_cast<uint32_t>(out_pic_h);
+  bcfg.in_bg.block_w = static_cast<uint32_t>(core_w);
+  bcfg.in_bg.block_h = static_cast<uint32_t>(core_h);
+  bcfg.in_bg.block_offset_x = static_cast<uint32_t>(eff_x0);
+  bcfg.in_bg.block_offset_y = static_cast<uint32_t>(y0);
+  bcfg.in_bg.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+
+  bcfg.in_fg.buffer = mask;
+  bcfg.in_fg.pic_w = static_cast<uint32_t>(core_w);
+  bcfg.in_fg.pic_h = static_cast<uint32_t>(core_h);
+  bcfg.in_fg.block_w = static_cast<uint32_t>(core_w);
+  bcfg.in_fg.block_h = static_cast<uint32_t>(core_h);
+  bcfg.in_fg.blend_cm = PPA_BLEND_COLOR_MODE_A8;
+
+  bcfg.out.buffer = aligned_fb;
+  bcfg.out.buffer_size = static_cast<uint32_t>(aligned_avail);
+  bcfg.out.pic_w = static_cast<uint32_t>(SCREEN_W);
+  bcfg.out.pic_h = static_cast<uint32_t>(out_pic_h);
+  bcfg.out.block_offset_x = static_cast<uint32_t>(eff_x0);
+  bcfg.out.block_offset_y = static_cast<uint32_t>(y0);
+  bcfg.out.blend_cm = PPA_BLEND_COLOR_MODE_RGB565;
+
+  bcfg.bg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+  bcfg.bg_alpha_fix_val = 255U;
+  if (!need_grad) {
+    const int a_8 = std::clamp((std::clamp(a_top, 0, 256) * 255 + 128) >> 8, 0, 255);
+    bcfg.fg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+    bcfg.fg_alpha_fix_val = static_cast<uint32_t>(a_8);
+  } else {
+    bcfg.fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
+  }
+  bcfg.fg_fix_rgb_val.r = (mode == 3) ? tint.b : tint.r;
+  bcfg.fg_fix_rgb_val.g = tint.g;
+  bcfg.fg_fix_rgb_val.b = (mode == 3) ? tint.r : tint.b;
+  bcfg.mode = PPA_TRANS_MODE_BLOCKING;
+
+  const int64_t t0_us = esp_timer_get_time();
+  const esp_err_t blend_err = ppa_do_blend(st.ppa, &bcfg);
+  const int64_t t_blend_us = esp_timer_get_time();
+  if (blend_err != ESP_OK) {
+    st.glass_ok = false;
+    ESP_LOGW("disp_fb", "PSRAM PPA Blend glass failed (err=%d); disabling", static_cast<int>(blend_err));
+    return false;
+  }
+  ui_psram_cache_invalidate(aligned_fb + static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W),
+                            static_cast<size_t>(core_h) * static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+  const int64_t t_post_us = esp_timer_get_time();
+  st.washes++;
+  if (!st.glass_verified) {
+    st.glass_verified = true;
+    ESP_LOGI("disp_fb",
+             "PSRAM PPA Blend glass verified: %dx%d at (%d,%d) in %ld us (blend=%ldus post=%ldus)",
+             core_w, core_h, x0, y0,
+             static_cast<long>(t_post_us - t0_us),
+             static_cast<long>(t_blend_us - t0_us),
+             static_cast<long>(t_post_us - t_blend_us));
+  }
+  inout_x0 = x0;
+  inout_x1 = x1;
+  inout_y0 = y0;
+  inout_y1 = y1;
+  return true;
 }
 #endif
 
@@ -665,24 +866,12 @@ void blend_vertical_wash_cpu_mode(uint16_t *dst_fb, const uint16_t *src_bg, int 
   }
 }
 
-}  // namespace
-
-void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept {
-  if (dst_fb == nullptr || src_cache == nullptr) return;
-  const int lo_y = std::max(0, y0);
-  const int hi_y = std::min(SCREEN_H - 1, y1);
-  if (lo_y > hi_y) return;
-
-  const size_t row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
-  const size_t off_bytes = static_cast<size_t>(lo_y) * row_bytes;
-  const size_t total_bytes = static_cast<size_t>(hi_y - lo_y + 1) * row_bytes;
-  uint8_t *const dst_ptr = reinterpret_cast<uint8_t *>(dst_fb) + off_bytes;
-  const uint8_t *const src_ptr = reinterpret_cast<const uint8_t *>(src_cache) + off_bytes;
-
+void blit_psram_linear_fast(uint8_t *dst_ptr, const uint8_t *src_ptr, size_t total_bytes) noexcept {
+  if (dst_ptr == nullptr || src_ptr == nullptr || total_bytes == 0U) return;
 #if LATTER_FB_PPA
   constexpr size_t kMinPpaBytes = 32768U;
   constexpr uintptr_t kAlignMask = static_cast<uintptr_t>(kPpaSrmBufAlign - 1U);
-  if (total_bytes >= kMinPpaBytes && dst_fb != src_cache && ppa_srm_blit_init()) {
+  if (total_bytes >= kMinPpaBytes && dst_ptr != src_ptr && ppa_srm_blit_init()) {
     auto &st = ppa_srm_blit_state();
     const uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst_ptr);
     const uintptr_t lo = (dst_addr + kAlignMask) & ~kAlignMask;
@@ -773,6 +962,21 @@ void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, i
   std::memcpy(dst_ptr, src_ptr, total_bytes);
 }
 
+}  // namespace
+
+void blit_psram_band_fast(uint16_t *dst_fb, const uint16_t *src_cache, int y0, int y1) noexcept {
+  if (dst_fb == nullptr || src_cache == nullptr) return;
+  const int lo_y = std::max(0, y0);
+  const int hi_y = std::min(SCREEN_H - 1, y1);
+  if (lo_y > hi_y) return;
+
+  const size_t row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
+  const size_t off_bytes = static_cast<size_t>(lo_y) * row_bytes;
+  const size_t total_bytes = static_cast<size_t>(hi_y - lo_y + 1) * row_bytes;
+  blit_psram_linear_fast(reinterpret_cast<uint8_t *>(dst_fb) + off_bytes,
+                         reinterpret_cast<const uint8_t *>(src_cache) + off_bytes, total_bytes);
+}
+
 bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int dst_y0,
                           int dst_w, int dst_h, const uint16_t *src, int src_w, int src_h,
                           int crop_x0, int crop_y0, int crop_w, int crop_h,
@@ -787,20 +991,90 @@ bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int d
   }
   const int endian = active_frame_endian_mode();
   if (endian != 1 && endian != 3) return false;
-  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
-  if ((reinterpret_cast<uintptr_t>(dst_fb) & kMask) != 0U) return false;
 
   const float sx = static_cast<float>(dst_w) / static_cast<float>(crop_w);
   const float sy = static_cast<float>(dst_h) / static_cast<float>(crop_h);
   if (sx < 0.0625f || sx > 16.0f || sy < 0.0625f || sy > 16.0f) return false;
   if (!ppa_srm_blit_init()) return false;
 
-  const size_t src_bytes = static_cast<size_t>(src_w) * static_cast<size_t>(src_h) * sizeof(uint16_t);
-  const size_t out_pic_h = static_cast<size_t>(dst_y0 + dst_h);
-  const size_t out_bytes = align_up_psram(static_cast<size_t>(dst_stride_px) * out_pic_h * sizeof(uint16_t));
-  ui_psram_cache_writeback(src, src_bytes);
+  uint32_t sx_q4 = std::max<uint32_t>(1U, static_cast<uint32_t>(sx * 16.0f));
+  uint32_t sy_q4 = std::max<uint32_t>(1U, static_cast<uint32_t>(sy * 16.0f));
+  auto scaled_dim = [](uint32_t q4, int in_len) noexcept -> uint32_t {
+    const uint32_t i = q4 >> 4;
+    const uint32_t f = q4 & 15U;
+    return i * static_cast<uint32_t>(in_len) + (f * static_cast<uint32_t>(in_len)) / 16U;
+  };
+  uint32_t new_w = scaled_dim(sx_q4, crop_w);
+  while (new_w > static_cast<uint32_t>(dst_w) && sx_q4 > 1U) {
+    --sx_q4;
+    new_w = scaled_dim(sx_q4, crop_w);
+  }
+  uint32_t new_h = scaled_dim(sy_q4, crop_h);
+  while (new_h > static_cast<uint32_t>(dst_h) && sy_q4 > 1U) {
+    --sy_q4;
+    new_h = scaled_dim(sy_q4, crop_h);
+  }
+  if (new_w == 0U || new_w > static_cast<uint32_t>(dst_w) ||
+      new_h == 0U || new_h > static_cast<uint32_t>(dst_h)) {
+    return false;
+  }
+
+  constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
+  const uintptr_t rem = reinterpret_cast<uintptr_t>(dst_fb) & kMask;
+  if ((rem & 1U) != 0U) return false;
+  const size_t pad_bytes = (rem == 0U) ? 0U : (kPsramCacheLineAlign - rem);
+  const int pad_px = static_cast<int>(pad_bytes >> 1);
+
+  enum class SrmTargetMode : uint8_t { DIRECT_ALIGNED, OFFSET_FB, STAGED };
+  SrmTargetMode tmode = SrmTargetMode::STAGED;
+  uint16_t *out_buf = nullptr;
+  size_t out_buf_bytes = 0U;
+  int out_pic_w = dst_stride_px;
+  int out_pic_h = dst_y0 + dst_h;
+  int out_bx0 = dst_x0;
+  int out_by0 = dst_y0;
+  const char *mode_name = "staged";
+
+  if (rem == 0U) {
+    tmode = SrmTargetMode::DIRECT_ALIGNED;
+    out_buf = dst_fb;
+    out_buf_bytes = align_up_psram(static_cast<size_t>(dst_stride_px) * static_cast<size_t>(out_pic_h) * sizeof(uint16_t));
+    mode_name = "direct";
+  } else {
+    const size_t avail_bytes =
+        (static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) - static_cast<size_t>(pad_px)) * sizeof(uint16_t);
+    const size_t aligned_avail = avail_bytes & ~kMask;
+    const size_t req_out_len =
+        static_cast<size_t>(SCREEN_W) * static_cast<size_t>(dst_y0 + dst_h) * sizeof(uint16_t);
+    if (dst_stride_px == SCREEN_W && dst_x0 >= pad_px && req_out_len <= aligned_avail) {
+      tmode = SrmTargetMode::OFFSET_FB;
+      out_buf = dst_fb + pad_px;
+      out_buf_bytes = aligned_avail;
+      out_pic_w = SCREEN_W;
+      out_pic_h = dst_y0 + dst_h;
+      out_bx0 = dst_x0 - pad_px;
+      out_by0 = dst_y0;
+      mode_name = "offset_fb";
+    } else {
+      const size_t dst_bytes = static_cast<size_t>(dst_w) * static_cast<size_t>(dst_h) * sizeof(uint16_t);
+      uint16_t *const stage = ppa_srm_ensure_stage(dst_bytes);
+      if (stage == nullptr) return false;
+      tmode = SrmTargetMode::STAGED;
+      out_buf = stage;
+      out_buf_bytes = align_up_psram(dst_bytes);
+      out_pic_w = dst_w;
+      out_pic_h = dst_h;
+      out_bx0 = 0;
+      out_by0 = 0;
+    }
+  }
 
   auto &st = ppa_srm_blit_state();
+  if (tmode == SrmTargetMode::OFFSET_FB || (tmode == SrmTargetMode::DIRECT_ALIGNED && dst_w < out_pic_w)) {
+    ui_psram_cache_writeback(out_buf + static_cast<size_t>(out_by0) * static_cast<size_t>(out_pic_w),
+                             static_cast<size_t>(out_pic_w) * static_cast<size_t>(dst_h) * sizeof(uint16_t));
+  }
+
   ppa_srm_oper_config_t cfg = {};
   cfg.in.buffer = src;
   cfg.in.pic_w = static_cast<uint32_t>(src_w);
@@ -811,35 +1085,87 @@ bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int d
   cfg.in.block_offset_y = static_cast<uint32_t>(crop_y0);
   cfg.in.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
 
-  cfg.out.buffer = dst_fb;
-  cfg.out.buffer_size = static_cast<uint32_t>(out_bytes);
-  cfg.out.pic_w = static_cast<uint32_t>(dst_stride_px);
+  cfg.out.buffer = out_buf;
+  cfg.out.buffer_size = static_cast<uint32_t>(out_buf_bytes);
+  cfg.out.pic_w = static_cast<uint32_t>(out_pic_w);
   cfg.out.pic_h = static_cast<uint32_t>(out_pic_h);
-  cfg.out.block_offset_x = static_cast<uint32_t>(dst_x0);
-  cfg.out.block_offset_y = static_cast<uint32_t>(dst_y0);
+  cfg.out.block_offset_x = static_cast<uint32_t>(out_bx0);
+  cfg.out.block_offset_y = static_cast<uint32_t>(out_by0);
   cfg.out.srm_cm = PPA_SRM_COLOR_MODE_RGB565;
 
   cfg.rotation_angle = PPA_SRM_ROTATION_ANGLE_0;
-  cfg.scale_x = sx;
-  cfg.scale_y = sy;
+  cfg.scale_x = static_cast<float>(sx_q4) * (1.0f / 16.0f);
+  cfg.scale_y = static_cast<float>(sy_q4) * (1.0f / 16.0f);
   cfg.alpha_update_mode = PPA_ALPHA_NO_CHANGE;
   cfg.mode = PPA_TRANS_MODE_BLOCKING;
 
+  const int64_t t0_us = esp_timer_get_time();
   const esp_err_t err = ppa_do_scale_rotate_mirror(st.ppa, &cfg);
-  if (err != ESP_OK) return false;
-  if (sync_m2c) {
-    const uintptr_t y0_addr = reinterpret_cast<uintptr_t>(dst_fb + static_cast<size_t>(dst_y0) * static_cast<size_t>(dst_stride_px));
-    const uintptr_t y1_addr = reinterpret_cast<uintptr_t>(dst_fb + out_pic_h * static_cast<size_t>(dst_stride_px));
-    const uintptr_t lo = y0_addr & ~kMask;
-    const uintptr_t hi = (y1_addr + kMask) & ~kMask;
-    if (hi > lo) {
-      if (esp_cache_msync(reinterpret_cast<void *>(lo), static_cast<size_t>(hi - lo),
-                          ESP_CACHE_MSYNC_FLAG_DIR_M2C) != ESP_OK) {
-        return false;
+  const int64_t t_srm_us = esp_timer_get_time();
+  if (err != ESP_OK) {
+    if (!st.scale_warned) {
+      st.scale_warned = true;
+      ESP_LOGW("disp_fb", "PSRAM PPA SRM scale failed (err=%d dst=%p %dx%d->%dx%d %s)",
+               static_cast<int>(err), static_cast<const void *>(dst_fb), crop_w, crop_h, dst_w, dst_h, mode_name);
+    }
+    return false;
+  }
+
+  const bool need_edge_rep =
+      (new_w < static_cast<uint32_t>(dst_w)) || (new_h < static_cast<uint32_t>(dst_h));
+  if (tmode == SrmTargetMode::STAGED || sync_m2c || need_edge_rep) {
+    ui_psram_cache_invalidate(out_buf + static_cast<size_t>(out_by0) * static_cast<size_t>(out_pic_w),
+                              static_cast<size_t>(out_pic_w) * static_cast<size_t>(dst_h) * sizeof(uint16_t));
+  }
+  if (need_edge_rep) {
+    const int nw = static_cast<int>(new_w);
+    const int nh = static_cast<int>(new_h);
+    for (int y = 0; y < nh; ++y) {
+      uint16_t *const row = out_buf + static_cast<size_t>(out_by0 + y) * static_cast<size_t>(out_pic_w) +
+                            static_cast<size_t>(out_bx0);
+      const uint16_t edge_px = row[nw - 1];
+      for (int x = nw; x < dst_w; ++x) row[x] = edge_px;
+    }
+    if (nh < dst_h) {
+      const uint16_t *const last_row = out_buf + static_cast<size_t>(out_by0 + nh - 1) * static_cast<size_t>(out_pic_w) +
+                                       static_cast<size_t>(out_bx0);
+      for (int y = nh; y < dst_h; ++y) {
+        uint16_t *const row = out_buf + static_cast<size_t>(out_by0 + y) * static_cast<size_t>(out_pic_w) +
+                              static_cast<size_t>(out_bx0);
+        std::memcpy(row, last_row, static_cast<size_t>(dst_w) * sizeof(uint16_t));
+      }
+    }
+    if ((tmode == SrmTargetMode::STAGED && dst_x0 == 0 && dst_w == dst_stride_px) ||
+        (!sync_m2c && tmode != SrmTargetMode::STAGED)) {
+      ui_psram_cache_writeback(out_buf + static_cast<size_t>(out_by0) * static_cast<size_t>(out_pic_w),
+                               static_cast<size_t>(out_pic_w) * static_cast<size_t>(dst_h) * sizeof(uint16_t));
+    }
+  }
+
+  if (tmode == SrmTargetMode::STAGED) {
+    const size_t dst_bytes = static_cast<size_t>(dst_w) * static_cast<size_t>(dst_h) * sizeof(uint16_t);
+    if (dst_x0 == 0 && dst_w == dst_stride_px) {
+      blit_psram_linear_fast(
+          reinterpret_cast<uint8_t *>(dst_fb + static_cast<size_t>(dst_y0) * static_cast<size_t>(dst_stride_px)),
+          reinterpret_cast<const uint8_t *>(out_buf), dst_bytes);
+    } else {
+      for (int y = 0; y < dst_h; ++y) {
+        std::memcpy(dst_fb + static_cast<size_t>(dst_y0 + y) * static_cast<size_t>(dst_stride_px) +
+                        static_cast<size_t>(dst_x0),
+                    out_buf + static_cast<size_t>(y) * static_cast<size_t>(dst_w),
+                    static_cast<size_t>(dst_w) * sizeof(uint16_t));
       }
     }
   }
+
+  const int64_t t_end_us = esp_timer_get_time();
   st.blits++;
+  if (!st.scale_verified) {
+    st.scale_verified = true;
+    ESP_LOGI("disp_fb", "PSRAM PPA SRM scale verified: %dx%d -> %dx%d (%s) in %ld us (srm=%ldus)",
+             crop_w, crop_h, dst_w, dst_h, mode_name,
+             static_cast<long>(t_end_us - t0_us), static_cast<long>(t_srm_us - t0_us));
+  }
   return true;
 #else
   (void)dst_fb;
@@ -860,31 +1186,47 @@ bool ppa_srm_scale_rgb565(uint16_t *dst_fb, int dst_stride_px, int dst_x0, int d
 #endif
 }
 
-bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexcept {
+bool ppa_blend_uniform_dim_rgb565(uint16_t *dst_buf, const uint16_t *src_buf,
+                                  int w, int h, int mul_q8) noexcept {
 #if LATTER_FB_PPA && !LATTER_ROUND_DISPLAY
-  if (buf == nullptr || w <= 0 || h <= 0 || mul_q8 < 0 || mul_q8 >= 256) return false;
+  if (dst_buf == nullptr || w <= 0 || h <= 0 || mul_q8 < 0 || mul_q8 >= 256) return false;
+  const uint16_t *const in_bg = (src_buf != nullptr) ? src_buf : dst_buf;
   const int endian = active_frame_endian_mode();
   if (endian != 1 && endian != 3) return false;
+  if (!ppa_blend_wash_init()) return false;
+
+  auto &st = ppa_blend_wash_state();
+  if (!st.uniform_ok) return false;
   constexpr uintptr_t kMask = static_cast<uintptr_t>(kPsramCacheLineAlign - 1U);
-  if ((reinterpret_cast<uintptr_t>(buf) & kMask) != 0U) return false;
+  if ((reinterpret_cast<uintptr_t>(dst_buf) & kMask) != 0U) {
+    if (!st.uniform_warned) {
+      st.uniform_warned = true;
+      ESP_LOGW("disp_fb", "PSRAM PPA Blend uniform dim skipped: dst=%p unaligned (rem=%u)",
+               static_cast<const void *>(dst_buf),
+               static_cast<unsigned>(reinterpret_cast<uintptr_t>(dst_buf) & kMask));
+    }
+    return false;
+  }
 
   const size_t px_count = static_cast<size_t>(w) * static_cast<size_t>(h);
   const size_t max_mask_px = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
   const size_t total_bytes = px_count * sizeof(uint16_t);
   if (px_count > max_mask_px || total_bytes < 32768U || (total_bytes % kPpaCopyRowBytes) != 0U) {
+    if (!st.uniform_warned) {
+      st.uniform_warned = true;
+      ESP_LOGW("disp_fb", "PSRAM PPA Blend uniform dim skipped: %dx%d (%u bytes) unsupported",
+               w, h, static_cast<unsigned>(total_bytes));
+    }
     return false;
   }
   const size_t rows = total_bytes / kPpaCopyRowBytes;
   if (rows == 0U || rows > kFbPpaMaxRows) return false;
-  if (!ppa_blend_wash_init()) return false;
 
-  auto &st = ppa_blend_wash_state();
-  if (!st.uniform_ok) return false;
-  uint8_t *const alpha_mask = ppa_blend_wash_ensure_mask(0);
+  uint8_t *const alpha_mask = (st.alpha_mask != nullptr) ? st.alpha_mask : ppa_blend_wash_ensure_mask(0);
   if (alpha_mask == nullptr) return false;
 
   ppa_blend_oper_config_t bcfg = {};
-  bcfg.in_bg.buffer = buf;
+  bcfg.in_bg.buffer = in_bg;
   bcfg.in_bg.pic_w = kPpaCopyRowPx;
   bcfg.in_bg.pic_h = static_cast<uint32_t>(rows);
   bcfg.in_bg.block_w = kPpaCopyRowPx;
@@ -898,7 +1240,7 @@ bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexc
   bcfg.in_fg.block_h = static_cast<uint32_t>(rows);
   bcfg.in_fg.blend_cm = PPA_BLEND_COLOR_MODE_A8;
 
-  bcfg.out.buffer = buf;
+  bcfg.out.buffer = dst_buf;
   bcfg.out.buffer_size = static_cast<uint32_t>(total_bytes);
   bcfg.out.pic_w = kPpaCopyRowPx;
   bcfg.out.pic_h = static_cast<uint32_t>(rows);
@@ -906,12 +1248,8 @@ bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexc
 
   bcfg.bg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
   bcfg.bg_alpha_fix_val = 255U;
-  if (mul_q8 <= 0) {
-    bcfg.fg_alpha_update_mode = PPA_ALPHA_NO_CHANGE;
-  } else {
-    bcfg.fg_alpha_update_mode = PPA_ALPHA_SCALE;
-    bcfg.fg_alpha_scale_ratio = static_cast<float>(256 - mul_q8) * (1.0f / 256.0f);
-  }
+  bcfg.fg_alpha_update_mode = PPA_ALPHA_FIX_VALUE;
+  bcfg.fg_alpha_fix_val = static_cast<uint32_t>(std::clamp(256 - mul_q8, 0, 255));
   bcfg.fg_fix_rgb_val.r = 0U;
   bcfg.fg_fix_rgb_val.g = 0U;
   bcfg.fg_fix_rgb_val.b = 0U;
@@ -925,7 +1263,7 @@ bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexc
     ESP_LOGW("disp_fb", "PSRAM PPA Blend uniform dim failed (err=%d); disabling", static_cast<int>(blend_err));
     return false;
   }
-  const esp_err_t post_err = esp_cache_msync(buf, total_bytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
+  const esp_err_t post_err = esp_cache_msync(dst_buf, total_bytes, ESP_CACHE_MSYNC_FLAG_DIR_M2C);
   const int64_t t_post_us = esp_timer_get_time();
   if (post_err != ESP_OK) {
     st.uniform_ok = false;
@@ -936,15 +1274,17 @@ bool ppa_blend_uniform_dim_rgb565(uint16_t *buf, int w, int h, int mul_q8) noexc
   if (!st.uniform_verified) {
     st.uniform_verified = true;
     ESP_LOGI("disp_fb",
-             "PSRAM PPA Blend uniform dim verified: %u KB (%dx%d q8=%d) in %ld us (blend=%ldus post=%ldus)",
+             "PSRAM PPA Blend uniform dim verified: %u KB (%dx%d q8=%d, %s) in %ld us (blend=%ldus post=%ldus)",
              static_cast<unsigned>(total_bytes / 1024U), w, h, mul_q8,
+             (in_bg == dst_buf) ? "in-place" : "direct",
              static_cast<long>(t_post_us - t0_us),
              static_cast<long>(t_blend_us - t0_us),
              static_cast<long>(t_post_us - t_blend_us));
   }
   return true;
 #else
-  (void)buf;
+  (void)dst_buf;
+  (void)src_buf;
   (void)w;
   (void)h;
   (void)mul_q8;
@@ -1658,6 +1998,25 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
   AaRoundRect in;
   const bool has_hole = (hole > 0 && w > 2 * hole && h > 2 * hole);
   if (has_hole) in.init(x0 + hole, y0 + hole, w - 2 * hole, h - 2 * hole, rad - static_cast<float>(hole));
+
+  bool ppa_core = false;
+  int ppa_x0 = 0, ppa_x1 = -1, ppa_y0 = 0, ppa_y1 = -1;
+#if LATTER_FB_PPA
+  if constexpr (Mode == 1 || Mode == 3) {
+    if (hole == 0 && (a_top > 0 || a_bot > 0)) {
+      const int r_ceil = static_cast<int>(std::ceil(o.rad));
+      ppa_x0 = std::max(0, x0 + r_ceil + 1);
+      ppa_x1 = std::min(SCREEN_W - 1, x0 + w - 2 - r_ceil);
+      ppa_y0 = std::max(ys, y0 + 1);
+      ppa_y1 = std::min(ye - 1, y0 + h - 2);
+      if (ppa_x1 >= ppa_x0 && ppa_y1 >= ppa_y0) {
+        ppa_core = ppa_blend_glass_rect_rgb565(fb, ppa_x0, ppa_x1, ppa_y0, ppa_y1,
+                                               y0, h, tint, a_top, a_bot, Mode);
+      }
+    }
+  }
+#endif
+
   const uint32_t tr = (static_cast<uint32_t>(tint.r) * 31U * 256U + 127U) / 255U;
   const uint32_t tg = (static_cast<uint32_t>(tint.g) * 63U * 256U + 127U) / 255U;
   const uint32_t tb = (static_cast<uint32_t>(tint.b) * 31U * 256U + 127U) / 255U;
@@ -1740,6 +2099,9 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
       } else if (in_hit && hs1 >= hs0) {
         span(s0, std::min(s1, hs0 - 1));
         span(std::max(s0, hs1 + 1), s1);
+      } else if (ppa_core && py >= ppa_y0 && py <= ppa_y1) {
+        if (s0 < ppa_x0) span(s0, std::min(s1, ppa_x0 - 1));
+        if (s1 > ppa_x1) span(std::max(s0, ppa_x1 + 1), s1);
       } else {
         span(s0, s1);
       }

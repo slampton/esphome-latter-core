@@ -853,9 +853,26 @@ void test_p4_dma_blit_calm_sky_and_dock_clip() {
     LATTER_CHECK(evaluate_sky_has_motion("Live (Home Assistant)", fast, "above_horizon", 10000U));
     LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", fast, "above_horizon", 10000U));
   }
-  LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", 10000U));
+  LATTER_CHECK(evaluate_sky_has_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", 10000U));
+  LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", 10000U) ==
+               evaluate_sky_has_fast_motion("Live (Home Assistant)", "clear-night", "below_horizon", 10000U));
   LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", "clear-night", "below_horizon", 10000U) ==
                evaluate_sky_has_motion("Live (Home Assistant)", "clear-night", "below_horizon", 10000U));
+  {
+    HostSurfaceFixture fx_night{};
+    const bool prev_usb = runtime_state().hw_usb_connected;
+    runtime_state().hw_usb_connected = true;
+    constexpr uint32_t kMeteorT0 = 500000U;
+    render_weather_motion_wallpaper(fx_night.surf, SCREEN_CX, SCREEN_CY, kMeteorT0,
+                                    "partlycloudy", true, 0.5, SCREEN_CX, SCREEN_CY / 2, 0.0f, 0.0f, true);
+    render_weather_motion_wallpaper(fx_night.surf, SCREEN_CX, SCREEN_CY, kMeteorT0 + 180U,
+                                    "partlycloudy", true, 0.5, SCREEN_CX, SCREEN_CY / 2, 0.0f, 0.0f, true);
+    LATTER_CHECK(evaluate_sky_has_fast_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", kMeteorT0 + 1400U));
+    LATTER_CHECK(evaluate_sky_has_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", kMeteorT0 + 4000U));
+    LATTER_CHECK(!evaluate_sky_has_fast_motion("Live (Home Assistant)", "partlycloudy", "below_horizon", kMeteorT0 + 4000U));
+    runtime_state().hw_usb_connected = prev_usb;
+    evict_registered_psram_caches();
+  }
 
   // 2. Calm-sky cadence (240 ms) + Home dock band clipping vs fast full-screen weather
   const int dock_y0 = dock_dirty_band_y0();

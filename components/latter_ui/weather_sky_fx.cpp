@@ -1303,7 +1303,7 @@ bool has_fast_weather_motion_sv(std::string_view cond, bool is_night, uint32_t n
   const WeatherCondFlags f = classify_weather_condition(cond, is_night);
   if (f.is_rain_precip || f.is_snow_precip || f.is_storm || f.is_windy) return true;
   if (f.is_starry_night) {
-    return f.is_partly || is_night_meteor_active(now_ms);
+    return is_night_meteor_active(now_ms);
   }
   return false;
 }
@@ -1487,10 +1487,10 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
             art_canvas_drop_all();
           }
         }
-        victim->buf = ui_psram_phase_alloc(bytes, fb, false);
+        victim->buf = ui_psram_phase_alloc(bytes, nullptr, false);
         if (victim->buf.px == nullptr) {
           art_canvas_drop_all();
-          victim->buf = ui_psram_phase_alloc(bytes, fb, false);
+          victim->buf = ui_psram_phase_alloc(bytes, nullptr, false);
         }
         if (victim->buf.px == nullptr) {
           SkyBaseCacheSlot *fallback = nullptr;

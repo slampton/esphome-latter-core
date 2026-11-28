@@ -951,6 +951,39 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
   }
 
   if (src_w == SCREEN_W && src_h == SCREEN_H) {
+#if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4) && !LATTER_ROUND_DISPLAY
+    uint16_t *const fb_tgt = active_frame_buf16();
+    if (fb_tgt != nullptr && !is_letterbox && start_y == 0 && end_y == SCREEN_H &&
+        clip_y0() <= 0 && clip_y1() >= SCREEN_H - 1) {
+      const int uni_mul = uniform_art_dim_q8(apply_scrim, show_metadata, dim_level);
+      const size_t frame_bytes =
+          static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
+      if (uni_mul == 256) {
+        ui_psram_cache_writeback(src_data, frame_bytes);
+        blit_psram_band_fast(fb_tgt, src_data, 0, SCREEN_H - 1);
+        if (out_psram_coherent != nullptr) {
+          *out_psram_coherent = true;
+        } else if (mirror_fb != nullptr && mirror_fb != fb_tgt) {
+          for (int y = mirror_y_lo; y <= mirror_y_hi; ++y) {
+            const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+            std::memcpy(mirror_fb + off, fb_tgt + off, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+          }
+        }
+        return;
+      }
+      if (uni_mul >= 0 && ppa_blend_uniform_dim_rgb565(fb_tgt, src_data, SCREEN_W, SCREEN_H, uni_mul)) {
+        if (out_psram_coherent != nullptr) {
+          *out_psram_coherent = true;
+        } else if (mirror_fb != nullptr && mirror_fb != fb_tgt) {
+          for (int y = mirror_y_lo; y <= mirror_y_hi; ++y) {
+            const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+            std::memcpy(mirror_fb + off, fb_tgt + off, static_cast<size_t>(SCREEN_W) * sizeof(uint16_t));
+          }
+        }
+        return;
+      }
+    }
+#endif
     const int view_h = std::max(1, end_y - start_y);
     const int src_y_off = std::max(0, (src_h - view_h) / 2);
     for (int y = start_y; y < end_y; y++) {
@@ -1001,7 +1034,7 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
           }
           return;
         }
-        if (uni_mul >= 0 && ppa_blend_uniform_dim_rgb565(fb_tgt, SCREEN_W, SCREEN_H, uni_mul)) {
+        if (uni_mul >= 0 && ppa_blend_uniform_dim_rgb565(fb_tgt, fb_tgt, SCREEN_W, SCREEN_H, uni_mul)) {
           if (out_psram_coherent != nullptr) {
             *out_psram_coherent = true;
           } else if (mirror_fb != nullptr && mirror_fb != fb_tgt) {
@@ -1318,10 +1351,10 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
           psram_headroom_below(frame_bytes + 512U * 1024U, frame_bytes + 64U * 1024U)) {
         evict_registered_psram_caches();
       }
-      PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);
+      PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, nullptr, !full_rect_overwrite);
       if (pb.px == nullptr) {
         evict_registered_psram_caches();
-        pb = ui_psram_phase_alloc(frame_bytes, fb, !full_rect_overwrite);
+        pb = ui_psram_phase_alloc(frame_bytes, nullptr, !full_rect_overwrite);
       }
       victim->px_raw = pb.raw;
       victim->px = pb.px;
