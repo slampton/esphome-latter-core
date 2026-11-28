@@ -931,6 +931,10 @@ void evict_registered_psram_caches() noexcept;
 bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,
                                   bool show_metadata, int dim_level = 0);
+bool blit_album_art_cached_rect_view(Rgb565Surface &it, ArtImageView target_art, int cx,
+                                     bool is_standard, bool is_letterbox, bool apply_scrim,
+                                     bool show_metadata, int dim_level,
+                                     int rx0, int ry0, int rw, int rh);
 bool render_lyrics_art_backdrop_view(Rgb565Surface &it, ArtImageView target_art, int cx,
                                      UiColor theme_primary, UiColor col_bg = kChromeShadow,
                                      int dim_level = kArtDimLyrics);

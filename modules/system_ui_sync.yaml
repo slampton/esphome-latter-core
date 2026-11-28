@@ -473,7 +473,7 @@ script:
                 if (rs.nav.gui_page == 1 && rs.nav.home_subpage == 0) {
                   latter_core::ensure_ui_anim_poller(id(ui_anim_tick));
                 }
-                latter_ui::schedule_anim_disp_update(&id(disp1));
+                latter_ui::request_anim_disp_update(&id(disp1));
 
   - id: apply_theme_preset
     mode: restart

@@ -406,6 +406,17 @@ inline void schedule_anim_disp_update(DispT *const *disp_ptr) {
 
 template <typename DispT>
   requires(!std::is_pointer_v<DispT>)
+inline void request_anim_disp_update(DispT *disp) {
+  DisplayUpdateScheduler::request_anim_ptr(disp);
+}
+
+template <typename DispT>
+inline void request_anim_disp_update(DispT *const *disp_ptr) {
+  if (disp_ptr != nullptr) DisplayUpdateScheduler::request_anim_ptr(*disp_ptr);
+}
+
+template <typename DispT>
+  requires(!std::is_pointer_v<DispT>)
 inline void schedule_anim_band_disp_update(DispT *disp, int y0, int y1) {
   mark_dirty_band(y0, y1);
   DisplayUpdateScheduler::request_anim_ptr(disp);

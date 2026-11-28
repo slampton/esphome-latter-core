@@ -1056,6 +1056,193 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
   }
   art_canvas_drop_all();
 
+  // Verify non-2x generic art scaling (180x180, stack sx_lut/scaled_row & line_px on SCREEN_W<=512)
+  // across endian modes 1 & 2, plus blit_album_art_cached_rect_view & partial-band Audio volume redraw.
+  {
+    constexpr int kGw = 180;
+    constexpr int kGh = 180;
+    std::vector<uint16_t> src_gen(static_cast<size_t>(kGw) * static_cast<size_t>(kGh));
+    for (int y = 0; y < kGh; ++y) {
+      for (int x = 0; x < kGw; ++x) {
+        const uint16_t r = static_cast<uint16_t>((x * 31) / (kGw - 1));
+        const uint16_t g = static_cast<uint16_t>((y * 63) / (kGh - 1));
+        const uint16_t b = static_cast<uint16_t>((((x ^ y) & 0x3F) * 31) / 63);
+        src_gen[static_cast<size_t>(y) * static_cast<size_t>(kGw) + static_cast<size_t>(x)] =
+            static_cast<uint16_t>((r << 11) | (g << 5) | b);
+      }
+    }
+    const ArtImageView gen_view{src_gen.data(), kGw, kGh};
+    for (int endian_mode : {1, 2}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, endian_mode);
+      art_canvas_drop_all();
+      fix.fill(0U);
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::MUSIC, 0, 0U, true);
+      frame_base_begin();
+      LATTER_CHECK(render_album_art_canvas_view(
+          fix.surf, gen_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
+          /*apply_scrim=*/true, /*show_metadata=*/true, kArtDimMenu));
+      const std::vector<uint16_t> pass0 = fix.pixels;
+
+      // Verify generic scaled row at SCREEN_CY has active dimmed variation.
+      const size_t cy_off = static_cast<size_t>(SCREEN_CY) * static_cast<size_t>(SCREEN_W);
+      uint16_t min_raw = 0xFFFFU, max_raw = 0U;
+      for (int x = SCREEN_CX / 2; x < SCREEN_CX + SCREEN_CX / 2; ++x) {
+        const uint16_t raw = decode_hw_rgb565_raw(pass0[cy_off + static_cast<size_t>(x)]);
+        if (raw < min_raw) min_raw = raw;
+        if (raw > max_raw) max_raw = raw;
+      }
+      LATTER_CHECK(max_raw > min_raw);
+
+      // Pass 1 cache hit matches pass 0 byte-for-byte.
+      fix.fill(0U);
+      dirty_band() = DirtyBandTracker{};
+      (void)dirty_band().begin_frame(PageId::MUSIC, 1, 0U, true);
+      frame_base_begin();
+      LATTER_CHECK(render_album_art_canvas_view(
+          fix.surf, gen_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
+          /*apply_scrim=*/true, /*show_metadata=*/true, kArtDimMenu));
+      LATTER_CHECK(fix.pixels == pass0);
+
+      // blit_album_art_cached_rect_view restores only the clipped rect and leaves surrounding sentinel pixels untouched.
+      const int rx0 = SCREEN_W / 4;
+      const int ry0 = SCREEN_H / 4;
+      const int rw = std::max(16, SCREEN_W / 3);
+      const int rh = std::max(16, SCREEN_H / 3);
+      const uint16_t kSentinel = 0xA55AU;
+      fix.fill(kSentinel);
+      set_clip_y_band(ry0 + 2, ry0 + rh - 3);
+      LATTER_CHECK(blit_album_art_cached_rect_view(
+          fix.surf, gen_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
+          /*apply_scrim=*/true, /*show_metadata=*/true, kArtDimMenu, rx0, ry0, rw, rh));
+      reset_clip_y_band();
+      LATTER_CHECK(fix.pixels[static_cast<size_t>(ry0) * SCREEN_W + static_cast<size_t>(rx0)] == kSentinel);
+      LATTER_CHECK(fix.pixels[static_cast<size_t>(ry0 + 4) * SCREEN_W + static_cast<size_t>(rx0 - 1)] == kSentinel);
+      const size_t mid_idx = static_cast<size_t>(SCREEN_CY) * SCREEN_W + static_cast<size_t>(SCREEN_CX);
+      if (SCREEN_CY >= ry0 + 2 && SCREEN_CY <= ry0 + rh - 3 && SCREEN_CX >= rx0 && SCREEN_CX < rx0 + rw) {
+        LATTER_CHECK(fix.pixels[mid_idx] == pass0[mid_idx]);
+      }
+    }
+
+    // End-to-end MusicView::AUDIO partial-band volume update via render_music_page():
+    // preserves left pills and bottom mode bar pixel-for-pixel while updating pct header & slider.
+    art_canvas_drop_all();
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+    auto &rs = runtime_state();
+    auto &ms = media_state();
+    const auto saved_nav = rs.nav;
+    const auto saved_music = rs.music;
+    const auto saved_ms = ms;
+    const auto saved_mode_anim = mode_bar_anim();
+
+    mode_bar_anim() = DockSlideAnimator{};
+    rs.nav.gui_page = PageId::MUSIC;
+    rs.nav.quick_actions_open = false;
+    rs.nav.menu_scroll_active = false;
+    rs.music = std::decay_t<decltype(rs.music)>{};
+    rs.music.view = MusicView::AUDIO;
+    rs.music.drilldown = MusicDrilldown::NONE;
+    rs.music.takeover = MusicTakeover::NONE;
+    ms = MediaState{};
+    ms.is_local = true;
+    ms.muted = false;
+    ms.speaker_name = "Test Speaker";
+    fix.ctx.now_ms = 9000U;
+    fix.ctx.spk_vol_pct = 35;
+    fix.ctx.vol_step_pct = 5;
+    fix.ctx.album_art = gen_view;
+    fix.ctx.music_fullscreen_art_opt = UiStrView{};
+
+    const int sub_audio = compute_active_subpage_id(rs);
+    const uint32_t sig35 = compute_idle_state_signature(fix.ctx);
+    fix.fill(0U);
+    dirty_band() = DirtyBandTracker{};
+    LATTER_CHECK(dirty_band().begin_frame(PageId::MUSIC, sub_audio, 0U, true, 1200, sig35, 100,
+                                          compute_live_sec_active(fix.ctx)));
+    reset_clip_y_band();
+    frame_base_begin();
+    frame_hits().clear();
+    render_music_page(fix.surf, fix.ctx);
+    const std::vector<uint16_t> full35 = fix.pixels;
+
+    const MusicVolumeGeom g = compute_music_volume_geom(
+        SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_SLIDER) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_UP_STEP) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_MUTE_BTN) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MODE_BAR_SLOT_BASE) != nullptr);
+
+    // Partial-band update to 75% (no mark_dirty_full).
+    fix.ctx.now_ms += 500U;
+    fix.ctx.spk_vol_pct = 75;
+    LATTER_CHECK(dirty_band().begin_frame(PageId::MUSIC, sub_audio, 0U, false, 1200, sig35, 100,
+                                          compute_live_sec_active(fix.ctx)));
+    LATTER_CHECK(!dirty_band().is_full());
+    set_clip_y_band(dirty_band().band_y0(), dirty_band().band_y1());
+    frame_base_begin();
+    frame_hits().clear();
+    render_music_page(fix.surf, fix.ctx);
+    reset_clip_y_band();
+
+    // Bottom mode bar & all 3 left-column pills stay pixel-identical to full35.
+    const int mode_bar_pill_top = layout().app_dock_y - (layout().dock_r + std::max(2, dp_px(3)));
+    LATTER_CHECK(dirty_band().band_y1() < mode_bar_pill_top);
+    for (int y = dirty_band().band_y1() + 1; y < SCREEN_H; ++y) {
+      for (int x = 0; x < SCREEN_W; ++x) {
+        const size_t idx = static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
+        LATTER_CHECK(fix.pixels[idx] == full35[idx]);
+      }
+    }
+    for (int y = g.up_y0; y < g.mute_y0 + g.btn_h; ++y) {
+      for (int x = g.btn_x0; x < g.btn_x0 + g.btn_w; ++x) {
+        const size_t idx = static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
+        LATTER_CHECK(fix.pixels[idx] == full35[idx]);
+      }
+    }
+
+    // Slider & percentage header visibly updated.
+    int slider_diff = 0;
+    for (int y = g.slider_y0; y < g.slider_y0 + g.slider_h; ++y) {
+      for (int x = g.slider_x0; x < g.slider_x0 + g.slider_w; ++x) {
+        const size_t idx = static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
+        if (fix.pixels[idx] != full35[idx]) ++slider_diff;
+      }
+    }
+    LATTER_CHECK(slider_diff > 20);
+
+    const int scale_m = layout().base.scale_milli;
+    const int pct_w = std::min(g.hdr_max_w, dp_px_for(190, scale_m));
+    const int pct_x0 = std::max(0, g.cx - pct_w / 2);
+    const int pct_x1 = std::min(SCREEN_W - 1, pct_x0 + pct_w - 1);
+    const int pct_y0 = std::max(0, g.hdr_pct_y - dp_px_for(14, scale_m));
+    const int pct_y1 = std::min(SCREEN_H - 1, pct_y0 + dp_px_for(28, scale_m));
+    int pct_diff = 0;
+    for (int y = pct_y0; y <= pct_y1; ++y) {
+      for (int x = pct_x0; x <= pct_x1; ++x) {
+        const size_t idx = static_cast<size_t>(y) * SCREEN_W + static_cast<size_t>(x);
+        if (fix.pixels[idx] != full35[idx]) ++pct_diff;
+      }
+    }
+    LATTER_CHECK(pct_diff > 5);
+
+    // Hit table remains complete after partial redraw.
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_SPEAKER_PICKER_BTN) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_SLIDER) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_UP_STEP) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_DOWN_STEP) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MUSIC_VOL_MUTE_BTN) != nullptr);
+    LATTER_CHECK(frame_hits().find_by_id(WidgetId::MODE_BAR_SLOT_BASE) != nullptr);
+
+    rs.nav.gui_page = PageId::HOME;
+    (void)compute_live_sec_active(fix.ctx);
+    mode_bar_anim() = saved_mode_anim;
+    ms = saved_ms;
+    rs.music = saved_music;
+    rs.nav = saved_nav;
+    dirty_band() = DirtyBandTracker{};
+    art_canvas_drop_all();
+  }
+
   // Verify static day/night sky and lyrics fallback gradient propagate provable backdrop_max_lum_q8() ceilings
   {
     fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);

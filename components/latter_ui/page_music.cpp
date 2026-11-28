@@ -1217,33 +1217,78 @@ void render_audio_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const auto &rs = runtime_state();
   const auto &ms = media_state();
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
-
-  render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
-                                     /*has_metadata_scrim=*/true, kArtDimMenu);
-
   const MusicVolumeGeom g = compute_music_volume_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);
   register_music_volume_hits(frame_hits(), g);
 
+  const int scale_m = layout().base.scale_milli;
+  const int pct_w = std::min(g.hdr_max_w, dp_px_for(190, scale_m));
+  const int pct_x0 = g.cx - pct_w / 2;
+  const int pct_y0 = std::max(0, g.hdr_pct_y - dp_px_for(14, scale_m));
+  const int pct_h = std::max(0, std::min(dp_px_for(28, scale_m), (g.slider_y0 - 1) - pct_y0));
+  const int sl_rx0 = g.slider_x0 - 2;
+  const int sl_ry0 = g.slider_y0 - 2;
+  const int sl_rw = g.slider_w + 4;
+  const int sl_rh = g.slider_h + 4;
+
+  const int mode_bar_pill_top = layout().app_dock_y - (layout().dock_r + std::max(2, dp_px(3)));
+  bool fast_vol_redraw = false;
+  if (!dirty_band().is_full() && clip_y1() < mode_bar_pill_top && clip_y0() <= g.hdr_pct_y + 12 && pct_h > 0) {
+    const auto &ac = area_ctx_state();
+    const UiStrView art_mode = ctx.music_fullscreen_art_opt;
+    if (art_mode != "None") {
+      const ArtImageView art = select_music_art(ctx);
+      if (blit_album_art_cached_rect_view(it, art, ctx.cx, false, false, true, true, kArtDimMenu,
+                                          pct_x0, pct_y0, pct_w, pct_h) &&
+          blit_album_art_cached_rect_view(it, art, ctx.cx, false, false, true, true, kArtDimMenu,
+                                          sl_rx0, sl_ry0, sl_rw, sl_rh)) {
+        fast_vol_redraw = true;
+      }
+    } else if (!is_day_night_sky_wallpaper_url(ac.wallpaper_url)) {
+      const bool has_wall = (!ac.wallpaper_url.empty() &&
+                             ac.wallpaper_url == rs.music.loaded_wallpaper_url &&
+                             ctx.home_wallpaper_art.valid());
+      if (has_wall) {
+        if (blit_album_art_cached_rect_view(it, ctx.home_wallpaper_art, ctx.cx, false, false, true, false,
+                                            kArtDimMenu, pct_x0, pct_y0, pct_w, pct_h) &&
+            blit_album_art_cached_rect_view(it, ctx.home_wallpaper_art, ctx.cx, false, false, true, false,
+                                            kArtDimMenu, sl_rx0, sl_ry0, sl_rw, sl_rh)) {
+          fast_vol_redraw = true;
+        }
+      } else {
+        fill_rect_row_major(it, pct_x0, pct_y0, pct_w, pct_h, ctx.col_bg);
+        fill_rect_row_major(it, sl_rx0, sl_ry0, sl_rw, sl_rh, ctx.col_bg);
+        backdrop_active() = true;
+        backdrop_max_lum_q8() = 64;
+        fast_vol_redraw = true;
+      }
+    }
+  }
+
   const int vol_pct = std::clamp(ms.is_local ? ctx.spk_vol_pct : rs.music.remote_vol_pct, 0, 100);
-  const int spk_ic = std::clamp(dp_px(16), 14, 24);
-  const int ic_gap = dp_px(6);
-  const int chev_gap = dp_px(6);
-  int chev_w = 0, cxo = 0, cb = 0, cth = 0;
-  if (ctx.font_small != nullptr) ctx.font_small->measure(">", &chev_w, &cxo, &cb, &cth);
-  const int name_max_w = std::max(40, g.spk_hdr_w - spk_ic - ic_gap - chev_gap - chev_w - dp_px(8));
-  const std::string spk_fit = fit_text_to_width_font(trk.speaker_name, name_max_w, ctx.font_small);
-  int tw = 0, txo = 0, tb = 0, th = 0;
-  if (ctx.font_small != nullptr) ctx.font_small->measure(spk_fit.c_str(), &tw, &txo, &tb, &th);
-  const int tot_w = spk_ic + ic_gap + tw + chev_gap + chev_w;
-  const int sx0 = g.cx - tot_w / 2;
-  const UiColor hdr_ic_c = ms.is_local ? ctx.col_slate : ctx.theme_secondary;
-  render_mdi_icon(it, ms.is_local ? "mdi:speaker" : "mdi:speaker-wireless",
-                  sx0 + spk_ic / 2, g.hdr_title_y, spk_ic, hdr_ic_c, true);
-  ui::shadow_print(it, sx0 + spk_ic + ic_gap, g.hdr_title_y, ctx.font_small, ctx.col_white,
-                   TextAlign::CENTER_LEFT, spk_fit.c_str(), true);
-  ui::shadow_print(it, sx0 + spk_ic + ic_gap + tw + chev_gap, g.hdr_title_y, ctx.font_small,
-                   ctx.theme_secondary, TextAlign::CENTER_LEFT, ">", true);
+  if (!fast_vol_redraw) {
+    render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
+                                       /*has_metadata_scrim=*/true, kArtDimMenu);
+
+    const int spk_ic = std::clamp(dp_px(16), 14, 24);
+    const int ic_gap = dp_px(6);
+    const int chev_gap = dp_px(6);
+    int chev_w = 0, cxo = 0, cb = 0, cth = 0;
+    if (ctx.font_small != nullptr) ctx.font_small->measure(">", &chev_w, &cxo, &cb, &cth);
+    const int name_max_w = std::max(40, g.spk_hdr_w - spk_ic - ic_gap - chev_gap - chev_w - dp_px(8));
+    const std::string spk_fit = fit_text_to_width_font(trk.speaker_name, name_max_w, ctx.font_small);
+    int tw = 0, txo = 0, tb = 0, th = 0;
+    if (ctx.font_small != nullptr) ctx.font_small->measure(spk_fit.c_str(), &tw, &txo, &tb, &th);
+    const int tot_w = spk_ic + ic_gap + tw + chev_gap + chev_w;
+    const int sx0 = g.cx - tot_w / 2;
+    const UiColor hdr_ic_c = ms.is_local ? ctx.col_slate : ctx.theme_secondary;
+    render_mdi_icon(it, ms.is_local ? "mdi:speaker" : "mdi:speaker-wireless",
+                    sx0 + spk_ic / 2, g.hdr_title_y, spk_ic, hdr_ic_c, true);
+    ui::shadow_print(it, sx0 + spk_ic + ic_gap, g.hdr_title_y, ctx.font_small, ctx.col_white,
+                     TextAlign::CENTER_LEFT, spk_fit.c_str(), true);
+    ui::shadow_print(it, sx0 + spk_ic + ic_gap + tw + chev_gap, g.hdr_title_y, ctx.font_small,
+                     ctx.theme_secondary, TextAlign::CENTER_LEFT, ">", true);
+  }
 
   char pct_buf[24];
   if (ms.muted) {
@@ -1274,29 +1319,31 @@ void render_audio_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   ui::draw_icon_speaker(it, g.slider_x0 + g.slider_w / 2, g.slider_y0 + g.slider_h - dp_px(20),
                         std::max(7, dp_px(9)), ctx.col_white, !ms.muted, true, ms.muted);
 
-  const int step_v = std::clamp(ctx.vol_step_pct, 1, 25);
-  char up_lbl[16], dn_lbl[16];
-  if (ms.is_local) {
-    std::snprintf(up_lbl, sizeof(up_lbl), "+%d%%", step_v);
-    std::snprintf(dn_lbl, sizeof(dn_lbl), "-%d%%", step_v);
-  } else {
-    std::snprintf(up_lbl, sizeof(up_lbl), "Vol +");
-    std::snprintf(dn_lbl, sizeof(dn_lbl), "Vol -");
-  }
-  const int btn_eh = std::clamp(g.btn_vis_h, 26, g.btn_h);
+  if (!fast_vol_redraw) {
+    const int step_v = std::clamp(ctx.vol_step_pct, 1, 25);
+    char up_lbl[16], dn_lbl[16];
+    if (ms.is_local) {
+      std::snprintf(up_lbl, sizeof(up_lbl), "+%d%%", step_v);
+      std::snprintf(dn_lbl, sizeof(dn_lbl), "-%d%%", step_v);
+    } else {
+      std::snprintf(up_lbl, sizeof(up_lbl), "Vol +");
+      std::snprintf(dn_lbl, sizeof(dn_lbl), "Vol -");
+    }
+    const int btn_eh = std::clamp(g.btn_vis_h, 26, g.btn_h);
 
-  ui::action_pill(it, g.btn_x0, g.btn_w, g.up_y0 + g.btn_h / 2, btn_eh,
-                  ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
-                  up_lbl, ctx.col_white, ctx.font_small, WidgetId::NONE, 0, 0, -1, "mdi:volume-plus");
-  ui::action_pill(it, g.btn_x0, g.btn_w, g.down_y0 + g.btn_h / 2, btn_eh,
-                  ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
-                  dn_lbl, ctx.col_white, ctx.font_small, WidgetId::NONE, 0, 0, -1, "mdi:volume-minus");
-  ui::action_pill(it, g.btn_x0, g.btn_w, g.mute_y0 + g.btn_h / 2, btn_eh,
-                  ms.muted ? ctx.col_gold : ui::chrome_card_brd_off(),
-                  ms.muted ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
-                  ms.muted ? "Unmute" : "Mute", ms.muted ? ctx.col_gold : ctx.col_white,
-                  ctx.font_small, WidgetId::NONE, 0, 0, -1,
-                  ms.muted ? "mdi:volume-off" : "mdi:volume-mute");
+    ui::action_pill(it, g.btn_x0, g.btn_w, g.up_y0 + g.btn_h / 2, btn_eh,
+                    ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
+                    up_lbl, ctx.col_white, ctx.font_small, WidgetId::NONE, 0, 0, -1, "mdi:volume-plus");
+    ui::action_pill(it, g.btn_x0, g.btn_w, g.down_y0 + g.btn_h / 2, btn_eh,
+                    ui::chrome_card_brd_off(), ui::chrome_card_bg_off(),
+                    dn_lbl, ctx.col_white, ctx.font_small, WidgetId::NONE, 0, 0, -1, "mdi:volume-minus");
+    ui::action_pill(it, g.btn_x0, g.btn_w, g.mute_y0 + g.btn_h / 2, btn_eh,
+                    ms.muted ? ctx.col_gold : ui::chrome_card_brd_off(),
+                    ms.muted ? ui::chrome_card_bg_on() : ui::chrome_card_bg_off(),
+                    ms.muted ? "Unmute" : "Mute", ms.muted ? ctx.col_gold : ctx.col_white,
+                    ctx.font_small, WidgetId::NONE, 0, 0, -1,
+                    ms.muted ? "mdi:volume-off" : "mdi:volume-mute");
+  }
 
   render_music_stadium_mode_bar(it, ctx);
 }

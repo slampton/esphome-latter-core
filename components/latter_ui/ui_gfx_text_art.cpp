@@ -939,6 +939,8 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
     const int mode = active_frame_endian_mode();
     if (mode == 1 || mode < 0 || mode == 2) {
       ensure_art_dim_lut_row(scratch, mul_q8, (mode == 2) ? 2 : 1, y);
+      uint16_t line_px[(SCREEN_W <= 512) ? SCREEN_W : 1];
+      uint16_t *const wr = (SCREEN_W <= 512) ? line_px : dst;
       const uint16_t *const r0 = scratch.r_lut[th[(start_x + 0) & 3]];
       const uint16_t *const g0 = scratch.g_lut[th[(start_x + 0) & 3]];
       const uint16_t *const b0 = scratch.b_lut[th[(start_x + 0) & 3]];
@@ -963,30 +965,42 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
         const uint32_t d3 = static_cast<uint32_t>(r3[p3 >> 11] | g3[(p3 >> 5) & 0x3FU] | b3[p3 & 0x1FU]);
         const uint32_t w01 = d0 | (d1 << 16);
         const uint32_t w23 = d2 | (d3 << 16);
-        std::memcpy(dst + i, &w01, 4U);
-        std::memcpy(dst + i + 2, &w23, 4U);
+        std::memcpy(wr + i, &w01, 4U);
+        std::memcpy(wr + i + 2, &w23, 4U);
       }
       for (; i < span_w; ++i) {
         const uint32_t p = src_row[i];
         const uint8_t bidx = th[(start_x + i) & 3];
-        dst[i] = static_cast<uint16_t>(
+        wr[i] = static_cast<uint16_t>(
             scratch.r_lut[bidx][p >> 11] | scratch.g_lut[bidx][(p >> 5) & 0x3FU] | scratch.b_lut[bidx][p & 0x1FU]);
       }
-      if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+      if constexpr (SCREEN_W <= 512) {
+        std::memcpy(dst, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
+        if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+          std::memcpy(mirror_fb + row_off, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
+        }
+      } else if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
         std::memcpy(mirror_fb + row_off, dst, static_cast<size_t>(span_w) * sizeof(uint16_t));
       }
       return;
     }
     const uint32_t m = static_cast<uint32_t>(mul_q8);
+    uint16_t line_px[(SCREEN_W <= 512) ? SCREEN_W : 1];
+    uint16_t *const wr = (SCREEN_W <= 512) ? line_px : dst;
     for (int i = 0; i < span_w; i++) {
       const uint32_t p = src_row[i];
       const uint32_t t = static_cast<uint32_t>(th[(start_x + i) & 3]) * 16U + 8U;
       const uint32_t r = (((p >> 11) & 0x1FU) * m + t) >> 8;
       const uint32_t g = (((p >> 5) & 0x3FU) * m + t) >> 8;
       const uint32_t b = ((p & 0x1FU) * m + t) >> 8;
-      dst[i] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+      wr[i] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
     }
-    if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+    if constexpr (SCREEN_W <= 512) {
+      std::memcpy(dst, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
+      if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+        std::memcpy(mirror_fb + row_off, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
+      }
+    } else if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
       std::memcpy(mirror_fb + row_off, dst, static_cast<size_t>(span_w) * sizeof(uint16_t));
     }
     return;
@@ -1265,14 +1279,16 @@ void draw_album_art_2x_upscale(uint16_t *fb_tgt, const uint16_t *src_data, int s
 void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int src_h, int cx,
                     bool is_standard, bool is_letterbox, bool apply_scrim, bool show_metadata, int dim_level,
                     uint16_t *mirror_fb = nullptr, int mirror_y_lo = 0, int mirror_y_hi = -1,
-                    bool *out_psram_coherent = nullptr) {
+                    bool *out_psram_coherent = nullptr, const char **out_path_tag = nullptr) {
   if (out_psram_coherent != nullptr) *out_psram_coherent = false;
+  if (out_path_tag != nullptr) *out_path_tag = "other";
   ArtScaleScratch *scratch_p = art_scale_scratch_ptr();
   if (scratch_p == nullptr) return;
   auto &scratch = *scratch_p;
   uint16_t *const row_buf = scratch.row_buf;
 
   if (is_standard) {
+    if (out_path_tag != nullptr) *out_path_tag = "standard";
     const ArtRect r = art_standard_rect(cx, src_w, src_h, show_metadata, apply_scrim);
     const int step_x = (src_w << 12) / r.w;
     const int step_y = (src_h << 12) / r.h;
@@ -1327,6 +1343,7 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
       const size_t frame_bytes =
           static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H) * sizeof(uint16_t);
       if (uni_mul == 256 && active_frame_endian_mode() == 1) {
+        if (out_path_tag != nullptr) *out_path_tag = "1x_memcpy";
         ui_psram_cache_writeback(src_data, frame_bytes);
         blit_psram_band_fast(fb_tgt, src_data, 0, SCREEN_H - 1);
         if (out_psram_coherent != nullptr) {
@@ -1340,6 +1357,7 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
         return;
       }
       if (uni_mul >= 0 && ppa_blend_uniform_dim_rgb565(fb_tgt, src_data, SCREEN_W, SCREEN_H, uni_mul)) {
+        if (out_path_tag != nullptr) *out_path_tag = "1x_ppa";
         if (out_psram_coherent != nullptr) {
           *out_psram_coherent = true;
         } else if (mirror_fb != nullptr && mirror_fb != fb_tgt) {
@@ -1352,6 +1370,7 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
       }
     }
 #endif
+    if (out_path_tag != nullptr) *out_path_tag = "1x_cpu";
     const int view_h = std::max(1, end_y - start_y);
     const int src_y_off = std::max(0, (src_h - view_h) / 2);
     for (int y = start_y; y < end_y; y++) {
@@ -1430,17 +1449,23 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
       }
     }
 #endif
-    if (!ppa_scaled) {
+    if (ppa_scaled) {
+      if (out_path_tag != nullptr) *out_path_tag = "ppa_scale";
+    } else {
       uint16_t *const direct_fb = active_frame_buf16();
       const int endian_mode = active_frame_endian_mode();
       if (!is_letterbox && start_y == 0 && end_y == SCREEN_H &&
           (src_w * 2 == SCREEN_W) && (src_h * 2 == SCREEN_H) &&
           direct_fb != nullptr && (endian_mode == 1 || endian_mode < 0 || endian_mode == 2)) {
+        if (out_path_tag != nullptr) *out_path_tag = "2x_upscale";
         draw_album_art_2x_upscale(direct_fb, src_data, src_w, cx, apply_scrim, show_metadata, dim_level,
                                   endian_mode, scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
       } else {
-        uint16_t *const sx_lut = scratch.sx_lut;
-        uint16_t *const scaled_row = scratch.scaled_row;
+        if (out_path_tag != nullptr) *out_path_tag = "generic_scale";
+        uint16_t sx_lut_stack[(SCREEN_W <= 512) ? SCREEN_W : 1];
+        uint16_t scaled_row_stack[(SCREEN_W <= 512) ? SCREEN_W : 1];
+        uint16_t *const sx_lut = (SCREEN_W <= 512) ? sx_lut_stack : scratch.sx_lut;
+        uint16_t *const scaled_row = (SCREEN_W <= 512) ? scaled_row_stack : scratch.scaled_row;
         {
           int curr_x = src_x0_fp;
           for (int x = 0; x < SCREEN_W; x++) {
@@ -1792,8 +1817,10 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     // unless P4 PPA hardware wrote the scaled/dimmed target directly into PSRAM.
     uint16_t *const mirror_dst = (full_bleed && y_hi >= y_lo) ? fb : nullptr;
     bool psram_coherent = false;
+    const uint64_t miss_t0_us = profiler_enabled() ? prof_now_us() : 0ULL;
+    const char *path_tag = "other";
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level,
-                   mirror_dst, y_lo, y_hi, &psram_coherent);
+                   mirror_dst, y_lo, y_hi, &psram_coherent, &path_tag);
     active_frame_buf16() = fb;
     set_clip_y_band(saved_cy0, saved_cy1);
     if (full_rect_overwrite && !psram_coherent) {
@@ -1808,6 +1835,12 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     victim->mode = mode;
     hit = victim;
     mirrored_to_fb = (mirror_dst != nullptr) && !psram_coherent;
+    if (miss_t0_us != 0ULL) {
+      const uint32_t miss_ms = static_cast<uint32_t>((prof_now_us() - miss_t0_us) / 1000ULL);
+      LATTER_PROF_LOGI("[PROF:ART] cache_miss %dx%d->%dx%d path=%s dim=%d ms=%u",
+                       src_w, src_h, SCREEN_W, SCREEN_H, path_tag, dim_level,
+                       static_cast<unsigned>(miss_ms));
+    }
   }
   hit->last_use = use_seq;
 
@@ -1821,6 +1854,57 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
         const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(hit->row_x0[y]);
         std::memcpy(fb + off, hit->px + off, static_cast<size_t>(len) * sizeof(uint16_t));
       }
+    }
+  }
+  backdrop_active() = true;
+  backdrop_max_lum_q8() = hit->max_mul_q8;
+  return true;
+}
+
+bool blit_album_art_cached_rect_view(Rgb565Surface &it, ArtImageView target_art, int cx,
+                                     bool is_standard, bool is_letterbox, bool apply_scrim,
+                                     bool show_metadata, int dim_level,
+                                     int rx0, int ry0, int rw, int rh) {
+  (void)it;
+  if (!target_art.valid() || rw <= 0 || rh <= 0) return false;
+  uint16_t *const fb = active_frame_buf16();
+  ArtCanvasCache *const entries = art_canvas_entries();
+  if (fb == nullptr || entries == nullptr) return false;
+
+  const uint32_t mode = build_art_cache_mode_key(is_standard, is_letterbox, apply_scrim, show_metadata,
+                                                 dim_level, cx, active_frame_endian_mode());
+  const uint32_t sample = art_sample_hash(target_art.data, target_art.width, target_art.height);
+  ArtCanvasCache *hit = nullptr;
+  for (int i = 0; i < kArtCacheActiveSlots; ++i) {
+    ArtCanvasCache &e = entries[i];
+    if (e.px != nullptr && e.data == target_art.data && e.w == target_art.width && e.h == target_art.height &&
+        e.sample == sample && e.mode == mode) {
+      hit = &e;
+      break;
+    }
+  }
+  if (hit == nullptr) return false;
+
+  struct ArtTimer {
+    uint64_t t0;
+    ~ArtTimer() { prof_art_end(t0); }
+  } art_timer{prof_section_begin()};
+
+  const int cx0 = std::max(0, rx0);
+  const int cx1 = std::min(SCREEN_W - 1, rx0 + rw - 1);
+  const int cy0 = std::max({0, clip_y0(), ry0});
+  const int cy1 = std::min({SCREEN_H - 1, clip_y1(), ry0 + rh - 1});
+  if (cx0 <= cx1 && cy0 <= cy1) {
+    for (int y = cy0; y <= cy1; ++y) {
+      const int span_len = static_cast<int>(hit->row_len[y]);
+      if (span_len <= 0) continue;
+      const int sx0 = static_cast<int>(hit->row_x0[y]);
+      const int sx1 = sx0 + span_len - 1;
+      const int x0 = std::max(cx0, sx0);
+      const int x1 = std::min(cx1, sx1);
+      if (x1 < x0) continue;
+      const size_t off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x0);
+      std::memcpy(fb + off, hit->px + off, static_cast<size_t>(x1 - x0 + 1) * sizeof(uint16_t));
     }
   }
   backdrop_active() = true;

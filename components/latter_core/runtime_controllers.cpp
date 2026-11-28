@@ -419,7 +419,8 @@ V3DomainEffects V3DomainReducer::reduce(std::string_view sv_dom,
       if (wallpaper_cleared || wallpaper_changed || first_area_ctx) {
         eff.mark_dirty_full = true;
       }
-      if (wallpaper_cleared || wallpaper_changed || first_area_ctx || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 || gp == 10 ||
+      if (wallpaper_cleared || wallpaper_changed || first_area_ctx || r.alert.active || gp == 1 || gp == 4 || gp == 6 || gp == 7 || gp == 9 ||
+          (gp == 10 && r.nav.time_subpage == 0) ||
           gp == PageId::PINNED || gp == PageId::CALENDAR || gp == PageId::CAMERAS || gp == PageId::WEATHER) {
         if (gp == 1 && r.nav.home_subpage == 0) {
           eff.ensure_anim_poller = true;

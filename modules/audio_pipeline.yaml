@@ -144,6 +144,7 @@ image:
             rs.music.loaded_art_url = "";
           }
           if (rs.nav.gui_page == 2) {
+            latter_ui::mark_dirty_full();
             id(throttled_disp_update).execute();
           }
 

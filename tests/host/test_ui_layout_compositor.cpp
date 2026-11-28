@@ -1645,10 +1645,77 @@ void test_aa_font_live_fb_blending_no_halo() {
     // Muted toggle still changes idle_state_sig -> full redraw.
     ms.muted = true;
     LATTER_CHECK(compute_idle_state_signature(ctx) != sig_rem50);
+    ms.muted = false;
+
+    // action_feedback stays ignored on MusicView::AUDIO, but still triggers invalidation on NOW_PLAYING.
+    rs.music.action_feedback = "Volume: 55%";
+    rs.music.feedback_timer = ctx.now_ms - 100U;
+    LATTER_CHECK(compute_idle_state_signature(ctx) == sig_rem50);
+    rs.music.view = latter_core::MusicView::NOW_PLAYING;
+    rs.music.action_feedback.clear();
+    const uint32_t sig_np_nofb = compute_idle_state_signature(ctx);
+    rs.music.action_feedback = "Volume: 55%";
+    rs.music.feedback_timer = ctx.now_ms - 100U;
+    LATTER_CHECK(compute_idle_state_signature(ctx) != sig_np_nofb);
+    rs.music.action_feedback.clear();
 
     // Leave MusicView::AUDIO cleanly so static s_last_music_audio_vol_pct resets.
     rs.nav.gui_page = latter_core::PageId::HOME;
     (void)compute_live_sec_active(ctx);
+
+    // compute_post_frame_schedule() chains a mid-frame mode_bar_anim() transition into anim_band.
+    const auto saved_mode_anim = mode_bar_anim();
+    mode_bar_anim() = DockSlideAnimator{};
+    rs.nav.gui_page = latter_core::PageId::MUSIC;
+    FrameRenderPlan sched_plan{};
+    sched_plan.dock_anim_now = false;
+    mode_bar_anim().win_animating = true;
+    const PostFrameSchedule sched = compute_post_frame_schedule(ctx, sched_plan);
+    LATTER_CHECK(!sched.anim_full && sched.anim_band && sched.anim_band_y0 == dock_dirty_band_y0());
+    mode_bar_anim() = saved_mode_anim;
+
+    // area_context reducer does not schedule TIMERS/ALARMS redraws, while CLOCK still schedules and local_tz_info invalidates only CLOCK.
+    const auto saved_ac = latter_core::area_ctx_state();
+    latter_core::v3_domain_reducer().reset();
+    auto &ac = latter_core::area_ctx_state();
+    ac = latter_core::AreaContextState{};
+    ac.epoch = 1U;
+    ac.rev = 1U;
+    ac.local_tz_info = "UTC";
+    rs.nav.display_power_state = 0;
+    rs.nav.is_hibernating = false;
+    rs.nav.gui_page = latter_core::PageId::TIME;
+    rs.nav.time_subpage = TimeSubpage::CLOCK;
+    latter_core::V3ReduceContext rctx{};
+    rctx.now_ms = 6000U;
+    (void)latter_core::v3_domain_reducer().reduce("area_context", rctx);
+
+    ac.rev = 2U;
+    rs.nav.time_subpage = TimeSubpage::ALARMS;
+    const auto eff_alarms = latter_core::v3_domain_reducer().reduce("area_context", rctx);
+    LATTER_CHECK(!eff_alarms.mark_dirty_full && !eff_alarms.schedule_disp_update);
+
+    ac.rev = 3U;
+    rs.nav.time_subpage = TimeSubpage::TIMERS;
+    const auto eff_timers = latter_core::v3_domain_reducer().reduce("area_context", rctx);
+    LATTER_CHECK(!eff_timers.mark_dirty_full && !eff_timers.schedule_disp_update);
+
+    ac.rev = 4U;
+    rs.nav.time_subpage = TimeSubpage::CLOCK;
+    const uint32_t clk_sig_utc = compute_idle_state_signature(ctx);
+    ac.local_tz_info = "PST";
+    const uint32_t clk_sig_pst = compute_idle_state_signature(ctx);
+    LATTER_CHECK(clk_sig_pst != clk_sig_utc);
+    const auto eff_clock = latter_core::v3_domain_reducer().reduce("area_context", rctx);
+    LATTER_CHECK(eff_clock.schedule_disp_update);
+
+    rs.nav.time_subpage = TimeSubpage::ALARMS;
+    const uint32_t alm_sig_pst = compute_idle_state_signature(ctx);
+    ac.local_tz_info = "EST";
+    LATTER_CHECK(compute_idle_state_signature(ctx) == alm_sig_pst);
+
+    latter_core::area_ctx_state() = saved_ac;
+    latter_core::v3_domain_reducer().reset();
 
     ms = saved_ms;
     rs.music = saved_music;
