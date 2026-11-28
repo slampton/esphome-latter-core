@@ -217,31 +217,83 @@ bool apply_calendar_view_action(int req_id,
   return true;
 }
 
-// Parse Contract v3 packed browse/area slots ("name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current]\x1e...")
-size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
-  for (size_t i = 0; i < max_slots; i++) {
-    out_slots[i] = BrowseSlotItem{};
-  }
-  if (slots_blob.empty() || max_slots == 0) return 0;
+namespace {
 
-  std::string_view recs[16];
-  size_t rec_cnt = v3_split_fields(slots_blob, recs, (max_slots < 16) ? max_slots : 16, '\x1e');
-  size_t valid_cnt = 0;
-  for (size_t i = 0; i < rec_cnt && valid_cnt < max_slots; i++) {
-    if (recs[i].empty()) continue;
-    std::string_view cols[8];
-    size_t col_cnt = v3_split_fields(recs[i], cols, 8, '\x1f');
-    if (col_cnt >= 2) {
-      out_slots[valid_cnt].name          = std::string(cols[0]);
-      out_slots[valid_cnt].id            = std::string(cols[1]);
-      out_slots[valid_cnt].type          = (col_cnt >= 3) ? std::string(cols[2]) : "";
-      out_slots[valid_cnt].active        = (col_cnt >= 4) ? v3_parse_bool(cols[3]) : false;
-      out_slots[valid_cnt].level         = (col_cnt >= 5) ? v3_parse_int(cols[4], -1) : -1;
-      out_slots[valid_cnt].queue_item_id = (col_cnt >= 6) ? std::string(cols[5]) : "";
-      out_slots[valid_cnt].is_current    = (col_cnt >= 7) ? v3_parse_bool(cols[6]) : false;
-      valid_cnt++;
+// Parse packed browse/area slots directly into out_slots without stack-allocating a full page array.
+bool parse_v3_slots_payload_into(std::string_view slots_blob, BrowseSlotItem *out_slots,
+                                 size_t max_slots, size_t *out_valid_cnt = nullptr) {
+  if (out_slots == nullptr || max_slots == 0U) {
+    if (out_valid_cnt != nullptr) *out_valid_cnt = 0U;
+    return false;
+  }
+  bool changed = false;
+  size_t valid_cnt = 0U;
+  if (!slots_blob.empty()) {
+    std::string_view recs[16];
+    const size_t rec_cnt = v3_split_fields(slots_blob, recs, (max_slots < 16U) ? max_slots : 16U, '\x1e');
+    for (size_t i = 0; i < rec_cnt && valid_cnt < max_slots; ++i) {
+      if (recs[i].empty()) continue;
+      std::string_view cols[8];
+      const size_t col_cnt = v3_split_fields(recs[i], cols, 8, '\x1f');
+      if (col_cnt < 2U) continue;
+      const std::string_view name = cols[0];
+      const std::string_view id = cols[1];
+      const std::string_view type = (col_cnt >= 3U) ? cols[2] : std::string_view{};
+      const bool active = (col_cnt >= 4U) ? v3_parse_bool(cols[3]) : false;
+      const int level = (col_cnt >= 5U) ? v3_parse_int(cols[4], -1) : -1;
+      const std::string_view queue_item_id = (col_cnt >= 6U) ? cols[5] : std::string_view{};
+      const bool is_current = (col_cnt >= 7U) ? v3_parse_bool(cols[6]) : false;
+
+      BrowseSlotItem &dst = out_slots[valid_cnt];
+      if (dst.active != active) {
+        dst.active = active;
+        changed = true;
+      }
+      if (dst.level != level) {
+        dst.level = level;
+        changed = true;
+      }
+      if (dst.is_current != is_current) {
+        dst.is_current = is_current;
+        changed = true;
+      }
+      if (dst.name != name) {
+        dst.name.assign(name);
+        changed = true;
+      }
+      if (dst.id != id) {
+        dst.id.assign(id);
+        changed = true;
+      }
+      if (dst.type != type) {
+        dst.type.assign(type);
+        changed = true;
+      }
+      if (dst.queue_item_id != queue_item_id) {
+        dst.queue_item_id.assign(queue_item_id);
+        changed = true;
+      }
+      ++valid_cnt;
     }
   }
+  for (size_t i = valid_cnt; i < max_slots; ++i) {
+    BrowseSlotItem &dst = out_slots[i];
+    if (dst.active || dst.level != -1 || dst.is_current ||
+        !dst.name.empty() || !dst.id.empty() || !dst.type.empty() || !dst.queue_item_id.empty()) {
+      dst = BrowseSlotItem{};
+      changed = true;
+    }
+  }
+  if (out_valid_cnt != nullptr) *out_valid_cnt = valid_cnt;
+  return changed;
+}
+
+}  // namespace
+
+// Parse Contract v3 packed browse/area slots ("name\x1fid\x1ftype\x1factive\x1flevel[\x1fqueue_item_id\x1fis_current]\x1e...")
+size_t parse_v3_slots_payload(std::string_view slots_blob, BrowseSlotItem *out_slots, size_t max_slots) {
+  size_t valid_cnt = 0U;
+  parse_v3_slots_payload_into(slots_blob, out_slots, max_slots, &valid_cnt);
   return valid_cnt;
 }
 
@@ -350,8 +402,6 @@ bool apply_slots_action(int req_id, std::string_view mode,
   const size_t max_items =
       (ch == latter_rpc::SlotChannel::AREA_ENTITIES) ? DeviceRuntimeState::kCardSlotsPerPage
                                                      : DeviceRuntimeState::kListSlotsPerPage;
-  BrowseSlotItem parsed[DeviceRuntimeState::kListSlotsPerPage]{};
-  parse_v3_slots_payload(slots_blob, parsed, max_items);
 
   int new_page = rt.slot_page_for(ch);
   if (ch == latter_rpc::SlotChannel::MUSIC) {
@@ -370,18 +420,8 @@ bool apply_slots_action(int req_id, std::string_view mode,
   bool changed = (new_page != rt.slot_page_for(ch)) ||
                  (total_pages != rt.slot_total_pages_for(ch)) ||
                  ((ch == latter_rpc::SlotChannel::AREA_ENTITIES) && (new_browse_mode != rt.area.browse_mode));
-  for (size_t i = 0; i < max_items; ++i) {
-    if (!changed &&
-        (cur[i].active != parsed[i].active ||
-         cur[i].level != parsed[i].level ||
-         cur[i].is_current != parsed[i].is_current ||
-         cur[i].id != parsed[i].id ||
-         cur[i].name != parsed[i].name ||
-         cur[i].type != parsed[i].type ||
-         cur[i].queue_item_id != parsed[i].queue_item_id)) {
-      changed = true;
-    }
-    cur[i] = std::move(parsed[i]);
+  if (parse_v3_slots_payload_into(slots_blob, cur, max_items)) {
+    changed = true;
   }
   rt.slot_page_for(ch) = new_page;
   rt.slot_total_pages_for(ch) = total_pages;

@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
-#include <type_traits>
 
 namespace latter_ui {
 using namespace latter_core;
@@ -940,8 +939,6 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
     const int mode = active_frame_endian_mode();
     if (mode == 1 || mode < 0 || mode == 2) {
       ensure_art_dim_lut_row(scratch, mul_q8, (mode == 2) ? 2 : 1, y);
-      uint16_t line_px[(SCREEN_W <= 512) ? SCREEN_W : 1];
-      uint16_t *const wr = (SCREEN_W <= 512) ? line_px : dst;
       const uint16_t *const r0 = scratch.r_lut[th[(start_x + 0) & 3]];
       const uint16_t *const g0 = scratch.g_lut[th[(start_x + 0) & 3]];
       const uint16_t *const b0 = scratch.b_lut[th[(start_x + 0) & 3]];
@@ -966,42 +963,30 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
         const uint32_t d3 = static_cast<uint32_t>(r3[p3 >> 11] | g3[(p3 >> 5) & 0x3FU] | b3[p3 & 0x1FU]);
         const uint32_t w01 = d0 | (d1 << 16);
         const uint32_t w23 = d2 | (d3 << 16);
-        std::memcpy(wr + i, &w01, 4U);
-        std::memcpy(wr + i + 2, &w23, 4U);
+        std::memcpy(dst + i, &w01, 4U);
+        std::memcpy(dst + i + 2, &w23, 4U);
       }
       for (; i < span_w; ++i) {
         const uint32_t p = src_row[i];
         const uint8_t bidx = th[(start_x + i) & 3];
-        wr[i] = static_cast<uint16_t>(
+        dst[i] = static_cast<uint16_t>(
             scratch.r_lut[bidx][p >> 11] | scratch.g_lut[bidx][(p >> 5) & 0x3FU] | scratch.b_lut[bidx][p & 0x1FU]);
       }
-      if constexpr (SCREEN_W <= 512) {
-        std::memcpy(dst, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
-        if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
-          std::memcpy(mirror_fb + row_off, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
-        }
-      } else if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+      if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
         std::memcpy(mirror_fb + row_off, dst, static_cast<size_t>(span_w) * sizeof(uint16_t));
       }
       return;
     }
     const uint32_t m = static_cast<uint32_t>(mul_q8);
-    uint16_t line_px[(SCREEN_W <= 512) ? SCREEN_W : 1];
-    uint16_t *const wr = (SCREEN_W <= 512) ? line_px : dst;
     for (int i = 0; i < span_w; i++) {
       const uint32_t p = src_row[i];
       const uint32_t t = static_cast<uint32_t>(th[(start_x + i) & 3]) * 16U + 8U;
       const uint32_t r = (((p >> 11) & 0x1FU) * m + t) >> 8;
       const uint32_t g = (((p >> 5) & 0x3FU) * m + t) >> 8;
       const uint32_t b = ((p & 0x1FU) * m + t) >> 8;
-      wr[i] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+      dst[i] = encode_hw_rgb565_raw(static_cast<uint16_t>((r << 11) | (g << 5) | b));
     }
-    if constexpr (SCREEN_W <= 512) {
-      std::memcpy(dst, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
-      if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
-        std::memcpy(mirror_fb + row_off, line_px, static_cast<size_t>(span_w) * sizeof(uint16_t));
-      }
-    } else if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+    if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
       std::memcpy(mirror_fb + row_off, dst, static_cast<size_t>(span_w) * sizeof(uint16_t));
     }
     return;
@@ -1118,56 +1103,13 @@ void upscale_2x_single_row_swar(uint16_t *dst_row, const uint16_t *src_row,
   }
 }
 
-struct LocalArtDimLut {
-  int mul_q8{-1};
-  uint8_t row_mask{0U};
-  uint16_t r[16][32];
-  uint16_t g[16][64];
-  uint16_t b[16][32];
-};
-
-template <int EffMode>
-inline void ensure_local_art_dim_lut_row(LocalArtDimLut &lut, int mul_q8, int y) noexcept {
-  if (lut.mul_q8 != mul_q8) {
-    lut.mul_q8 = mul_q8;
-    lut.row_mask = 0U;
-  }
-  const uint8_t ry = static_cast<uint8_t>(y & 3);
-  const uint8_t bit = static_cast<uint8_t>(1U << ry);
-  if ((lut.row_mask & bit) != 0U) return;
-
-  const uint32_t m = static_cast<uint32_t>(mul_q8);
-  constexpr bool swap_bytes = (EffMode == 2);
-  const uint8_t *const th = kBayer4[ry];
-  for (int col = 0; col < 4; ++col) {
-    const uint8_t bidx = th[col];
-    const uint32_t t = static_cast<uint32_t>(bidx) * 16U + 8U;
-    uint16_t *const rl = lut.r[bidx];
-    uint16_t *const gl = lut.g[bidx];
-    uint16_t *const bl = lut.b[bidx];
-    for (uint32_t v = 0U; v < 32U; ++v) {
-      const uint32_t q = (v * m + t) >> 8;
-      const uint16_t r_raw = static_cast<uint16_t>(q << 11);
-      const uint16_t b_raw = static_cast<uint16_t>(q);
-      rl[v] = swap_bytes ? bswap16_u16(r_raw) : r_raw;
-      bl[v] = swap_bytes ? bswap16_u16(b_raw) : b_raw;
-    }
-    for (uint32_t v = 0U; v < 64U; ++v) {
-      const uint32_t q = (v * m + t) >> 8;
-      const uint16_t g_raw = static_cast<uint16_t>(q << 5);
-      gl[v] = swap_bytes ? bswap16_u16(g_raw) : g_raw;
-    }
-  }
-  lut.row_mask |= bit;
-}
-
 template <int EffMode>
 void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, int src_w, int cx,
                                     bool apply_scrim, bool show_metadata, int dim_level,
-                                    uint16_t *mirror_fb, int mirror_y_lo, int mirror_y_hi) noexcept {
-  alignas(4) uint16_t line0_px[512];
-  alignas(4) uint16_t line1_px[512];
-  std::conditional_t<(SCREEN_W <= 512), LocalArtDimLut, uint8_t> local_lut{};
+                                    ArtScaleScratch &scratch, uint16_t *mirror_fb,
+                                    int mirror_y_lo, int mirror_y_hi) noexcept {
+  uint16_t *const line0_px = scratch.row_buf;
+  uint16_t *const line1_px = scratch.scaled_row;
   auto copy_row_span = [&](uint16_t *dst_row, int row_y, const uint16_t *src_line, int sx0, int sx1) noexcept {
     const size_t nbytes = static_cast<size_t>(sx1 - sx0 + 1) * sizeof(uint16_t);
     std::memcpy(dst_row + sx0, src_line + sx0, nbytes);
@@ -1196,7 +1138,7 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
     uint16_t *const dst0 = fb_tgt + static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W);
     uint16_t *const dst1 = has_y1 ? (fb_tgt + static_cast<size_t>(y1) * static_cast<size_t>(SCREEN_W)) : nullptr;
 
-    if (vis0 && vis1 && mul0 == mul1 && (SCREEN_W <= 512)) {
+    if (vis0 && vis1 && mul0 == mul1) {
       const int u_x0 = std::min(sx0_a, sx0_b);
       const int u_x1 = std::max(sx1_a, sx1_b);
       const int s_lo = u_x0 >> 1;
@@ -1210,18 +1152,18 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
         }
         copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
         copy_row_span(dst1, y1, line0_px, sx0_b, sx1_b);
-      } else if constexpr (SCREEN_W <= 512) {
+      } else {
         const int eff_mul = std::max(0, mul0);
-        ensure_local_art_dim_lut_row<EffMode>(local_lut, eff_mul, y0);
-        ensure_local_art_dim_lut_row<EffMode>(local_lut, eff_mul, y1);
+        ensure_art_dim_lut_row(scratch, eff_mul, EffMode, y0);
+        ensure_art_dim_lut_row(scratch, eff_mul, EffMode, y1);
         const uint8_t *const th0 = kBayer4[y0 & 3];
         const uint8_t *const th1 = kBayer4[y1 & 3];
-        const uint16_t *const r0[4] = {local_lut.r[th0[0]], local_lut.r[th0[1]], local_lut.r[th0[2]], local_lut.r[th0[3]]};
-        const uint16_t *const g0[4] = {local_lut.g[th0[0]], local_lut.g[th0[1]], local_lut.g[th0[2]], local_lut.g[th0[3]]};
-        const uint16_t *const b0[4] = {local_lut.b[th0[0]], local_lut.b[th0[1]], local_lut.b[th0[2]], local_lut.b[th0[3]]};
-        const uint16_t *const r1[4] = {local_lut.r[th1[0]], local_lut.r[th1[1]], local_lut.r[th1[2]], local_lut.r[th1[3]]};
-        const uint16_t *const g1[4] = {local_lut.g[th1[0]], local_lut.g[th1[1]], local_lut.g[th1[2]], local_lut.g[th1[3]]};
-        const uint16_t *const b1[4] = {local_lut.b[th1[0]], local_lut.b[th1[1]], local_lut.b[th1[2]], local_lut.b[th1[3]]};
+        const uint16_t *const r0[4] = {scratch.r_lut[th0[0]], scratch.r_lut[th0[1]], scratch.r_lut[th0[2]], scratch.r_lut[th0[3]]};
+        const uint16_t *const g0[4] = {scratch.g_lut[th0[0]], scratch.g_lut[th0[1]], scratch.g_lut[th0[2]], scratch.g_lut[th0[3]]};
+        const uint16_t *const b0[4] = {scratch.b_lut[th0[0]], scratch.b_lut[th0[1]], scratch.b_lut[th0[2]], scratch.b_lut[th0[3]]};
+        const uint16_t *const r1[4] = {scratch.r_lut[th1[0]], scratch.r_lut[th1[1]], scratch.r_lut[th1[2]], scratch.r_lut[th1[3]]};
+        const uint16_t *const g1[4] = {scratch.g_lut[th1[0]], scratch.g_lut[th1[1]], scratch.g_lut[th1[2]], scratch.g_lut[th1[3]]};
+        const uint16_t *const b1[4] = {scratch.b_lut[th1[0]], scratch.b_lut[th1[1]], scratch.b_lut[th1[2]], scratch.b_lut[th1[3]]};
         auto emit_one_src = [&](int sx, int b_lo, int b_hi) noexcept {
           const uint32_t s = src_row[sx];
           const uint32_t rv = s >> 11;
@@ -1255,44 +1197,26 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
     }
 
     if (vis0) {
-      if (SCREEN_W <= 512) {
-        upscale_2x_single_row_swar<EffMode>(line0_px, src_row, sx0_a, sx1_a, mul0, y0);
-        copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
-      } else {
-        upscale_2x_single_row_swar<EffMode>(dst0, src_row, sx0_a, sx1_a, mul0, y0);
-        if (mirror_fb != nullptr && y0 >= mirror_y_lo && y0 <= mirror_y_hi) {
-          const size_t row_off = static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(sx0_a);
-          std::memcpy(mirror_fb + row_off, dst0 + sx0_a,
-                      static_cast<size_t>(sx1_a - sx0_a + 1) * sizeof(uint16_t));
-        }
-      }
+      upscale_2x_single_row_swar<EffMode>(line0_px, src_row, sx0_a, sx1_a, mul0, y0);
+      copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
     }
     if (vis1) {
-      if (SCREEN_W <= 512) {
-        upscale_2x_single_row_swar<EffMode>(line1_px, src_row, sx0_b, sx1_b, mul1, y1);
-        copy_row_span(dst1, y1, line1_px, sx0_b, sx1_b);
-      } else {
-        upscale_2x_single_row_swar<EffMode>(dst1, src_row, sx0_b, sx1_b, mul1, y1);
-        if (mirror_fb != nullptr && y1 >= mirror_y_lo && y1 <= mirror_y_hi) {
-          const size_t row_off = static_cast<size_t>(y1) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(sx0_b);
-          std::memcpy(mirror_fb + row_off, dst1 + sx0_b,
-                      static_cast<size_t>(sx1_b - sx0_b + 1) * sizeof(uint16_t));
-        }
-      }
+      upscale_2x_single_row_swar<EffMode>(line1_px, src_row, sx0_b, sx1_b, mul1, y1);
+      copy_row_span(dst1, y1, line1_px, sx0_b, sx1_b);
     }
   }
 }
 
 void draw_album_art_2x_upscale(uint16_t *fb_tgt, const uint16_t *src_data, int src_w, int cx,
                                bool apply_scrim, bool show_metadata, int dim_level, int mode,
-                               ArtScaleScratch &, uint16_t *mirror_fb,
+                               ArtScaleScratch &scratch, uint16_t *mirror_fb,
                                int mirror_y_lo, int mirror_y_hi) noexcept {
   if (mode == 2) {
     draw_album_art_2x_upscale_mode<2>(fb_tgt, src_data, src_w, cx, apply_scrim, show_metadata,
-                                      dim_level, mirror_fb, mirror_y_lo, mirror_y_hi);
+                                      dim_level, scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
   } else {
     draw_album_art_2x_upscale_mode<1>(fb_tgt, src_data, src_w, cx, apply_scrim, show_metadata,
-                                      dim_level, mirror_fb, mirror_y_lo, mirror_y_hi);
+                                      dim_level, scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
   }
 }
 
@@ -1482,10 +1406,8 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
                                   endian_mode, scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
       } else {
         if (out_path_tag != nullptr) *out_path_tag = "generic_scale";
-        uint16_t sx_lut_stack[(SCREEN_W <= 512) ? SCREEN_W : 1];
-        uint16_t scaled_row_stack[(SCREEN_W <= 512) ? SCREEN_W : 1];
-        uint16_t *const sx_lut = (SCREEN_W <= 512) ? sx_lut_stack : scratch.sx_lut;
-        uint16_t *const scaled_row = (SCREEN_W <= 512) ? scaled_row_stack : scratch.scaled_row;
+        uint16_t *const sx_lut = scratch.sx_lut;
+        uint16_t *const scaled_row = scratch.scaled_row;
         {
           int curr_x = src_x0_fp;
           for (int x = 0; x < SCREEN_W; x++) {
