@@ -985,8 +985,11 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
     const Case half_cases[] = {
         {false, false, 0},
         {true, true, kArtDimMusicHud},
+        {true, true, kArtDimMenu},
+        {true, true, kArtDimLyricsHud},
         {false, true, 0},
     };
+    std::vector<uint16_t> menu_capture;
     for (int endian_mode : {1, 2}) {
       fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, endian_mode);
       art_canvas_drop_all();
@@ -995,9 +998,17 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
           fix.fill(0U);
           dirty_band() = DirtyBandTracker{};
           (void)dirty_band().begin_frame(PageId::MUSIC, pass, 0U, true);
+          frame_base_begin();
           LATTER_CHECK(render_album_art_canvas_view(
               fix.surf, half_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
               c.scrim, c.meta, c.dim));
+          if (c.dim == kArtDimMenu || c.dim == kArtDimLyricsHud) {
+            LATTER_CHECK(backdrop_max_lum_q8() == 64);
+          } else if (c.dim == kArtDimMusicHud) {
+            LATTER_CHECK(backdrop_max_lum_q8() < 256);
+          } else {
+            LATTER_CHECK(backdrop_max_lum_q8() == 256);
+          }
           for (int y = 0; y < SCREEN_H; y += 13) {
             const int mul_q8 = compute_art_row_scale_q8(y, c.scrim, c.meta, c.dim);
             int x0 = 0;
@@ -1020,6 +1031,11 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
               const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, y, endian_mode);
               LATTER_CHECK(fix.pixels[dst_idx] == want);
             }
+          }
+          if (endian_mode == 2 && pass == 0 && c.dim == kArtDimMenu) {
+            menu_capture = fix.pixels;
+          } else if (endian_mode == 2 && pass == 0 && c.dim == kArtDimLyricsHud) {
+            LATTER_CHECK(fix.pixels == menu_capture);
           }
         }
       }
@@ -1792,6 +1808,100 @@ void test_wave2_rodata_lut_spans_blend_glass_and_clipped_pill() {
     LATTER_CHECK(hit != nullptr && hit->widget_id == WidgetId::MUSIC_VOL_MUTE_BTN);
     LATTER_CHECK(fix.pixels[static_cast<size_t>(pill_y_mid) * static_cast<size_t>(SCREEN_W) + 100U] == bg_hw);
     reset_clip_y_band();
+  }
+
+  // 6. Rimmed glass 1-pass parity, smart backdrop sample skip, shadow_print/fast_print_alpha, wrap_text_lines.
+  {
+    const UiColor bg_c{24, 38, 62};
+    const UiColor rim_c{210, 224, 248};
+    const UiColor fill_c{18, 22, 32};
+    const int saved_endian = active_frame_endian_mode();
+    for (int mode : {1, 2, 3, 4}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, mode);
+      const uint16_t bg_hw = encode_hw_rgb565(bg_c);
+      struct Shape {
+        int x, y, w, h;
+        float rad, rad_in;
+      };
+      const Shape shapes[] = {
+          {36, 40, 140, 56, 14.0f, 12.6f},
+          {60, 110, 52, 52, 26.0f, 24.6f},
+      };
+      for (const Shape &sh : shapes) {
+        fix.fill(bg_hw);
+        dirty_band() = DirtyBandTracker{};
+        (void)dirty_band().begin_frame(PageId::HOME, 0, 0U, true);
+        frame_base_begin();
+        fill_round_rect_glass(fix.surf, sh.x, sh.y, sh.w, sh.h, sh.rad, rim_c, 150, 90, 1);
+        fill_round_rect_glass(fix.surf, sh.x + 1, sh.y + 1, sh.w - 2, sh.h - 2, sh.rad_in, fill_c, 116, 84, 0);
+        const std::vector<uint16_t> two_pass = fix.pixels;
+
+        fix.fill(bg_hw);
+        frame_base_begin();
+        fill_round_rect_glass_rimmed(fix.surf, sh.x, sh.y, sh.w, sh.h, sh.rad, rim_c, 150, 90, fill_c, 116, 84, sh.rad_in);
+        LATTER_CHECK(fix.pixels == two_pass);
+      }
+
+      // shadow_print (single + double_shadow) & fast_print_alpha miss->hit parity across endian modes
+      fix.fill(bg_hw);
+      ui::shadow_print(fix.surf, SCREEN_CX, 64, fix.ctx.font_small, fix.ctx.col_white, UiTextAlign::CENTER,
+                       "Living Room Audio S3", true);
+      const std::vector<uint16_t> shadow_miss = fix.pixels;
+      LATTER_CHECK(shadow_miss != std::vector<uint16_t>(shadow_miss.size(), bg_hw));
+      fix.fill(bg_hw);
+      ui::shadow_print(fix.surf, SCREEN_CX, 64, fix.ctx.font_small, fix.ctx.col_white, UiTextAlign::CENTER,
+                       "Living Room Audio S3", true);
+      LATTER_CHECK(fix.pixels == shadow_miss);
+
+      fix.fill(bg_hw);
+      fast_print_alpha(fix.surf, SCREEN_CX, 96, fix.ctx.font_small, fix.ctx.col_white, UiTextAlign::CENTER,
+                       "Dimmed Subline S3", 180);
+      const std::vector<uint16_t> alpha_miss = fix.pixels;
+      LATTER_CHECK(alpha_miss != std::vector<uint16_t>(alpha_miss.size(), bg_hw));
+      fix.fill(bg_hw);
+      fast_print_alpha(fix.surf, SCREEN_CX, 96, fix.ctx.font_small, fix.ctx.col_white, UiTextAlign::CENTER,
+                       "Dimmed Subline S3", 180);
+      LATTER_CHECK(fix.pixels == alpha_miss);
+    }
+    active_frame_endian_mode() = saved_endian;
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+
+    // Smart backdrop sample skip when dimmed art already guarantees >= 5.0:1 WCAG contrast
+    const uint8_t saved_gs = persisted_prefs().glass_style;
+    persisted_prefs().glass_style = static_cast<uint8_t>(GlassStyle::Auto);
+    fix.fill(encode_hw_rgb565(UiColor{230, 235, 240}));
+    frame_base_begin();
+    backdrop_active() = true;
+    backdrop_max_lum_q8() = 64;
+    GlassBackdrop bd{};
+    UiColor eff_tint{}, rim_col{};
+    int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
+    resolve_styled_glass(30, 40, 120, 48, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, fix.ctx.col_white, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(!bd.valid && bd.sample_count == 0U);
+    LATTER_CHECK(a_top == kGlassClearAlphaMaxQ8 && a_bot == kGlassAlphaMinQ8);
+
+    backdrop_max_lum_q8() = 256;
+    resolve_styled_glass(30, 40, 120, 48, kChromeGlassTint, kChromeCardBorder,
+                         GlassVariant::Clear, fix.ctx.col_white, -1, false,
+                         bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
+    LATTER_CHECK(bd.valid && bd.sample_count > 0U && bd.sample_count <= 48U);
+    LATTER_CHECK(a_top > kGlassClearAlphaMaxQ8);
+    persisted_prefs().glass_style = saved_gs;
+
+    // O(N) wrap_text_lines: single-line fast path, word wrap, explicit newline, max_lines ellipsis
+    std::string lines[4];
+    LATTER_CHECK(ui::wrap_text_lines("Short", 240, fix.ctx.font_small, lines, 4) == 1);
+    LATTER_CHECK(lines[0] == "Short");
+    LATTER_CHECK(ui::wrap_text_lines("Line one\nLine two", 240, fix.ctx.font_small, lines, 4) == 2);
+    LATTER_CHECK(lines[0] == "Line one" && lines[1] == "Line two");
+    LATTER_CHECK(ui::wrap_text_lines("Alpha Beta Gamma Delta Epsilon Zeta Eta Theta", 110, fix.ctx.font_small, lines, 2) == 2);
+    LATTER_CHECK(lines[1].size() >= 2U && lines[1].substr(lines[1].size() - 2U) == "..");
+    int w0 = 0, w1 = 0, xo = 0, b = 0, h = 0;
+    fix.ctx.font_small->measure(lines[0].c_str(), &w0, &xo, &b, &h);
+    fix.ctx.font_small->measure(lines[1].c_str(), &w1, &xo, &b, &h);
+    LATTER_CHECK(w0 <= 110 && w1 <= 110);
   }
 }
 

@@ -628,7 +628,8 @@ void test_sram_psram_budget_and_http_stall_guards() {
       "../../modules/sleep_lifecycle.yaml",
   });
   const std::string sys_core_yaml = read_repo_file("../../modules/system_core.yaml");
-  LATTER_CHECK(wid_src.find("sample_surface ? sample_glass_mean(") != std::string::npos);
+  LATTER_CHECK(gfx_src.find("sample_surface ? sample_glass_mean(") != std::string::npos);
+  LATTER_CHECK(wid_src.find("resolve_styled_glass(") != std::string::npos);
   LATTER_CHECK(pm_yaml.find("defined(CONFIG_PM_ENABLE) && defined(CONFIG_FREERTOS_USE_TICKLESS_IDLE)") != std::string::npos);
   LATTER_CHECK(sys_core_yaml.find("update_interval: 300s") == std::string::npos);
   LATTER_CHECK(wth_src.find("art_canvas_drop_all()") != std::string::npos);

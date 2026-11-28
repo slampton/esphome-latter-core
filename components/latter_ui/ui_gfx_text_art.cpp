@@ -176,7 +176,7 @@ int text_decode_spans(const UiFontView &font, const char *text, int bpp, TextSpa
   return n;
 }
 
-const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &count) {
+const TextCacheEntry *text_cache_get_entry(const UiFontView &font, const char *text) {
   const int bpp = font.get_bpp();
   if (font.handle == nullptr || font.find_glyph_fn == nullptr || bpp <= 0 || bpp > 4) return nullptr;
   TextCacheEntry *entries = text_cache_entries();
@@ -190,8 +190,7 @@ const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &co
     TextCacheEntry &e = entries[i];
     if (e.font == font.handle && e.bpp == static_cast<uint8_t>(bpp) && std::strcmp(e.text, text) == 0) {
       e.last_use = use_seq;
-      count = e.count;
-      return e.spans;
+      return &e;
     }
     if (e.last_use < victim->last_use) victim = &e;
   }
@@ -207,18 +206,125 @@ const TextSpan *text_cache_get(const UiFontView &font, const char *text, int &co
       victim->bpp = 0;
       victim->text[0] = 0;
       victim->count = 0;
-      count = n;
-      return scratch;
+      return nullptr;
     }
   }
   if (n > 0) std::memcpy(victim->spans, scratch, sizeof(TextSpan) * static_cast<size_t>(n));
+  int ink_x0 = 0, ink_x1 = 0, th = 0, bl = 0;
+  measure_text_ink_span(font, text, ink_x0, ink_x1, th, bl);
+  victim->ink_x0 = static_cast<int16_t>(ink_x0);
+  victim->ink_x1 = static_cast<int16_t>(ink_x1);
+  victim->text_h = static_cast<int16_t>(th);
+  victim->baseline = static_cast<int16_t>(bl);
   victim->font = font.handle;
   victim->bpp = static_cast<uint8_t>(bpp);
   std::memcpy(victim->text, text, len + 1);
   victim->count = static_cast<uint16_t>(n);
   victim->last_use = use_seq;
-  count = n;
-  return victim->spans;
+  return victim;
+}
+
+inline void compute_pen_from_ink(int x, int y, UiTextAlign align,
+                                 int ink_x0, int ink_x1, int h, int baseline,
+                                 int &x_pen, int &y_pen) noexcept {
+  const uint8_t bits = static_cast<uint8_t>(align);
+  const uint8_t h_align = static_cast<uint8_t>(bits & 0x18U);
+  const uint8_t v_align = static_cast<uint8_t>(bits & 0x07U);
+  x_pen = x;
+  if (h_align == static_cast<uint8_t>(UiTextAlign::CENTER_HORIZONTAL)) {
+    x_pen = x - ((ink_x0 + ink_x1) / 2);
+  } else if (h_align == static_cast<uint8_t>(UiTextAlign::RIGHT)) {
+    x_pen = x - ink_x1;
+  }
+  y_pen = y;
+  if (v_align == static_cast<uint8_t>(UiTextAlign::CENTER_VERTICAL)) {
+    y_pen = y - h / 2;
+  } else if (v_align == static_cast<uint8_t>(UiTextAlign::BASELINE)) {
+    y_pen = y - baseline;
+  } else if (v_align == static_cast<uint8_t>(UiTextAlign::BOTTOM)) {
+    y_pen = y - h;
+  }
+}
+
+template <int Mode>
+void blit_text_spans_mode(uint16_t *fb, const TextSpan *spans, int span_count,
+                          int x_start, int y_start, int eff_cy0, int eff_cy1,
+                          UiColor color, uint16_t full_hw, int alpha_q8,
+                          bool solid_bg, int bpp_max, const uint16_t lut[16]) noexcept {
+  const int a_clamped = std::clamp(alpha_q8, 0, 256);
+  const bool full_text_alpha = (a_clamped >= 256);
+  const bool is_black = !color.is_on();
+  const uint32_t cr5 = (static_cast<uint32_t>(color.r) * 31U + 127U) / 255U;
+  const uint32_t cg6 = (static_cast<uint32_t>(color.g) * 63U + 127U) / 255U;
+  const uint32_t cb5 = (static_cast<uint32_t>(color.b) * 31U + 127U) / 255U;
+
+  for (int i = 0; i < span_count; ++i) {
+    const TextSpan &sp = spans[i];
+    const int py = y_start + sp.y;
+    if (py < eff_cy0 || py > eff_cy1) continue;
+    int px = x_start + sp.x;
+    int len = sp.len;
+    if (px >= SCREEN_W || len <= 0) continue;
+    if (px < 0) {
+      len += px;
+      px = 0;
+    }
+    if (len <= 0) continue;
+    if (len > SCREEN_W - px) len = SCREEN_W - px;
+    uint16_t *const dst = fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(px);
+
+    if (full_text_alpha && sp.alpha >= 255U) {
+      fill_hw16_span(dst, len, full_hw);
+      continue;
+    }
+    if (solid_bg) {
+      const int lv = std::clamp((static_cast<int>(sp.alpha) * bpp_max + 127) / 255, 1, bpp_max);
+      fill_hw16_span(dst, len, lut[lv]);
+      continue;
+    }
+    const int eff_a = full_text_alpha
+                          ? (static_cast<int>(sp.alpha) + static_cast<int>(sp.alpha >> 7))
+                          : ((sp.alpha >= 255U)
+                                 ? a_clamped
+                                 : ((a_clamped * static_cast<int>(sp.alpha) + 127) / 255));
+    if (eff_a <= 0) continue;
+    if (eff_a >= 256) {
+      fill_hw16_span(dst, len, full_hw);
+      continue;
+    }
+    const uint32_t a_q8 = static_cast<uint32_t>(eff_a);
+    const uint32_t inv = 256U - a_q8;
+    if (is_black) {
+      for (int k = 0; k < len; ++k) {
+        dst[k] = blend_black_q8_px<Mode>(dst[k], inv);
+      }
+    } else {
+      const uint32_t base_rb = ((cr5 * a_q8 + 128U) << 16) | (cb5 * a_q8 + 128U);
+      const uint32_t base_g_s5 = (cg6 * a_q8 + 128U) << 5;
+      for (int k = 0; k < len; ++k) {
+        dst[k] = blend_swar_q8_px<Mode>(dst[k], inv, base_rb, base_g_s5);
+      }
+    }
+  }
+}
+
+inline void dispatch_blit_text_spans(int mode, uint16_t *fb, const TextSpan *spans, int span_count,
+                                     int x_start, int y_start, int eff_cy0, int eff_cy1,
+                                     UiColor color, uint16_t full_hw, int alpha_q8,
+                                     bool solid_bg, int bpp_max, const uint16_t lut[16]) noexcept {
+  if (mode == 1 || mode < 0) {
+    blit_text_spans_mode<1>(fb, spans, span_count, x_start, y_start, eff_cy0, eff_cy1,
+                            color, full_hw, alpha_q8, solid_bg, bpp_max, lut);
+  } else if (mode == 2) {
+    blit_text_spans_mode<2>(fb, spans, span_count, x_start, y_start, eff_cy0, eff_cy1,
+                            color, full_hw, alpha_q8, solid_bg, bpp_max, lut);
+  } else if (mode == 4) {
+    blit_text_spans_mode<4>(fb, spans, span_count, x_start, y_start, eff_cy0, eff_cy1,
+                            color, full_hw, alpha_q8, solid_bg, bpp_max, lut);
+  } else {
+    blit_text_spans_mode<3>(fb, spans, span_count, x_start, y_start, eff_cy0, eff_cy1,
+                            color, full_hw, alpha_q8, solid_bg, bpp_max, lut);
+  }
 }
 
 inline uint16_t *resolve_surface_fb(Rgb565Surface &it) noexcept {
@@ -495,21 +601,14 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
     return;
   }
 
-  int x_start = 0, y_start = 0, text_h = 0;
-  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
-  if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
-
   const int eff_cy0 = std::max(0, cy0);
   const int eff_cy1 = std::min(SCREEN_H - 1, cy1);
   if (eff_cy1 < eff_cy0) return;
 
   const int bpp_max = (1 << bpp) - 1;
+  const int mode = active_frame_endian_mode();
   const uint16_t full_hw = encode_hw_rgb565(color);
   const bool solid_bg = background.is_on();
-  const int cr5 = (static_cast<int>(color.r) * 31 + 127) / 255;
-  const int cg6 = (static_cast<int>(color.g) * 63 + 127) / 255;
-  const int cb5 = (static_cast<int>(color.b) * 31 + 127) / 255;
-
   uint16_t lut[16]{};
   if (solid_bg) {
     const float diff_r = static_cast<float>(color.r) - static_cast<float>(background.r);
@@ -529,6 +628,22 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
     }
   }
 
+  int x_start = 0, y_start = 0, text_h = 0;
+  if (const TextCacheEntry *entry = text_cache_get_entry(font, text)) {
+    compute_pen_from_ink(x, y, align, entry->ink_x0, entry->ink_x1,
+                         entry->text_h, entry->baseline, x_start, y_start);
+    if (entry->text_h > 0 && (y_start + entry->text_h <= cy0 || y_start > cy1)) return;
+    dispatch_blit_text_spans(mode, fb, entry->spans, entry->count, x_start, y_start,
+                             eff_cy0, eff_cy1, color, full_hw, 256, solid_bg, bpp_max, lut);
+    return;
+  }
+
+  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
+  if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
+
+  const uint32_t cr5 = (static_cast<uint32_t>(color.r) * 31U + 127U) / 255U;
+  const uint32_t cg6 = (static_cast<uint32_t>(color.g) * 63U + 127U) / 255U;
+  const uint32_t cb5 = (static_cast<uint32_t>(color.b) * 31U + 127U) / 255U;
   auto blend_live = [&](uint16_t &dst, uint8_t alpha) {
     if (alpha >= 255U) {
       dst = full_hw;
@@ -539,39 +654,15 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
       dst = lut[lv];
       return;
     }
-    const uint16_t bg = decode_hw_rgb565_raw(dst);
-    const int a_q8 = static_cast<int>(alpha) + static_cast<int>(alpha >> 7);
-    const int ia = 256 - a_q8;
-    const int r = (cr5 * a_q8 + ((bg >> 11) & 0x1F) * ia + 128) >> 8;
-    const int g = (cg6 * a_q8 + ((bg >> 5) & 0x3F) * ia + 128) >> 8;
-    const int b = (cb5 * a_q8 + (bg & 0x1F) * ia + 128) >> 8;
-    dst = encode_hw_rgb565_raw(static_cast<uint16_t>(
-        (std::min(31, r) << 11) | (std::min(63, g) << 5) | std::min(31, b)));
+    const uint32_t a_q8 = static_cast<uint32_t>(alpha) + static_cast<uint32_t>(alpha >> 7);
+    const uint32_t inv = 256U - a_q8;
+    const uint32_t base_rb = ((cr5 * a_q8 + 128U) << 16) | (cb5 * a_q8 + 128U);
+    const uint32_t base_g_s5 = (cg6 * a_q8 + 128U) << 5;
+    if (mode == 1 || mode < 0) dst = blend_swar_q8_px<1>(dst, inv, base_rb, base_g_s5);
+    else if (mode == 2) dst = blend_swar_q8_px<2>(dst, inv, base_rb, base_g_s5);
+    else if (mode == 4) dst = blend_swar_q8_px<4>(dst, inv, base_rb, base_g_s5);
+    else dst = blend_swar_q8_px<3>(dst, inv, base_rb, base_g_s5);
   };
-
-  {
-    int span_count = 0;
-    const TextSpan *spans = text_cache_get(font, text, span_count);
-    if (spans != nullptr) {
-      for (int i = 0; i < span_count; i++) {
-        const int py = y_start + spans[i].y;
-        if (py < eff_cy0 || py > eff_cy1) continue;
-        int px = x_start + spans[i].x, len = spans[i].len;
-        if (px >= SCREEN_W || len <= 0) continue;
-        if (px < 0) { len += px; px = 0; }
-        if (len <= 0) continue;
-        if (len > SCREEN_W - px) len = SCREEN_W - px;
-        uint16_t *dst = fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(px);
-        const uint8_t sa = spans[i].alpha;
-        if (sa >= 255U) {
-          for (int k = 0; k < len; k++) dst[k] = full_hw;
-        } else {
-          for (int k = 0; k < len; k++) blend_live(dst[k], sa);
-        }
-      }
-      return;
-    }
-  }
 
   rasterize_glyph_pixels(fb, font, text, x_start, y_start, eff_cy0, eff_cy1, bpp,
                          [&](uint16_t &dst, uint8_t pixel) {
@@ -585,6 +676,52 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
                              blend_live(dst, a);
                            }
                          });
+}
+
+void shadow_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
+                       UiColor color, UiTextAlign align, const char *text,
+                       bool double_shadow) {
+  if (font == nullptr || text == nullptr || text[0] == '\0') return;
+  const int cy0 = clip_y0();
+  const int cy1 = clip_y1();
+  if (cy1 < cy0) return;
+
+  uint16_t *fb = resolve_surface_fb(it);
+  const int bpp = font.get_bpp();
+  if (fb != nullptr && bpp > 0 && bpp <= 4 && font.find_glyph_fn != nullptr) {
+    if (const TextCacheEntry *entry = text_cache_get_entry(font, text)) {
+      int x_start = 0, y_start = 0;
+      compute_pen_from_ink(x, y, align, entry->ink_x0, entry->ink_x1,
+                           entry->text_h, entry->baseline, x_start, y_start);
+      const int sh_max = double_shadow ? 2 : 1;
+      if (entry->text_h > 0 && (y_start + entry->text_h + sh_max <= cy0 || y_start > cy1)) return;
+      const int eff_cy0 = std::max(0, cy0);
+      const int eff_cy1 = std::min(SCREEN_H - 1, cy1);
+      if (eff_cy1 < eff_cy0) return;
+      const int mode = active_frame_endian_mode();
+      const uint16_t sh_hw = encode_hw_rgb565(kChromeShadow);
+      const uint16_t fg_hw = encode_hw_rgb565(color);
+      static constexpr uint16_t kEmptyLut[16]{};
+      if (double_shadow) {
+        dispatch_blit_text_spans(mode, fb, entry->spans, entry->count,
+                                 x_start + 2, y_start + 2, eff_cy0, eff_cy1,
+                                 kChromeShadow, sh_hw, 256, false, 1, kEmptyLut);
+      }
+      dispatch_blit_text_spans(mode, fb, entry->spans, entry->count,
+                               x_start + 1, y_start + 1, eff_cy0, eff_cy1,
+                               kChromeShadow, sh_hw, 256, false, 1, kEmptyLut);
+      dispatch_blit_text_spans(mode, fb, entry->spans, entry->count,
+                               x_start, y_start, eff_cy0, eff_cy1,
+                               color, fg_hw, 256, false, 1, kEmptyLut);
+      return;
+    }
+  }
+
+  if (double_shadow) {
+    fast_print_impl(it, x + 2, y + 2, font, kChromeShadow, align, text, kColorOff);
+  }
+  fast_print_impl(it, x + 1, y + 1, font, kChromeShadow, align, text, kColorOff);
+  fast_print_impl(it, x, y, font, color, align, text, kColorOff);
 }
 
 void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
@@ -602,53 +739,43 @@ void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
     return;
   }
 
-  int x_start = 0, y_start = 0, text_h = 0;
-  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
-  if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
-
   const int eff_cy0 = std::max(0, cy0), eff_cy1 = std::min(SCREEN_H - 1, cy1);
   if (eff_cy1 < eff_cy0) return;
 
   const int bpp_max = (1 << bpp) - 1;
   const int a_clamped = std::min(256, alpha_q8);
+  const int mode = active_frame_endian_mode();
   const uint16_t full_hw = encode_hw_rgb565(color);
-  const int cr5 = (static_cast<int>(color.r) * 31 + 127) / 255;
-  const int cg6 = (static_cast<int>(color.g) * 63 + 127) / 255;
-  const int cb5 = (static_cast<int>(color.b) * 31 + 127) / 255;
 
+  int x_start = 0, y_start = 0, text_h = 0;
+  if (const TextCacheEntry *entry = text_cache_get_entry(font, text)) {
+    compute_pen_from_ink(x, y, align, entry->ink_x0, entry->ink_x1,
+                         entry->text_h, entry->baseline, x_start, y_start);
+    if (entry->text_h > 0 && (y_start + entry->text_h <= cy0 || y_start > cy1)) return;
+    static constexpr uint16_t kEmptyLut[16]{};
+    dispatch_blit_text_spans(mode, fb, entry->spans, entry->count, x_start, y_start,
+                             eff_cy0, eff_cy1, color, full_hw, a_clamped, false, bpp_max, kEmptyLut);
+    return;
+  }
+
+  compute_text_pen_origin(x, y, text, font, align, &x_start, &y_start, nullptr, nullptr, &text_h);
+  if (text_h > 0 && (y_start + text_h <= cy0 || y_start > cy1)) return;
+
+  const uint32_t cr5 = (static_cast<uint32_t>(color.r) * 31U + 127U) / 255U;
+  const uint32_t cg6 = (static_cast<uint32_t>(color.g) * 63U + 127U) / 255U;
+  const uint32_t cb5 = (static_cast<uint32_t>(color.b) * 31U + 127U) / 255U;
   auto blend_px = [&](uint16_t &dst, int a) {
     if (a <= 0) return;
     if (a >= 256) { dst = full_hw; return; }
-    const uint16_t bg = decode_hw_rgb565_raw(dst);
-    const int ia = 256 - a;
-    const int r = (cr5 * a + ((bg >> 11) & 0x1F) * ia + 128) >> 8;
-    const int g = (cg6 * a + ((bg >> 5) & 0x3F) * ia + 128) >> 8;
-    const int b = (cb5 * a + (bg & 0x1F) * ia + 128) >> 8;
-    dst = encode_hw_rgb565_raw(static_cast<uint16_t>(
-        (std::min(31, r) << 11) | (std::min(63, g) << 5) | std::min(31, b)));
+    const uint32_t a_q8 = static_cast<uint32_t>(a);
+    const uint32_t inv = 256U - a_q8;
+    const uint32_t base_rb = ((cr5 * a_q8 + 128U) << 16) | (cb5 * a_q8 + 128U);
+    const uint32_t base_g_s5 = (cg6 * a_q8 + 128U) << 5;
+    if (mode == 1 || mode < 0) dst = blend_swar_q8_px<1>(dst, inv, base_rb, base_g_s5);
+    else if (mode == 2) dst = blend_swar_q8_px<2>(dst, inv, base_rb, base_g_s5);
+    else if (mode == 4) dst = blend_swar_q8_px<4>(dst, inv, base_rb, base_g_s5);
+    else dst = blend_swar_q8_px<3>(dst, inv, base_rb, base_g_s5);
   };
-
-  {
-    int span_count = 0;
-    const TextSpan *spans = text_cache_get(font, text, span_count);
-    if (spans != nullptr) {
-      for (int i = 0; i < span_count; i++) {
-        const int py = y_start + spans[i].y;
-        if (py < eff_cy0 || py > eff_cy1) continue;
-        int px = x_start + spans[i].x, len = spans[i].len;
-        if (px >= SCREEN_W || len <= 0) continue;
-        if (px < 0) { len += px; px = 0; }
-        if (len <= 0) continue;
-        if (len > SCREEN_W - px) len = SCREEN_W - px;
-        uint16_t *dst = fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(px);
-        const int eff_a = (spans[i].alpha >= 255U)
-                              ? a_clamped
-                              : ((a_clamped * static_cast<int>(spans[i].alpha) + 127) / 255);
-        for (int k = 0; k < len; k++) blend_px(dst[k], eff_a);
-      }
-      return;
-    }
-  }
 
   rasterize_glyph_pixels(fb, font, text, x_start, y_start, eff_cy0, eff_cy1, bpp,
                          [&](uint16_t &dst, uint8_t pixel) {
@@ -898,91 +1025,217 @@ int uniform_art_dim_q8(bool show_controls, bool show_metadata, int dim_level) no
 }
 #endif
 
+inline uint16_t dim_rgb565_swar_q8_le(uint32_t rb_m, uint32_t g_m, uint32_t t_rb, uint32_t t_g) noexcept {
+  const uint32_t rb_sum = rb_m + t_rb;
+  const uint32_t g_sum = g_m + t_g;
+  return static_cast<uint16_t>(((rb_sum >> 13) & 0xF800U) |
+                               ((g_sum >> 8) & 0x07E0U) |
+                               ((rb_sum >> 8) & 0x001FU));
+}
+
+template <int EffMode>
+void upscale_2x_single_row_swar(uint16_t *dst_row, const uint16_t *src_row,
+                                int start_x, int end_x, int mul_q8, int y) noexcept {
+  if (mul_q8 >= 256) {
+    int x = start_x;
+    if (x <= end_x && (x & 1) != 0) {
+      const uint16_t s = src_row[x >> 1];
+      dst_row[x++] = (EffMode == 2) ? bswap16_u16(s) : s;
+    }
+    for (; x + 1 <= end_x; x += 2) {
+      const uint16_t s = src_row[x >> 1];
+      const uint32_t hw = static_cast<uint32_t>((EffMode == 2) ? bswap16_u16(s) : s);
+      const uint32_t w = hw | (hw << 16);
+      std::memcpy(dst_row + x, &w, 4U);
+    }
+    if (x <= end_x) {
+      const uint16_t s = src_row[x >> 1];
+      dst_row[x] = (EffMode == 2) ? bswap16_u16(s) : s;
+    }
+    return;
+  }
+
+  const uint32_t m = static_cast<uint32_t>(std::max(0, mul_q8));
+  const uint8_t *const th = kBayer4[y & 3];
+  uint32_t t_rb[4], t_g[4];
+  for (int k = 0; k < 4; ++k) {
+    const uint32_t tk = static_cast<uint32_t>(th[k]) * 16U + 8U;
+    t_rb[k] = (tk << 16) | tk;
+    t_g[k] = tk << 5;
+  }
+  int x = start_x;
+  while (x <= end_x && (x & 3) != 0) {
+    const uint32_t s = src_row[x >> 1];
+    const uint32_t rb_m = (((s & 0xF800U) << 5) | (s & 0x001FU)) * m;
+    const uint32_t g_m = (s & 0x07E0U) * m;
+    const int k = x & 3;
+    const uint16_t px_le = dim_rgb565_swar_q8_le(rb_m, g_m, t_rb[k], t_g[k]);
+    dst_row[x++] = (EffMode == 2) ? bswap16_u16(px_le) : px_le;
+  }
+  for (; x + 3 <= end_x; x += 4) {
+    const int sx = x >> 1;
+    const uint32_t s0 = src_row[sx];
+    const uint32_t s1 = src_row[sx + 1];
+    const uint32_t rb0 = (((s0 & 0xF800U) << 5) | (s0 & 0x001FU)) * m;
+    const uint32_t g0 = (s0 & 0x07E0U) * m;
+    const uint32_t rb1 = (((s1 & 0xF800U) << 5) | (s1 & 0x001FU)) * m;
+    const uint32_t g1 = (s1 & 0x07E0U) * m;
+    const uint32_t d0 = dim_rgb565_swar_q8_le(rb0, g0, t_rb[0], t_g[0]);
+    const uint32_t d1 = dim_rgb565_swar_q8_le(rb0, g0, t_rb[1], t_g[1]);
+    const uint32_t d2 = dim_rgb565_swar_q8_le(rb1, g1, t_rb[2], t_g[2]);
+    const uint32_t d3 = dim_rgb565_swar_q8_le(rb1, g1, t_rb[3], t_g[3]);
+    uint32_t w01 = d0 | (d1 << 16);
+    uint32_t w23 = d2 | (d3 << 16);
+    if constexpr (EffMode == 2) {
+      w01 = bswap16x2_u32(w01);
+      w23 = bswap16x2_u32(w23);
+    }
+    std::memcpy(dst_row + x, &w01, 4U);
+    std::memcpy(dst_row + x + 2, &w23, 4U);
+  }
+  for (; x <= end_x; ++x) {
+    const uint32_t s = src_row[x >> 1];
+    const uint32_t rb_m = (((s & 0xF800U) << 5) | (s & 0x001FU)) * m;
+    const uint32_t g_m = (s & 0x07E0U) * m;
+    const int k = x & 3;
+    const uint16_t px_le = dim_rgb565_swar_q8_le(rb_m, g_m, t_rb[k], t_g[k]);
+    dst_row[x] = (EffMode == 2) ? bswap16_u16(px_le) : px_le;
+  }
+}
+
+template <int EffMode>
+void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, int src_w, int cx,
+                                    bool apply_scrim, bool show_metadata, int dim_level,
+                                    uint16_t *mirror_fb, int mirror_y_lo, int mirror_y_hi) noexcept {
+  const size_t full_row_bytes = static_cast<size_t>(SCREEN_W) * sizeof(uint16_t);
+  for (int y = 0; y < SCREEN_H; y += 2) {
+    const int y0 = y;
+    const int y1 = y + 1;
+    const bool has_y0 = row_in_clip_band(y0);
+    const bool has_y1 = (y1 < SCREEN_H) && row_in_clip_band(y1);
+    if (!has_y0 && !has_y1) continue;
+
+    int sx0_a = 0, sx1_a = -1, sx0_b = 0, sx1_b = -1;
+    if (has_y0) art_row_span(y0, cx, sx0_a, sx1_a);
+    if (has_y1) art_row_span(y1, cx, sx0_b, sx1_b);
+    const bool vis0 = has_y0 && (sx0_a <= sx1_a);
+    const bool vis1 = has_y1 && (sx0_b <= sx1_b);
+    if (!vis0 && !vis1) continue;
+
+    const int mul0 = vis0 ? compute_art_row_scale_q8(y0, apply_scrim, show_metadata, dim_level) : -1;
+    const int mul1 = vis1 ? compute_art_row_scale_q8(y1, apply_scrim, show_metadata, dim_level) : -1;
+    const uint16_t *const src_row = src_data + static_cast<size_t>(y0 >> 1) * static_cast<size_t>(src_w);
+    uint16_t *const dst0 = fb_tgt + static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W);
+    uint16_t *const dst1 = fb_tgt + static_cast<size_t>(y1) * static_cast<size_t>(SCREEN_W);
+
+    if (vis0 && vis1 && mul0 == mul1 && (SCREEN_W <= 512) && ((SCREEN_W & 3) == 0) &&
+        sx0_a == 0 && sx1_a == (SCREEN_W - 1) && sx0_b == 0 && sx1_b == (SCREEN_W - 1)) {
+      uint32_t line0[256];
+      uint32_t line1[256];
+      const int pairs = SCREEN_W >> 1;
+      if (mul0 >= 256) {
+        for (int sx = 0; sx < pairs; ++sx) {
+          const uint16_t s = src_row[sx];
+          const uint32_t hw = static_cast<uint32_t>((EffMode == 2) ? bswap16_u16(s) : s);
+          line0[sx] = hw | (hw << 16);
+        }
+        std::memcpy(dst0, line0, full_row_bytes);
+        std::memcpy(dst1, line0, full_row_bytes);
+        if (mirror_fb != nullptr) {
+          if (y0 >= mirror_y_lo && y0 <= mirror_y_hi) {
+            std::memcpy(mirror_fb + static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W),
+                        line0, full_row_bytes);
+          }
+          if (y1 >= mirror_y_lo && y1 <= mirror_y_hi) {
+            std::memcpy(mirror_fb + static_cast<size_t>(y1) * static_cast<size_t>(SCREEN_W),
+                        line0, full_row_bytes);
+          }
+        }
+      } else {
+        const uint32_t m = static_cast<uint32_t>(std::max(0, mul0));
+        const uint8_t *const th0 = kBayer4[y0 & 3];
+        const uint8_t *const th1 = kBayer4[y1 & 3];
+        uint32_t t0_rb[4], t0_g[4], t1_rb[4], t1_g[4];
+        for (int k = 0; k < 4; ++k) {
+          const uint32_t v0 = static_cast<uint32_t>(th0[k]) * 16U + 8U;
+          const uint32_t v1 = static_cast<uint32_t>(th1[k]) * 16U + 8U;
+          t0_rb[k] = (v0 << 16) | v0;
+          t0_g[k] = v0 << 5;
+          t1_rb[k] = (v1 << 16) | v1;
+          t1_g[k] = v1 << 5;
+        }
+        for (int sx = 0; sx < pairs; sx += 2) {
+          const uint32_t s0 = src_row[sx];
+          const uint32_t s1 = src_row[sx + 1];
+          const uint32_t rb0 = (((s0 & 0xF800U) << 5) | (s0 & 0x001FU)) * m;
+          const uint32_t g0 = (s0 & 0x07E0U) * m;
+          const uint32_t rb1 = (((s1 & 0xF800U) << 5) | (s1 & 0x001FU)) * m;
+          const uint32_t g1 = (s1 & 0x07E0U) * m;
+
+          uint32_t a01 = dim_rgb565_swar_q8_le(rb0, g0, t0_rb[0], t0_g[0]) |
+                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb0, g0, t0_rb[1], t0_g[1])) << 16);
+          uint32_t a23 = dim_rgb565_swar_q8_le(rb1, g1, t0_rb[2], t0_g[2]) |
+                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb1, g1, t0_rb[3], t0_g[3])) << 16);
+          uint32_t b01 = dim_rgb565_swar_q8_le(rb0, g0, t1_rb[0], t1_g[0]) |
+                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb0, g0, t1_rb[1], t1_g[1])) << 16);
+          uint32_t b23 = dim_rgb565_swar_q8_le(rb1, g1, t1_rb[2], t1_g[2]) |
+                         (static_cast<uint32_t>(dim_rgb565_swar_q8_le(rb1, g1, t1_rb[3], t1_g[3])) << 16);
+          if constexpr (EffMode == 2) {
+            a01 = bswap16x2_u32(a01);
+            a23 = bswap16x2_u32(a23);
+            b01 = bswap16x2_u32(b01);
+            b23 = bswap16x2_u32(b23);
+          }
+          line0[sx] = a01;
+          line0[sx + 1] = a23;
+          line1[sx] = b01;
+          line1[sx + 1] = b23;
+        }
+        std::memcpy(dst0, line0, full_row_bytes);
+        std::memcpy(dst1, line1, full_row_bytes);
+        if (mirror_fb != nullptr) {
+          if (y0 >= mirror_y_lo && y0 <= mirror_y_hi) {
+            std::memcpy(mirror_fb + static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W),
+                        line0, full_row_bytes);
+          }
+          if (y1 >= mirror_y_lo && y1 <= mirror_y_hi) {
+            std::memcpy(mirror_fb + static_cast<size_t>(y1) * static_cast<size_t>(SCREEN_W),
+                        line1, full_row_bytes);
+          }
+        }
+      }
+      continue;
+    }
+
+    if (vis0) {
+      upscale_2x_single_row_swar<EffMode>(dst0, src_row, sx0_a, sx1_a, mul0, y0);
+      if (mirror_fb != nullptr && y0 >= mirror_y_lo && y0 <= mirror_y_hi) {
+        const size_t row_off = static_cast<size_t>(y0) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(sx0_a);
+        std::memcpy(mirror_fb + row_off, dst0 + sx0_a,
+                    static_cast<size_t>(sx1_a - sx0_a + 1) * sizeof(uint16_t));
+      }
+    }
+    if (vis1) {
+      upscale_2x_single_row_swar<EffMode>(dst1, src_row, sx0_b, sx1_b, mul1, y1);
+      if (mirror_fb != nullptr && y1 >= mirror_y_lo && y1 <= mirror_y_hi) {
+        const size_t row_off = static_cast<size_t>(y1) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(sx0_b);
+        std::memcpy(mirror_fb + row_off, dst1 + sx0_b,
+                    static_cast<size_t>(sx1_b - sx0_b + 1) * sizeof(uint16_t));
+      }
+    }
+  }
+}
+
 void draw_album_art_2x_upscale(uint16_t *fb_tgt, const uint16_t *src_data, int src_w, int cx,
                                bool apply_scrim, bool show_metadata, int dim_level, int mode,
-                               ArtScaleScratch &scratch, uint16_t *mirror_fb,
+                               ArtScaleScratch &, uint16_t *mirror_fb,
                                int mirror_y_lo, int mirror_y_hi) noexcept {
-  const int eff_mode = (mode == 2) ? 2 : 1;
-  for (int y = 0; y < SCREEN_H; ++y) {
-    if (!row_in_clip_band(y)) continue;
-    int start_x = 0;
-    int end_x = 0;
-    art_row_span(y, cx, start_x, end_x);
-    if (start_x > end_x) continue;
-
-    const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
-    const uint16_t *const src_row = src_data + static_cast<size_t>(y >> 1) * static_cast<size_t>(src_w);
-    uint16_t *const dst_row = fb_tgt + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
-
-    if (mul_q8 >= 256) {
-      int x = start_x;
-      if (x <= end_x && (x & 1) != 0) {
-        const uint16_t s = src_row[x >> 1];
-        dst_row[x++] = (eff_mode == 2) ? bswap16_u16(s) : s;
-      }
-      for (; x + 1 <= end_x; x += 2) {
-        const uint16_t s = src_row[x >> 1];
-        const uint32_t hw = static_cast<uint32_t>((eff_mode == 2) ? bswap16_u16(s) : s);
-        const uint32_t w = hw | (hw << 16);
-        std::memcpy(dst_row + x, &w, 4U);
-      }
-      if (x <= end_x) {
-        const uint16_t s = src_row[x >> 1];
-        dst_row[x] = (eff_mode == 2) ? bswap16_u16(s) : s;
-      }
-    } else {
-      ensure_art_dim_lut_row(scratch, std::max(0, mul_q8), eff_mode, y);
-      const uint8_t *const th = kBayer4[y & 3];
-      const uint16_t *const r0 = scratch.r_lut[th[0]];
-      const uint16_t *const g0 = scratch.g_lut[th[0]];
-      const uint16_t *const b0 = scratch.b_lut[th[0]];
-      const uint16_t *const r1 = scratch.r_lut[th[1]];
-      const uint16_t *const g1 = scratch.g_lut[th[1]];
-      const uint16_t *const b1 = scratch.b_lut[th[1]];
-      const uint16_t *const r2 = scratch.r_lut[th[2]];
-      const uint16_t *const g2 = scratch.g_lut[th[2]];
-      const uint16_t *const b2 = scratch.b_lut[th[2]];
-      const uint16_t *const r3 = scratch.r_lut[th[3]];
-      const uint16_t *const g3 = scratch.g_lut[th[3]];
-      const uint16_t *const b3 = scratch.b_lut[th[3]];
-
-      int x = start_x;
-      while (x <= end_x && (x & 3) != 0) {
-        const uint32_t p = src_row[x >> 1];
-        const uint8_t bidx = th[x & 3];
-        dst_row[x] = static_cast<uint16_t>(scratch.r_lut[bidx][p >> 11] |
-                                           scratch.g_lut[bidx][(p >> 5) & 0x3FU] |
-                                           scratch.b_lut[bidx][p & 0x1FU]);
-        ++x;
-      }
-      for (; x + 3 <= end_x; x += 4) {
-        const uint32_t s0 = src_row[x >> 1];
-        const uint32_t s1 = src_row[(x >> 1) + 1];
-        const uint32_t s0r = s0 >> 11, s0g = (s0 >> 5) & 0x3FU, s0b = s0 & 0x1FU;
-        const uint32_t s1r = s1 >> 11, s1g = (s1 >> 5) & 0x3FU, s1b = s1 & 0x1FU;
-        const uint32_t d0 = static_cast<uint32_t>(r0[s0r] | g0[s0g] | b0[s0b]);
-        const uint32_t d1 = static_cast<uint32_t>(r1[s0r] | g1[s0g] | b1[s0b]);
-        const uint32_t d2 = static_cast<uint32_t>(r2[s1r] | g2[s1g] | b2[s1b]);
-        const uint32_t d3 = static_cast<uint32_t>(r3[s1r] | g3[s1g] | b3[s1b]);
-        const uint32_t w01 = d0 | (d1 << 16);
-        const uint32_t w23 = d2 | (d3 << 16);
-        std::memcpy(dst_row + x, &w01, 4U);
-        std::memcpy(dst_row + x + 2, &w23, 4U);
-      }
-      for (; x <= end_x; ++x) {
-        const uint32_t p = src_row[x >> 1];
-        const uint8_t bidx = th[x & 3];
-        dst_row[x] = static_cast<uint16_t>(scratch.r_lut[bidx][p >> 11] |
-                                           scratch.g_lut[bidx][(p >> 5) & 0x3FU] |
-                                           scratch.b_lut[bidx][p & 0x1FU]);
-      }
-    }
-
-    if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
-      const size_t row_off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(start_x);
-      std::memcpy(mirror_fb + row_off, dst_row + start_x,
-                  static_cast<size_t>(end_x - start_x + 1) * sizeof(uint16_t));
-    }
+  if (mode == 2) {
+    draw_album_art_2x_upscale_mode<2>(fb_tgt, src_data, src_w, cx, apply_scrim, show_metadata,
+                                      dim_level, mirror_fb, mirror_y_lo, mirror_y_hi);
+  } else {
+    draw_album_art_2x_upscale_mode<1>(fb_tgt, src_data, src_w, cx, apply_scrim, show_metadata,
+                                      dim_level, mirror_fb, mirror_y_lo, mirror_y_hi);
   }
 }
 
@@ -1387,6 +1640,47 @@ void evict_registered_psram_caches() noexcept {
   }
 }
 
+inline int compute_art_max_mul_q8(bool is_standard, bool apply_scrim, bool show_metadata,
+                                  int dim_level) noexcept {
+  if (is_standard) {
+    if (dim_level == kArtDimLyricsHud || dim_level >= kArtDimMenu) return 64;
+    if (dim_level == kArtDimLyrics) return 84;
+    if (dim_level == kArtDimMusicHud) return apply_scrim ? 96 : 256;
+    return apply_scrim ? 140 : 256;
+  }
+  if (dim_level == kArtDimLyrics) return 84;
+  if (dim_level == kArtDimMenu || dim_level >= kArtDimLyricsHud) return 64;
+  if (dim_level == kArtDimMusicHud) {
+    if (apply_scrim) return 96;
+    return 256;
+  }
+  if (apply_scrim) return 140;
+  return 256;
+  (void)show_metadata;
+}
+
+inline uint32_t build_art_cache_mode_key(bool is_standard, bool is_letterbox, bool apply_scrim,
+                                         bool show_metadata, int dim_level, int cx, int endian) noexcept {
+  const uint32_t endian_bits = static_cast<uint32_t>(endian & 0x7) << 24;
+  const uint32_t cx_bits = static_cast<uint32_t>(cx & 0xFFFF) << 8;
+  if (!is_standard && !is_letterbox) {
+    uint32_t prof = 0U;
+    if (dim_level == kArtDimLyrics) {
+      prof = 1U;
+    } else if (dim_level == kArtDimMenu || dim_level >= kArtDimLyricsHud) {
+      prof = 2U;
+    } else if (dim_level == kArtDimMusicHud) {
+      prof = apply_scrim ? 3U : (show_metadata ? 4U : 0U);
+    } else {
+      prof = apply_scrim ? 5U : (show_metadata ? 6U : 0U);
+    }
+    return 0x80U | (prof << 4) | cx_bits | endian_bits;
+  }
+  return (is_standard ? 1U : 0U) | (is_letterbox ? 2U : 0U) | (apply_scrim ? 4U : 0U) |
+         (show_metadata ? 8U : 0U) | (static_cast<uint32_t>(dim_level & 0xF) << 4) |
+         cx_bits | endian_bits;
+}
+
 bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,
                                   bool show_metadata, int dim_level) {
@@ -1395,6 +1689,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
   const int src_w = target_art.width;
   const int src_h = target_art.height;
   const bool full_bleed = !is_standard && !is_letterbox;
+  const int max_mul_q8 = compute_art_max_mul_q8(is_standard, apply_scrim, show_metadata, dim_level);
 
   if (full_bleed) {
     frame_base_claim();
@@ -1412,13 +1707,12 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);
     draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
     backdrop_active() = true;
+    backdrop_max_lum_q8() = max_mul_q8;
     return true;
   }
 
-  const uint32_t mode = (is_standard ? 1U : 0U) | (is_letterbox ? 2U : 0U) | (apply_scrim ? 4U : 0U) |
-                        (show_metadata ? 8U : 0U) | (static_cast<uint32_t>(dim_level & 0xF) << 4) |
-                        (static_cast<uint32_t>(cx & 0xFFFF) << 8) |
-                        (static_cast<uint32_t>(active_frame_endian_mode() & 0x7) << 24);
+  const uint32_t mode = build_art_cache_mode_key(is_standard, is_letterbox, apply_scrim, show_metadata,
+                                                 dim_level, cx, active_frame_endian_mode());
   const uint32_t sample = art_sample_hash(src_data, src_w, src_h);
   static uint32_t use_seq = 0;
   ++use_seq;
@@ -1464,6 +1758,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
       if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);
       draw_album_art(it, src_data, src_w, src_h, cx, is_standard, is_letterbox, apply_scrim, show_metadata, dim_level);
       backdrop_active() = true;
+      backdrop_max_lum_q8() = max_mul_q8;
       return true;
     }
     const int saved_cy0 = clip_y0();
@@ -1485,6 +1780,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     victim->data = src_data;
     victim->w = static_cast<int16_t>(src_w);
     victim->h = static_cast<int16_t>(src_h);
+    victim->max_mul_q8 = static_cast<int16_t>(max_mul_q8);
     victim->sample = sample;
     victim->mode = mode;
     hit = victim;
@@ -1505,6 +1801,7 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     }
   }
   backdrop_active() = true;
+  backdrop_max_lum_q8() = hit->max_mul_q8;
   return true;
 }
 
@@ -1517,6 +1814,7 @@ bool render_lyrics_art_backdrop_view(Rgb565Surface &it, ArtImageView target_art,
   }
   frame_base_claim();
   backdrop_active() = true;
+  backdrop_max_lum_q8() = 256;
   const int ys = std::max(0, clip_y0());
   const int ye = std::min(SCREEN_H - 1, clip_y1());
   const int peak_y = std::max(1, (SCREEN_H * 38) / 100);

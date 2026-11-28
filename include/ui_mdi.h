@@ -16,6 +16,18 @@ namespace latter_ui {
 using MdiSpanEmitFn = void (*)(void *user, int x0, int x1_excl, int y, uint8_t alpha_q8);
 using IconSpanEmitFn = MdiSpanEmitFn;
 
+struct MdiSpan {
+  uint8_t y;
+  uint8_t x0;
+  uint8_t x1;
+  uint8_t alpha;
+};
+
+struct MdiSpanListView {
+  const MdiSpan *spans{nullptr};
+  uint16_t count{0};
+};
+
 // Canonical 32-bit FNV-1a hash of an MDI slug: strips optional "mdi:" / "mdi-",
 // strips '-' / '_' / whitespace, and ASCII-lowercases. Returns 0 when empty.
 constexpr uint32_t mdi_icon_hash(std::string_view name) noexcept {
@@ -45,6 +57,7 @@ std::size_t mdi_catalog_count() noexcept;
 bool has_mdi_icon(std::string_view name) noexcept;
 bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
                         MdiSpanEmitFn emit_fn, void *user) noexcept;
+MdiSpanListView get_mdi_raster_spans(std::string_view name, int size_px) noexcept;
 void mdi_raster_cache_drop() noexcept;
 
 // ==============================================================================

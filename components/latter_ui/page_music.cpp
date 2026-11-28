@@ -632,11 +632,10 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
   g.card_y0 += bounce_y;
   g.cy_row += bounce_y;
 
-  const std::string clean_primary = sanitize_utf8_for_font(
-      std::string(primary_txt != nullptr ? primary_txt : ""), ctx.font_small);
+  const char *safe_primary = (primary_txt != nullptr) ? primary_txt : "";
 
   if (!register_hits) {
-    const std::string fit_p = fit_text_to_width_font(clean_primary, std::max(40, g.card_w - dp_px(24)), ctx.font_small);
+    const std::string fit_p = fit_text_to_width_font(std::string(safe_primary), std::max(40, g.card_w - dp_px(24)), ctx.font_small);
     ui::shadow_print(it, g.card_x0 + g.card_w / 2, g.cy_row, ctx.font_small, ctx.col_slate,
                      TextAlign::CENTER, fit_p.c_str());
     return;
@@ -672,28 +671,33 @@ void render_slot_list_row(Rgb565Surface &it, const UiFrameContext &ctx,
   const int text_right = g.card_x0 + g.card_w - dp_px(12) - badge_reserve_w;
   const int text_max_w = std::max(40, text_right - text_x0);
 
-  int sw = 0, xo = 0, b = 0, sh = 0;
-  if (ctx.font_small != nullptr && !clean_primary.empty()) {
-    ctx.font_small->measure(clean_primary.c_str(), &sw, &xo, &b, &sh);
-  }
-
-  if (sw <= text_max_w || g.card_h < dp_px(56)) {
-    const std::string fit_p = fit_text_to_width_font(clean_primary, text_max_w, ctx.font_small);
+  if (g.card_h < dp_px(56)) {
+    const std::string fit_p = fit_text_to_width_font(std::string(safe_primary), text_max_w, ctx.font_small);
     ui::shadow_print(it, text_x0, g.cy_row, ctx.font_small, fg,
                      TextAlign::CENTER_LEFT, fit_p.c_str());
   } else {
-    std::string two_lines[2];
-    const int lc = ui::wrap_text_lines(clean_primary, text_max_w, ctx.font_small, two_lines, 2);
-    if (lc <= 1) {
+    const std::string clean_primary = sanitize_utf8_for_font(std::string(safe_primary), ctx.font_small);
+    int sw = 0, xo = 0, b = 0, sh = 0;
+    if (ctx.font_small != nullptr && !clean_primary.empty()) {
+      ctx.font_small->measure(clean_primary.c_str(), &sw, &xo, &b, &sh);
+    }
+    if (sw <= text_max_w) {
       ui::shadow_print(it, text_x0, g.cy_row, ctx.font_small, fg,
-                       TextAlign::CENTER_LEFT, two_lines[0].c_str());
+                       TextAlign::CENTER_LEFT, clean_primary.c_str());
     } else {
-      const int off_y = compute_two_line_half_gap(ctx.font_small, g.card_h);
-      ui::shadow_print(it, text_x0, g.cy_row - off_y, ctx.font_small, fg,
-                       TextAlign::CENTER_LEFT, two_lines[0].c_str());
-      ui::shadow_print(it, text_x0, g.cy_row + off_y, ctx.font_small,
-                       mix_color_q8(fg, ctx.col_slate, 56),
-                       TextAlign::CENTER_LEFT, two_lines[1].c_str());
+      std::string two_lines[2];
+      const int lc = ui::wrap_text_lines(clean_primary, text_max_w, ctx.font_small, two_lines, 2);
+      if (lc <= 1) {
+        ui::shadow_print(it, text_x0, g.cy_row, ctx.font_small, fg,
+                         TextAlign::CENTER_LEFT, two_lines[0].c_str());
+      } else {
+        const int off_y = compute_two_line_half_gap(ctx.font_small, g.card_h);
+        ui::shadow_print(it, text_x0, g.cy_row - off_y, ctx.font_small, fg,
+                         TextAlign::CENTER_LEFT, two_lines[0].c_str());
+        ui::shadow_print(it, text_x0, g.cy_row + off_y, ctx.font_small,
+                         mix_color_q8(fg, ctx.col_slate, 56),
+                         TextAlign::CENTER_LEFT, two_lines[1].c_str());
+      }
     }
   }
 

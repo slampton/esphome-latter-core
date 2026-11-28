@@ -98,6 +98,30 @@ static constexpr uint8_t kBayer4[4][4] = {
     {15, 7, 13, 5},
 };
 
+inline constexpr uint32_t bswap16x2_u32(uint32_t w) noexcept {
+  return ((w & 0x00FF00FFU) << 8) | ((w >> 8) & 0x00FF00FFU);
+}
+
+// Bit-exact 8-bit Q8 RGB565 blend using 2-lane SWAR (R5+B5 packed with 3 guard bits each,
+// G6 pre-shifted by 5) — mathematically identical to 3-channel scalar Q8 blending with zero
+// clamping branches, zero per-pixel array lookups, and 32-bit aligned PSRAM pair bursts.
+template <int Mode>
+inline uint16_t blend_swar_q8_px(uint16_t hw, uint32_t inv, uint32_t base_rb, uint32_t base_g_s5) noexcept {
+  const uint16_t p = decode_hw_rgb565_mode<Mode>(hw);
+  const uint32_t rb = (static_cast<uint32_t>(p & 0xF800U) << 5) | static_cast<uint32_t>(p & 0x001FU);
+  const uint32_t rb_sum = base_rb + rb * inv;
+  const uint32_t g_sum = base_g_s5 + static_cast<uint32_t>(p & 0x07E0U) * inv;
+  const uint16_t out = static_cast<uint16_t>(((rb_sum >> 13) & 0xF800U) |
+                                             ((g_sum >> 8) & 0x07E0U) |
+                                             ((rb_sum >> 8) & 0x001FU));
+  return encode_hw_rgb565_mode<Mode>(out);
+}
+
+template <int Mode>
+inline uint16_t blend_black_q8_px(uint16_t hw, uint32_t inv) noexcept {
+  return blend_swar_q8_px<Mode>(hw, inv, (128U << 16) | 128U, 128U << 5);
+}
+
 template <typename DisplayT>
 inline void fast_pixel(DisplayT &it, int x, int y, UiColor c) {
   if (x < 0 || x >= SCREEN_W || !row_in_clip_band(y)) return;
@@ -659,12 +683,26 @@ void resolve_styled_glass(int x0, int y0, int w, int h,
 
 void fill_round_rect_glass_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
                                 UiColor tint, int a_top, int a_bot, int hole = 0);
+void fill_round_rect_glass_rimmed_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
+                                       UiColor rim_tint, int rim_top, int rim_bot,
+                                       UiColor fill_tint, int fill_top, int fill_bot,
+                                       float rad_in = -1.0f);
 
 template <typename DisplayT>
 inline void fill_round_rect_glass(DisplayT &it, int x0, int y0, int w, int h, float rad,
                                   UiColor tint, int a_top, int a_bot, int hole = 0) {
   Rgb565Surface surf(it);
   fill_round_rect_glass_impl(surf, x0, y0, w, h, rad, tint, a_top, a_bot, hole);
+}
+
+template <typename DisplayT>
+inline void fill_round_rect_glass_rimmed(DisplayT &it, int x0, int y0, int w, int h, float rad,
+                                         UiColor rim_tint, int rim_top, int rim_bot,
+                                         UiColor fill_tint, int fill_top, int fill_bot,
+                                         float rad_in = -1.0f) {
+  Rgb565Surface surf(it);
+  fill_round_rect_glass_rimmed_impl(surf, x0, y0, w, h, rad, rim_tint, rim_top, rim_bot,
+                                    fill_tint, fill_top, fill_bot, rad_in);
 }
 
 template <typename DisplayT>
@@ -678,13 +716,19 @@ inline void render_glass_card(DisplayT &it, int x0, int y0, int w, int h, int r,
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
   resolve_styled_glass(x0, y0, w, h, tint, kChromeCardBorder, variant, ref_text, alpha_q8, false,
                        bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
-  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
-  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, static_cast<float>(r) - 1.0f, eff_tint, a_top, a_bot);
+  fill_round_rect_glass_rimmed(it, x0, y0, w, h, static_cast<float>(r),
+                               rim_col, rim_top, rim_bot, eff_tint, a_top, a_bot,
+                               static_cast<float>(r) - 1.0f);
 }
 
 inline bool &backdrop_active() {
   static bool active = false;
   return active;
+}
+
+inline int &backdrop_max_lum_q8() noexcept {
+  static int q8 = 256;
+  return q8;
 }
 
 // ------------------------------------------------------------------------------
@@ -704,6 +748,10 @@ struct TextCacheEntry {
   TextSpan *spans;
   uint16_t count;
   uint16_t cap;
+  int16_t ink_x0;
+  int16_t ink_x1;
+  int16_t text_h;
+  int16_t baseline;
   uint8_t bpp;
   char text[96];
 };
@@ -717,6 +765,9 @@ void fast_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
 void fast_print_alpha_impl(Rgb565Surface &it, int x, int y, UiFontView font,
                            UiColor color, UiTextAlign align, const char *text,
                            int alpha_q8);
+void shadow_print_impl(Rgb565Surface &it, int x, int y, UiFontView font,
+                       UiColor color, UiTextAlign align, const char *text,
+                       bool double_shadow = false);
 
 template <typename FontT>
 inline int text_ink_right_edge(FontT font, const char *text) {
@@ -805,6 +856,7 @@ struct ArtCanvasCache {
   uint16_t *px;
   const void *data;
   int16_t w, h;
+  int16_t max_mul_q8;
   uint32_t sample;
   uint32_t mode;
   uint32_t last_use;

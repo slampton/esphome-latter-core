@@ -21,24 +21,15 @@ UiColor render_card_box(Rgb565Surface &it, int x0, int y0, int w, int h,
   if (r > w / 2) r = w / 2;
   if (r < 2) r = 2;
 
-  const uint8_t g_style = active_glass_style_raw();
-  GlassVariant eff_var =
-      (variant == GlassVariant::ReadableDark || g_style == 2U)
-          ? GlassVariant::ReadableDark
-          : GlassVariant::Clear;
-  UiColor norm_tint{}, rim_col{};
-  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark || g_style == 0U)
-          ? sample_glass_backdrop(x0, y0, w, h)
-          : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
-  UiColor eff_tint{};
+  GlassBackdrop bd{};
+  UiColor eff_tint{}, rim_col{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
+  resolve_styled_glass(x0, y0, w, h, bg_c, border_c, variant, ref_text, -1, sample_surface,
+                       bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
 
-  fill_round_rect_glass(it, x0, y0, w, h, static_cast<float>(r), rim_col, rim_top, rim_bot, 1);
-  fill_round_rect_glass(it, x0 + 1, y0 + 1, w - 2, h - 2, std::max(0.5f, static_cast<float>(r) - 1.0f),
-                        eff_tint, a_top, a_bot);
+  fill_round_rect_glass_rimmed(it, x0, y0, w, h, static_cast<float>(r),
+                               rim_col, rim_top, rim_bot, eff_tint, a_top, a_bot,
+                               std::max(0.5f, static_cast<float>(r) - 1.0f));
   return bd.valid ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
 }
 
@@ -49,27 +40,19 @@ UiColor render_glass_circle(Rgb565Surface &it, int cx_btn, int cy_btn, int r,
                             bool sample_surface) {
   if (r <= 1 || (cy_btn + r) < clip_y0() || (cy_btn - r) > clip_y1()) return bg_c;
   const int d = 2 * r + 1;
-  const uint8_t g_style = active_glass_style_raw();
-  GlassVariant eff_var =
-      (variant == GlassVariant::ReadableDark || g_style == 2U)
-          ? GlassVariant::ReadableDark
-          : GlassVariant::Clear;
-  UiColor norm_tint{}, rim_col{};
-  normalize_glass_chrome(bg_c, border_c, eff_var, norm_tint, rim_col);
-  const GlassBackdrop bd =
-      (eff_var == GlassVariant::ReadableDark || g_style == 0U)
-          ? sample_glass_backdrop(cx_btn - r, cy_btn - r, d, d)
-          : (sample_surface ? sample_glass_mean(cx_btn - r, cy_btn - r, d, d) : GlassBackdrop{});
-  UiColor eff_tint{};
+  GlassBackdrop bd{};
+  UiColor eff_tint{}, rim_col{};
   int a_top = 0, a_bot = 0, rim_top = 0, rim_bot = 0;
-  resolve_glass_fill(bd, norm_tint, ref_text, eff_tint, a_top, a_bot, rim_top, rim_bot, -1, eff_var);
+  resolve_styled_glass(cx_btn - r, cy_btn - r, d, d, bg_c, border_c, variant, ref_text, -1, sample_surface,
+                       bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
 
-  fill_round_rect_glass(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f,
-                        rim_col, rim_top, rim_bot, 1);
   if (inner_hole_r <= 0) {
-    fill_round_rect_glass(it, cx_btn - r + 1, cy_btn - r + 1, d - 2, d - 2, static_cast<float>(r) - 0.5f,
-                          eff_tint, a_top, a_bot);
+    fill_round_rect_glass_rimmed(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f,
+                                 rim_col, rim_top, rim_bot, eff_tint, a_top, a_bot,
+                                 static_cast<float>(r) - 0.5f);
   } else {
+    fill_round_rect_glass(it, cx_btn - r, cy_btn - r, d, d, static_cast<float>(r) + 0.5f,
+                          rim_col, rim_top, rim_bot, 1);
     const int hr = std::min(inner_hole_r, r - 2);
     if (hr > 0) {
       const int fill_r = r - 1;
@@ -272,12 +255,9 @@ void toggle_switch(Rgb565Surface &it, int cx_sw, int cy_sw, bool is_on, UiColor 
                        GlassVariant::Clear, kChromeGlassSheen, -1, false,
                        bd, eff_tint, rim_col, a_top, a_bot, rim_top, rim_bot);
 
-  fill_round_rect_glass(it, x0, y0, sw_w, sw_h, rad,
-                        rim_col, is_on ? std::min(256, rim_top + 24) : rim_top, rim_bot, 1);
-  if (sw_w > 2 && sw_h > 2) {
-    fill_round_rect_glass(it, x0 + 1, y0 + 1, sw_w - 2, sw_h - 2,
-                          std::max(0.5f, rad - 1.0f), eff_tint, a_top, a_bot);
-  }
+  fill_round_rect_glass_rimmed(it, x0, y0, sw_w, sw_h, rad,
+                               rim_col, is_on ? std::min(256, rim_top + 24) : rim_top, rim_bot,
+                               eff_tint, a_top, a_bot, std::max(0.5f, rad - 1.0f));
   const int thumb_r = std::max(5, sw_h / 2 - 3);
   const int thumb_cx = is_on ? (cx_sw + sw_w / 2 - thumb_r - 3) : (cx_sw - sw_w / 2 + thumb_r + 3);
   fast_filled_circle_aa(it, thumb_cx + 1, cy_sw + 1, thumb_r, kChromeShadow);
@@ -1354,12 +1334,7 @@ void shadow_print(Rgb565Surface &it, int x, int y,
                   UiFontView font, UiColor col,
                   UiTextAlign align, const char *text,
                   bool double_shadow) {
-  if (text == nullptr || text[0] == '\0' || font == nullptr) return;
-  if (double_shadow) {
-    fast_print(it, x + 2, y + 2, font, kChromeShadow, align, text);
-  }
-  fast_print(it, x + 1, y + 1, font, kChromeShadow, align, text);
-  fast_print(it, x, y, font, col, align, text);
+  shadow_print_impl(it, x, y, font, col, align, text, double_shadow);
 }
 
 int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
@@ -1367,10 +1342,62 @@ int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
   if (text.empty() || font == nullptr || out_lines == nullptr || max_lines <= 0 || max_w <= 12) {
     return 0;
   }
-  const std::string clean = sanitize_utf8_for_font(text, font);
+  std::string clean;
+  if (text.find('\n') == std::string::npos) {
+    clean = sanitize_utf8_for_font(text, font);
+  } else {
+    clean.reserve(text.size());
+    size_t seg = 0;
+    while (seg <= text.size()) {
+      const size_t nl = text.find('\n', seg);
+      const size_t end = (nl == std::string::npos) ? text.size() : nl;
+      if (end > seg) {
+        clean.append(sanitize_utf8_for_font(text.substr(seg, end - seg), font));
+      }
+      if (nl == std::string::npos) break;
+      clean.push_back('\n');
+      seg = nl + 1;
+    }
+  }
+  const size_t n = clean.size();
+  if (clean.find('\n') == std::string::npos) {
+    size_t s = 0;
+    while (s < n && (clean[s] == ' ' || clean[s] == '\t' || clean[s] == '\r')) ++s;
+    size_t e = n;
+    while (e > s && (clean[e - 1] == ' ' || clean[e - 1] == '\t' || clean[e - 1] == '\r')) --e;
+    if (s >= e) return 0;
+    const std::string trimmed = (s == 0 && e == n) ? clean : clean.substr(s, e - s);
+    int tw = 0, x_off = 0, base = 0, th = 0;
+    font->measure(trimmed.c_str(), &tw, &x_off, &base, &th);
+    if (tw <= max_w) {
+      out_lines[0] = trimmed;
+      return 1;
+    }
+    if (max_lines == 1) {
+      out_lines[0] = fit_text_to_width_font(trimmed, max_w, font);
+      return 1;
+    }
+  }
+
+  int space_w = 0;
+  {
+    UiGlyphData sp{};
+    if (font.find_glyph(32U, sp) && sp.advance > 0) {
+      space_w = sp.advance;
+    } else {
+      int sp_w = 0, xo = 0, b = 0, h = 0;
+      font->measure(" ", &sp_w, &xo, &b, &h);
+      space_w = (sp_w > 0) ? sp_w : std::max(3, font.get_height() / 4);
+    }
+  }
+
+  std::string word;
+  std::string cand;
+  word.reserve(48U);
+  cand.reserve(96U);
+
   int count = 0;
   size_t pos = 0;
-  const size_t n = clean.size();
   while (pos < n && count < max_lines) {
     while (pos < n && (clean[pos] == ' ' || clean[pos] == '\t' || clean[pos] == '\r')) ++pos;
     if (pos >= n) break;
@@ -1379,6 +1406,7 @@ int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
       continue;
     }
     std::string line;
+    int cur_w = 0;
     while (pos < n && clean[pos] != '\n') {
       size_t ws_end = pos;
       while (ws_end < n && clean[ws_end] == ' ') ++ws_end;
@@ -1390,19 +1418,37 @@ int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
         pos = ws_end;
         break;
       }
-      const std::string word = clean.substr(ws_end, word_end - ws_end);
-      const std::string cand = line.empty() ? word : (line + " " + word);
-      int tw = 0, x_off = 0, base = 0, th = 0;
-      font->measure(cand.c_str(), &tw, &x_off, &base, &th);
-      if (tw <= max_w) {
-        line = cand;
+      word.assign(clean, ws_end, word_end - ws_end);
+      int ww = 0, wxo = 0, wb = 0, wh = 0;
+      font->measure(word.c_str(), &ww, &wxo, &wb, &wh);
+      if (line.empty()) {
+        if (ww <= max_w) {
+          line = word;
+          cur_w = ww;
+          pos = word_end;
+        } else {
+          line = fit_text_to_width_font(word, max_w, font);
+          pos = word_end;
+          break;
+        }
+      } else if (cur_w + space_w + ww <= max_w - space_w) {
+        line.push_back(' ');
+        line.append(word);
+        cur_w += space_w + ww;
         pos = word_end;
-      } else if (line.empty()) {
-        line = fit_text_to_width_font(word, max_w, font);
-        pos = word_end;
-        break;
       } else {
-        break;
+        cand.assign(line);
+        cand.push_back(' ');
+        cand.append(word);
+        int cw = 0, cxo = 0, cb = 0, ch = 0;
+        font->measure(cand.c_str(), &cw, &cxo, &cb, &ch);
+        if (cw <= max_w) {
+          line.swap(cand);
+          cur_w = cw;
+          pos = word_end;
+        } else {
+          break;
+        }
       }
     }
     if (count + 1 == max_lines && pos < n) {
@@ -1412,7 +1458,7 @@ int wrap_text_lines(const std::string &text, int max_w, UiFontView font,
         line = fit_text_to_width_font(line + "...", max_w, font);
       }
     }
-    out_lines[count++] = line;
+    out_lines[count++] = std::move(line);
     if (pos < n && clean[pos] == '\n') ++pos;
   }
   return count;

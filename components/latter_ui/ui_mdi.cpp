@@ -30297,13 +30297,6 @@ struct MdiRuntimeScratch {
   MdiEdgeHit hits[96]{};
 };
 
-struct MdiSpan {
-  uint8_t y;
-  uint8_t x0;
-  uint8_t x1;
-  uint8_t alpha;
-};
-
 #if defined(CONFIG_IDF_TARGET_ESP32P4) || defined(USE_ESP32_VARIANT_ESP32P4)
 constexpr std::size_t kRasterCacheSlots = 64;
 constexpr std::size_t kMaxCachedSpans = 2048;
@@ -30312,17 +30305,13 @@ constexpr std::size_t kRasterCacheSlots = 24;
 constexpr std::size_t kMaxCachedSpans = 1024;
 #endif
 
-struct RasterizedMdiEntry {
-  uint32_t hash = 0;
-  uint32_t stamp = 0;
-  uint16_t size_px = 0;
-  uint16_t span_count = 0;
-  MdiSpan spans[kMaxCachedSpans]{};
-};
-
 struct MdiRasterCache {
-  RasterizedMdiEntry slots[kRasterCacheSlots]{};
+  uint32_t hashes[kRasterCacheSlots]{};
+  uint32_t stamps[kRasterCacheSlots]{};
+  uint16_t sizes[kRasterCacheSlots]{};
+  uint16_t counts[kRasterCacheSlots]{};
   uint32_t stamp = 0;
+  MdiSpan spans[kRasterCacheSlots][kMaxCachedSpans]{};
 };
 
 MdiRuntimeScratch *mdi_scratch() noexcept {
@@ -30568,56 +30557,62 @@ void mdi_raster_cache_drop() noexcept {
   }
 #else
   auto &rc = mdi_raster_cache_host();
-  for (auto &slot : rc.slots) {
-    slot.hash = 0;
-    slot.stamp = 0;
-    slot.size_px = 0;
-    slot.span_count = 0;
+  for (std::size_t i = 0; i < kRasterCacheSlots; ++i) {
+    rc.hashes[i] = 0;
+    rc.stamps[i] = 0;
+    rc.sizes[i] = 0;
+    rc.counts[i] = 0;
   }
   rc.stamp = 0;
 #endif
 }
 
-bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
-                        MdiSpanEmitFn emit_fn, void *user) noexcept {
-  if (emit_fn == nullptr || size_px < 4) return false;
+namespace {
+
+int rasterize_mdi_hash_internal(uint32_t hash, int x0_box, int y0_box, int size_px,
+                                MdiSpanEmitFn emit_fn, void *user, bool &out_ok) noexcept {
+  out_ok = false;
+  if (hash == 0U || size_px < 4) return -1;
   if (size_px > 255) size_px = 255;
 
-  const uint32_t hash = mdi_icon_hash(name);
-  if (hash == 0U) return false;
-
-  const int x0_box = cx - (size_px / 2);
-  const int y0_box = cy - (size_px / 2);
-
   MdiRasterCache *rc = mdi_raster_cache();
+  const uint16_t sz16 = static_cast<uint16_t>(size_px);
   if (rc != nullptr) {
-    for (auto &slot : rc->slots) {
-      if (slot.hash == hash && slot.size_px == static_cast<uint16_t>(size_px)) {
-        slot.stamp = ++rc->stamp;
-        for (uint16_t i = 0; i < slot.span_count; ++i) {
-          const MdiSpan &s = slot.spans[i];
-          emit_fn(user, x0_box + static_cast<int>(s.x0), x0_box + static_cast<int>(s.x1),
-                  y0_box + static_cast<int>(s.y), s.alpha);
+    for (std::size_t i = 0; i < kRasterCacheSlots; ++i) {
+      if (rc->hashes[i] == hash && rc->sizes[i] == sz16) {
+        rc->stamps[i] = ++rc->stamp;
+        if (emit_fn != nullptr) {
+          const uint16_t cnt = rc->counts[i];
+          const MdiSpan *sp = rc->spans[i];
+          for (uint16_t k = 0; k < cnt; ++k) {
+            const MdiSpan &s = sp[k];
+            emit_fn(user, x0_box + static_cast<int>(s.x0), x0_box + static_cast<int>(s.x1),
+                    y0_box + static_cast<int>(s.y), s.alpha);
+          }
         }
-        return true;
+        out_ok = true;
+        return static_cast<int>(i);
       }
     }
   }
 
   const DecodedMdiEntry *entry = get_or_decode_mdi(hash);
-  if (entry == nullptr) return false;
+  if (entry == nullptr) return -1;
 
-  RasterizedMdiEntry *dst = nullptr;
+  int victim_idx = -1;
+  MdiSpan *dst_spans = nullptr;
+  uint16_t span_cnt = 0;
   bool cache_overflow = false;
   if (rc != nullptr) {
     std::size_t victim = 0;
     for (std::size_t i = 1; i < kRasterCacheSlots; ++i) {
-      if (rc->slots[i].stamp < rc->slots[victim].stamp) victim = i;
+      if (rc->stamps[i] < rc->stamps[victim]) victim = i;
     }
-    dst = &rc->slots[victim];
-    dst->hash = 0;
-    dst->size_px = 0;
-    dst->span_count = 0;
+    victim_idx = static_cast<int>(victim);
+    rc->hashes[victim] = 0;
+    rc->sizes[victim] = 0;
+    rc->counts[victim] = 0;
+    dst_spans = rc->spans[victim];
   }
 
   // svg_coord = q * 0.1 - 0.5; pixel_coord = svg_coord * (size_px / 24.0)
@@ -30626,7 +30621,7 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
   const float px_to_q = 240.0f / static_cast<float>(size_px);
 
   MdiRuntimeScratch *sc = mdi_scratch();
-  if (sc == nullptr) return false;
+  if (sc == nullptr) return -1;
   uint16_t *const cov = sc->cov;
   MdiEdgeHit *const hits = sc->hits;
 
@@ -30722,10 +30717,12 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
       } else {
         while (run_end < size_px && cov[run_end] == c_val) ++run_end;
       }
-      emit_fn(user, x0_box + px, x0_box + run_end, y0_box + py, alpha);
-      if (dst != nullptr && !cache_overflow) {
-        if (static_cast<std::size_t>(dst->span_count) < kMaxCachedSpans) {
-          dst->spans[dst->span_count++] = MdiSpan{
+      if (emit_fn != nullptr) {
+        emit_fn(user, x0_box + px, x0_box + run_end, y0_box + py, alpha);
+      }
+      if (dst_spans != nullptr && !cache_overflow) {
+        if (static_cast<std::size_t>(span_cnt) < kMaxCachedSpans) {
+          dst_spans[span_cnt++] = MdiSpan{
               static_cast<uint8_t>(py),
               static_cast<uint8_t>(px),
               static_cast<uint8_t>(run_end),
@@ -30738,12 +30735,48 @@ bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
       px = run_end;
     }
   }
-  if (dst != nullptr && !cache_overflow) {
-    dst->hash = hash;
-    dst->size_px = static_cast<uint16_t>(size_px);
-    dst->stamp = ++rc->stamp;
+  out_ok = true;
+  if (rc != nullptr && victim_idx >= 0 && !cache_overflow) {
+    rc->hashes[victim_idx] = hash;
+    rc->sizes[victim_idx] = sz16;
+    rc->counts[victim_idx] = span_cnt;
+    rc->stamps[victim_idx] = ++rc->stamp;
+    return victim_idx;
   }
-  return true;
+  return -1;
+}
+
+}  // namespace
+
+bool rasterize_mdi_icon(std::string_view name, int cx, int cy, int size_px,
+                        MdiSpanEmitFn emit_fn, void *user) noexcept {
+  if (emit_fn == nullptr || size_px < 4) return false;
+  if (size_px > 255) size_px = 255;
+
+  const uint32_t hash = mdi_icon_hash(name);
+  if (hash == 0U) return false;
+
+  const int x0_box = cx - (size_px / 2);
+  const int y0_box = cy - (size_px / 2);
+  bool ok = false;
+  (void)rasterize_mdi_hash_internal(hash, x0_box, y0_box, size_px, emit_fn, user, ok);
+  return ok;
+}
+
+MdiSpanListView get_mdi_raster_spans(std::string_view name, int size_px) noexcept {
+  if (size_px < 4) return {};
+  if (size_px > 255) size_px = 255;
+
+  const uint32_t hash = mdi_icon_hash(name);
+  if (hash == 0U) return {};
+
+  bool ok = false;
+  const int slot = rasterize_mdi_hash_internal(hash, 0, 0, size_px, nullptr, nullptr, ok);
+  if (!ok || slot < 0) return {};
+  MdiRasterCache *rc = mdi_raster_cache();
+  return (rc != nullptr)
+      ? MdiSpanListView{rc->spans[slot], rc->counts[slot]}
+      : MdiSpanListView{};
 }
 
 }  // namespace latter_ui

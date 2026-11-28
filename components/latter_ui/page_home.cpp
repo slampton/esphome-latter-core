@@ -692,12 +692,10 @@ void draw_home_activity_row_contents(
     const int ab = static_cast<int>(std::lround(static_cast<float>(raw_ab) * alpha));
     const int rt_a = static_cast<int>(std::lround(static_cast<float>(raw_rt) * alpha));
     const int rb_a = static_cast<int>(std::lround(static_cast<float>(raw_rb) * alpha));
-    if (rt_a > 0 || rb_a > 0) {
-      fill_round_rect_glass(it, act_bx - btn_r, row_y - btn_r, d, d, static_cast<float>(btn_r) + 0.5f, btn_rim, rt_a, rb_a, 1);
-    }
-    if ((at > 0 || ab > 0) && d > 2) {
-      fill_round_rect_glass(it, act_bx - btn_r + 1, row_y - btn_r + 1, d - 2, d - 2,
-                            std::max(0.5f, static_cast<float>(btn_r) - 0.5f), btn_eff, at, ab);
+    if (rt_a > 0 || rb_a > 0 || at > 0 || ab > 0) {
+      fill_round_rect_glass_rimmed(it, act_bx - btn_r, row_y - btn_r, d, d, static_cast<float>(btn_r) + 0.5f,
+                                   btn_rim, rt_a, rb_a, btn_eff, at, ab,
+                                   std::max(0.5f, static_cast<float>(btn_r) - 0.5f));
     }
   }
 
@@ -789,12 +787,10 @@ bool draw_glass_activity_surface(
   const int a_bot = full_opaque ? raw_a_bot : static_cast<int>(std::lround(static_cast<float>(raw_a_bot) * surf_alpha));
   const int rim_top = full_opaque ? raw_rim_top : static_cast<int>(std::lround(static_cast<float>(raw_rim_top) * surf_alpha));
   const int rim_bot = full_opaque ? raw_rim_bot : static_cast<int>(std::lround(static_cast<float>(raw_rim_bot) * surf_alpha));
-  if (full_opaque || rim_top > 0 || rim_bot > 0) {
-    fill_round_rect_glass(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r), rim_col, rim_top, rim_bot, 1);
-  }
-  if ((full_opaque || a_top > 0 || a_bot > 0) && card_w > 2 && box_h > 2) {
-    fill_round_rect_glass(it, card_x0 + 1, card_y0 + 1, card_w - 2, box_h - 2,
-                          std::max(0.5f, static_cast<float>(card_r) - 1.0f), eff_tint, a_top, a_bot);
+  if (full_opaque || rim_top > 0 || rim_bot > 0 || a_top > 0 || a_bot > 0) {
+    fill_round_rect_glass_rimmed(it, card_x0, card_y0, card_w, box_h, static_cast<float>(card_r),
+                                 rim_col, rim_top, rim_bot, eff_tint, a_top, a_bot,
+                                 std::max(0.5f, static_cast<float>(card_r) - 1.0f));
   }
   if (full_opaque) {
     out_card_bg = (sample_bd && bd.valid) ? mix_color_q8(bd.mean, eff_tint, (a_top + a_bot) / 2) : eff_tint;
@@ -1437,8 +1433,9 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
           const int rim_boost_bot = item_active ? 36 : (show_tint ? 24 : 0);
           const int sheen_top = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_top + rim_boost_top)) * alpha));
           const int sheen_bot = static_cast<int>(std::roundf(static_cast<float>(std::min(255, raw_rim_bot + rim_boost_bot)) * alpha));
-          fill_round_rect_glass(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f, rim_col, sheen_top, sheen_bot, 1);
-          fill_round_rect_glass(it, bx - dock_r + 1, dock_y - dock_r + 1, d - 2, d - 2, static_cast<float>(dock_r) - 0.5f, eff_tint, a_top, a_bot);
+          fill_round_rect_glass_rimmed(it, bx - dock_r, dock_y - dock_r, d, d, static_cast<float>(dock_r) + 0.5f,
+                                       rim_col, sheen_top, sheen_bot, eff_tint, a_top, a_bot,
+                                       static_cast<float>(dock_r) - 0.5f);
 
           const UiColor base_fg = item_unavail
                                       ? ctx.col_gray

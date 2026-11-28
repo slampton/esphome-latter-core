@@ -702,21 +702,7 @@ bool ppa_blend_glass_rect_rgb565(uint16_t *fb, int &inout_x0, int &inout_x1,
 }
 #endif
 
-// Bit-exact 8-bit Q8 RGB565 blend using 2-lane SWAR (R5+B5 packed with 3 guard bits each,
-// G6 pre-shifted by 5) — mathematically identical to 3-channel scalar Q8 blending with zero
-// clamping branches, zero per-pixel array lookups, and 32-bit aligned PSRAM pair bursts.
-template <int Mode>
-inline uint16_t blend_swar_q8_px(uint16_t hw, uint32_t inv, uint32_t base_rb, uint32_t base_g_s5) noexcept {
-  const uint16_t p = decode_hw_rgb565_mode<Mode>(hw);
-  const uint32_t rb = (static_cast<uint32_t>(p & 0xF800U) << 5) | static_cast<uint32_t>(p & 0x001FU);
-  const uint32_t rb_sum = base_rb + rb * inv;
-  const uint32_t g_sum = base_g_s5 + static_cast<uint32_t>(p & 0x07E0U) * inv;
-  const uint16_t out = static_cast<uint16_t>(((rb_sum >> 13) & 0xF800U) |
-                                             ((g_sum >> 8) & 0x07E0U) |
-                                             ((rb_sum >> 8) & 0x001FU));
-  return encode_hw_rgb565_mode<Mode>(out);
-}
-
+// 2-lane SWAR span blitter using shared blend_swar_q8_px<Mode> and 2-pixel Mode-2 bswap bursts.
 template <int Mode>
 inline void blend_swar_q8_span(uint16_t *dst_row, const uint16_t *src_row, int x0, int x1,
                                uint32_t inv, const uint32_t base_rb[4],
@@ -741,14 +727,27 @@ inline void blend_swar_q8_span(uint16_t *dst_row, const uint16_t *src_row, int x
       uint32_t in01 = 0U, in23 = 0U;
       std::memcpy(&in01, src32, 4U);
       std::memcpy(&in23, src32 + 4, 4U);
-      const uint32_t out0 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01), inv, rb0, g0);
-      const uint32_t out1 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
-      const uint32_t out2 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23), inv, rb2, g2);
-      const uint32_t out3 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
-      const uint32_t p01 = out0 | (out1 << 16);
-      const uint32_t p23 = out2 | (out3 << 16);
-      std::memcpy(dst32, &p01, 4U);
-      std::memcpy(dst32 + 4, &p23, 4U);
+      if constexpr (Mode == 2) {
+        in01 = bswap16x2_u32(in01);
+        in23 = bswap16x2_u32(in23);
+        const uint32_t out0 = blend_swar_q8_px<1>(static_cast<uint16_t>(in01), inv, rb0, g0);
+        const uint32_t out1 = blend_swar_q8_px<1>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
+        const uint32_t out2 = blend_swar_q8_px<1>(static_cast<uint16_t>(in23), inv, rb2, g2);
+        const uint32_t out3 = blend_swar_q8_px<1>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
+        const uint32_t p01 = bswap16x2_u32(out0 | (out1 << 16));
+        const uint32_t p23 = bswap16x2_u32(out2 | (out3 << 16));
+        std::memcpy(dst32, &p01, 4U);
+        std::memcpy(dst32 + 4, &p23, 4U);
+      } else {
+        const uint32_t out0 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01), inv, rb0, g0);
+        const uint32_t out1 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in01 >> 16), inv, rb1, g1);
+        const uint32_t out2 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23), inv, rb2, g2);
+        const uint32_t out3 = blend_swar_q8_px<Mode>(static_cast<uint16_t>(in23 >> 16), inv, rb3, g3);
+        const uint32_t p01 = out0 | (out1 << 16);
+        const uint32_t p23 = out2 | (out3 << 16);
+        std::memcpy(dst32, &p01, 4U);
+        std::memcpy(dst32 + 4, &p23, 4U);
+      }
     }
   } else {
     auto *dst32 = std::assume_aligned<4>(reinterpret_cast<uint8_t *>(dst_row + px));
@@ -1621,8 +1620,8 @@ namespace {
 template <int Mode>
 GlassBackdrop sample_glass_backdrop_mode(const uint16_t *fb, int xs, int xe, int ys, int ye, int w, int h) {
   GlassBackdrop out;
-  const int step_x = std::max(4, w / 12);
-  const int step_y = std::max(3, h / 12);
+  const int step_x = std::max(4, w / 6);
+  const int step_y = std::max(3, h / 6);
   const int x_start = xs + std::min(step_x / 2, (xe - xs - 1) / 2);
   const int y_start = ys + std::min(step_y / 2, (ye - ys - 1) / 2);
   uint16_t cnt[32] = {0};
@@ -1796,28 +1795,56 @@ int glass_alpha_for_text(UiColor tint, UiColor backdrop, UiColor text, int min_a
   return 248;
 }
 
+namespace {
+
+inline UiColor resolve_glass_contrast_fg(UiColor ref_text) noexcept {
+  const float raw_fg_lum = relative_luminance(ref_text);
+  return ((static_cast<int>(ref_text.r) + static_cast<int>(ref_text.g) + static_cast<int>(ref_text.b)) < 48)
+             ? kChromeGlassSheen
+             : ((raw_fg_lum < 0.18f) ? kChromeMuted : ref_text);
+}
+
+inline UiColor resolve_glass_clear_tint(UiColor tint, int explicit_alpha_q8,
+                                      int &out_a_top, int &out_a_bot) noexcept {
+  const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
+  const int frost_q8 = dark_tint ? (is_semantic_glass_color(tint) ? 32 : 54) : 0;
+  const UiColor clear_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
+  const int base_a = (explicit_alpha_q8 >= 0) ? explicit_alpha_q8 : kGlassClearAlphaQ8;
+  const int da = dark_tint ? 12 : 0;
+  out_a_top = std::min(256, base_a + da);
+  out_a_bot = std::max(0, base_a - (da * 2) / 3);
+  return clear_tint;
+}
+
+inline bool glass_clear_safe_for_dim_q8(int dim_q8, UiColor clear_tint, int clear_a_top,
+                                        int clear_a_bot, UiColor ref_text) noexcept {
+  if (dim_q8 < 0 || dim_q8 >= 256) return false;
+  const int ceil_v_i = std::min(255, ((255 * dim_q8 + 255) >> 8) + 2);
+  const uint8_t ceil_v = static_cast<uint8_t>(ceil_v_i);
+  const UiColor ceil_c{ceil_v, ceil_v, ceil_v};
+  const float fg_lum = relative_luminance(resolve_glass_contrast_fg(ref_text));
+  if (fg_lum <= relative_luminance(ceil_c)) return false;
+  return (contrast_ratio(fg_lum, relative_luminance(mix_color_q8(ceil_c, clear_tint, clear_a_top))) >=
+          kGlassTextContrast) &&
+         (contrast_ratio(fg_lum, relative_luminance(mix_color_q8(ceil_c, clear_tint, clear_a_bot))) >=
+          kGlassTextContrast);
+}
+
+}  // namespace
+
 void resolve_glass_fill(const GlassBackdrop &bd, UiColor tint, UiColor ref_text,
                         UiColor &out_tint, int &out_a_top, int &out_a_bot,
                         int &out_rim_top, int &out_rim_bot, int explicit_alpha_q8,
                         GlassVariant variant) {
   const uint8_t g_style = active_glass_style_raw();
-  const bool dark_tint = (std::max({tint.r, tint.g, tint.b}) <= 160);
   const bool is_readable_dark = (variant == GlassVariant::ReadableDark) || (g_style == 2U);
 
-  const float raw_fg_lum = relative_luminance(ref_text);
-  const UiColor contrast_fg =
-      ((static_cast<int>(ref_text.r) + static_cast<int>(ref_text.g) + static_cast<int>(ref_text.b)) < 48)
-          ? kChromeGlassSheen
-          : ((raw_fg_lum < 0.18f) ? kChromeMuted : ref_text);
+  const UiColor contrast_fg = resolve_glass_contrast_fg(ref_text);
   const float fg_lum = relative_luminance(contrast_fg);
 
   if (!is_readable_dark) {
-    const int frost_q8 = dark_tint ? (is_semantic_glass_color(tint) ? 32 : 54) : 0;
-    const UiColor clear_tint = (frost_q8 > 0) ? mix_color_q8(tint, kChromeHomePill, frost_q8) : tint;
-    const int base_a = (explicit_alpha_q8 >= 0) ? explicit_alpha_q8 : kGlassClearAlphaQ8;
-    const int da = dark_tint ? 12 : 0;
-    const int clear_a_top = std::min(256, base_a + da);
-    const int clear_a_bot = std::max(0, base_a - (da * 2) / 3);
+    int clear_a_top = 0, clear_a_bot = 0;
+    const UiColor clear_tint = resolve_glass_clear_tint(tint, explicit_alpha_q8, clear_a_top, clear_a_bot);
     const int clear_rim_top = std::min(256, kGlassSheenTopQ8 + 18);
     const int clear_rim_bot = std::min(256, kGlassSheenBotQ8 + 12);
 
@@ -1908,7 +1935,15 @@ void resolve_styled_glass(int x0, int y0, int w, int h,
           : GlassVariant::Clear;
   UiColor norm_tint{};
   normalize_glass_chrome(caller_bg, caller_brd, eff_var, norm_tint, out_rim);
-  const bool need_bd = (eff_var == GlassVariant::ReadableDark) || (g_style == 0U && explicit_alpha_q8 < 0);
+  bool need_bd = (eff_var == GlassVariant::ReadableDark) || (g_style == 0U && explicit_alpha_q8 < 0);
+  if (need_bd && eff_var == GlassVariant::Clear && g_style == 0U && explicit_alpha_q8 < 0 &&
+      !sample_surface && backdrop_active()) {
+    int clear_a_top = 0, clear_a_bot = 0;
+    const UiColor clear_tint = resolve_glass_clear_tint(norm_tint, explicit_alpha_q8, clear_a_top, clear_a_bot);
+    if (glass_clear_safe_for_dim_q8(backdrop_max_lum_q8(), clear_tint, clear_a_top, clear_a_bot, ref_text)) {
+      need_bd = false;
+    }
+  }
   out_bd = need_bd
                ? sample_glass_backdrop(x0, y0, w, h)
                : (sample_surface ? sample_glass_mean(x0, y0, w, h) : GlassBackdrop{});
@@ -1987,6 +2022,52 @@ void fill_round_rect_aa_impl(Rgb565Surface &it, int x0, int y0, int w, int h, fl
 
 namespace {
 
+constexpr int kMaxCornerCacheRows = 40;
+
+struct GlassCornerRow {
+  float dy{0.0f};
+  int16_t s0{0}, s1{-1}, e0{0}, e1{-1};
+  bool hit{false};
+  bool valid{false};
+};
+
+struct GlassRimmedCornerRow {
+  float dy{0.0f}, idy{0.0f}, fdy{0.0f};
+  int16_t s0{0}, s1{-1}, e0{0}, e1{-1};
+  int16_t hs0{1}, hs1{0}, ie0{0}, ie1{-1};
+  int16_t fs0{1}, fs1{0}, fe0{0}, fe1{-1};
+  bool o_hit{false};
+  bool in_hit{false};
+  bool f_hit{false};
+  bool valid{false};
+};
+
+inline void build_bayer_row_bases(const uint8_t *th, uint32_t tr_a, uint32_t tg_a, uint32_t tb_a,
+                                  uint32_t base_rb[4], uint32_t base_g_s5[4]) noexcept {
+  for (int k = 0; k < 4; ++k) {
+    const uint32_t tk = static_cast<uint32_t>(th[k]) * 16U + 8U;
+    base_rb[k] = ((tr_a + tk) << 16) | (tb_a + tk);
+    base_g_s5[k] = (tg_a + tk) << 5;
+  }
+}
+
+template <int Mode>
+inline void glass_mix_px_mode(uint16_t &dst, uint32_t tr, uint32_t tg, uint32_t tb, int a, int t) noexcept {
+  const uint16_t bg = decode_hw_rgb565_mode<Mode>(dst);
+  const uint32_t ia = static_cast<uint32_t>(256 - a);
+  const uint32_t ua = static_cast<uint32_t>(a);
+  uint32_t r = ((tr * ua) >> 8) + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t);
+  uint32_t g = ((tg * ua) >> 8) + ((bg >> 5) & 0x3FU) * ia + static_cast<uint32_t>(t);
+  uint32_t b = ((tb * ua) >> 8) + (bg & 0x1FU) * ia + static_cast<uint32_t>(t);
+  r >>= 8;
+  g >>= 8;
+  b >>= 8;
+  if (r > 31U) r = 31U;
+  if (g > 63U) g = 63U;
+  if (b > 31U) b = 31U;
+  dst = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
+}
+
 template <int Mode>
 void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, float rad,
                                 UiColor tint, int a_top, int a_bot, int hole) {
@@ -2020,49 +2101,63 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
   const uint32_t tr = (static_cast<uint32_t>(tint.r) * 31U * 256U + 127U) / 255U;
   const uint32_t tg = (static_cast<uint32_t>(tint.g) * 63U * 256U + 127U) / 255U;
   const uint32_t tb = (static_cast<uint32_t>(tint.b) * 31U * 256U + 127U) / 255U;
-  auto mix = [&](uint16_t &dst, int a, int t) {
-    const uint16_t bg = decode_hw_rgb565_mode<Mode>(dst);
-    const uint32_t ia = static_cast<uint32_t>(256 - a);
-    const uint32_t ua = static_cast<uint32_t>(a);
-    uint32_t r = ((tr * ua) >> 8) + ((bg >> 11) & 0x1FU) * ia + static_cast<uint32_t>(t);
-    uint32_t g = ((tg * ua) >> 8) + ((bg >> 5) & 0x3FU) * ia + static_cast<uint32_t>(t);
-    uint32_t b = ((tb * ua) >> 8) + (bg & 0x1FU) * ia + static_cast<uint32_t>(t);
-    r >>= 8;
-    g >>= 8;
-    b >>= 8;
-    if (r > 31U) r = 31U;
-    if (g > 63U) g = 63U;
-    if (b > 31U) b = 31U;
-    dst = encode_hw_rgb565_mode<Mode>(static_cast<uint16_t>((r << 11) | (g << 5) | b));
-  };
+  GlassCornerRow corner_cache[kMaxCornerCacheRows]{};
+  const int max_rad_rows = static_cast<int>(std::ceil(o.rad));
+  const bool flat_alpha = (a_top == a_bot);
+  uint32_t flat_tr_a = 0U, flat_tg_a = 0U, flat_tb_a = 0U;
+  if (flat_alpha && a_top > 0) {
+    const uint32_t ua = static_cast<uint32_t>(std::clamp(a_top, 0, 256));
+    flat_tr_a = (tr * ua) >> 8;
+    flat_tg_a = (tg * ua) >> 8;
+    flat_tb_a = (tb * ua) >> 8;
+  }
+
   for (int py = ys; py < ye; py++) {
+    const int k_sym = std::min(py - y0, (y0 + h - 1) - py);
     float dy = 0.0f;
     int s0 = 0, s1 = -1, e0 = 0, e1 = -1;
-    if (!o.row(py, dy, s0, s1, e0, e1)) continue;
+    bool o_hit = false;
+    if (k_sym < max_rad_rows && k_sym < kMaxCornerCacheRows) {
+      GlassCornerRow &c = corner_cache[k_sym];
+      int s0_l = 0, s1_l = -1, e0_l = 0, e1_l = -1;
+      if (!c.valid) {
+        c.hit = o.row(py, c.dy, s0_l, s1_l, e0_l, e1_l);
+        c.s0 = static_cast<int16_t>(s0_l);
+        c.s1 = static_cast<int16_t>(s1_l);
+        c.e0 = static_cast<int16_t>(e0_l);
+        c.e1 = static_cast<int16_t>(e1_l);
+        c.valid = true;
+      }
+      o_hit = c.hit;
+      dy = c.dy;
+      s0 = c.s0;
+      s1 = c.s1;
+      e0 = c.e0;
+      e1 = c.e1;
+    } else {
+      o_hit = o.row(py, dy, s0, s1, e0, e1);
+    }
+    if (!o_hit) continue;
     const int a = std::clamp((h > 1) ? (a_top + ((a_bot - a_top) * (py - y0)) / (h - 1)) : a_top, 0, 256);
     if (a <= 0) continue;
     const uint8_t *th = kBayer4[py & 3];
     uint16_t *row = fb + static_cast<size_t>(py) * SCREEN_W;
     if (hole == 1 && has_hole && dy == 0.0f && py > y0 && py < (y0 + h - 1)) {
       if (x0 >= 0 && x0 < SCREEN_W) {
-        mix(row[x0], a, th[x0 & 3] * 16 + 8);
+        glass_mix_px_mode<Mode>(row[x0], tr, tg, tb, a, th[x0 & 3] * 16 + 8);
       }
       if (o.x_last >= 0 && o.x_last < SCREEN_W && o.x_last != x0) {
-        mix(row[o.x_last], a, th[o.x_last & 3] * 16 + 8);
+        glass_mix_px_mode<Mode>(row[o.x_last], tr, tg, tb, a, th[o.x_last & 3] * 16 + 8);
       }
       continue;
     }
     const uint32_t ua = static_cast<uint32_t>(a);
     const uint32_t ia = static_cast<uint32_t>(256 - a);
-    const uint32_t tr_a = (tr * ua) >> 8;
-    const uint32_t tg_a = (tg * ua) >> 8;
-    const uint32_t tb_a = (tb * ua) >> 8;
+    const uint32_t tr_a = flat_alpha ? flat_tr_a : ((tr * ua) >> 8);
+    const uint32_t tg_a = flat_alpha ? flat_tg_a : ((tg * ua) >> 8);
+    const uint32_t tb_a = flat_alpha ? flat_tb_a : ((tb * ua) >> 8);
     uint32_t base_rb[4], base_g_s5[4];
-    for (int k = 0; k < 4; k++) {
-      const uint32_t tk = static_cast<uint32_t>(th[k]) * 16U + 8U;
-      base_rb[k] = ((tr_a + tk) << 16) | (tb_a + tk);
-      base_g_s5[k] = (tg_a + tk) << 5;
-    }
+    build_bayer_row_bases(th, tr_a, tg_a, tb_a, base_rb, base_g_s5);
     auto span = [&](int xa, int xb) {
       xa = std::max(xa, 0);
       xb = std::min(xb, SCREEN_W - 1);
@@ -2073,14 +2168,14 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
       const int cov = o.coverage(px, dy);
       if (cov <= 0) return;
       const int ae = (a * (cov + (cov >> 7)) + 128) >> 8;
-      if (ae > 0) mix(row[px], std::min(256, ae), th[px & 3] * 16 + 8);
+      if (ae > 0) glass_mix_px_mode<Mode>(row[px], tr, tg, tb, std::min(256, ae), th[px & 3] * 16 + 8);
     };
     auto inner_edge = [&](int px, float idy) {
       if (px < 0 || px >= SCREEN_W) return;
       const int cov = 255 - in.coverage(px, idy);
       if (cov <= 0) return;
       const int ae = (a * (cov + (cov >> 7)) + 128) >> 8;
-      if (ae > 0) mix(row[px], std::min(256, ae), th[px & 3] * 16 + 8);
+      if (ae > 0) glass_mix_px_mode<Mode>(row[px], tr, tg, tb, std::min(256, ae), th[px & 3] * 16 + 8);
     };
     if (s1 >= s0) {
       int hs0 = 1, hs1 = 0;
@@ -2109,6 +2204,214 @@ void fill_round_rect_glass_mode(uint16_t *fb, int x0, int y0, int w, int h, floa
       for (int px = s1 + 1; px <= e1; px++) edge(px);
     } else {
       for (int px = e0; px <= e1; px++) edge(px);
+    }
+  }
+}
+
+template <int Mode>
+void fill_round_rect_glass_rimmed_mode(uint16_t *fb, int x0, int y0, int w, int h, float rad,
+                                       UiColor rim_tint, int rim_top, int rim_bot,
+                                       UiColor fill_tint, int fill_top, int fill_bot,
+                                       float rad_in_override) {
+  const int ys = std::max(clip_y0(), y0);
+  const int ye = std::min(clip_y1() + 1, y0 + h);
+  if (ye <= ys) return;
+
+  AaRoundRect o;
+  o.init(x0, y0, w, h, rad);
+  const bool has_in = (w > 2 && h > 2);
+  const int ix0 = x0 + 1;
+  const int iy0 = y0 + 1;
+  const int iw = w - 2;
+  const int ih = h - 2;
+  const float rim_in_rad = rad - 1.0f;
+  const float fill_in_rad = (rad_in_override >= 0.0f) ? rad_in_override : rim_in_rad;
+  AaRoundRect in_rim;
+  AaRoundRect in_fill;
+  bool same_in_geom = true;
+  if (has_in) {
+    in_rim.init(ix0, iy0, iw, ih, rim_in_rad);
+    in_fill.init(ix0, iy0, iw, ih, fill_in_rad);
+    same_in_geom = (in_rim.rad == in_fill.rad);
+  }
+
+  bool ppa_core = false;
+  int ppa_x0 = 0, ppa_x1 = -1, ppa_y0 = 0, ppa_y1 = -1;
+#if LATTER_FB_PPA
+  if constexpr (Mode == 1 || Mode == 3) {
+    if (has_in && (fill_top > 0 || fill_bot > 0)) {
+      const int r_ceil = static_cast<int>(std::ceil(in_fill.rad));
+      ppa_x0 = std::max(0, ix0 + r_ceil + 1);
+      ppa_x1 = std::min(SCREEN_W - 1, ix0 + iw - 2 - r_ceil);
+      ppa_y0 = std::max(std::max(ys, iy0 + 1), iy0);
+      ppa_y1 = std::min(ye - 1, iy0 + ih - 2);
+      if (ppa_x1 >= ppa_x0 && ppa_y1 >= ppa_y0) {
+        ppa_core = ppa_blend_glass_rect_rgb565(fb, ppa_x0, ppa_x1, ppa_y0, ppa_y1,
+                                               iy0, ih, fill_tint, fill_top, fill_bot, Mode);
+      }
+    }
+  }
+#endif
+
+  const uint32_t rr = (static_cast<uint32_t>(rim_tint.r) * 31U * 256U + 127U) / 255U;
+  const uint32_t rg = (static_cast<uint32_t>(rim_tint.g) * 63U * 256U + 127U) / 255U;
+  const uint32_t rb = (static_cast<uint32_t>(rim_tint.b) * 31U * 256U + 127U) / 255U;
+  const uint32_t fr = (static_cast<uint32_t>(fill_tint.r) * 31U * 256U + 127U) / 255U;
+  const uint32_t fg = (static_cast<uint32_t>(fill_tint.g) * 63U * 256U + 127U) / 255U;
+  const uint32_t fb_c = (static_cast<uint32_t>(fill_tint.b) * 31U * 256U + 127U) / 255U;
+
+  GlassRimmedCornerRow corner_cache[kMaxCornerCacheRows]{};
+  const float max_r = has_in ? std::max(o.rad, 1.0f + std::max(in_rim.rad, in_fill.rad)) : o.rad;
+  const int r_straight = static_cast<int>(std::ceil(max_r - 0.5f)) + 1;
+  const int x_fill_lo = std::max(0, ix0);
+  const int x_fill_hi = std::min(SCREEN_W - 1, ix0 + iw - 1);
+
+  for (int py = ys; py < ye; ++py) {
+    const int a_rim = std::clamp((h > 1) ? (rim_top + ((rim_bot - rim_top) * (py - y0)) / (h - 1)) : rim_top, 0, 256);
+    const int a_fill = (has_in && py >= iy0 && py < (iy0 + ih))
+                           ? std::clamp((ih > 1) ? (fill_top + ((fill_bot - fill_top) * (py - iy0)) / (ih - 1)) : fill_top, 0, 256)
+                           : 0;
+    if (a_rim <= 0 && a_fill <= 0) continue;
+
+    const int k_sym = std::min(py - y0, (y0 + h - 1) - py);
+    const uint8_t *th = kBayer4[py & 3];
+    uint16_t *row = fb + static_cast<size_t>(py) * SCREEN_W;
+
+    if (k_sym >= r_straight && py > y0 && py < (y0 + h - 1)) {
+      if (a_rim > 0) {
+        if (x0 >= 0 && x0 < SCREEN_W) {
+          glass_mix_px_mode<Mode>(row[x0], rr, rg, rb, a_rim, th[x0 & 3] * 16 + 8);
+        }
+        if (o.x_last >= 0 && o.x_last < SCREEN_W && o.x_last != x0) {
+          glass_mix_px_mode<Mode>(row[o.x_last], rr, rg, rb, a_rim, th[o.x_last & 3] * 16 + 8);
+        }
+      }
+      if (a_fill > 0 && x_fill_lo <= x_fill_hi) {
+        const uint32_t ua = static_cast<uint32_t>(a_fill);
+        const uint32_t ia = static_cast<uint32_t>(256 - a_fill);
+        uint32_t base_rb[4], base_g_s5[4];
+        build_bayer_row_bases(th, (fr * ua) >> 8, (fg * ua) >> 8, (fb_c * ua) >> 8, base_rb, base_g_s5);
+        if (ppa_core && py >= ppa_y0 && py <= ppa_y1) {
+          if (x_fill_lo < ppa_x0) {
+            blend_swar_q8_span<Mode>(row, row, x_fill_lo, std::min(x_fill_hi, ppa_x0 - 1), ia, base_rb, base_g_s5);
+          }
+          if (x_fill_hi > ppa_x1) {
+            blend_swar_q8_span<Mode>(row, row, std::max(x_fill_lo, ppa_x1 + 1), x_fill_hi, ia, base_rb, base_g_s5);
+          }
+        } else {
+          blend_swar_q8_span<Mode>(row, row, x_fill_lo, x_fill_hi, ia, base_rb, base_g_s5);
+        }
+      }
+      continue;
+    }
+
+    GlassRimmedCornerRow local_cr{};
+    GlassRimmedCornerRow *cr = &local_cr;
+    if (k_sym < kMaxCornerCacheRows) {
+      cr = &corner_cache[k_sym];
+    }
+    if (!cr->valid) {
+      int os0 = 0, os1 = -1, oe0 = 0, oe1 = -1;
+      cr->o_hit = o.row(py, cr->dy, os0, os1, oe0, oe1);
+      cr->s0 = static_cast<int16_t>(os0);
+      cr->s1 = static_cast<int16_t>(os1);
+      cr->e0 = static_cast<int16_t>(oe0);
+      cr->e1 = static_cast<int16_t>(oe1);
+      if (has_in) {
+        int rhs0 = 1, rhs1 = 0, rie0 = 0, rie1 = -1;
+        cr->in_hit = in_rim.row(py, cr->idy, rhs0, rhs1, rie0, rie1);
+        cr->hs0 = static_cast<int16_t>(rhs0);
+        cr->hs1 = static_cast<int16_t>(rhs1);
+        cr->ie0 = static_cast<int16_t>(rie0);
+        cr->ie1 = static_cast<int16_t>(rie1);
+        if (same_in_geom) {
+          cr->f_hit = cr->in_hit;
+          cr->fdy = cr->idy;
+          cr->fs0 = cr->hs0;
+          cr->fs1 = cr->hs1;
+          cr->fe0 = cr->ie0;
+          cr->fe1 = cr->ie1;
+        } else {
+          int fhs0 = 1, fhs1 = 0, fie0 = 0, fie1 = -1;
+          cr->f_hit = in_fill.row(py, cr->fdy, fhs0, fhs1, fie0, fie1);
+          cr->fs0 = static_cast<int16_t>(fhs0);
+          cr->fs1 = static_cast<int16_t>(fhs1);
+          cr->fe0 = static_cast<int16_t>(fie0);
+          cr->fe1 = static_cast<int16_t>(fie1);
+        }
+      }
+      cr->valid = true;
+    }
+
+    if (cr->o_hit && a_rim > 0) {
+      if (has_in && cr->dy == 0.0f && py > y0 && py < (y0 + h - 1)) {
+        if (x0 >= 0 && x0 < SCREEN_W) {
+          glass_mix_px_mode<Mode>(row[x0], rr, rg, rb, a_rim, th[x0 & 3] * 16 + 8);
+        }
+        if (o.x_last >= 0 && o.x_last < SCREEN_W && o.x_last != x0) {
+          glass_mix_px_mode<Mode>(row[o.x_last], rr, rg, rb, a_rim, th[o.x_last & 3] * 16 + 8);
+        }
+      } else {
+        const uint32_t ua = static_cast<uint32_t>(a_rim);
+        const uint32_t ia = static_cast<uint32_t>(256 - a_rim);
+        uint32_t r_base_rb[4], r_base_g_s5[4];
+        build_bayer_row_bases(th, (rr * ua) >> 8, (rg * ua) >> 8, (rb * ua) >> 8, r_base_rb, r_base_g_s5);
+        auto r_span = [&](int xa, int xb) {
+          xa = std::max(xa, 0);
+          xb = std::min(xb, SCREEN_W - 1);
+          if (xa <= xb) blend_swar_q8_span<Mode>(row, row, xa, xb, ia, r_base_rb, r_base_g_s5);
+        };
+        auto r_edge = [&](int px) {
+          if (px < 0 || px >= SCREEN_W) return;
+          const int cov = o.coverage(px, cr->dy);
+          if (cov <= 0) return;
+          const int ae = (a_rim * (cov + (cov >> 7)) + 128) >> 8;
+          if (ae > 0) glass_mix_px_mode<Mode>(row[px], rr, rg, rb, std::min(256, ae), th[px & 3] * 16 + 8);
+        };
+        if (cr->s1 >= cr->s0) {
+          if (cr->in_hit && cr->hs1 >= cr->hs0) {
+            r_span(cr->s0, std::min<int>(cr->s1, cr->hs0 - 1));
+            r_span(std::max<int>(cr->s0, cr->hs1 + 1), cr->s1);
+          } else {
+            r_span(cr->s0, cr->s1);
+          }
+          for (int px = cr->e0; px < cr->s0; ++px) r_edge(px);
+          for (int px = cr->s1 + 1; px <= cr->e1; ++px) r_edge(px);
+        } else {
+          for (int px = cr->e0; px <= cr->e1; ++px) r_edge(px);
+        }
+      }
+    }
+
+    if (cr->f_hit && a_fill > 0) {
+      const uint32_t ua = static_cast<uint32_t>(a_fill);
+      const uint32_t ia = static_cast<uint32_t>(256 - a_fill);
+      uint32_t f_base_rb[4], f_base_g_s5[4];
+      build_bayer_row_bases(th, (fr * ua) >> 8, (fg * ua) >> 8, (fb_c * ua) >> 8, f_base_rb, f_base_g_s5);
+      auto f_span = [&](int xa, int xb) {
+        xa = std::max(xa, 0);
+        xb = std::min(xb, SCREEN_W - 1);
+        if (xa <= xb) blend_swar_q8_span<Mode>(row, row, xa, xb, ia, f_base_rb, f_base_g_s5);
+      };
+      auto f_edge = [&](int px) {
+        if (px < 0 || px >= SCREEN_W) return;
+        const int cov = in_fill.coverage(px, cr->fdy);
+        if (cov <= 0) return;
+        const int ae = (a_fill * (cov + (cov >> 7)) + 128) >> 8;
+        if (ae > 0) glass_mix_px_mode<Mode>(row[px], fr, fg, fb_c, std::min(256, ae), th[px & 3] * 16 + 8);
+      };
+      if (cr->fs1 >= cr->fs0) {
+        if (ppa_core && py >= ppa_y0 && py <= ppa_y1) {
+          if (cr->fs0 < ppa_x0) f_span(cr->fs0, std::min<int>(cr->fs1, ppa_x0 - 1));
+          if (cr->fs1 > ppa_x1) f_span(std::max<int>(cr->fs0, ppa_x1 + 1), cr->fs1);
+        } else {
+          f_span(cr->fs0, cr->fs1);
+        }
+        for (int px = cr->fe0; px < cr->fs0; ++px) f_edge(px);
+        for (int px = cr->fs1 + 1; px <= cr->fe1; ++px) f_edge(px);
+      } else {
+        for (int px = cr->fe0; px <= cr->fe1; ++px) f_edge(px);
+      }
     }
   }
 }
@@ -2191,6 +2494,57 @@ void render_mdi_icon_mode(uint16_t *fb, std::string_view eff_name, int cx, int c
 }
 
 template <int Mode>
+void render_mdi_icon_spans_mode(uint16_t *fb, MdiSpanListView sv, int cx, int cy, int size_px,
+                                int cy0, int cy1, UiColor color, uint16_t full_hw,
+                                bool drop_shadow) noexcept {
+  const int n = static_cast<int>(sv.count);
+  const MdiSpan *const spans = sv.spans;
+  if (drop_shadow) {
+    const int x0_sh = (cx + 1) - (size_px / 2);
+    const int y0_sh = (cy + 1) - (size_px / 2);
+    for (int i = 0; i < n; ++i) {
+      const MdiSpan &s = spans[i];
+      const int py = y0_sh + static_cast<int>(s.y);
+      if (py < cy0 || py > cy1) continue;
+      const uint32_t sa = (static_cast<uint32_t>(s.alpha) * 184U) >> 8;
+      if (sa == 0U) continue;
+      const uint32_t a_q8 = sa + (sa >> 7);
+      const uint32_t inv = 256U - a_q8;
+      int xs = x0_sh + static_cast<int>(s.x0);
+      int xe = x0_sh + static_cast<int>(s.x1);
+      if (xs < 0) xs = 0;
+      if (xe > SCREEN_W) xe = SCREEN_W;
+      if (xs >= xe) continue;
+      uint16_t *const dst = fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W);
+      for (int px = xs; px < xe; ++px) {
+        dst[px] = blend_black_q8_px<Mode>(dst[px], inv);
+      }
+    }
+  }
+  const int x0_fg = cx - (size_px / 2);
+  const int y0_fg = cy - (size_px / 2);
+  const uint32_t r5 = (static_cast<uint32_t>(color.r) * 31U + 127U) / 255U;
+  const uint32_t g6 = (static_cast<uint32_t>(color.g) * 63U + 127U) / 255U;
+  const uint32_t b5 = (static_cast<uint32_t>(color.b) * 31U + 127U) / 255U;
+  for (int i = 0; i < n; ++i) {
+    const MdiSpan &s = spans[i];
+    const int py = y0_fg + static_cast<int>(s.y);
+    if (py < cy0 || py > cy1) continue;
+    int xs = x0_fg + static_cast<int>(s.x0);
+    int xe = x0_fg + static_cast<int>(s.x1);
+    if (xs < 0) xs = 0;
+    if (xe > SCREEN_W) xe = SCREEN_W;
+    if (xs >= xe) continue;
+    if (s.alpha == 255U) {
+      fill_hw16_span(fb + static_cast<size_t>(py) * static_cast<size_t>(SCREEN_W) + xs, xe - xs, full_hw);
+    } else if (s.alpha > 0U) {
+      const uint32_t a_q8 = static_cast<uint32_t>(s.alpha) + (static_cast<uint32_t>(s.alpha) >> 7);
+      blend_icon_span_mode<Mode>(fb, xs, xe, py, cy0, cy1, r5, g6, b5, a_q8);
+    }
+  }
+}
+
+template <int Mode>
 void blend_solid_span_q8_mode(uint16_t *dst_row, int x0, int x1, UiColor c, int a_255) noexcept {
   const uint32_t a_q8 = static_cast<uint32_t>(a_255 + (a_255 >> 7));
   const uint32_t inv = 256U - a_q8;
@@ -2248,11 +2602,11 @@ void render_mdi_icon_impl(Rgb565Surface &it, std::string_view name, int cx, int 
   const int cy0 = clip_y0();
   const int cy1 = clip_y1();
   if ((cy + half) < cy0 || (cy - half) > cy1) return;
-  const std::string_view eff_name = has_icon(name) ? name : fallback_name;
-  if (eff_name.empty()) return;
 
   uint16_t *const fb = active_frame_buf16();
   if (fb == nullptr) {
+    const std::string_view eff_name = has_icon(name) ? name : fallback_name;
+    if (eff_name.empty()) return;
     if (drop_shadow) {
       rasterize_icon_fn(eff_name, cx + 1, cy + 1, size_px,
                         [&](int x0, int x1_excl, int y, uint8_t a) {
@@ -2273,6 +2627,37 @@ void render_mdi_icon_impl(Rgb565Surface &it, std::string_view name, int cx, int 
 
   const uint16_t full_hw = encode_hw_rgb565(color);
   const int mode = active_frame_endian_mode();
+  MdiSpanListView sv = get_mdi_raster_spans(name, size_px);
+  if (sv.spans != nullptr) {
+    if (mode == 1 || mode < 0) {
+      render_mdi_icon_spans_mode<1>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+    } else if (mode == 2) {
+      render_mdi_icon_spans_mode<2>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+    } else if (mode == 4) {
+      render_mdi_icon_spans_mode<4>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+    } else {
+      render_mdi_icon_spans_mode<3>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+    }
+    return;
+  }
+
+  const std::string_view eff_name = has_icon(name) ? name : fallback_name;
+  if (eff_name.empty()) return;
+  if (eff_name != name) {
+    sv = get_mdi_raster_spans(eff_name, size_px);
+    if (sv.spans != nullptr) {
+      if (mode == 1 || mode < 0) {
+        render_mdi_icon_spans_mode<1>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+      } else if (mode == 2) {
+        render_mdi_icon_spans_mode<2>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+      } else if (mode == 4) {
+        render_mdi_icon_spans_mode<4>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+      } else {
+        render_mdi_icon_spans_mode<3>(fb, sv, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
+      }
+      return;
+    }
+  }
   if (mode == 1 || mode < 0) {
     render_mdi_icon_mode<1>(fb, eff_name, cx, cy, size_px, cy0, cy1, color, full_hw, drop_shadow);
   } else if (mode == 2) {
@@ -2305,6 +2690,37 @@ void fill_round_rect_glass_impl(Rgb565Surface &it, int x0, int y0, int w, int h,
   }
 }
 
+void fill_round_rect_glass_rimmed_impl(Rgb565Surface &it, int x0, int y0, int w, int h, float rad,
+                                       UiColor rim_tint, int rim_top, int rim_bot,
+                                       UiColor fill_tint, int fill_top, int fill_bot,
+                                       float rad_in) {
+  if (w <= 0 || h <= 0) return;
+  if (y0 + h <= clip_y0() || y0 > clip_y1()) return;
+  uint16_t *fb = active_frame_buf16();
+  if (fb == nullptr) {
+    fill_round_rect_aa_impl(it, x0, y0, w, h, rad, rim_tint, rim_tint, 1);
+    if (w > 2 && h > 2) {
+      const float r_in = (rad_in >= 0.0f) ? rad_in : std::max(0.0f, rad - 1.0f);
+      fill_round_rect_aa_impl(it, x0 + 1, y0 + 1, w - 2, h - 2, r_in, fill_tint, fill_tint, 0);
+    }
+    return;
+  }
+  const int mode = active_frame_endian_mode();
+  if (mode == 1 || mode < 0) {
+    fill_round_rect_glass_rimmed_mode<1>(fb, x0, y0, w, h, rad, rim_tint, rim_top, rim_bot,
+                                         fill_tint, fill_top, fill_bot, rad_in);
+  } else if (mode == 2) {
+    fill_round_rect_glass_rimmed_mode<2>(fb, x0, y0, w, h, rad, rim_tint, rim_top, rim_bot,
+                                         fill_tint, fill_top, fill_bot, rad_in);
+  } else if (mode == 4) {
+    fill_round_rect_glass_rimmed_mode<4>(fb, x0, y0, w, h, rad, rim_tint, rim_top, rim_bot,
+                                         fill_tint, fill_top, fill_bot, rad_in);
+  } else {
+    fill_round_rect_glass_rimmed_mode<3>(fb, x0, y0, w, h, rad, rim_tint, rim_top, rim_bot,
+                                         fill_tint, fill_top, fill_bot, rad_in);
+  }
+}
+
 // ------------------------------------------------------------------------------
 // 4. Dirty-Band Aware Frame Base State
 // ------------------------------------------------------------------------------
@@ -2317,6 +2733,7 @@ void frame_base_begin() {
   frame_base_state().painted = false;
   frame_base_state().has_color = false;
   backdrop_active() = false;
+  backdrop_max_lum_q8() = 256;
   set_clip_y_band(dirty_band().band_y0(), dirty_band().band_y1());
 }
 

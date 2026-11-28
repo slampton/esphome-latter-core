@@ -51,6 +51,32 @@ void test_icon_provider_contract_and_state_resolver() {
   LATTER_CHECK(rasterize_icon("mdi:weather-sunny", 100, 100, 180, raw_emit, &rebuilt_spans));
   LATTER_CHECK(rebuilt_spans == large_spans);
 
+  // Direct span-list view hit/miss/eviction + render_mdi_icon parity across endian modes 1..4
+  const MdiSpanListView sv_miss = get_mdi_raster_spans("mdi:weather-sunny", 36);
+  LATTER_CHECK(sv_miss.spans != nullptr && sv_miss.count > 0);
+  const MdiSpanListView sv_hit = get_mdi_raster_spans("mdi:weather-sunny", 36);
+  LATTER_CHECK(sv_hit.spans == sv_miss.spans && sv_hit.count == sv_miss.count);
+  const MdiSpanListView sv_bad = get_mdi_raster_spans("mdi:nonexistent-icon-xyz", 36);
+  LATTER_CHECK(sv_bad.spans == nullptr && sv_bad.count == 0);
+  mdi_raster_cache_drop();
+  const MdiSpanListView sv_rebuilt = get_mdi_raster_spans("mdi:weather-sunny", 36);
+  LATTER_CHECK(sv_rebuilt.spans != nullptr && sv_rebuilt.count == sv_miss.count);
+  {
+    HostSurfaceFixture fix{};
+    const int saved_endian = active_frame_endian_mode();
+    for (int mode : {1, 2, 3, 4}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, mode);
+      fix.fill(0U);
+      render_mdi_icon(fix.surf, "mdi:weather-sunny", SCREEN_CX, SCREEN_CY, 36, UiColor{255, 220, 100}, true);
+      LATTER_CHECK(count_nonzero_pixels(fix.pixels) > 20U);
+      const std::vector<uint16_t> first_draw = fix.pixels;
+      fix.fill(0U);
+      render_mdi_icon(fix.surf, "mdi:weather-sunny", SCREEN_CX, SCREEN_CY, 36, UiColor{255, 220, 100}, true);
+      LATTER_CHECK(fix.pixels == first_draw);
+    }
+    active_frame_endian_mode() = saved_endian;
+  }
+
   // Item 2: resolve_state_mdi_slug() across all states and edge cases
   char buf[96]{};
 

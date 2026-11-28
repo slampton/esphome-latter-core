@@ -336,12 +336,9 @@ void render_viewport_scrollbar(Rgb565Surface &it, int cx, int y_pos, int total_i
     rim_top = (rim_top * 2) / 3;
     rim_bot = (rim_bot * 2) / 3;
   }
-  fill_round_rect_glass(it, track_x0, track_y0, track_w, track_h, cap,
-                        rim_col, rim_top, rim_bot, 1);
-  if (track_h > 2) {
-    fill_round_rect_glass(it, track_x0 + 1, track_y0 + 1, track_w - 2, track_h - 2,
-                          std::max(0.5f, cap - 1.0f), eff_tint, a_top, a_bot);
-  }
+  fill_round_rect_glass_rimmed(it, track_x0, track_y0, track_w, track_h, cap,
+                               rim_col, rim_top, rim_bot, eff_tint, a_top, a_bot,
+                               std::max(0.5f, cap - 1.0f));
 
   const int min_thumb_w = std::max(20, dp_px(20));
   const int thumb_w = std::max(min_thumb_w, std::min(track_w, (track_w * vis_cap) / total_items));
@@ -474,10 +471,11 @@ void render_in_app_mode_bar_track(Rgb565Surface &it, int cx, const int *win_xs,
       const int slot_rim_bot = static_cast<int>(std::round(64.0f * ring_alpha));
       const int slot_wash_top = static_cast<int>(std::round(static_cast<float>(kGlassSemanticWashMaxQ8) * ring_alpha));
       const int slot_wash_bot = static_cast<int>(std::round(24.0f * ring_alpha));
-      fill_round_rect_glass(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1,
-                            static_cast<float>(dr) + 0.5f, slot_rim, slot_rim_top, slot_rim_bot, 1);
-      fill_round_rect_glass(it, abx - dr + 1, by - dr + 1, 2 * dr - 1, 2 * dr - 1,
-                            static_cast<float>(dr) - 0.5f, theme_primary, slot_wash_top, slot_wash_bot);
+      fill_round_rect_glass_rimmed(it, abx - dr, by - dr, 2 * dr + 1, 2 * dr + 1,
+                                   static_cast<float>(dr) + 0.5f,
+                                   slot_rim, slot_rim_top, slot_rim_bot,
+                                   theme_primary, slot_wash_top, slot_wash_bot,
+                                   static_cast<float>(dr) - 0.5f);
     }
   }
 
