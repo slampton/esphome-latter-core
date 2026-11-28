@@ -211,11 +211,15 @@ void AudioPathArbitrator::arm_media_idle_debounce(uint32_t now_ms, uint32_t dela
     return;
   }
   idle_debounce_start_ms_ = non_zero_ms_(now_ms);
-  idle_debounce_delay_ms_ = (delay_ms == 0U) ? kDefaultMediaIdleDebounceMs : delay_ms;
-  pause_settle_start_ms_ = 0U;
   if (delay_ms != 0U) {
+    idle_debounce_delay_ms_ = delay_ms;
     explicit_pause_ms_ = 0U;
+  } else if (audio_session().active_play_intent(now_ms) == MusicPlayIntent::TrackAdvanceOrSeek) {
+    idle_debounce_delay_ms_ = kTrackAdvanceGraceMs;
+  } else {
+    idle_debounce_delay_ms_ = kDefaultMediaIdleDebounceMs;
   }
+  pause_settle_start_ms_ = 0U;
 }
 
 void AudioPathArbitrator::cancel_media_idle_debounce() noexcept {

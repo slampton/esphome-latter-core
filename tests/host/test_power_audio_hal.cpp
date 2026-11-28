@@ -1010,12 +1010,14 @@ void test_audio_path_and_intercom_arbitrator() {
   LATTER_CHECK(act.unmute_mic && arb.echo_stage() == EchoGateStage::Inactive);
   arb.reset();
 
-  // AudioPathArbitrator fast explicit-pause settle vs default 1200ms track-gap debounce vs 2500ms VA resume grace
+  // AudioPathArbitrator fast explicit-pause settle vs default 1200ms track-gap debounce vs 2500ms VA resume grace vs 3000ms track-advance grace
   {
     static_assert(AudioPathArbitrator::kDefaultMediaIdleDebounceMs == 1200U);
+    static_assert(AudioPathArbitrator::kTrackAdvanceGraceMs == 3000U);
     static_assert(AudioPathArbitrator::kVaResumeMusicGraceMs == 2500U);
     static_assert(AudioPathArbitrator::kExplicitPauseFastIdleWindowMs == 2000U);
 
+    audio_session().reset();
     AudioArbitratorInputs m_in{};
     m_in.media_mixer_running = false;
 
@@ -1046,12 +1048,26 @@ void test_audio_path_and_intercom_arbitrator() {
     LATTER_CHECK(!arb.step(3199U, m_in).run_media_idle_finish);
     LATTER_CHECK(arb.step(3200U, m_in).run_media_idle_finish);
 
+    // TrackAdvanceOrSeek (next/prev/seek) waits kTrackAdvanceGraceMs (3000 ms) on natural IDLE,
+    // while an explicit user pause still preempts it immediately.
+    audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, 5000U);
+    arb.arm_media_idle_debounce(5800U);
+    LATTER_CHECK(!arb.step(8799U, m_in).run_media_idle_finish);
+    LATTER_CHECK(arb.step(8800U, m_in).run_media_idle_finish);
+
+    audio_session().set_play_intent(MusicPlayIntent::TrackAdvanceOrSeek, 5900U);
+    arb.arm_media_pause_settle(6000U);
+    arb.arm_media_idle_debounce(6100U);
+    LATTER_CHECK(arb.step(6120U, m_in).run_media_idle_finish);
+    arb.clear_explicit_pause();
+
     // finish_va_tts_drain_state() clears any lingering media_idle_debounce so MWW re-arms promptly.
     arb.arm_media_idle_debounce(4000U);
     LATTER_CHECK(arb.media_idle_debounce_active());
     (void)finish_va_tts_drain_state();
     LATTER_CHECK(!arb.media_idle_debounce_active());
     arb.reset();
+    audio_session().reset();
   }
 
   struct FakeOutbox {

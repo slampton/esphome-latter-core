@@ -292,6 +292,7 @@ class AudioPathArbitrator {
   using HostDriverFn = void (*)(uint32_t now_ms);
 
   static constexpr uint32_t kDefaultMediaIdleDebounceMs = 1200U;
+  static constexpr uint32_t kTrackAdvanceGraceMs = 3000U;
   static constexpr uint32_t kVaResumeMusicGraceMs = 2500U;
   static constexpr uint32_t kExplicitPauseFastIdleWindowMs = 2000U;
   static constexpr uint32_t kPauseSettleTimeoutMs = 500U;
