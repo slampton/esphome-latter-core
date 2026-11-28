@@ -577,6 +577,16 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
     th = (th ^ 0xFFU) * 16777619U;
     for (const char *p = prefs.world_clocks_spec; *p != '\0'; ++p) th = (th ^ static_cast<unsigned char>(*p)) * 16777619U;
     th = (th ^ rs.stopwatch.elapsed_ms ^ (static_cast<uint32_t>(rs.stopwatch.lap_count) << 24)) * 16777619U;
+    th = (th ^ static_cast<uint32_t>(timer_view_slot() + 1)) * 16777619U;
+    th = (th ^ static_cast<uint32_t>(rs.timers.duration_sec)) * 16777619U;
+    th = (th ^ static_cast<uint32_t>(rs.timers.remaining_sec)) * 16777619U;
+    th = (th ^ ((rs.timers.running ? 1U : 0U) | (rs.timers.paused ? 2U : 0U))) * 16777619U;
+    for (int i = 0; i < 3; ++i) {
+      const auto &ts = rs.timers.slots[i];
+      th = (th ^ static_cast<uint32_t>(ts.duration_sec)) * 16777619U;
+      th = (th ^ static_cast<uint32_t>(ts.remaining_sec)) * 16777619U;
+      th = (th ^ ((ts.running ? 1U : 0U) | (ts.paused ? 2U : 0U))) * 16777619U;
+    }
     sig ^= (th | 1U);
   } else if (is_camera_view_active(rs) || rs.nav.gui_page == PageId::HOME_HUB) {
     const auto &ac = area_ctx_state();
@@ -679,7 +689,6 @@ uint32_t compute_idle_state_signature(const UiFrameContext &ctx) {
         (static_cast<uint32_t>(prefs.podcast_sort_order & 0x03U) << 17) |
         (static_cast<uint32_t>(prefs.music_auto_open & 0x03U) << 19);
     mu_sig = (mu_sig ^ mu_flags) * 16777619U;
-    mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.is_local ? ctx.spk_vol_pct : rs.music.remote_vol_pct)) * 16777619U;
     mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.queue_count)) * 16777619U;
     mu_sig = (mu_sig ^ static_cast<uint32_t>(ms.media_caps)) * 16777619U;
     hash_sv(ms.title);
@@ -760,6 +769,7 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
   if (rs.nav.quick_actions_open) return false;
   static uint32_t s_last_music_np_pos_sec = 0xFFFFFFFFU;
   static int s_last_music_np_dur_sec = -1;
+  static int s_last_music_audio_vol_pct = -1;
   static uint32_t s_last_home_live_sec_sig = 0xFFFFFFFFU;
   if (rs.nav.gui_page != PageId::HOME || rs.nav.home_subpage != HomeSubpage::MAIN) {
     s_last_home_live_sec_sig = 0xFFFFFFFFU;
@@ -771,10 +781,19 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
     s_last_music_np_pos_sec = 0xFFFFFFFFU;
     s_last_music_np_dur_sec = -1;
   }
+  if (rs.nav.gui_page != PageId::MUSIC ||
+      rs.music.view != MusicView::AUDIO ||
+      rs.music.drilldown != MusicDrilldown::NONE ||
+      rs.music.takeover != MusicTakeover::NONE) {
+    s_last_music_audio_vol_pct = -1;
+  }
   if (rs.nav.gui_page == PageId::CLOCK) return true;
   if (rs.nav.gui_page == PageId::TIME) {
     if (rs.nav.time_subpage == TimeSubpage::CLOCK) return true;
-    if (rs.nav.time_subpage == TimeSubpage::TIMERS) return true;
+    if (rs.nav.time_subpage == TimeSubpage::TIMERS) {
+      return rs.timers.running || rs.timers.slots[0].running ||
+             rs.timers.slots[1].running || rs.timers.slots[2].running;
+    }
     if (rs.nav.time_subpage == TimeSubpage::STOPWATCH) return rs.stopwatch.running;
     return false;
   }
@@ -871,6 +890,29 @@ bool compute_live_sec_active(const UiFrameContext &ctx) {
             any_vert_bounce_active(PageId::MUSIC, ctx.now_ms);
         if (dock_or_scroll) return true;
         mark_music_progress_dirty_band(music_metadata_band_y0(), music_metadata_band_y1());
+      }
+      return false;
+    }
+    if (rs.music.view == MusicView::AUDIO &&
+        rs.music.drilldown == MusicDrilldown::NONE &&
+        rs.music.takeover == MusicTakeover::NONE) {
+      const int cur_vol = std::clamp(ms.is_local ? ctx.spk_vol_pct : rs.music.remote_vol_pct, 0, 100);
+      const int cur_sub = compute_active_subpage_id(rs);
+      if (dirty_band().last_page != PageId::MUSIC || dirty_band().last_subpage != cur_sub ||
+          s_last_music_audio_vol_pct < 0) {
+        s_last_music_audio_vol_pct = cur_vol;
+        return false;
+      }
+      if (cur_vol != s_last_music_audio_vol_pct) {
+        s_last_music_audio_vol_pct = cur_vol;
+        const bool dock_or_scroll =
+            rs.nav.menu_scroll_active ||
+            any_dock_anim_active(PageId::MUSIC, 0, ctx.now_ms) ||
+            any_vert_bounce_active(PageId::MUSIC, ctx.now_ms);
+        if (dock_or_scroll) return true;
+        int vy0 = 0, vy1 = SCREEN_H - 1;
+        music_volume_dirty_band(vy0, vy1);
+        mark_dirty_band(vy0, vy1);
       }
       return false;
     }

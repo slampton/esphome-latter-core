@@ -1010,26 +1010,29 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
             LATTER_CHECK(backdrop_max_lum_q8() == 256);
           }
           for (int y = 0; y < SCREEN_H; y += 13) {
-            const int mul_q8 = compute_art_row_scale_q8(y, c.scrim, c.meta, c.dim);
-            int x0 = 0;
-            int x1 = SCREEN_W - 1;
+            for (int ry : {y, y + 1}) {
+              if (ry >= SCREEN_H) continue;
+              const int mul_q8 = compute_art_row_scale_q8(ry, c.scrim, c.meta, c.dim);
+              int x0 = 0;
+              int x1 = SCREEN_W - 1;
 #if LATTER_ROUND_DISPLAY
-            const int hw = circle_half_span(y, 0);
-            x0 = std::max(0, SCREEN_CX - hw);
-            x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+              const int hw = circle_half_span(ry, 0);
+              x0 = std::max(0, SCREEN_CX - hw);
+              x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
 #endif
-            for (int x = x0; x <= x1; x += 7) {
-              const size_t dst_idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
-              const size_t src_idx = static_cast<size_t>(y >> 1) * static_cast<size_t>(kHw) + static_cast<size_t>(x >> 1);
-              const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, y, endian_mode);
-              LATTER_CHECK(fix.pixels[dst_idx] == want);
-            }
-            for (int x : {x0, x1}) {
-              if (x < x0 || x > x1) continue;
-              const size_t dst_idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
-              const size_t src_idx = static_cast<size_t>(y >> 1) * static_cast<size_t>(kHw) + static_cast<size_t>(x >> 1);
-              const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, y, endian_mode);
-              LATTER_CHECK(fix.pixels[dst_idx] == want);
+              for (int x = x0; x <= x1; x += 7) {
+                const size_t dst_idx = static_cast<size_t>(ry) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
+                const size_t src_idx = static_cast<size_t>(ry >> 1) * static_cast<size_t>(kHw) + static_cast<size_t>(x >> 1);
+                const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, ry, endian_mode);
+                LATTER_CHECK(fix.pixels[dst_idx] == want);
+              }
+              for (int x : {x0, x0 + 1, x1 - 1, x1}) {
+                if (x < x0 || x > x1) continue;
+                const size_t dst_idx = static_cast<size_t>(ry) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
+                const size_t src_idx = static_cast<size_t>(ry >> 1) * static_cast<size_t>(kHw) + static_cast<size_t>(x >> 1);
+                const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, ry, endian_mode);
+                LATTER_CHECK(fix.pixels[dst_idx] == want);
+              }
             }
           }
           if (endian_mode == 2 && pass == 0 && c.dim == kArtDimMenu) {
@@ -1052,6 +1055,38 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
         /*apply_scrim=*/true, /*show_metadata=*/false, kArtDimLyricsHud));
   }
   art_canvas_drop_all();
+
+  // Verify static day/night sky and lyrics fallback gradient propagate provable backdrop_max_lum_q8() ceilings
+  {
+    fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+    sky_base_cache_drop();
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::TIME, 0, 0U, true);
+    frame_base_begin();
+    render_static_day_night_sky_base(fix.surf, SCREEN_CX, SCREEN_CY, true);
+    LATTER_CHECK(backdrop_active() && backdrop_max_lum_q8() <= 44);
+
+    frame_base_begin();
+    render_static_day_night_sky_base(fix.surf, SCREEN_CX, SCREEN_CY, false);
+    LATTER_CHECK(backdrop_active() && backdrop_max_lum_q8() <= 124);
+
+    frame_base_begin();
+    render_neutral_day_night_sky_base(fix.surf, SCREEN_CX, SCREEN_CY, true);
+    LATTER_CHECK(backdrop_active() && backdrop_max_lum_q8() == 40);
+
+    frame_base_begin();
+    render_neutral_day_night_sky_base(fix.surf, SCREEN_CX, SCREEN_CY, false);
+    LATTER_CHECK(backdrop_active() && backdrop_max_lum_q8() == 112);
+
+    frame_base_begin();
+    LATTER_CHECK(!render_lyrics_art_backdrop_view(
+        fix.surf, ArtImageView{}, SCREEN_CX, UiColor{96, 160, 255}, UiColor{0, 0, 0}, kArtDimLyrics));
+    LATTER_CHECK(backdrop_active() && backdrop_max_lum_q8() < 256);
+
+    sky_base_cache_drop();
+    backdrop_max_lum_q8() = 256;
+    backdrop_active() = false;
+  }
 
   // Verify fast_hline_blend Q8 SWAR span blender matches color interpolation closely across endian modes & clipping
   {

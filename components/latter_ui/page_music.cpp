@@ -1219,7 +1219,7 @@ void render_audio_peer_tab(Rgb565Surface &it, const UiFrameContext &ctx) {
   const ResolvedTrackStrings trk = resolve_track_strings(ctx);
 
   render_music_art_or_wallpaper_base(it, ctx, /*has_controls_scrim=*/true,
-                                     /*has_metadata_scrim=*/true, kArtDimMusicHud);
+                                     /*has_metadata_scrim=*/true, kArtDimMenu);
 
   const MusicVolumeGeom g = compute_music_volume_geom(
       SCREEN_W, SCREEN_H, LATTER_ROUND_DISPLAY != 0, LATTER_IS_WEARABLE != 0, LATTER_PANEL_PPI);

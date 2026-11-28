@@ -1004,6 +1004,7 @@ void render_home_page(Rgb565Surface &it, const UiFrameContext &ctx) {
       render_album_art_canvas(it, ctx.home_wallpaper_art, cx, false, false, true, false, 2);
     } else if ((show_weather_bg || sim_override_on) && (weather_ready || dns_known)) {
       backdrop_active() = true;
+      backdrop_max_lum_q8() = celestial_visible ? 44 : 24;
       const bool eff_night = weather_ready ? is_night : dns_night;
 #if LATTER_ROUND_DISPLAY
       frame_base(it, ctx.col_bg);

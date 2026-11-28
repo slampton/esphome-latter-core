@@ -1308,6 +1308,21 @@ bool has_fast_weather_motion_sv(std::string_view cond, bool is_night, uint32_t n
   return false;
 }
 
+int compute_sky_base_max_lum_q8(std::string_view cond, bool is_night, bool show_celestial,
+                                int wash_sheet_q8) noexcept {
+  if (wash_sheet_q8 > 0 || show_celestial) return 256;
+  if (cond == "neutral") return is_night ? 40 : 112;
+  const WeatherCondFlags f = classify_weather_condition(cond, is_night);
+  if (f.is_snow_precip || f.is_windy || f.is_rain_precip) return 256;
+  if (is_night) {
+    return (!f.is_fog_mist && !f.is_overcast_canopy && !f.is_storm && !f.is_partly) ? 44 : 138;
+  }
+  if (f.is_clear_day && !f.is_fog_mist && !f.is_overcast_canopy && !f.is_storm && !f.is_partly) {
+    return 124;
+  }
+  return 256;
+}
+
 void bake_static_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view cond, bool is_night,
                           double moon_cycle, int cel_cx, int cel_cy, bool show_celestial) {
   const WeatherCondFlags f = classify_weather_condition(cond, is_night);
@@ -1562,6 +1577,7 @@ void blit_or_bake_sky_base(Rgb565Surface &it, int cx, int cy, std::string_view c
                                      wash_sheet_q8, 152, kFlashInset, cx);
     }
   }
+  backdrop_max_lum_q8() = compute_sky_base_max_lum_q8(cond, is_night, show_celestial, wash_sheet_q8);
 }
 
 WeatherParticleEngine *&particle_engine_slot() noexcept {
@@ -1821,7 +1837,10 @@ void render_weather_motion_wallpaper(Rgb565Surface &it, int cx, int cy, uint32_t
     }
   }
 
-  if (storm_flash_active) render_storm_lightning_bolts(it, fb, now_ms, storm_env, eng.lightning);
+  if (storm_flash_active) {
+    render_storm_lightning_bolts(it, fb, now_ms, storm_env, eng.lightning);
+    backdrop_max_lum_q8() = 256;
+  }
   lap.mark(ProfSect::BG_CLOUDS);
 
   if (is_windy) render_wind_gusts_and_leaves(it, fb, cy, is_night, dt_s, precip_alpha, par_x, par_y, eng);

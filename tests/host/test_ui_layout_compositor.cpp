@@ -1542,6 +1542,119 @@ void test_aa_font_live_fb_blending_no_halo() {
     LATTER_CHECK(vy1 >= std::min(g.mode_bar_top - 1, g.slider_y0 + g.slider_h));
     LATTER_CHECK(vy1 >= std::min(g.mode_bar_top - 1, g.mute_y0 + g.btn_h));
   }
+
+  // 5. TimeSubpage::TIMERS gates live-second redraws unless running, and idle sig tracks timer edits.
+  {
+    auto &rs = latter_core::runtime_state();
+    const auto saved_nav = rs.nav;
+    const auto saved_timers = rs.timers;
+    const auto saved_slot = latter_core::timer_view_slot();
+
+    rs.nav.gui_page = latter_core::PageId::TIME;
+    rs.nav.time_subpage = TimeSubpage::TIMERS;
+    rs.nav.quick_actions_open = false;
+    rs.timers = std::decay_t<decltype(rs.timers)>{};
+    latter_core::timer_view_slot() = 0;
+
+    UiFrameContext ctx{};
+    ctx.now_ms = 5000U;
+    LATTER_CHECK(!compute_live_sec_active(ctx));
+
+    rs.timers.slots[1].paused = true;
+    rs.timers.slots[1].remaining_sec = 45;
+    const uint32_t sig_paused = compute_idle_state_signature(ctx);
+    LATTER_CHECK(!compute_live_sec_active(ctx));
+
+    rs.timers.slots[1].duration_sec = 90;
+    LATTER_CHECK(compute_idle_state_signature(ctx) != sig_paused);
+    rs.timers.slots[1].remaining_sec = 40;
+    LATTER_CHECK(compute_idle_state_signature(ctx) != sig_paused);
+    latter_core::timer_view_slot() = 2;
+    LATTER_CHECK(compute_idle_state_signature(ctx) != sig_paused);
+    latter_core::timer_view_slot() = 0;
+
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(latter_core::PageId::TIME, compute_active_subpage_id(rs), 0U, false, 1200,
+                                   compute_idle_state_signature(ctx), 100, compute_live_sec_active(ctx));
+    dirty_band().mark_band(layout().app_dock_y - layout().dock_r - 4, SCREEN_H - 1);
+    LATTER_CHECK(dirty_band().begin_frame(latter_core::PageId::TIME, compute_active_subpage_id(rs), 0U, false, 1200,
+                                          compute_idle_state_signature(ctx), 100, compute_live_sec_active(ctx)));
+    LATTER_CHECK(!dirty_band().is_full());
+
+    rs.timers.slots[1].running = true;
+    LATTER_CHECK(compute_live_sec_active(ctx));
+
+    rs.timers = saved_timers;
+    rs.nav = saved_nav;
+    latter_core::timer_view_slot() = saved_slot;
+    dirty_band() = DirtyBandTracker{};
+  }
+
+  // 6. MusicView::AUDIO uses music_volume_dirty_band() on volume changes instead of full-screen idle sig invalidation.
+  {
+    auto &rs = latter_core::runtime_state();
+    auto &ms = latter_core::media_state();
+    const auto saved_nav = rs.nav;
+    const auto saved_music = rs.music;
+    const auto saved_ms = ms;
+
+    rs.nav.gui_page = latter_core::PageId::MUSIC;
+    rs.nav.quick_actions_open = false;
+    rs.nav.menu_scroll_active = false;
+    rs.music = std::decay_t<decltype(rs.music)>{};
+    rs.music.view = latter_core::MusicView::AUDIO;
+    rs.music.drilldown = latter_core::MusicDrilldown::NONE;
+    rs.music.takeover = latter_core::MusicTakeover::NONE;
+    ms = latter_core::MediaState{};
+    ms.is_local = true;
+
+    UiFrameContext ctx{};
+    ctx.now_ms = 6000U;
+    ctx.spk_vol_pct = 35;
+
+    const int sub_audio = compute_active_subpage_id(rs);
+    const uint32_t sig35 = compute_idle_state_signature(ctx);
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(latter_core::PageId::MUSIC, sub_audio, 0U, false, 1200, sig35, 100,
+                                   compute_live_sec_active(ctx));
+
+    // Local volume change keeps idle_state_sig unchanged and marks only the volume dirty band.
+    ctx.spk_vol_pct = 40;
+    LATTER_CHECK(compute_idle_state_signature(ctx) == sig35);
+    LATTER_CHECK(!compute_live_sec_active(ctx));
+    LATTER_CHECK(dirty_band().begin_frame(latter_core::PageId::MUSIC, sub_audio, 0U, false, 1200, sig35, 100, false));
+    LATTER_CHECK(!dirty_band().is_full());
+    int exp_y0 = 0, exp_y1 = 0, got_y0 = 0, got_y1 = 0;
+    music_volume_dirty_band(exp_y0, exp_y1);
+    DirtyBandTracker::align_band(exp_y0, exp_y1, SCREEN_H, got_y0, got_y1);
+    LATTER_CHECK(dirty_band().band_y0() == got_y0 && dirty_band().band_y1() == got_y1);
+
+    // Remote volume change also stays partial-band.
+    ms.is_local = false;
+    rs.music.remote_vol_pct = 50;
+    const uint32_t sig_rem50 = compute_idle_state_signature(ctx);
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(latter_core::PageId::MUSIC, sub_audio, 0U, false, 1200, sig_rem50, 100,
+                                   compute_live_sec_active(ctx));
+    rs.music.remote_vol_pct = 55;
+    LATTER_CHECK(compute_idle_state_signature(ctx) == sig_rem50);
+    LATTER_CHECK(!compute_live_sec_active(ctx));
+    LATTER_CHECK(dirty_band().begin_frame(latter_core::PageId::MUSIC, sub_audio, 0U, false, 1200, sig_rem50, 100, false));
+    LATTER_CHECK(!dirty_band().is_full());
+
+    // Muted toggle still changes idle_state_sig -> full redraw.
+    ms.muted = true;
+    LATTER_CHECK(compute_idle_state_signature(ctx) != sig_rem50);
+
+    // Leave MusicView::AUDIO cleanly so static s_last_music_audio_vol_pct resets.
+    rs.nav.gui_page = latter_core::PageId::HOME;
+    (void)compute_live_sec_active(ctx);
+
+    ms = saved_ms;
+    rs.music = saved_music;
+    rs.nav = saved_nav;
+    dirty_band() = DirtyBandTracker{};
+  }
 }
 
 }  // namespace

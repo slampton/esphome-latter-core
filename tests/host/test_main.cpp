@@ -414,7 +414,7 @@ void test_music_app_v3_d059() {
     LATTER_CHECK(trk_fn.find("render_music_stadium_mode_bar(") != std::string::npos);
     LATTER_CHECK(trk_fn.find("render_back_button(") == std::string::npos);
     LATTER_CHECK(np_fn.find("kArtDimMusicHud") != std::string::npos);
-    LATTER_CHECK(vol_fn.find("kArtDimMusicHud") != std::string::npos);
+    LATTER_CHECK(vol_fn.find("kArtDimMenu") != std::string::npos);
 
     const size_t sheet_guard = page_fn.find("m.takeover == MusicTakeover::ACTION_SHEET");
     const size_t browse_call = page_fn.find("render_music_browse_views(");
