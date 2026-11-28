@@ -900,6 +900,11 @@ bool color_wheel_cache_ensure(int r_in, int r_out) noexcept {
   }
   color_wheel_cache_drop();
   const size_t px_count = static_cast<size_t>(side) * static_cast<size_t>(side);
+  if constexpr (LATTER_PSRAM_MB < 16) {
+    if (psram_headroom_below(px_count * 3U + 512U * 1024U, px_count * 2U + 64U * 1024U)) {
+      art_canvas_trim_to_one();
+    }
+  }
   c.rgb = static_cast<uint16_t *>(ui_psram_malloc(px_count * sizeof(uint16_t)));
   c.alpha = static_cast<uint8_t *>(ui_psram_malloc(px_count));
   if (c.rgb == nullptr || c.alpha == nullptr) {

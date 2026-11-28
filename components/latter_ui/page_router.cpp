@@ -13,6 +13,11 @@ void render_active_page(Rgb565Surface &it, const UiFrameContext &ctx) {
     home_activity_card_shown() = false;
     home_activity_rendered_rows() = -1;
   }
+  if constexpr (LATTER_PSRAM_MB < 16) {
+    if (pg != PageId::MUSIC && psram_headroom_below(640U * 1024U, 256U * 1024U)) {
+      art_canvas_trim_to_one();
+    }
+  }
   switch (pg) {
     case PageId::CLOCK:
       render_clock_page(it, ctx);
