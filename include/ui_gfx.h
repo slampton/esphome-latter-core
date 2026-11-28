@@ -823,8 +823,8 @@ inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 inline constexpr size_t art_cache_psram_budget_bytes(int psram_mb) noexcept {
   if (psram_mb >= 32) return 6144U * 1024U;
   if (psram_mb >= 16) return 3584U * 1024U;
-  if (psram_mb >= 8) return 1408U * 1024U;
-  if (psram_mb >= 4) return 1024U * 1024U;
+  if (psram_mb >= 8) return 768U * 1024U;
+  if (psram_mb >= 4) return 768U * 1024U;
   return 0U;
 }
 

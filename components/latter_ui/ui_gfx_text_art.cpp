@@ -830,10 +830,14 @@ void blit_dimmed_rgb565_scanline(Rgb565Surface &it, int start_x, int y, int span
         const uint32_t p1 = src_row[i + 1];
         const uint32_t p2 = src_row[i + 2];
         const uint32_t p3 = src_row[i + 3];
-        dst[i]     = static_cast<uint16_t>(r0[p0 >> 11] | g0[(p0 >> 5) & 0x3FU] | b0[p0 & 0x1FU]);
-        dst[i + 1] = static_cast<uint16_t>(r1[p1 >> 11] | g1[(p1 >> 5) & 0x3FU] | b1[p1 & 0x1FU]);
-        dst[i + 2] = static_cast<uint16_t>(r2[p2 >> 11] | g2[(p2 >> 5) & 0x3FU] | b2[p2 & 0x1FU]);
-        dst[i + 3] = static_cast<uint16_t>(r3[p3 >> 11] | g3[(p3 >> 5) & 0x3FU] | b3[p3 & 0x1FU]);
+        const uint32_t d0 = static_cast<uint32_t>(r0[p0 >> 11] | g0[(p0 >> 5) & 0x3FU] | b0[p0 & 0x1FU]);
+        const uint32_t d1 = static_cast<uint32_t>(r1[p1 >> 11] | g1[(p1 >> 5) & 0x3FU] | b1[p1 & 0x1FU]);
+        const uint32_t d2 = static_cast<uint32_t>(r2[p2 >> 11] | g2[(p2 >> 5) & 0x3FU] | b2[p2 & 0x1FU]);
+        const uint32_t d3 = static_cast<uint32_t>(r3[p3 >> 11] | g3[(p3 >> 5) & 0x3FU] | b3[p3 & 0x1FU]);
+        const uint32_t w01 = d0 | (d1 << 16);
+        const uint32_t w23 = d2 | (d3 << 16);
+        std::memcpy(dst + i, &w01, 4U);
+        std::memcpy(dst + i + 2, &w23, 4U);
       }
       for (; i < span_w; ++i) {
         const uint32_t p = src_row[i];
@@ -893,6 +897,94 @@ int uniform_art_dim_q8(bool show_controls, bool show_metadata, int dim_level) no
   return 256;
 }
 #endif
+
+void draw_album_art_2x_upscale(uint16_t *fb_tgt, const uint16_t *src_data, int src_w, int cx,
+                               bool apply_scrim, bool show_metadata, int dim_level, int mode,
+                               ArtScaleScratch &scratch, uint16_t *mirror_fb,
+                               int mirror_y_lo, int mirror_y_hi) noexcept {
+  const int eff_mode = (mode == 2) ? 2 : 1;
+  for (int y = 0; y < SCREEN_H; ++y) {
+    if (!row_in_clip_band(y)) continue;
+    int start_x = 0;
+    int end_x = 0;
+    art_row_span(y, cx, start_x, end_x);
+    if (start_x > end_x) continue;
+
+    const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
+    const uint16_t *const src_row = src_data + static_cast<size_t>(y >> 1) * static_cast<size_t>(src_w);
+    uint16_t *const dst_row = fb_tgt + static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W);
+
+    if (mul_q8 >= 256) {
+      int x = start_x;
+      if (x <= end_x && (x & 1) != 0) {
+        const uint16_t s = src_row[x >> 1];
+        dst_row[x++] = (eff_mode == 2) ? bswap16_u16(s) : s;
+      }
+      for (; x + 1 <= end_x; x += 2) {
+        const uint16_t s = src_row[x >> 1];
+        const uint32_t hw = static_cast<uint32_t>((eff_mode == 2) ? bswap16_u16(s) : s);
+        const uint32_t w = hw | (hw << 16);
+        std::memcpy(dst_row + x, &w, 4U);
+      }
+      if (x <= end_x) {
+        const uint16_t s = src_row[x >> 1];
+        dst_row[x] = (eff_mode == 2) ? bswap16_u16(s) : s;
+      }
+    } else {
+      ensure_art_dim_lut_row(scratch, std::max(0, mul_q8), eff_mode, y);
+      const uint8_t *const th = kBayer4[y & 3];
+      const uint16_t *const r0 = scratch.r_lut[th[0]];
+      const uint16_t *const g0 = scratch.g_lut[th[0]];
+      const uint16_t *const b0 = scratch.b_lut[th[0]];
+      const uint16_t *const r1 = scratch.r_lut[th[1]];
+      const uint16_t *const g1 = scratch.g_lut[th[1]];
+      const uint16_t *const b1 = scratch.b_lut[th[1]];
+      const uint16_t *const r2 = scratch.r_lut[th[2]];
+      const uint16_t *const g2 = scratch.g_lut[th[2]];
+      const uint16_t *const b2 = scratch.b_lut[th[2]];
+      const uint16_t *const r3 = scratch.r_lut[th[3]];
+      const uint16_t *const g3 = scratch.g_lut[th[3]];
+      const uint16_t *const b3 = scratch.b_lut[th[3]];
+
+      int x = start_x;
+      while (x <= end_x && (x & 3) != 0) {
+        const uint32_t p = src_row[x >> 1];
+        const uint8_t bidx = th[x & 3];
+        dst_row[x] = static_cast<uint16_t>(scratch.r_lut[bidx][p >> 11] |
+                                           scratch.g_lut[bidx][(p >> 5) & 0x3FU] |
+                                           scratch.b_lut[bidx][p & 0x1FU]);
+        ++x;
+      }
+      for (; x + 3 <= end_x; x += 4) {
+        const uint32_t s0 = src_row[x >> 1];
+        const uint32_t s1 = src_row[(x >> 1) + 1];
+        const uint32_t s0r = s0 >> 11, s0g = (s0 >> 5) & 0x3FU, s0b = s0 & 0x1FU;
+        const uint32_t s1r = s1 >> 11, s1g = (s1 >> 5) & 0x3FU, s1b = s1 & 0x1FU;
+        const uint32_t d0 = static_cast<uint32_t>(r0[s0r] | g0[s0g] | b0[s0b]);
+        const uint32_t d1 = static_cast<uint32_t>(r1[s0r] | g1[s0g] | b1[s0b]);
+        const uint32_t d2 = static_cast<uint32_t>(r2[s1r] | g2[s1g] | b2[s1b]);
+        const uint32_t d3 = static_cast<uint32_t>(r3[s1r] | g3[s1g] | b3[s1b]);
+        const uint32_t w01 = d0 | (d1 << 16);
+        const uint32_t w23 = d2 | (d3 << 16);
+        std::memcpy(dst_row + x, &w01, 4U);
+        std::memcpy(dst_row + x + 2, &w23, 4U);
+      }
+      for (; x <= end_x; ++x) {
+        const uint32_t p = src_row[x >> 1];
+        const uint8_t bidx = th[x & 3];
+        dst_row[x] = static_cast<uint16_t>(scratch.r_lut[bidx][p >> 11] |
+                                           scratch.g_lut[bidx][(p >> 5) & 0x3FU] |
+                                           scratch.b_lut[bidx][p & 0x1FU]);
+      }
+    }
+
+    if (mirror_fb != nullptr && y >= mirror_y_lo && y <= mirror_y_hi) {
+      const size_t row_off = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(start_x);
+      std::memcpy(mirror_fb + row_off, dst_row + start_x,
+                  static_cast<size_t>(end_x - start_x + 1) * sizeof(uint16_t));
+    }
+  }
+}
 
 void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int src_h, int cx,
                     bool is_standard, bool is_letterbox, bool apply_scrim, bool show_metadata, int dim_level,
@@ -1063,50 +1155,59 @@ void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int 
     }
 #endif
     if (!ppa_scaled) {
-      uint16_t *const sx_lut = scratch.sx_lut;
-      uint16_t *const scaled_row = scratch.scaled_row;
-      {
-        int curr_x = src_x0_fp;
-        for (int x = 0; x < SCREEN_W; x++) {
-          sx_lut[x] = static_cast<uint16_t>(std::min(src_w - 1, curr_x >> 12));
-          curr_x += step_fp;
+      uint16_t *const direct_fb = active_frame_buf16();
+      const int endian_mode = active_frame_endian_mode();
+      if (!is_letterbox && start_y == 0 && end_y == SCREEN_H &&
+          (src_w * 2 == SCREEN_W) && (src_h * 2 == SCREEN_H) &&
+          direct_fb != nullptr && (endian_mode == 1 || endian_mode < 0 || endian_mode == 2)) {
+        draw_album_art_2x_upscale(direct_fb, src_data, src_w, cx, apply_scrim, show_metadata, dim_level,
+                                  endian_mode, scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
+      } else {
+        uint16_t *const sx_lut = scratch.sx_lut;
+        uint16_t *const scaled_row = scratch.scaled_row;
+        {
+          int curr_x = src_x0_fp;
+          for (int x = 0; x < SCREEN_W; x++) {
+            sx_lut[x] = static_cast<uint16_t>(std::min(src_w - 1, curr_x >> 12));
+            curr_x += step_fp;
+          }
         }
-      }
 
-      int curr_y = src_y0_fp;
-      int prev_sy = -1;
-      int prev_sx0 = SCREEN_W;
-      int prev_sx1 = -1;
-      for (int y = start_y; y < end_y; y++) {
-        const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
-        curr_y += step_fp;
-        const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
-        int start_x = 0, end_x = 0;
-        art_row_span(y, cx, start_x, end_x);
-        const int span_w = end_x - start_x + 1;
-        if (span_w <= 0) continue;
-        if (sy != prev_sy) {
-          const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
-          for (int x = start_x; x <= end_x; x++) {
-            scaled_row[x] = src_row[sx_lut[x]];
+        int curr_y = src_y0_fp;
+        int prev_sy = -1;
+        int prev_sx0 = SCREEN_W;
+        int prev_sx1 = -1;
+        for (int y = start_y; y < end_y; y++) {
+          const int sy = std::min(src_h - 1, std::max(0, curr_y >> 12));
+          curr_y += step_fp;
+          const int mul_q8 = compute_art_row_scale_q8(y, apply_scrim, show_metadata, dim_level);
+          int start_x = 0, end_x = 0;
+          art_row_span(y, cx, start_x, end_x);
+          const int span_w = end_x - start_x + 1;
+          if (span_w <= 0) continue;
+          if (sy != prev_sy) {
+            const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
+            for (int x = start_x; x <= end_x; x++) {
+              scaled_row[x] = src_row[sx_lut[x]];
+            }
+            prev_sy = sy;
+            prev_sx0 = start_x;
+            prev_sx1 = end_x;
+          } else if (start_x < prev_sx0 || end_x > prev_sx1) {
+            // On round displays the visible chord widens toward the equator across repeated source rows.
+            const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
+            for (int x = start_x; x < prev_sx0; x++) {
+              scaled_row[x] = src_row[sx_lut[x]];
+            }
+            for (int x = prev_sx1 + 1; x <= end_x; x++) {
+              scaled_row[x] = src_row[sx_lut[x]];
+            }
+            if (start_x < prev_sx0) prev_sx0 = start_x;
+            if (end_x > prev_sx1) prev_sx1 = end_x;
           }
-          prev_sy = sy;
-          prev_sx0 = start_x;
-          prev_sx1 = end_x;
-        } else if (start_x < prev_sx0 || end_x > prev_sx1) {
-          // On round displays the visible chord widens toward the equator across repeated source rows.
-          const uint16_t *src_row = src_data + static_cast<size_t>(sy) * static_cast<size_t>(src_w);
-          for (int x = start_x; x < prev_sx0; x++) {
-            scaled_row[x] = src_row[sx_lut[x]];
-          }
-          for (int x = prev_sx1 + 1; x <= end_x; x++) {
-            scaled_row[x] = src_row[sx_lut[x]];
-          }
-          if (start_x < prev_sx0) prev_sx0 = start_x;
-          if (end_x > prev_sx1) prev_sx1 = end_x;
+          blit_dimmed_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, mul_q8, row_buf + start_x,
+                                      scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
         }
-        blit_dimmed_rgb565_scanline(it, start_x, y, span_w, scaled_row + start_x, mul_q8, row_buf + start_x,
-                                    scratch, mirror_fb, mirror_y_lo, mirror_y_hi);
       }
     }
   }

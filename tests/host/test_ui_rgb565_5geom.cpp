@@ -873,7 +873,7 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
 #if LATTER_CHIP_P4
   static_assert(kArtCacheEntries == 6, "P4 builds must configure 6 ArtCanvasCache entries");
 #elif LATTER_PSRAM_MB >= 8
-  static_assert(kArtCacheEntries == 3, "8 MB S3 builds must allow 3 ArtCanvasCache entries");
+  static_assert(kArtCacheEntries == 1, "8 MB PSRAM XIP S3 builds cap ArtCanvasCache to 1 entry");
 #else
   static_assert(kArtCacheEntries == 1, "<8 MB PSRAM builds must cap ArtCanvasCache to 1 entry");
 #endif
@@ -962,6 +962,64 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
             const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
             const uint16_t want = ref_dim_px(src[idx], mul_q8, x, y, endian_mode);
             LATTER_CHECK(fix.pixels[idx] == want);
+          }
+        }
+      }
+    }
+  }
+  // Exact 2x upscale fast-path parity across endian modes (240x240->480x480, 233x233->466x466, etc.)
+  if constexpr ((SCREEN_W % 2 == 0) && (SCREEN_H % 2 == 0)) {
+    constexpr int kHw = SCREEN_W / 2;
+    constexpr int kHh = SCREEN_H / 2;
+    std::vector<uint16_t> src_half(static_cast<size_t>(kHw) * static_cast<size_t>(kHh));
+    for (int y = 0; y < kHh; ++y) {
+      for (int x = 0; x < kHw; ++x) {
+        const uint16_t r = static_cast<uint16_t>((x * 31) / std::max(1, kHw - 1));
+        const uint16_t g = static_cast<uint16_t>((y * 63) / std::max(1, kHh - 1));
+        const uint16_t b = static_cast<uint16_t>(((x + y) * 31) / std::max(1, kHw + kHh - 2));
+        src_half[static_cast<size_t>(y) * static_cast<size_t>(kHw) + static_cast<size_t>(x)] =
+            static_cast<uint16_t>((r << 11) | (g << 5) | b);
+      }
+    }
+    const ArtImageView half_view{src_half.data(), kHw, kHh};
+    const Case half_cases[] = {
+        {false, false, 0},
+        {true, true, kArtDimMusicHud},
+        {false, true, 0},
+    };
+    for (int endian_mode : {1, 2}) {
+      fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, endian_mode);
+      art_canvas_drop_all();
+      for (const Case &c : half_cases) {
+        for (int pass = 0; pass < 2; ++pass) {
+          fix.fill(0U);
+          dirty_band() = DirtyBandTracker{};
+          (void)dirty_band().begin_frame(PageId::MUSIC, pass, 0U, true);
+          LATTER_CHECK(render_album_art_canvas_view(
+              fix.surf, half_view, SCREEN_CX, /*is_standard=*/false, /*is_letterbox=*/false,
+              c.scrim, c.meta, c.dim));
+          for (int y = 0; y < SCREEN_H; y += 13) {
+            const int mul_q8 = compute_art_row_scale_q8(y, c.scrim, c.meta, c.dim);
+            int x0 = 0;
+            int x1 = SCREEN_W - 1;
+#if LATTER_ROUND_DISPLAY
+            const int hw = circle_half_span(y, 0);
+            x0 = std::max(0, SCREEN_CX - hw);
+            x1 = std::min(SCREEN_W - 1, SCREEN_CX + hw);
+#endif
+            for (int x = x0; x <= x1; x += 7) {
+              const size_t dst_idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
+              const size_t src_idx = static_cast<size_t>(y >> 1) * static_cast<size_t>(kHw) + static_cast<size_t>(x >> 1);
+              const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, y, endian_mode);
+              LATTER_CHECK(fix.pixels[dst_idx] == want);
+            }
+            for (int x : {x0, x1}) {
+              if (x < x0 || x > x1) continue;
+              const size_t dst_idx = static_cast<size_t>(y) * static_cast<size_t>(SCREEN_W) + static_cast<size_t>(x);
+              const size_t src_idx = static_cast<size_t>(y >> 1) * static_cast<size_t>(kHw) + static_cast<size_t>(x >> 1);
+              const uint16_t want = ref_dim_px(src_half[src_idx], mul_q8, x, y, endian_mode);
+              LATTER_CHECK(fix.pixels[dst_idx] == want);
+            }
           }
         }
       }

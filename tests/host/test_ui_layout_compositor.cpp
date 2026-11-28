@@ -764,11 +764,11 @@ void test_landscape_geoms_psram_budget_and_utf8_probing() {
   static_assert(compute_art_cache_slot_budget(1024, 600, 32, 6) == 5);
   static_assert(compute_art_cache_slot_budget(1280, 800, 32, 6) == 3);
   static_assert(compute_art_cache_slot_budget(1280, 800, 16, 6) == 1);
-  static_assert(compute_art_cache_slot_budget(466, 466, 8, 3) == 3);
-  static_assert(compute_art_cache_slot_budget(480, 480, 8, 3) == 3);
+  static_assert(compute_art_cache_slot_budget(466, 466, 8, 3) == 1);
+  static_assert(compute_art_cache_slot_budget(480, 480, 8, 3) == 1);
   static_assert(compute_art_cache_slot_budget(800, 480, 8, 3) == 1);
   static_assert(compute_art_cache_slot_budget(1280, 800, 8, 3) == 0);
-  static_assert(compute_art_cache_slot_budget(466, 466, 4, 3) == 2);
+  static_assert(compute_art_cache_slot_budget(466, 466, 4, 3) == 1);
   static_assert(sky_base_cache_allowed(720, 720, 32));
   static_assert(sky_base_cache_allowed(1024, 600, 32));
   static_assert(sky_base_cache_allowed(1280, 800, 32));
