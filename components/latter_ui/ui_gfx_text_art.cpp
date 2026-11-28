@@ -878,6 +878,7 @@ void art_row_span(int y, int cx, int &start_x, int &end_x) {
 #endif
 }
 
+#if defined(USE_ESP32) && defined(CONFIG_IDF_TARGET_ESP32P4) && !LATTER_ROUND_DISPLAY
 int uniform_art_dim_q8(bool show_controls, bool show_metadata, int dim_level) noexcept {
   if (dim_level == kArtDimLyricsHud) return 64;
   if (dim_level == kArtDimLyrics) return -1;
@@ -891,6 +892,7 @@ int uniform_art_dim_q8(bool show_controls, bool show_metadata, int dim_level) no
   if (show_metadata) return -1;
   return 256;
 }
+#endif
 
 void draw_album_art(Rgb565Surface &it, const uint16_t *src_data, int src_w, int src_h, int cx,
                     bool is_standard, bool is_letterbox, bool apply_scrim, bool show_metadata, int dim_level,
