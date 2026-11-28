@@ -533,8 +533,8 @@ void test_sram_psram_budget_and_http_stall_guards() {
 #if LATTER_CHIP_P4
   static_assert(LATTER_ART_CACHE_ENTRIES == 6, "32 MB PSRAM P4 builds allow 6 ArtCanvasCache slots");
 #elif LATTER_PSRAM_MB >= 8
-  static_assert(LATTER_ART_CACHE_ENTRIES == 1,
-                "8 MB PSRAM XIP S3 builds cap ArtCanvasCache to 1 slot to prevent cache thrashing");
+  static_assert(LATTER_ART_CACHE_ENTRIES == 2,
+                "8 MB PSRAM XIP S3 builds allow 2 ArtCanvasCache slots");
 #else
   static_assert(LATTER_ART_CACHE_ENTRIES == 1, "<8 MB PSRAM builds must cap ArtCanvasCache to 1 slot");
 #endif
@@ -542,7 +542,9 @@ void test_sram_psram_budget_and_http_stall_guards() {
   static_assert(compute_art_cache_slot_budget(1024, 600, 32, 6) == 5);
   static_assert(compute_art_cache_slot_budget(1280, 800, 32, 6) == 3);
   static_assert(compute_art_cache_slot_budget(466, 466, 8, 1) == 1);
-  static_assert(compute_art_cache_slot_budget(480, 480, 8, 3) == 1);
+  static_assert(compute_art_cache_slot_budget(466, 466, 8, 2) == 2);
+  static_assert(compute_art_cache_slot_budget(480, 480, 8, 3) == 2);
+  static_assert(compute_art_cache_slot_budget(800, 480, 8, 3) == 1);
   static_assert(effective_touch_poll_ms(false, true, 8U, 28U, 10000U, 0U) == 8U);
   static_assert(effective_touch_poll_ms(true, false, 8U, 28U, 10000U, 0U) == 8U);
   static_assert(effective_touch_poll_ms(false, false, 8U, 28U, 1200U, 1000U) == 8U);

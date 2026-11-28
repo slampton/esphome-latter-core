@@ -887,7 +887,7 @@ void color_wheel_cache_drop() noexcept {
 }
 
 bool color_wheel_cache_ensure(int r_in, int r_out) noexcept {
-  static const bool s_wheel_evictor_reg = register_psram_cache_evictor(&color_wheel_cache_drop);
+  static const bool s_wheel_evictor_reg = register_psram_cache_evictor(&color_wheel_cache_drop, true);
   (void)s_wheel_evictor_reg;
   auto &c = color_wheel_cache();
   const int endian = active_frame_endian_mode();

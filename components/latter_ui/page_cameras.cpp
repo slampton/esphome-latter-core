@@ -726,6 +726,12 @@ void render_cameras_page(Rgb565Surface &it, const UiFrameContext &ctx) {
   auto &rs = runtime_state();
   const auto &ac = area_ctx_state();
 
+  if constexpr (LATTER_PSRAM_MB < 16) {
+    if (psram_headroom_below(768U * 1024U, 256U * 1024U)) {
+      art_canvas_trim_to_one();
+    }
+  }
+
   CameraRecord *cams = camera_records_scratch();
   const int cam_count = parse_cameras_records(ac.cameras_summary, cams, MAX_CAMERA_SLOTS);
   const bool has_fallback_src = !ac.camera_stream_url.empty() || !ac.camera_snapshot_url.empty();

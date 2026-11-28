@@ -875,7 +875,7 @@ inline constexpr int kArtCacheEntries = LATTER_ART_CACHE_ENTRIES;
 inline constexpr size_t art_cache_psram_budget_bytes(int psram_mb) noexcept {
   if (psram_mb >= 32) return 6144U * 1024U;
   if (psram_mb >= 16) return 3584U * 1024U;
-  if (psram_mb >= 8) return 768U * 1024U;
+  if (psram_mb >= 8) return 960U * 1024U;
   if (psram_mb >= 4) return 768U * 1024U;
   return 0U;
 }
@@ -926,7 +926,8 @@ void art_canvas_drop(const void *data);
 void art_canvas_trim_to_one() noexcept;
 void art_canvas_drop_all() noexcept;
 using PsramCacheEvictorFn = void (*)() noexcept;
-bool register_psram_cache_evictor(PsramCacheEvictorFn fn) noexcept;
+bool register_psram_cache_evictor(PsramCacheEvictorFn fn, bool heavy = false) noexcept;
+void evict_heavy_psram_caches() noexcept;
 void evict_registered_psram_caches() noexcept;
 bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, int cx,
                                   bool is_standard, bool is_letterbox, bool apply_scrim,

@@ -1153,28 +1153,32 @@ void draw_album_art_2x_upscale_mode(uint16_t *fb_tgt, const uint16_t *src_data, 
         copy_row_span(dst0, y0, line0_px, sx0_a, sx1_a);
         copy_row_span(dst1, y1, line0_px, sx0_b, sx1_b);
       } else {
-        const int eff_mul = std::max(0, mul0);
-        ensure_art_dim_lut_row(scratch, eff_mul, EffMode, y0);
-        ensure_art_dim_lut_row(scratch, eff_mul, EffMode, y1);
+        const uint32_t m = static_cast<uint32_t>(std::max(0, mul0));
         const uint8_t *const th0 = kBayer4[y0 & 3];
         const uint8_t *const th1 = kBayer4[y1 & 3];
-        const uint16_t *const r0[4] = {scratch.r_lut[th0[0]], scratch.r_lut[th0[1]], scratch.r_lut[th0[2]], scratch.r_lut[th0[3]]};
-        const uint16_t *const g0[4] = {scratch.g_lut[th0[0]], scratch.g_lut[th0[1]], scratch.g_lut[th0[2]], scratch.g_lut[th0[3]]};
-        const uint16_t *const b0[4] = {scratch.b_lut[th0[0]], scratch.b_lut[th0[1]], scratch.b_lut[th0[2]], scratch.b_lut[th0[3]]};
-        const uint16_t *const r1[4] = {scratch.r_lut[th1[0]], scratch.r_lut[th1[1]], scratch.r_lut[th1[2]], scratch.r_lut[th1[3]]};
-        const uint16_t *const g1[4] = {scratch.g_lut[th1[0]], scratch.g_lut[th1[1]], scratch.g_lut[th1[2]], scratch.g_lut[th1[3]]};
-        const uint16_t *const b1[4] = {scratch.b_lut[th1[0]], scratch.b_lut[th1[1]], scratch.b_lut[th1[2]], scratch.b_lut[th1[3]]};
+        uint32_t t0_rb[4], t0_g[4], t1_rb[4], t1_g[4];
+        for (int k = 0; k < 4; ++k) {
+          const uint32_t tk0 = static_cast<uint32_t>(th0[k]) * 16U + 8U;
+          const uint32_t tk1 = static_cast<uint32_t>(th1[k]) * 16U + 8U;
+          t0_rb[k] = (tk0 << 16) | tk0;
+          t0_g[k] = tk0 << 5;
+          t1_rb[k] = (tk1 << 16) | tk1;
+          t1_g[k] = tk1 << 5;
+        }
         auto emit_one_src = [&](int sx, int b_lo, int b_hi) noexcept {
           const uint32_t s = src_row[sx];
-          const uint32_t rv = s >> 11;
-          const uint32_t gv = (s >> 5) & 0x3FU;
-          const uint32_t bv = s & 0x1FU;
-          const uint32_t a =
-              static_cast<uint32_t>(r0[b_lo][rv] | g0[b_lo][gv] | b0[b_lo][bv]) |
-              (static_cast<uint32_t>(r0[b_hi][rv] | g0[b_hi][gv] | b0[b_hi][bv]) << 16);
-          const uint32_t b =
-              static_cast<uint32_t>(r1[b_lo][rv] | g1[b_lo][gv] | b1[b_lo][bv]) |
-              (static_cast<uint32_t>(r1[b_hi][rv] | g1[b_hi][gv] | b1[b_hi][bv]) << 16);
+          const uint32_t rb_m = (((s & 0xF800U) << 5) | (s & 0x001FU)) * m;
+          const uint32_t g_m = (s & 0x07E0U) * m;
+          const uint32_t d00 = dim_rgb565_swar_q8_le(rb_m, g_m, t0_rb[b_lo], t0_g[b_lo]);
+          const uint32_t d01 = dim_rgb565_swar_q8_le(rb_m, g_m, t0_rb[b_hi], t0_g[b_hi]);
+          const uint32_t d10 = dim_rgb565_swar_q8_le(rb_m, g_m, t1_rb[b_lo], t1_g[b_lo]);
+          const uint32_t d11 = dim_rgb565_swar_q8_le(rb_m, g_m, t1_rb[b_hi], t1_g[b_hi]);
+          uint32_t a = d00 | (d01 << 16);
+          uint32_t b = d10 | (d11 << 16);
+          if constexpr (EffMode == 2) {
+            a = bswap16x2_u32(a);
+            b = bswap16x2_u32(b);
+          }
           std::memcpy(line0_px + (sx << 1), &a, 4U);
           std::memcpy(line1_px + (sx << 1), &b, 4U);
         };
@@ -1607,25 +1611,40 @@ void art_canvas_drop_all() noexcept {
 }
 
 namespace {
-constexpr size_t kMaxPsramCacheEvictors = 24U;
-PsramCacheEvictorFn g_psram_cache_evictors[kMaxPsramCacheEvictors]{};
+constexpr size_t kMaxPsramCacheEvictors = 32U;
+struct PsramCacheEvictorEntry {
+  PsramCacheEvictorFn fn{nullptr};
+  bool heavy{false};
+};
+PsramCacheEvictorEntry g_psram_cache_evictors[kMaxPsramCacheEvictors]{};
 size_t g_psram_cache_evictor_count = 0U;
 }  // namespace
 
-bool register_psram_cache_evictor(PsramCacheEvictorFn fn) noexcept {
+bool register_psram_cache_evictor(PsramCacheEvictorFn fn, bool heavy) noexcept {
   if (fn == nullptr) return false;
   for (size_t i = 0; i < g_psram_cache_evictor_count; ++i) {
-    if (g_psram_cache_evictors[i] == fn) return true;
+    if (g_psram_cache_evictors[i].fn == fn) {
+      g_psram_cache_evictors[i].heavy = g_psram_cache_evictors[i].heavy || heavy;
+      return true;
+    }
   }
   if (g_psram_cache_evictor_count >= kMaxPsramCacheEvictors) return false;
-  g_psram_cache_evictors[g_psram_cache_evictor_count++] = fn;
+  g_psram_cache_evictors[g_psram_cache_evictor_count++] = PsramCacheEvictorEntry{fn, heavy};
   return true;
+}
+
+void evict_heavy_psram_caches() noexcept {
+  for (size_t i = 0; i < g_psram_cache_evictor_count; ++i) {
+    if (g_psram_cache_evictors[i].heavy && g_psram_cache_evictors[i].fn != nullptr) {
+      g_psram_cache_evictors[i].fn();
+    }
+  }
 }
 
 void evict_registered_psram_caches() noexcept {
   for (size_t i = 0; i < g_psram_cache_evictor_count; ++i) {
-    if (g_psram_cache_evictors[i] != nullptr) {
-      g_psram_cache_evictors[i]();
+    if (g_psram_cache_evictors[i].fn != nullptr) {
+      g_psram_cache_evictors[i].fn();
     }
   }
 }
@@ -1732,17 +1751,31 @@ bool render_album_art_canvas_view(Rgb565Surface &it, ArtImageView target_art, in
     const size_t px_count = static_cast<size_t>(SCREEN_W) * static_cast<size_t>(SCREEN_H);
     const size_t frame_bytes = px_count * sizeof(uint16_t);
     if (victim->px == nullptr) {
-      if ((LATTER_PSRAM_MB < 16 || frame_bytes > 1536U * 1024U) &&
-          psram_headroom_below(frame_bytes + 512U * 1024U, frame_bytes + 64U * 1024U)) {
-        evict_registered_psram_caches();
+      ArtCanvasCache *oldest_alloc = nullptr;
+      for (int i = 0; i < kArtCacheActiveSlots; ++i) {
+        if (entries[i].px != nullptr &&
+            (oldest_alloc == nullptr || entries[i].last_use < oldest_alloc->last_use)) {
+          oldest_alloc = &entries[i];
+        }
       }
-      PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, nullptr, !full_rect_overwrite);
-      if (pb.px == nullptr) {
-        evict_registered_psram_caches();
-        pb = ui_psram_phase_alloc(frame_bytes, nullptr, !full_rect_overwrite);
+      if (LATTER_PSRAM_MB < 16 || frame_bytes > 1536U * 1024U) {
+        if (psram_headroom_below(frame_bytes + 512U * 1024U, frame_bytes + 64U * 1024U)) {
+          evict_heavy_psram_caches();
+        }
+        if (oldest_alloc != nullptr &&
+            psram_headroom_below(frame_bytes + 384U * 1024U, frame_bytes + 64U * 1024U)) {
+          victim = oldest_alloc;
+        }
       }
-      victim->px_raw = pb.raw;
-      victim->px = pb.px;
+      if (victim->px == nullptr) {
+        PsramPhaseBuf pb = ui_psram_phase_alloc(frame_bytes, nullptr, !full_rect_overwrite);
+        if (pb.px == nullptr) {
+          evict_registered_psram_caches();
+          pb = ui_psram_phase_alloc(frame_bytes, nullptr, !full_rect_overwrite);
+        }
+        victim->px_raw = pb.raw;
+        victim->px = pb.px;
+      }
     }
     if (victim->px == nullptr) {
       if (full_bleed) fill_rect_row_major(it, 0, 0, SCREEN_W, SCREEN_H, kChromeShadow);

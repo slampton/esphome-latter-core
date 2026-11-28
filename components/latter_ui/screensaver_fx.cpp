@@ -73,7 +73,7 @@ void screensaver_fx_cache_drop() noexcept {
 
 struct ScreensaverPsramEvictorRegistrar {
   ScreensaverPsramEvictorRegistrar() noexcept {
-    register_psram_cache_evictor(&screensaver_fx_cache_drop);
+    register_psram_cache_evictor(&screensaver_fx_cache_drop, true);
   }
 };
 const ScreensaverPsramEvictorRegistrar kScreensaverPsramEvictorRegistrar{};

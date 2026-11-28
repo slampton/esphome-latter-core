@@ -873,7 +873,7 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
 #if LATTER_CHIP_P4
   static_assert(kArtCacheEntries == 6, "P4 builds must configure 6 ArtCanvasCache entries");
 #elif LATTER_PSRAM_MB >= 8
-  static_assert(kArtCacheEntries == 1, "8 MB PSRAM XIP S3 builds cap ArtCanvasCache to 1 entry");
+  static_assert(kArtCacheEntries == 2, "8 MB PSRAM XIP S3 builds allow 2 ArtCanvasCache entries");
 #else
   static_assert(kArtCacheEntries == 1, "<8 MB PSRAM builds must cap ArtCanvasCache to 1 entry");
 #endif
@@ -1056,7 +1056,7 @@ void test_art_canvas_lut_and_dual_sink_parity_5geom() {
   }
   art_canvas_drop_all();
 
-  // Verify non-2x generic art scaling (180x180, stack sx_lut/scaled_row & line_px on SCREEN_W<=512)
+  // Verify non-2x generic art scaling (180x180, PSRAM scratch sx_lut/scaled_row)
   // across endian modes 1 & 2, plus blit_album_art_cached_rect_view & partial-band Audio volume redraw.
   {
     constexpr int kGw = 180;
@@ -2221,6 +2221,93 @@ void test_wave2_rodata_lut_spans_blend_glass_and_clipped_pill() {
   }
 }
 
+void test_tiered_psram_evictor_and_lunar_disc_shading() {
+  using namespace latter_ui;
+  using namespace latter_core;
+
+  // Tiered evictors: heavy eviction leaves lightweight glyph/MDI caches untouched; full eviction clears all.
+  static int s_heavy_hits = 0;
+  static int s_light_hits = 0;
+  auto on_heavy = +[]() noexcept { ++s_heavy_hits; };
+  auto on_light = +[]() noexcept { ++s_light_hits; };
+  s_heavy_hits = 0;
+  s_light_hits = 0;
+  LATTER_CHECK(register_psram_cache_evictor(on_heavy, true));
+  LATTER_CHECK(register_psram_cache_evictor(on_light, false));
+  evict_heavy_psram_caches();
+  LATTER_CHECK(s_heavy_hits == 1 && s_light_hits == 0);
+  evict_registered_psram_caches();
+  LATTER_CHECK(s_heavy_hits == 2 && s_light_hits == 1);
+
+  // Fast lunar disc shading via PageId::WEATHER subpage 3 (moon): hemisphere lighting symmetry across phases.
+  HostSurfaceFixture fix{};
+  populate_rich_host_state(fix.ctx);
+  fix.surf = bind_host_surface(fix.pixels.data(), SCREEN_W, SCREEN_H, 1);
+  auto &rs = runtime_state();
+  auto &ws = weather_state();
+  auto &prefs = persisted_prefs();
+  area_ctx_state().wallpaper_url.clear();
+  prefs.weather_app_background = false;
+  prefs.weather_background = false;
+  fix.ctx.now = UiWallTime{};
+  fix.ctx.weather_sim_opt = UiStrView{};
+  fix.ctx.col_bg = UiColor(0, 0, 0);
+  rs.nav.gui_page = PageId::WEATHER;
+  rs.nav.sky_weather_subpage = 3;
+
+  const auto ly = layout();
+  const int moon_top_y = ly.hdr_y + dp_px(30);
+  const int illum_y = ly.mode_bar_zone_top() - dp_px(22);
+  const int phase_y = illum_y - std::max(dp_px(26), kAutoFonts.date + dp_px(4));
+  const int text_gap = std::max(dp_px(18), (kAutoFonts.date / 2) + dp_px(12));
+  const int disc_span = std::max(64, (phase_y - text_gap) - moon_top_y);
+  const int moon_cy = moon_top_y + disc_span / 2;
+  const int moon_r = std::clamp(
+      std::min({dp_px(110), ly.safe_span(moon_cy, dp_px(24)) / 2, disc_span / 2}),
+      34, dp_px(110));
+  const int cx = fix.ctx.cx;
+
+  auto avg_half_lum = [&](int x_lo, int x_hi) -> uint64_t {
+    uint64_t sum = 0ULL;
+    uint64_t cnt = 0ULL;
+    for (int x = x_lo; x <= x_hi; ++x) {
+      const uint16_t raw =
+          decode_hw_rgb565_raw(fix.pixels[static_cast<size_t>(moon_cy) * SCREEN_W + static_cast<size_t>(x)]);
+      const uint64_t pr = ((raw >> 11) & 0x1FU) << 3;
+      const uint64_t pg = ((raw >> 5) & 0x3FU) << 2;
+      const uint64_t pb = (raw & 0x1FU) << 3;
+      sum += pr + pg + pb;
+      ++cnt;
+    }
+    return (cnt > 0ULL) ? (sum / cnt) : 0ULL;
+  };
+  auto render_phase = [&](const char *phase_name) {
+    ws.moon_phase = phase_name;
+    fix.fill(0U);
+    dirty_band() = DirtyBandTracker{};
+    (void)dirty_band().begin_frame(PageId::WEATHER, 3, 0U, true);
+    reset_clip_y_band();
+    frame_base_begin();
+    frame_hits().clear();
+    render_weather_page(fix.surf, fix.ctx);
+  };
+
+  render_phase("first_quarter");
+  const uint64_t wax_left = avg_half_lum(cx - moon_r / 2, cx - 4);
+  const uint64_t wax_right = avg_half_lum(cx + 4, cx + moon_r / 2);
+  LATTER_CHECK(wax_right > wax_left * 2ULL && wax_left >= 4ULL);
+
+  render_phase("full_moon");
+  const uint64_t full_left = avg_half_lum(cx - moon_r / 2, cx - 4);
+  const uint64_t full_right = avg_half_lum(cx + 4, cx + moon_r / 2);
+  LATTER_CHECK(full_left > wax_left * 2ULL && full_right > wax_left * 2ULL);
+
+  render_phase("last_quarter");
+  const uint64_t wane_left = avg_half_lum(cx - moon_r / 2, cx - 4);
+  const uint64_t wane_right = avg_half_lum(cx + 4, cx + moon_r / 2);
+  LATTER_CHECK(wane_left > wane_right * 2ULL && wane_right >= 4ULL);
+}
+
 }  // namespace
 
 void run_ui_rgb565_5geom_tests() {
@@ -2232,6 +2319,7 @@ void run_ui_rgb565_5geom_tests() {
   test_additive_cold_boot_sky_and_celestial_d085();
   test_weather_forecast_and_music_lyrics_invariants_9geom();
   test_wave2_rodata_lut_spans_blend_glass_and_clipped_pill();
+  test_tiered_psram_evictor_and_lunar_disc_shading();
 }
 
 }  // namespace latter_test

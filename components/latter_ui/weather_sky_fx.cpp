@@ -311,6 +311,25 @@ struct LunarShade {
   }
 };
 
+inline float fast_sqrtf_lunar(float x) noexcept {
+  if (x <= 0.0f) return 0.0f;
+  uint32_t i = 0U;
+  std::memcpy(&i, &x, sizeof(i));
+  i = 0x5f375a86U - (i >> 1);
+  float y = 0.0f;
+  std::memcpy(&y, &i, sizeof(y));
+  const float half_x = 0.5f * x;
+  y = y * (1.5f - half_x * y * y);
+  y = y * (1.5f - half_x * y * y);
+  return x * y;
+}
+
+inline uint32_t clamp_u8_f(float v) noexcept {
+  if (v <= 0.0f) return 0U;
+  if (v >= 255.0f) return 255U;
+  return static_cast<uint32_t>(v);
+}
+
 int lunar_aa_half_span(int moon_r, int my) {
   const float r_aa = static_cast<float>(moon_r) + 0.45f;
   const float d2 = r_aa * r_aa - static_cast<float>(my * my);
@@ -321,20 +340,25 @@ int lunar_aa_half_span(int moon_r, int my) {
 
 void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
   const int moon_r = sh.r;
-  const float my_sq_f = static_cast<float>(my * my);
+  const int my_sq_i = my * my;
+  const int r_sq_i = moon_r * moon_r;
   const int two_r = 2 * std::max(1, moon_r);
   const int ty_139 = (moon_r == 69) ? (my + 69) : ((my + moon_r) * 138 / two_r);
   const uint8_t *const tex_row = LUNAR_ALBEDO_139[ty_139];
   const float r_outer = sh.r_f + 0.45f;
   const float r_outer_sq = r_outer * r_outer;
+  const float sun_x_inv = sh.sun_x * sh.inv_r;
+  const float sun_z_inv = sh.sun_z * sh.inv_r;
+  const bool has_lit = (sh.lit_scale > 0.0f);
+  const bool full_lit = (sh.lit_scale >= 1.0f);
   // Hoist 138 / (2 * moon_r) to 16.16 fixed point so the inner pixel loop does zero integer divisions.
   const uint32_t tx_step_fp =
       (moon_r == 69) ? 0U : (((138U << 16) + static_cast<uint32_t>(two_r) - 1U) / static_cast<uint32_t>(two_r));
   uint32_t tx_fp = (moon_r == 69) ? 0U : (static_cast<uint32_t>(moon_r - w_line) * tx_step_fp);
 
   for (int mx = -w_line; mx <= w_line; mx++) {
-    const float r2 = static_cast<float>(mx * mx) + my_sq_f;
-    if (r2 >= r_outer_sq) {
+    const int r2_i = mx * mx + my_sq_i;
+    if (r2_i >= r_sq_i && static_cast<float>(r2_i) >= r_outer_sq) {
       row[mx + w_line] = 0;
       tx_fp += tx_step_fp;
       continue;
@@ -349,13 +373,12 @@ void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
       tx_fp += tx_step_fp;
     }
 
-    const float mz = (r2 < sh.r_sq) ? std::sqrt(sh.r_sq - r2) : 0.0f;
+    const float mz = (r2_i < r_sq_i) ? fast_sqrtf_lunar(static_cast<float>(r_sq_i - r2_i)) : 0.0f;
     const float nz = mz * sh.inv_r;
-    const float base_lum = static_cast<float>(tex_u8) * (0.84f + 0.16f * nz);
 
     float shadow = 0.0f;
-    if (sh.lit_scale > 0.0f) {
-      const float ndotl = (static_cast<float>(mx) * sh.sun_x + mz * sh.sun_z) * sh.inv_r;
+    if (has_lit) {
+      const float ndotl = static_cast<float>(mx) * sun_x_inv + mz * sun_z_inv;
       if (ndotl >= sh.term_w) {
         shadow = sh.lit_scale;
       } else if (ndotl > 0.0f) {
@@ -364,23 +387,30 @@ void shade_lunar_row(uint16_t *row, const LunarShade &sh, int my, int w_line) {
       }
     }
 
-    const float earthshine_limb = 0.62f + 0.38f * nz;
-    const float dark_lum = (6.0f + static_cast<float>(tex_u8) * 0.115f) * earthshine_limb;
-
-    const float lit_r = base_lum;
-    const float lit_g = base_lum * 0.98f;
-    const float lit_b = base_lum * 0.94f;
-
-    const float drk_r = dark_lum * 0.82f;
-    const float drk_g = dark_lum * 0.90f;
-    const float drk_b = dark_lum * 1.12f;
-
-    const uint8_t cr = static_cast<uint8_t>(std::fmin(255.0f, drk_r + (lit_r - drk_r) * shadow));
-    const uint8_t cg = static_cast<uint8_t>(std::fmin(255.0f, drk_g + (lit_g - drk_g) * shadow));
-    const uint8_t cb = static_cast<uint8_t>(std::fmin(255.0f, drk_b + (lit_b - drk_b) * shadow));
-    row[mx + w_line] = static_cast<uint16_t>(((static_cast<uint16_t>(cr) & 0xF8U) << 8) |
-                                             ((static_cast<uint16_t>(cg) & 0xFCU) << 3) |
-                                             (static_cast<uint16_t>(cb) >> 3));
+    uint32_t cr = 0U, cg = 0U, cb = 0U;
+    if (shadow <= 0.0f) {
+      const float earthshine_limb = 0.62f + 0.38f * nz;
+      const float dark_lum = (6.0f + static_cast<float>(tex_u8) * 0.115f) * earthshine_limb;
+      cr = clamp_u8_f(dark_lum * 0.82f);
+      cg = clamp_u8_f(dark_lum * 0.90f);
+      cb = clamp_u8_f(dark_lum * 1.12f);
+    } else if (full_lit && shadow >= 1.0f) {
+      const float base_lum = static_cast<float>(tex_u8) * (0.84f + 0.16f * nz);
+      cr = clamp_u8_f(base_lum);
+      cg = clamp_u8_f(base_lum * 0.98f);
+      cb = clamp_u8_f(base_lum * 0.94f);
+    } else {
+      const float base_lum = static_cast<float>(tex_u8) * (0.84f + 0.16f * nz);
+      const float earthshine_limb = 0.62f + 0.38f * nz;
+      const float dark_lum = (6.0f + static_cast<float>(tex_u8) * 0.115f) * earthshine_limb;
+      const float drk_r = dark_lum * 0.82f;
+      const float drk_g = dark_lum * 0.90f;
+      const float drk_b = dark_lum * 1.12f;
+      cr = clamp_u8_f(drk_r + (base_lum - drk_r) * shadow);
+      cg = clamp_u8_f(drk_g + (base_lum * 0.98f - drk_g) * shadow);
+      cb = clamp_u8_f(drk_b + (base_lum * 0.94f - drk_b) * shadow);
+    }
+    row[mx + w_line] = static_cast<uint16_t>(((cr & 0xF8U) << 8) | ((cg & 0xFCU) << 3) | (cb >> 3));
   }
 }
 
@@ -520,7 +550,7 @@ void render_lunar_disc(Rgb565Surface &it, int moon_cx, int moon_cy, int moon_r, 
     auto blend_limb_px = [&](int mx) {
       const int px = moon_cx + mx;
       if (px < 0 || px >= SCREEN_W) return;
-      const float edge_t = ((sh.r_f + 0.45f) - std::sqrt(static_cast<float>(mx * mx) + my_sq_f)) * (1.0f / 1.35f);
+      const float edge_t = ((sh.r_f + 0.45f) - fast_sqrtf_lunar(static_cast<float>(mx * mx) + my_sq_f)) * (1.0f / 1.35f);
       if (edge_t <= 0.0f) return;
       const float edge_alpha = (edge_t >= 1.0f) ? 1.0f : (edge_t * edge_t * (3.0f - 2.0f * edge_t));
       const uint16_t m565 = row[mx + w_line];
@@ -1664,9 +1694,9 @@ struct WeatherPsramEvictorRegistrar {
   WeatherPsramEvictorRegistrar() noexcept {
     // Evict only the heavy full-screen sky base (434 KB - 1 MB) and cloud sprites under PSRAM pressure;
     // keep the small (~60 KB) shaded lunar disc cache warm across Music visits to avoid cold Moon re-shade spikes.
-    register_psram_cache_evictor(&sky_base_cache_evict);
-    register_psram_cache_evictor(&weather_cloud_cache_drop);
-    register_psram_cache_evictor(&weather_particle_engine_drop);
+    register_psram_cache_evictor(&sky_base_cache_evict, true);
+    register_psram_cache_evictor(&weather_cloud_cache_drop, true);
+    register_psram_cache_evictor(&weather_particle_engine_drop, true);
   }
 };
 const WeatherPsramEvictorRegistrar kWeatherPsramEvictorRegistrar{};

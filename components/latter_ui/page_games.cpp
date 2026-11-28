@@ -663,7 +663,7 @@ namespace {
 
 struct GameArenaPsramEvictorRegistrar {
   GameArenaPsramEvictorRegistrar() noexcept {
-    register_psram_cache_evictor(&game_arena_drop);
+    register_psram_cache_evictor(&game_arena_drop, true);
   }
 };
 const GameArenaPsramEvictorRegistrar kGameArenaPsramEvictorRegistrar{};

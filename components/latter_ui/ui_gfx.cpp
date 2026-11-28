@@ -445,7 +445,7 @@ uint16_t *ppa_srm_ensure_stage(size_t needed_bytes) noexcept {
     if (st.stage_buf == nullptr) return nullptr;
     st.stage_bytes = req;
     if (!st.stage_evictor_registered) {
-      st.stage_evictor_registered = register_psram_cache_evictor(&ppa_srm_stage_evict);
+      st.stage_evictor_registered = register_psram_cache_evictor(&ppa_srm_stage_evict, true);
     }
   }
   return st.stage_buf;
@@ -535,7 +535,7 @@ uint8_t *ppa_blend_wash_ensure_mask(int falloff_drop) noexcept {
     if (st.alpha_mask == nullptr) return nullptr;
     st.cached_falloff_drop = -1;
     if (!st.evictor_registered) {
-      st.evictor_registered = register_psram_cache_evictor(&ppa_blend_wash_evict);
+      st.evictor_registered = register_psram_cache_evictor(&ppa_blend_wash_evict, true);
     }
   }
   if (st.cached_falloff_drop != falloff_drop) {
@@ -569,7 +569,7 @@ uint8_t *ppa_blend_glass_ensure_mask(int core_w, int core_h, int core_y0, int re
     st.glass_mask_cap = req_bytes;
     st.glass_key_at = -1;
     if (!st.evictor_registered) {
-      st.evictor_registered = register_psram_cache_evictor(&ppa_blend_wash_evict);
+      st.evictor_registered = register_psram_cache_evictor(&ppa_blend_wash_evict, true);
     }
   }
   if (!need_gradient) return st.glass_mask;
